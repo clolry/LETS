@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment and local credentials
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.clasprc.json
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.vscode/
+.idea/
+
+# Build artifacts
+dist/
+build/

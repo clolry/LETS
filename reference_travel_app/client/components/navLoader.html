@@ -1,0 +1,250 @@
+<!-- client/components/navLoader.html -->
+<!-- Shared navigation loader component for Travel pages -->
+
+<!-- Navigation Loader (plane with contrails) -->
+<div id="navLoader" class="nav-loader" aria-hidden="true">
+  <div class="nav-loader__content">
+    <svg class="nav-plane" viewBox="0 -960 960 960" role="img" aria-label="Loading">
+      <g id="rig">
+        <path class="trail t1" d="M 480 -480 L 80 -80" />
+        <path class="trail t2" d="M 420 -560 L 140 -280" />
+        <path class="trail t3" d="M 560 -420 L 280 -140" />
+        <path class="plane-body"
+          d="M771-354l-99-247-97 98 20 97-34 34-68-121-121-68 34-34 98 20 97-97-247-99 45-42 297 47 98-99q7-7 16-10.5t19-3.5q10 0 19 3.5t17 11.5q8 7 11.5 16t3.5 18q0 10-4 19t-12 17l-98 98 47 297-42 45Z"/>
+      </g>
+    </svg>
+    <div class="nav-loader__text" id="navLoaderText"></div>
+  </div>
+</div>
+
+<style>
+/* Navigation Loader (plane with contrails) */
+.nav-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(1px);
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.nav-loader.on {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.nav-loader__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.nav-loader__text {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #004f87;
+  min-height: 1.25rem;
+}
+
+.nav-loader__text:empty {
+  display: none;
+}
+
+/* Bouncing dots animation */
+.nav-loader__text .dot {
+  display: inline-block;
+  animation: dotBounce 1.2s ease-in-out infinite;
+}
+
+.nav-loader__text .dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.nav-loader__text .dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes dotBounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-4px); }
+}
+
+.nav-plane {
+  width: 48px;
+  height: 48px;
+  overflow: visible;
+}
+
+#rig {
+  transform-origin: 50% 50%;
+  transform-box: fill-box;
+  animation: rigBob 900ms ease-in-out infinite;
+}
+
+@keyframes rigBob {
+  0%, 100% { transform: rotate(45deg) translateY(0); }
+  50% { transform: rotate(45deg) translateY(-1.1px); }
+}
+
+.plane-body {
+  fill: var(--brand-blue, #004f87);
+}
+
+.trail {
+  fill: none;
+  stroke: var(--brand-blue, #004f87);
+  stroke-linecap: round;
+  stroke-width: 26;
+  opacity: 0.30;
+  stroke-dasharray: 110 520;
+  animation: trailDash 950ms linear infinite, trailBreathe 950ms ease-in-out infinite;
+}
+
+.trail.t2,
+.trail.t3 {
+  stroke-width: 20;
+  opacity: 0.20;
+  animation-duration: 1150ms;
+}
+
+@keyframes trailDash {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -630; }
+}
+
+@keyframes trailBreathe {
+  0%, 100% { opacity: 0.16; }
+  50% { opacity: 0.36; }
+}
+</style>
+
+<script>
+// Nav loader show/hide helpers and navigation
+(function() {
+  let navLoaderTimer = null;
+
+  /**
+   * Show the nav loader
+   * @param {number} delayMs - Delay before showing (default 200ms)
+   * @param {string} text - Optional text to show (will add bouncing dots)
+   */
+  window.showNavLoader = function(delayMs = 200, text = '') {
+    clearTimeout(navLoaderTimer);
+    navLoaderTimer = setTimeout(() => {
+      const loader = document.getElementById('navLoader');
+      const textEl = document.getElementById('navLoaderText');
+
+      if (textEl) {
+        if (text) {
+          // Add bouncing dots to text
+          textEl.innerHTML = text + '<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>';
+        } else {
+          textEl.innerHTML = '';
+        }
+      }
+
+      loader?.classList.add('on');
+    }, delayMs);
+  };
+
+  window.hideNavLoader = function() {
+    clearTimeout(navLoaderTimer);
+    const loader = document.getElementById('navLoader');
+    const textEl = document.getElementById('navLoaderText');
+    loader?.classList.remove('on');
+    if (textEl) textEl.innerHTML = '';
+  };
+
+  /**
+   * Safely navigate the top-level frame to a URL.
+   * Uses a hidden anchor with target="_top" which Chrome allows even in
+   * sandboxed GAS iframes, unlike window.top.location.href assignments.
+   * MUST be called synchronously within a user gesture (click handler).
+   * @param {string} url - The full URL to navigate to
+   */
+  window.safeTopNavigate = function(url) {
+    var a = document.createElement('a');
+    a.href = url;
+    a.target = '_top';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+  };
+
+  /**
+   * Pre-cache script URL on page load so navigation is always synchronous.
+   * Each page template sets this via: window._travelScriptUrl = scriptUrl;
+   * Fallback: resolve once via google.script.run (before any user click).
+   */
+  if (!window._travelScriptUrl) {
+    // Try window.top.location first
+    try {
+      window._travelScriptUrl = window.top.location.href.split('?')[0];
+    } catch (e) {
+      // Cross-origin — resolve async on load (before user clicks)
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(url) {
+            window._travelScriptUrl = url;
+          })
+          .getScriptUrl();
+      }
+    }
+  }
+
+  /**
+   * Navigate to a Travel app page with loader.
+   * Uses pre-cached _travelScriptUrl so navigation is synchronous
+   * within the user gesture — no async callbacks that lose activation.
+   * @param {string} mode - The mode to navigate to ('travel', 'form')
+   * @param {Object} params - Additional URL parameters
+   */
+  window.navigateToTravel = function(mode, params = {}) {
+    showNavLoader(0); // Show immediately for navigation
+
+    // Build query parameters
+    const queryParams = new URLSearchParams();
+    queryParams.set('mode', mode);
+    Object.keys(params).forEach(key => {
+      if (params[key]) queryParams.set(key, params[key]);
+    });
+
+    var baseUrl = window._travelScriptUrl;
+    if (!baseUrl) {
+      console.error('Script URL not available for navigation');
+      return;
+    }
+    safeTopNavigate(baseUrl + '?' + queryParams.toString());
+  };
+
+  // Show loader on page unload (back button, navigation, etc.)
+  window.addEventListener('pagehide', function() {
+    showNavLoader(0);
+  });
+
+  // Fallback for browsers that don't support pagehide well
+  window.addEventListener('beforeunload', function() {
+    showNavLoader(0);
+  });
+
+  // Handle page restore from bfcache (back-forward cache)
+  // This fixes blank screen issues when using browser back button
+  window.addEventListener('pageshow', function(event) {
+    // Always hide loader when page is shown
+    hideNavLoader();
+
+    // If page was restored from bfcache, reload to ensure fresh state
+    if (event.persisted) {
+      window.location.reload();
+    }
+  });
+})();
+</script>

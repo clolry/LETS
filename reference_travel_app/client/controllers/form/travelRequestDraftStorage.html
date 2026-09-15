@@ -1,0 +1,319 @@
+<!--
+  ================================================================
+  Travel Request Draft Storage Service (IndexedDB)
+  ================================================================
+
+  Client-side draft storage for Travel Request forms.
+
+  Features:
+  - Multiple drafts per user (stored locally in browser)
+  - Auto-generated unique IDs
+  - Full form state save/restore
+  - Draft listing with trip names and dates
+
+  Usage:
+  - TravelDraft.saveDraft(formData) - Save current form state
+  - TravelDraft.getDraft(draftId) - Load a specific draft
+  - TravelDraft.getAllDrafts() - List all saved drafts
+  - TravelDraft.deleteDraft(draftId) - Remove a draft
+-->
+
+<script>
+window.TravelDraft = (function() {
+  'use strict';
+
+  const DB_NAME = 'TravelRequestDraftsDB';
+  const DB_VERSION = 1;
+  const STORE_NAME = 'drafts';
+
+  let db = null;
+  let initPromise = null;
+
+  // ==========================================================================
+  // DATABASE INITIALIZATION
+  // ==========================================================================
+
+  function initDB() {
+    if (db) return Promise.resolve(db);
+    if (initPromise) return initPromise;
+
+    initPromise = new Promise((resolve, reject) => {
+      if (!window.indexedDB) {
+        reject(new Error('IndexedDB not supported'));
+        return;
+      }
+
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+      request.onerror = () => {
+        initPromise = null;
+        reject(request.error);
+      };
+
+      request.onsuccess = () => {
+        db = request.result;
+        resolve(db);
+      };
+
+      request.onupgradeneeded = (event) => {
+        const database = event.target.result;
+
+        // Create drafts store with auto-increment ID
+        if (!database.objectStoreNames.contains(STORE_NAME)) {
+          const store = database.createObjectStore(STORE_NAME, { keyPath: 'id' });
+          // Index for listing drafts by date
+          store.createIndex('updatedAt', 'updatedAt', { unique: false });
+          // Index for searching by trip name
+          store.createIndex('tripName', 'tripName', { unique: false });
+        }
+      };
+    });
+
+    return initPromise;
+  }
+
+  // ==========================================================================
+  // DRAFT OPERATIONS
+  // ==========================================================================
+
+  /**
+   * Generate a unique draft ID
+   * Format: draft_[timestamp]_[random]
+   */
+  function generateDraftId() {
+    const timestamp = Date.now();
+    const randomPart = Math.random().toString(36).substring(2, 9);
+    return `draft_${timestamp}_${randomPart}`;
+  }
+
+  /**
+   * Save a draft (create new or update existing)
+   * @param {Object} formData - The full form state to save
+   * @param {string} existingDraftId - Optional: ID of existing draft to update
+   * @returns {Promise<Object>} - { success: boolean, draftId: string, error?: string }
+   */
+  async function saveDraft(formData, existingDraftId = null) {
+    try {
+      await initDB();
+
+      const draftId = existingDraftId || formData.draftId || generateDraftId();
+      const now = new Date().toISOString();
+
+      const draftRecord = {
+        id: draftId,
+        tripName: formData.tripName || 'Untitled Draft',
+        locationType: formData.locationType || '',
+        eventStartDate: formData.eventStartDate || '',
+        eventEndDate: formData.eventEndDate || '',
+        travelerCount: (formData.travelers || []).length,
+        formData: formData,
+        createdAt: existingDraftId ? undefined : now, // Preserve original creation time
+        updatedAt: now
+      };
+
+      // If updating, preserve createdAt
+      if (existingDraftId) {
+        const existing = await getDraft(existingDraftId);
+        if (existing) {
+          draftRecord.createdAt = existing.createdAt;
+        } else {
+          draftRecord.createdAt = now;
+        }
+      } else {
+        draftRecord.createdAt = now;
+      }
+
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_NAME], 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.put(draftRecord);
+
+        req.onsuccess = () => {
+          resolve({ success: true, draftId: draftId });
+        };
+
+        req.onerror = () => {
+          reject(req.error);
+        };
+      });
+
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Get a specific draft by ID
+   * @param {string} draftId - The draft ID
+   * @returns {Promise<Object|null>} - The draft record or null
+   */
+  async function getDraft(draftId) {
+    try {
+      await initDB();
+
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_NAME], 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(draftId);
+
+        req.onsuccess = () => {
+          resolve(req.result || null);
+        };
+
+        req.onerror = () => {
+          reject(req.error);
+        };
+      });
+
+    } catch (error) {
+      console.error('TravelDraft: Error getting draft:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get all drafts, sorted by most recently updated
+   * @returns {Promise<Array>} - Array of draft summaries
+   */
+  async function getAllDrafts() {
+    try {
+      await initDB();
+
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_NAME], 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const index = store.index('updatedAt');
+        const req = index.openCursor(null, 'prev'); // Descending order
+
+        const drafts = [];
+
+        req.onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (cursor) {
+            // Return summary info, not full formData
+            const draft = cursor.value;
+            drafts.push({
+              id: draft.id,
+              tripName: draft.tripName,
+              locationType: draft.locationType,
+              eventStartDate: draft.eventStartDate,
+              eventEndDate: draft.eventEndDate,
+              travelerCount: draft.travelerCount,
+              createdAt: draft.createdAt,
+              updatedAt: draft.updatedAt
+            });
+            cursor.continue();
+          } else {
+            resolve(drafts);
+          }
+        };
+
+        req.onerror = () => {
+          reject(req.error);
+        };
+      });
+
+    } catch (error) {
+      console.error('TravelDraft: Error getting drafts:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Delete a draft by ID
+   * @param {string} draftId - The draft ID to delete
+   * @returns {Promise<Object>} - { success: boolean, error?: string }
+   */
+  async function deleteDraft(draftId) {
+    try {
+      await initDB();
+
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_NAME], 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.delete(draftId);
+
+        req.onsuccess = () => {
+          resolve({ success: true });
+        };
+
+        req.onerror = () => {
+          reject(req.error);
+        };
+      });
+
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Delete all drafts (clear storage)
+   * @returns {Promise<Object>} - { success: boolean, error?: string }
+   */
+  async function clearAllDrafts() {
+    try {
+      await initDB();
+
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_NAME], 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.clear();
+
+        req.onsuccess = () => {
+          resolve({ success: true });
+        };
+
+        req.onerror = () => {
+          reject(req.error);
+        };
+      });
+
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Get count of saved drafts
+   * @returns {Promise<number>}
+   */
+  async function getDraftCount() {
+    try {
+      await initDB();
+
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_NAME], 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.count();
+
+        req.onsuccess = () => {
+          resolve(req.result);
+        };
+
+        req.onerror = () => {
+          reject(req.error);
+        };
+      });
+
+    } catch (error) {
+      console.error('TravelDraft: Error counting drafts:', error);
+      return 0;
+    }
+  }
+
+  // ==========================================================================
+  // PUBLIC API
+  // ==========================================================================
+
+  return {
+    init: initDB,
+    saveDraft,
+    getDraft,
+    getAllDrafts,
+    deleteDraft,
+    clearAllDrafts,
+    getDraftCount
+  };
+})();
+</script>

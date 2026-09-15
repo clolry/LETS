@@ -1,0 +1,2620 @@
+<!-- client/controllers/form/travelRequestController.html -->
+<!-- Core Controller for the Travel Request multi-step form -->
+<!-- Additional modules: travelRequestItinerary.html, travelRequestTravelers.html, travelRequestPerDiem.html -->
+<script>
+(function() {
+  'use strict';
+
+  window.TravelRequest = window.TravelRequest || {};
+
+  /**
+   * Core Controller for Travel Request Form
+   * Handles initialization, step navigation, validation framework, and submission
+   *
+   * Module Architecture:
+   * - Core (this file): Init, navigation, validation, save/submit
+   * - Itinerary: Leg management, location autocomplete
+   * - Travelers: Traveler CRUD, costs, employee picker
+   * - PerDiem: GSA/DoD/DOS rate fetching
+   */
+  window.TravelRequest.Controller = {
+    // =========================================================================
+    // PROPERTIES
+    // =========================================================================
+
+    // DOM element references
+    _elements: {},
+
+    // Flatpickr instances
+    _datePickers: {},
+
+    // Awesomplete instances (for cleanup)
+    _autocompleteInstances: {},
+
+    // Track if a date picker is currently open
+    _datePickerOpen: false,
+
+    // Staffing data for employee autocomplete
+    _staffingData: null,
+
+    // Note: Foreign countries and city caching are now handled by TravelLocationService
+
+    // Loading state
+    _isLoading: false,
+
+    // =========================================================================
+    // INITIALIZATION
+    // =========================================================================
+
+    // Auto-save debounce timer
+    _autoSaveTimer: null,
+
+    // Current draft ID
+    _currentDraftId: null,
+
+    // Script URL for navigation
+    _scriptUrl: '',
+
+    /**
+     * Initialize the controller
+     */
+    async init(options = {}) {
+
+      // Store script URL for navigation
+      this._scriptUrl = options.scriptUrl || '';
+
+      // Initialize state with user info and submitter BU
+      if (window.TravelRequest.State) {
+        window.TravelRequest.State.init(options.userEmail, options.userName, {
+          buCode: options.submitterBU || '',
+          buName: options.submitterBUName || '',
+          orgCode: options.submitterOrgCode || ''
+        });
+      }
+
+      // Cache DOM elements
+      this._cacheElements();
+
+      // Set up core event listeners
+      this._bindCoreEvents();
+
+      // Initialize date pickers (for justification step)
+      this._initDatePickers();
+
+      // Initialize character counters
+      this._initCharCounters();
+
+      // Initialize focus-expand textareas
+      this._initFocusExpand();
+
+      // Initialize JS-based tooltips (escape overflow containers)
+      this._initTooltips();
+
+      // Load staffing data for employee autocomplete
+      this._loadStaffingData();
+
+      // Preload foreign countries via TravelLocationService (async, non-blocking)
+      if (window.TravelLocationService) {
+        TravelLocationService.getCountries();
+      }
+
+      // Load mileage rates from server (stored in Script Properties)
+      if (window.TravelRequest.loadMileageRates) {
+        window.TravelRequest.loadMileageRates();
+      }
+
+      // Initialize module-specific functionality
+      if (this._initItinerary) this._initItinerary();
+      if (this._initTravelers) this._initTravelers();
+      if (this._initSharedCosts) this._initSharedCosts();
+
+      // Initialize document upload
+      this._initDocumentUpload();
+
+      // Initialize auto-save
+      this._initAutoSave();
+
+      // Load draft if provided
+      if (options.draftId) {
+        await this._loadDraft(options.draftId);
+      }
+
+      // Hydrate from a duplicate-blueprint (server inlined when ?duplicateFrom=...)
+      // Mutually exclusive with draft load — only one can be the source of truth.
+      if (!this._draftLoaded && options.duplicateBlueprint) {
+        this._loadFromDuplicateBlueprint(options.duplicateBlueprint);
+      } else if (options.duplicateError) {
+        // Server tried to fetch a duplicate template but failed — toast it
+        // and let the user start blank.
+        this._showToast(options.duplicateError, 'warning');
+      }
+
+      // Expand initial step (unless draft or duplicate was loaded — those handle their own step)
+      if (!this._draftLoaded && !this._duplicateLoaded) {
+        this._expandStep(1);
+      }
+    },
+
+    /**
+     * Hydrate the form from a duplicate blueprint produced by
+     * getRequestForDuplication on the server. Same shape as a draft, but
+     * marks the form as "templated" so a banner can render and the submit
+     * path knows this isn't a draft resume.
+     *
+     * @param {Object} payload - { blueprint, sourceRequestId, sourceTripName, droppedTravelers }
+     */
+    _loadFromDuplicateBlueprint(payload) {
+      try {
+        if (!payload || !payload.blueprint) return;
+        const bp = payload.blueprint;
+        const state = window.TravelRequest && window.TravelRequest.State;
+        if (!state) {
+          console.warn('Cannot load duplicate blueprint — TravelRequest.State unavailable');
+          return;
+        }
+
+        // Top-level fields — same approach as _loadDraft
+        state.updateField('tripName', bp.tripName || '');
+        state.updateField('locationType', bp.locationType || '');
+        state.updateField('eventStartDate', '');  // RESET — submitter sets new dates
+        state.updateField('eventEndDate', '');    // RESET
+        state.updateField('bluf', bp.bluf || '');
+        state.updateField('purpose', bp.purpose || '');
+        state.updateField('travelTypes', bp.travelTypes || []);
+        state.updateField('missionCriticalTypes', bp.missionCriticalTypes || []);
+        state.updateField('isInternational', !!bp.isInternational);
+        state.updateField('isOCONUS', !!bp.isOCONUS);
+
+        // Clear any auto-init legs, then add blueprint legs
+        const existingLegs = state.getLegs() || [];
+        existingLegs.forEach(leg => {
+          const legCard = document.querySelector(`.leg-card[data-leg-id="${leg.id}"]`);
+          if (legCard) legCard.remove();
+        });
+        state._formData.legs = [];
+        (bp.legs || []).forEach(leg => state.addLeg(leg));
+
+        // Travelers — push raw, then initialize per-leg cost shells so
+        // downstream per-diem fetch / cost updates can write into them.
+        // updateTravelerLegPerDiem early-returns when legCosts[legId] is
+        // missing, which would silently drop the per-diem rates fetched
+        // after the user enters dates.
+        state._formData.travelers = [];
+        (bp.travelers || []).forEach(t => state._formData.travelers.push(t));
+        (bp.travelers || []).forEach(t => {
+          if (t && t.id && Array.isArray(t.attendingLegs)) {
+            state.updateTravelerLegs(t.id, t.attendingLegs);
+          }
+        });
+
+        // Shared costs
+        if (bp.sharedCosts) {
+          state._formData.sharedCosts = bp.sharedCosts;
+        }
+
+        // Mark as duplicate-loaded so banner can render and downstream init
+        // logic skips the blank-start path.
+        this._duplicateLoaded = true;
+        this._duplicateSource = {
+          requestId: payload.sourceRequestId || '',
+          tripName: payload.sourceTripName || '',
+          droppedTravelers: payload.droppedTravelers || []
+        };
+
+        // Re-render full form from the blueprint. _restoreFormUI is the
+        // same helper _loadDraft uses to hydrate UI from a saved draft —
+        // the blueprint shape mirrors a draft, so it just works.
+        if (typeof this._restoreFormUI === 'function') {
+          this._restoreFormUI(bp);
+        }
+
+        // Show the banner (the markup is in the page; we just toggle visibility)
+        this._renderDuplicateBanner();
+
+        // Surface dropped-traveler warnings as toasts (one summary toast)
+        const dropped = this._duplicateSource.droppedTravelers;
+        if (dropped && dropped.length > 0) {
+          const names = dropped.map(d => d.employeeName || d.email || 'Unknown').join(', ');
+          this._showToast(
+            dropped.length + ' traveler' + (dropped.length === 1 ? '' : 's') +
+              ' could not be re-resolved and ' + (dropped.length === 1 ? 'was' : 'were') +
+              ' removed: ' + names,
+            'warning'
+          );
+        }
+
+        // Open at step 1 so user starts at the top of the pre-filled form
+        this._expandStep(1);
+      } catch (err) {
+        console.error('_loadFromDuplicateBlueprint error:', err);
+        this._showToast('Failed to apply duplicate template — starting blank', 'error');
+      }
+    },
+
+    /**
+     * Render the "Templated from..." banner at the top of the form.
+     * Banner markup expected in the page template (id="duplicateBanner").
+     */
+    _renderDuplicateBanner() {
+      const banner = document.getElementById('duplicateBanner');
+      if (!banner || !this._duplicateSource) return;
+      const sourceLabel = this._duplicateSource.tripName
+        ? `${this._duplicateSource.requestId} (${this._duplicateSource.tripName})`
+        : this._duplicateSource.requestId;
+      const labelEl = document.getElementById('duplicateBannerSource');
+      if (labelEl) labelEl.textContent = sourceLabel;
+      banner.classList.remove('hidden');
+    },
+
+    /**
+     * Discard the duplicate template — confirm, then redirect to a blank form.
+     */
+    discardDuplicateTemplate() {
+      if (!confirm('Discard the templated data and start a blank request?')) return;
+      const baseUrl = (window._travelScriptUrl || '').split('?')[0];
+      if (typeof safeTopNavigate === 'function') {
+        safeTopNavigate(baseUrl + '?mode=form');
+      } else {
+        window.top.location.href = baseUrl + '?mode=form';
+      }
+    },
+
+    /**
+     * Load staffing data for employee autocomplete.
+     * Uses HCDataCenter (already auto-initialized on page load via indexModern.html).
+     * Maps HC bundle positions to the flat shape downstream code expects.
+     */
+    _loadStaffingData() {
+      const self = this;
+
+      if (!window.HCDataCenter) {
+        console.error('HCDataCenter not available');
+        self._staffingData = [];
+        return;
+      }
+
+      // HCDataCenter.init() is idempotent — returns immediately if already loaded
+      HCDataCenter.init().then(function() {
+        const staffed = HCDataCenter.getStaffed();
+
+        // Drop positions with no employee name. Some "staffed" entries
+        // from HC (rare DETAIL / TEMP PROMOTION states) come back with
+        // an empty employeeName field; without this filter they appear
+        // in the autocomplete as " (QFAA)" — just an org code in parens.
+        self._staffingData = staffed
+          .filter(function(pos) {
+            return pos && pos.employeeName && String(pos.employeeName).trim().length > 0;
+          })
+          .map(function(pos) {
+          // Walk supervisor chain to find GS-15 Division Director
+          var dd = HCDataCenter.findSupervisorAtGrade(pos.positionNumber, '15');
+          var loc = pos.location || {};
+
+          return {
+            employeeId: pos.employeeId || '',
+            employeeName: pos.employeeName || '',
+            email: pos.emailAddress || '',
+            orgCode: pos.orgCode || '',
+            bu: (pos.org && pos.org.businessUnit) || '',
+            lcat: pos.lcat || '',
+            dutyLocation: [loc.city, loc.state].filter(Boolean).join(', '),
+            supervisorPN: pos.reportsToPositionNumber || '',
+            ddName: dd ? (dd.employeeName || '') : '',
+            ddEmail: dd ? (dd.emailAddress || '') : '',
+            locationCode: pos.locationCode || '',
+            dutyStationAddress: loc.address1 || '',
+            dutyStationCity: loc.city || '',
+            dutyStationState: loc.state || '',
+            positionNumber: pos.positionNumber || ''
+          };
+        });
+
+        console.log('Loaded ' + self._staffingData.length + ' employees from HCDataCenter');
+      }).catch(function(error) {
+        console.error('Failed to load staffing data from HCDataCenter:', error);
+        self._staffingData = [];
+      });
+    },
+
+    // =========================================================================
+    // ELEMENT CACHING
+    // =========================================================================
+
+    /**
+     * Cache DOM element references
+     */
+    _cacheElements() {
+      this._elements = {
+        // Accordion Stepper
+        accordionStepper: document.querySelector('.accordion-stepper'),
+        accordionSteps: document.querySelectorAll('.accordion-step'),
+
+        // Step summaries (6 steps)
+        step1Summary: document.getElementById('step1Summary'),
+        step2Summary: document.getElementById('step2Summary'),
+        step3Summary: document.getElementById('step3Summary'),
+        step4Summary: document.getElementById('step4Summary'),
+        step5Summary: document.getElementById('step5Summary'),
+        step6Summary: document.getElementById('step6Summary'),
+
+        // Step 1: Trip Overview (includes Justification)
+        tripName: document.getElementById('tripName'),
+        locationType: document.getElementById('locationType'),
+        eventStartDate: document.getElementById('eventStartDate'),
+        eventEndDate: document.getElementById('eventEndDate'),
+        justificationBluf: document.getElementById('justificationBluf'),
+        justificationPurpose: document.getElementById('justificationPurpose'),
+        blufCharCount: document.getElementById('blufCharCount'),
+        purposeCharCount: document.getElementById('purposeCharCount'),
+
+        // Step 2: Itinerary
+        eventDateRange: document.getElementById('eventDateRange'),
+        eventDateRangeText: document.getElementById('eventDateRangeText'),
+        itineraryLegsContainer: document.getElementById('itineraryLegsContainer'),
+        itineraryEmptyState: document.getElementById('itineraryEmptyState'),
+        emptyStateAddLeg: document.getElementById('emptyStateAddLeg'),
+        btnAddLeg: document.getElementById('btnAddLeg'),
+        itinerarySummary: document.getElementById('itinerarySummary'),
+        itineraryRouteText: document.getElementById('itineraryRouteText'),
+        itineraryDatesText: document.getElementById('itineraryDatesText'),
+
+        // Step 3: Travelers
+        travelersContainer: document.getElementById('travelersContainer'),
+        travelersEmptyState: document.getElementById('travelersEmptyState'),
+        btnAddTraveler: document.getElementById('btnAddTraveler'),
+        emptyStateAddTraveler: document.getElementById('emptyStateAddTraveler'),
+        travelersTotal: document.getElementById('travelersTotal'),
+
+        // Step 4: Classification
+        travelTypesContainer: document.getElementById('travelTypesContainer'),
+        missionCriticalContainer: document.getElementById('missionCriticalContainer'),
+
+        // Step 5: Shared Costs
+        sharedCostsList: document.getElementById('sharedCostsList'),
+        sharedCostsTotal: document.getElementById('sharedCostsTotal'),
+
+        // Step 6: Review & Document Upload
+        docUploadZone: document.getElementById('docUploadZone'),
+        docFileInput: document.getElementById('docFileInput'),
+        docBrowseBtn: document.getElementById('docBrowseBtn'),
+        docUploadList: document.getElementById('docUploadList'),
+        docUploadCount: document.getElementById('docUploadCount'),
+        reviewSummary: document.getElementById('reviewSummary'),
+        reviewTravelerTotal: document.getElementById('reviewTravelerTotal'),
+        reviewSharedCosts: document.getElementById('reviewSharedCosts'),
+        reviewGrandTotal: document.getElementById('reviewGrandTotal'),
+
+        // Fixed Footer
+        fixedFooter: document.getElementById('travelFixedFooter'),
+        fixedFooterSaveDraft: document.getElementById('fixedFooterSaveDraft'),
+        fixedFooterBack: document.getElementById('fixedFooterBack'),
+        fixedFooterContinue: document.getElementById('fixedFooterContinue'),
+        fixedFooterSubmit: document.getElementById('fixedFooterSubmit')
+      };
+    },
+
+    // =========================================================================
+    // CORE EVENT BINDING
+    // =========================================================================
+
+    /**
+     * Bind core event listeners
+     */
+    _bindCoreEvents() {
+      const self = this;
+
+      // Accordion step navigation (Continue, Back, Submit, Save Draft buttons)
+      if (this._elements.accordionStepper) {
+        this._elements.accordionStepper.addEventListener('click', (e) => {
+          const btn = e.target.closest('[data-action]');
+          if (!btn) return;
+
+          const action = btn.dataset.action;
+          if (action === 'continue') {
+            self._handleContinue();
+          } else if (action === 'back') {
+            self._handleBack();
+          } else if (action === 'submit') {
+            self._handleSubmit();
+          } else if (action === 'save-draft') {
+            self._handleSaveDraft();
+          }
+        });
+
+        // Accordion header click (for jumping to any previously visited step)
+        this._elements.accordionStepper.addEventListener('click', (e) => {
+          const header = e.target.closest('.accordion-step__header');
+          if (!header) return;
+
+          const stepNum = parseInt(header.dataset.step, 10);
+          const state = window.TravelRequest.State;
+          const currentStep = state.getCurrentStep();
+          const highestCompletedStep = state.getHighestCompletedStep();
+
+          // Allow jumping to any previously visited step (up to highestCompletedStep)
+          // or back from a higher step to a lower one
+          if (stepNum !== currentStep && stepNum <= Math.max(highestCompletedStep, currentStep)) {
+            self._expandStep(stepNum);
+          }
+        });
+      }
+
+      // Step 1: Location Type dropdown
+      if (this._elements.locationType) {
+        this._elements.locationType.addEventListener('change', function() {
+          const locationType = this.value;
+          window.TravelRequest.State.updateField('locationType', locationType);
+          self._clearFieldError(this);
+          // Refresh existing leg cards to show/hide site name field
+          if (self._refreshLegSiteNameFields) {
+            self._refreshLegSiteNameFields();
+          }
+        });
+      }
+
+      // Step 1: Trip name input
+      if (this._elements.tripName) {
+        this._elements.tripName.addEventListener('blur', function() {
+          window.TravelRequest.State.updateField('tripName', this.value.trim());
+          self._clearFieldError(this);
+        });
+      }
+
+      // Fixed footer events
+      this._bindFixedFooterEvents();
+
+      // Step 4: Classification checkboxes
+      this._bindClassificationEvents();
+
+      // Step 5: Justification textarea events
+      this._bindJustificationEvents();
+    },
+
+    /**
+     * Bind fixed footer button events
+     */
+    _bindFixedFooterEvents() {
+      const self = this;
+
+      if (this._elements.fixedFooterSaveDraft) {
+        this._elements.fixedFooterSaveDraft.addEventListener('click', () => self._handleSaveDraft());
+      }
+      if (this._elements.fixedFooterBack) {
+        this._elements.fixedFooterBack.addEventListener('click', () => self._handleBack());
+      }
+      if (this._elements.fixedFooterContinue) {
+        this._elements.fixedFooterContinue.addEventListener('click', () => self._handleContinue());
+      }
+      if (this._elements.fixedFooterSubmit) {
+        this._elements.fixedFooterSubmit.addEventListener('click', () => self._handleSubmit());
+      }
+    },
+
+    /**
+     * Update fixed footer based on current step
+     */
+    _updateFixedFooter(stepNumber) {
+      const isFirstStep = stepNumber === 1;
+      const isLastStep = stepNumber === 6;
+
+      if (this._elements.fixedFooterBack) {
+        this._elements.fixedFooterBack.classList.toggle('hidden', isFirstStep);
+      }
+      if (this._elements.fixedFooterContinue) {
+        this._elements.fixedFooterContinue.classList.toggle('hidden', isLastStep);
+      }
+      if (this._elements.fixedFooterSubmit) {
+        this._elements.fixedFooterSubmit.classList.toggle('hidden', !isLastStep);
+      }
+    },
+
+    /**
+     * Bind classification checkbox events
+     */
+    _bindClassificationEvents() {
+      const self = this;
+
+      // Travel types
+      if (this._elements.travelTypesContainer) {
+        this._elements.travelTypesContainer.addEventListener('change', (e) => {
+          if (e.target.type === 'checkbox') {
+            const values = self._collectCheckboxValues('travelTypes', self._elements.travelTypesContainer);
+            window.TravelRequest.State.updateField('travelTypes', values);
+          }
+        });
+      }
+
+      // Mission critical
+      if (this._elements.missionCriticalContainer) {
+        this._elements.missionCriticalContainer.addEventListener('change', (e) => {
+          if (e.target.type === 'checkbox') {
+            const values = self._collectCheckboxValues('missionCriticalTypes', self._elements.missionCriticalContainer);
+            window.TravelRequest.State.updateField('missionCriticalTypes', values);
+          }
+        });
+      }
+    },
+
+    /**
+     * Bind justification textarea events
+     */
+    _bindJustificationEvents() {
+      const self = this;
+
+      if (this._elements.justificationBluf) {
+        this._elements.justificationBluf.addEventListener('input', function() {
+          window.TravelRequest.State.updateField('bluf', this.value);
+          self._updateCharCount(this, self._elements.blufCharCount, 500);
+        });
+        this._elements.justificationBluf.addEventListener('blur', function() {
+          self._clearFieldError(this);
+        });
+      }
+
+      if (this._elements.justificationPurpose) {
+        this._elements.justificationPurpose.addEventListener('input', function() {
+          window.TravelRequest.State.updateField('purpose', this.value);
+          self._updateCharCount(this, self._elements.purposeCharCount, 2000);
+        });
+        this._elements.justificationPurpose.addEventListener('blur', function() {
+          self._clearFieldError(this);
+        });
+      }
+    },
+
+    // =========================================================================
+    // DATE PICKERS
+    // =========================================================================
+
+    /**
+     * Initialize Flatpickr date pickers for Trip Overview
+     * Uses wrap mode for date chip integration
+     */
+    _initDatePickers() {
+      const self = this;
+      const state = window.TravelRequest.State;
+
+      // Event Start Date - wrap mode for chip integration
+      const startChip = document.getElementById('eventStartChip');
+      if (startChip) {
+        flatpickr(startChip, {
+          dateFormat: 'M j, Y',
+          allowInput: true,
+          wrap: true,
+          onOpen: function() {
+            self._datePickerOpen = true;
+          },
+          onClose: function() {
+            self._datePickerOpen = false;
+          },
+          onChange: function(selectedDates, dateStr) {
+            state.updateField('eventStartDate', dateStr);
+            // Toggle filled state on chip
+            startChip.classList.toggle('date-chip--filled', !!dateStr);
+            // Clear error if date is now filled
+            if (dateStr) {
+              self._clearDateChipError('eventStartChip');
+            }
+            // Update end date min if needed
+            if (self._eventEndPicker && dateStr) {
+              self._eventEndPicker.set('minDate', selectedDates[0]);
+            }
+            // Update event date range display
+            self._updateEventDateRangeDisplay();
+          }
+        });
+      }
+
+      // Event End Date - use wrap mode for chip integration
+      const endChip = document.getElementById('eventEndChip');
+      if (endChip) {
+        this._eventEndPicker = flatpickr(endChip, {
+          dateFormat: 'M j, Y',
+          allowInput: true,
+          wrap: true,
+          onOpen: function() {
+            self._datePickerOpen = true;
+          },
+          onClose: function() {
+            self._datePickerOpen = false;
+          },
+          onChange: function(selectedDates, dateStr) {
+            state.updateField('eventEndDate', dateStr);
+            // Toggle filled state on chip
+            endChip.classList.toggle('date-chip--filled', !!dateStr);
+            // Clear error if date is now filled
+            if (dateStr) {
+              self._clearDateChipError('eventEndChip');
+            }
+            // Update event date range display
+            self._updateEventDateRangeDisplay();
+          }
+        });
+      }
+    },
+
+    // =========================================================================
+    // CHARACTER COUNTERS
+    // =========================================================================
+
+    /**
+     * Initialize character counters
+     */
+    _initCharCounters() {
+      if (this._elements.justificationBluf && this._elements.blufCharCount) {
+        this._updateCharCount(this._elements.justificationBluf, this._elements.blufCharCount, 500);
+      }
+      if (this._elements.justificationPurpose && this._elements.purposeCharCount) {
+        this._updateCharCount(this._elements.justificationPurpose, this._elements.purposeCharCount, 2000);
+      }
+    },
+
+    /**
+     * Update character count display
+     */
+    _updateCharCount(textarea, counterEl, maxLength) {
+      if (!textarea || !counterEl) return;
+      const count = textarea.value.length;
+      counterEl.textContent = count;
+      counterEl.classList.toggle('text-danger', count > maxLength);
+    },
+
+    /**
+     * Initialize focus-expand textareas with auto-resize on input
+     */
+    _initFocusExpand() {
+      const self = this;
+      const textareas = document.querySelectorAll('textarea.focus-expand');
+
+      textareas.forEach(textarea => {
+        self._initFocusExpandSingle(textarea);
+      });
+    },
+
+    /**
+     * Auto-resize textarea to fit content (with optional max height)
+     */
+    _autoResizeTextarea(textarea, minHeight, maxHeight = 400) {
+      textarea.style.height = 'auto';
+      let newHeight = Math.max(textarea.scrollHeight, minHeight);
+      if (maxHeight && newHeight > maxHeight) {
+        newHeight = maxHeight;
+        textarea.style.overflowY = 'auto';
+      } else {
+        textarea.style.overflowY = 'hidden';
+      }
+      textarea.style.height = newHeight + 'px';
+    },
+
+    /**
+     * Collapse textarea to preview height
+     */
+    _collapseTextarea(textarea, previewHeight, minHeight) {
+      if (textarea.value.trim()) {
+        textarea.style.height = previewHeight + 'px';
+        textarea.style.overflowY = 'hidden';
+      } else {
+        textarea.style.height = minHeight + 'px';
+        textarea.style.overflowY = 'hidden';
+      }
+    },
+
+    /**
+     * Initialize focus-expand for a single textarea (for dynamically added elements)
+     */
+    _initFocusExpandSingle(textarea) {
+      if (!textarea || textarea._focusExpandInitialized) return;
+      textarea._focusExpandInitialized = true;
+
+      const self = this;
+      const ROW_HEIGHT = 22;
+      const PADDING = 10;
+
+      const minRows = parseInt(textarea.dataset.rowsMin) || 1;
+      const previewRows = parseInt(textarea.dataset.rowsPreview) || 3;
+      const minHeight = minRows * ROW_HEIGHT + PADDING;
+      const previewHeight = previewRows * ROW_HEIGHT + PADDING;
+
+      // Set initial collapsed state
+      this._collapseTextarea(textarea, previewHeight, minHeight);
+
+      // On focus: expand to fit content
+      textarea.addEventListener('focus', () => {
+        self._autoResizeTextarea(textarea, minHeight);
+      });
+
+      // On input: auto-resize as they type
+      textarea.addEventListener('input', () => {
+        self._autoResizeTextarea(textarea, minHeight);
+      });
+
+      // On blur: collapse to preview
+      textarea.addEventListener('blur', () => {
+        self._collapseTextarea(textarea, previewHeight, minHeight);
+      });
+    },
+
+    // =========================================================================
+    // TOOLTIPS (JS-based to escape overflow containers)
+    // =========================================================================
+
+    /**
+     * Initialize JS-based tooltips for elements with data-tooltip attribute
+     * Uses event delegation and creates tooltip in document body
+     */
+    _initTooltips() {
+      const self = this;
+
+      // Create tooltip element once
+      if (!this._tooltipEl) {
+        this._tooltipEl = document.createElement('div');
+        this._tooltipEl.className = 'js-tooltip';
+        this._tooltipEl.innerHTML = '<div class="js-tooltip__content"></div><div class="js-tooltip__arrow"></div>';
+        document.body.appendChild(this._tooltipEl);
+      }
+
+      // Event delegation for mouseenter/mouseleave on .field-tooltip elements
+      document.addEventListener('mouseenter', (e) => {
+        if (!e.target || !e.target.closest) return;
+        const trigger = e.target.closest('.field-tooltip[data-tooltip]');
+        if (trigger) self._showTooltip(trigger);
+      }, true);
+
+      document.addEventListener('mouseleave', (e) => {
+        if (!e.target || !e.target.closest) return;
+        const trigger = e.target.closest('.field-tooltip[data-tooltip]');
+        if (trigger) self._hideTooltip();
+      }, true);
+    },
+
+    /**
+     * Show tooltip above the trigger element
+     */
+    _showTooltip(trigger) {
+      const tooltip = this._tooltipEl;
+      const content = tooltip.querySelector('.js-tooltip__content');
+      const arrow = tooltip.querySelector('.js-tooltip__arrow');
+
+      content.textContent = trigger.dataset.tooltip;
+      tooltip.classList.add('js-tooltip--visible');
+
+      // Position above the trigger
+      const rect = trigger.getBoundingClientRect();
+      const tooltipRect = tooltip.getBoundingClientRect();
+
+      let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+      let top = rect.top - tooltipRect.height - 8;
+
+      // Keep within viewport horizontally
+      const padding = 8;
+      if (left < padding) left = padding;
+      if (left + tooltipRect.width > window.innerWidth - padding) {
+        left = window.innerWidth - tooltipRect.width - padding;
+      }
+
+      // If not enough room above, show below
+      if (top < padding) {
+        top = rect.bottom + 8;
+        tooltip.classList.add('js-tooltip--below');
+      } else {
+        tooltip.classList.remove('js-tooltip--below');
+      }
+
+      tooltip.style.left = left + 'px';
+      tooltip.style.top = top + 'px';
+    },
+
+    /**
+     * Hide tooltip
+     */
+    _hideTooltip() {
+      this._tooltipEl.classList.remove('js-tooltip--visible');
+    },
+
+    // =========================================================================
+    // STEP NAVIGATION
+    // =========================================================================
+
+    /**
+     * Collect checkbox values from a container
+     */
+    _collectCheckboxValues(fieldName, container) {
+      const checkboxes = container.querySelectorAll('input[type="checkbox"]:checked');
+      return Array.from(checkboxes).map(cb => cb.value);
+    },
+
+    /**
+     * Expand a step (collapse others)
+     */
+    _expandStep(stepNumber) {
+      const state = window.TravelRequest.State;
+      state.setStep(stepNumber);
+
+      // Get highest step ever completed for navigation
+      const highestCompletedStep = state.getHighestCompletedStep();
+
+      // Update all step accordions
+      this._elements.accordionSteps.forEach((step, index) => {
+        const stepNum = index + 1;
+        const indicator = step.querySelector('.stepper-indicator');
+        const body = step.querySelector('.accordion-step__body');
+
+        if (stepNum === stepNumber) {
+          // Active step
+          step.classList.add('active');
+          step.classList.remove('completed');
+          indicator.classList.add('active');
+          indicator.classList.remove('completed');
+          if (body) body.classList.remove('hidden');
+        } else if (stepNum <= highestCompletedStep) {
+          // Previously visited step - keep as completed for navigation
+          step.classList.remove('active');
+          step.classList.add('completed');
+          indicator.classList.remove('active');
+          indicator.classList.add('completed');
+          if (body) body.classList.add('hidden');
+          // Update summary
+          this._updateStepSummary(stepNum);
+        } else {
+          // Future step (not yet visited)
+          step.classList.remove('active', 'completed');
+          indicator.classList.remove('active', 'completed');
+          if (body) body.classList.add('hidden');
+        }
+      });
+
+      // Update fixed footer
+      this._updateFixedFooter(stepNumber);
+
+      // Scroll to step header with offset (account for fixed header + padding)
+      const stepElement = document.getElementById(`accordionStep${stepNumber}`);
+      if (stepElement) {
+        setTimeout(() => {
+          const fixedHeaderHeight = 52; // Height of .travel-header
+          const extraPadding = 16; // Breathing room below header
+          const totalOffset = fixedHeaderHeight + extraPadding;
+
+          const elementPosition = stepElement.getBoundingClientRect().top;
+          const offsetPosition = elementPosition + window.pageYOffset - totalOffset;
+
+          window.scrollTo({
+            top: offsetPosition,
+            behavior: 'smooth'
+          });
+        }, 100);
+      }
+
+      // Step-specific initialization
+      if (stepNumber === 3 && this._refreshTravelerCards) {
+        // Refresh traveler cards to show any new/removed legs
+        this._refreshTravelerCards();
+      }
+      if (stepNumber === 6) {
+        this._renderReviewStep();
+      }
+    },
+
+    /**
+     * Update step summary text
+     */
+    _updateStepSummary(stepNumber) {
+      const state = window.TravelRequest.State;
+      const formData = state.getFormData();
+      let summaryText = '';
+
+      switch (stepNumber) {
+        case 1:
+          const tripName = formData.tripName || 'Untitled';
+          const locType = this._formatLocationType(formData.locationType);
+          const dates = TravelDateService.formatDateRangeCompact(formData.eventStartDate, formData.eventEndDate);
+          summaryText = `${tripName}${locType ? ' · ' + locType : ''}${dates ? ' · ' + dates : ''}`;
+          break;
+        case 2:
+          summaryText = state.getFormattedItinerary() || 'No destinations';
+          break;
+        case 3:
+          const travelerCount = state.getTravelerCount();
+          const travelerTotal = state.formatCurrency(state.getTravelerTotal());
+          summaryText = `${travelerCount} traveler(s) - ${travelerTotal}`;
+          break;
+        case 4:
+          const types = formData.travelTypes || [];
+          summaryText = types.length > 0 ? `${types.length} type(s) selected` : 'No types selected';
+          break;
+        case 5:
+          const sharedTotal = state.formatCurrency(state.getSharedCostsTotal());
+          summaryText = `Shared costs: ${sharedTotal}`;
+          break;
+      }
+
+      const summaryEl = this._elements[`step${stepNumber}Summary`];
+      if (summaryEl) {
+        summaryEl.textContent = summaryText;
+      }
+    },
+
+    /**
+     * Handle Back button
+     */
+    _handleBack() {
+      const state = window.TravelRequest.State;
+      if (state.prevStep()) {
+        this._expandStep(state.getCurrentStep());
+      }
+    },
+
+    /**
+     * Handle Continue button
+     */
+    _handleContinue() {
+      const state = window.TravelRequest.State;
+      const currentStep = state.getCurrentStep();
+
+      if (this._validateStep(currentStep)) {
+        if (state.nextStep()) {
+          this._expandStep(state.getCurrentStep());
+        }
+      }
+    },
+
+    // =========================================================================
+    // VALIDATION
+    // =========================================================================
+
+    /**
+     * Validate current step
+     */
+    _validateStep(stepNumber) {
+      const stepElement = document.getElementById(`accordionStep${stepNumber}`);
+      if (stepElement) {
+        this._clearValidationErrors(stepElement);
+      }
+
+      switch (stepNumber) {
+        case 1:
+          return this._validateTripOverview();
+        case 2:
+          return this._validateItinerary();
+        case 3:
+          return this._validateTravelers();
+        case 4:
+          return this._validateClassification();
+        case 5:
+          return true; // Shared costs are optional
+        default:
+          return true;
+      }
+    },
+
+    /**
+     * Clear validation errors in step
+     */
+    _clearValidationErrors(stepElement) {
+      if (!stepElement) return;
+
+      stepElement.querySelectorAll('.is-invalid').forEach(el => {
+        el.classList.remove('is-invalid');
+      });
+      stepElement.querySelectorAll('.invalid-feedback').forEach(el => {
+        el.remove();
+      });
+      stepElement.querySelectorAll('.segmented-control--error').forEach(el => {
+        el.classList.remove('segmented-control--error');
+      });
+      stepElement.querySelectorAll('.alert-danger').forEach(el => {
+        if (!el.id) el.remove(); // Don't remove permanent alerts
+      });
+      // Clear date chip errors
+      stepElement.querySelectorAll('.date-chip--error').forEach(el => {
+        el.classList.remove('date-chip--error');
+      });
+      stepElement.querySelectorAll('.date-chip-error').forEach(el => {
+        el.remove();
+      });
+    },
+
+    /**
+     * Show field error
+     */
+    _showFieldError(field, message) {
+      if (!field) return;
+      field.classList.add('is-invalid');
+
+      // Remove existing feedback
+      const existingFeedback = field.parentElement.querySelector('.invalid-feedback');
+      if (existingFeedback) existingFeedback.remove();
+
+      // Add new feedback
+      const feedback = document.createElement('div');
+      feedback.className = 'invalid-feedback d-block';
+      feedback.textContent = message;
+      field.parentElement.appendChild(feedback);
+    },
+
+    /**
+     * Clear field error
+     */
+    _clearFieldError(field) {
+      if (!field) return;
+      field.classList.remove('is-invalid');
+      const feedback = field.parentElement.querySelector('.invalid-feedback');
+      if (feedback) feedback.remove();
+    },
+
+    /**
+     * Show segmented control error
+     */
+    _showSegmentedControlError(control, message) {
+      if (!control) return;
+      control.classList.add('segmented-control--error');
+
+      const feedback = document.createElement('div');
+      feedback.className = 'invalid-feedback d-block';
+      feedback.textContent = message;
+      control.parentElement.appendChild(feedback);
+    },
+
+    /**
+     * Show general error at top of step
+     */
+    _showGeneralError(stepElement, message) {
+      const alert = document.createElement('div');
+      alert.className = 'alert alert-danger alert-sm mb-3';
+      alert.innerHTML = `<i aria-hidden="true" class="fas fa-exclamation-circle me-2"></i>${this._escapeHtml(message)}`;
+
+      const body = stepElement.querySelector('.accordion-step__body');
+      if (body) {
+        body.insertBefore(alert, body.firstChild);
+      }
+    },
+
+    // =========================================================================
+    // STEP VALIDATION IMPLEMENTATIONS
+    // =========================================================================
+
+    /**
+     * Validate Step 1: Trip Overview (includes Justification)
+     */
+    _validateTripOverview() {
+      const state = window.TravelRequest.State;
+      let isValid = true;
+
+      // Trip name required
+      const tripName = this._elements.tripName?.value?.trim();
+      if (!tripName) {
+        this._showFieldError(this._elements.tripName, 'Event/Meeting name is required');
+        isValid = false;
+      } else {
+        state.updateField('tripName', tripName);
+      }
+
+      // Location type required
+      const locationType = this._elements.locationType?.value;
+      if (!locationType) {
+        this._showFieldError(this._elements.locationType, 'Please select a location type');
+        isValid = false;
+      } else {
+        state.updateField('locationType', locationType);
+      }
+
+      // BLUF required
+      const bluf = this._elements.justificationBluf?.value?.trim();
+      if (!bluf) {
+        this._showFieldError(this._elements.justificationBluf, 'BLUF is required');
+        isValid = false;
+      } else if (bluf.length > 500) {
+        this._showFieldError(this._elements.justificationBluf, 'BLUF must be 500 characters or less');
+        isValid = false;
+      } else {
+        state.updateField('bluf', bluf);
+      }
+
+      // Purpose required
+      const purpose = this._elements.justificationPurpose?.value?.trim();
+      if (!purpose) {
+        this._showFieldError(this._elements.justificationPurpose, 'Detailed justification is required');
+        isValid = false;
+      } else if (purpose.length > 2000) {
+        this._showFieldError(this._elements.justificationPurpose, 'Justification must be 2000 characters or less');
+        isValid = false;
+      } else {
+        state.updateField('purpose', purpose);
+      }
+
+      // Event dates required
+      const eventStartDate = this._elements.eventStartDate?.value?.trim();
+      const eventEndDate = this._elements.eventEndDate?.value?.trim();
+
+      if (!eventStartDate) {
+        this._showDateChipError('eventStartChip', 'Start date required');
+        isValid = false;
+      }
+
+      if (!eventEndDate) {
+        this._showDateChipError('eventEndChip', 'End date required');
+        isValid = false;
+      }
+
+      // Validate end date is not before start date
+      // Dates are stored as "M j, Y" format (e.g., "Jan 12, 2026")
+      if (eventStartDate && eventEndDate) {
+        const parseDate = (dateStr) => {
+          // Parse "Jan 12, 2026" format
+          const parsed = Date.parse(dateStr);
+          return isNaN(parsed) ? null : new Date(parsed);
+        };
+        const start = parseDate(eventStartDate);
+        const end = parseDate(eventEndDate);
+        if (start && end && end < start) {
+          this._showDateChipError('eventEndChip', 'End date must be after start date');
+          isValid = false;
+        }
+      }
+
+      return isValid;
+    },
+
+    /**
+     * Show error on date chip
+     */
+    _showDateChipError(chipId, message) {
+      const chip = document.getElementById(chipId);
+      if (!chip) return;
+
+      chip.classList.add('date-chip--error');
+
+      // Add error message AFTER the date-range-group (as sibling, not child)
+      const rangeGroup = chip.closest('.date-range-group');
+      if (rangeGroup) {
+        // Check if error already exists after the range group
+        let errorEl = rangeGroup.nextElementSibling;
+        if (!errorEl || !errorEl.classList.contains('date-chip-error')) {
+          errorEl = document.createElement('div');
+          errorEl.className = 'date-chip-error';
+          rangeGroup.parentNode.insertBefore(errorEl, rangeGroup.nextSibling);
+        }
+        // Append message if not already there
+        if (!errorEl.textContent.includes(message)) {
+          if (errorEl.textContent) errorEl.textContent += ' | ';
+          errorEl.textContent += message;
+        }
+      }
+    },
+
+    /**
+     * Clear error on date chip
+     */
+    _clearDateChipError(chipId) {
+      const chip = document.getElementById(chipId);
+      if (!chip) return;
+
+      chip.classList.remove('date-chip--error');
+
+      // Check if both chips are now valid, then remove the error message
+      const rangeGroup = chip.closest('.date-range-group');
+      if (rangeGroup) {
+        const hasErrors = rangeGroup.querySelector('.date-chip--error');
+        if (!hasErrors) {
+          const errorEl = rangeGroup.nextElementSibling;
+          if (errorEl && errorEl.classList.contains('date-chip-error')) {
+            errorEl.remove();
+          }
+        }
+      }
+    },
+
+    /**
+     * Update the event date range display above the itinerary
+     */
+    _updateEventDateRangeDisplay() {
+      const state = window.TravelRequest.State;
+      const startDate = state.getField('eventStartDate');
+      const endDate = state.getField('eventEndDate');
+
+      const container = this._elements.eventDateRange;
+      const textEl = this._elements.eventDateRangeText;
+
+      if (!container || !textEl) return;
+
+      if (startDate && endDate) {
+        textEl.textContent = TravelDateService.formatDateRange(startDate, endDate);
+        container.classList.remove('hidden');
+      } else if (startDate) {
+        textEl.textContent = TravelDateService.formatDate(startDate) + ' - (end date pending)';
+        container.classList.remove('hidden');
+      } else {
+        container.classList.add('hidden');
+      }
+    },
+
+    /**
+     * Validate Step 2: Itinerary
+     */
+    _validateItinerary() {
+      const state = window.TravelRequest.State;
+      const legs = state.getLegs();
+      const locationType = state.getField('locationType');
+      const requiresSiteName = locationType === 'client-site' || locationType === 'contractor-site';
+
+      if (legs.length === 0) {
+        const stepElement = document.getElementById('accordionStep2');
+        this._showGeneralError(stepElement, 'Please add at least one destination');
+        return false;
+      }
+
+      // Validate each leg has required fields
+      let isValid = true;
+      let missingFields = [];
+
+      legs.forEach((leg, index) => {
+        const legNum = index + 1;
+
+        // Validate city
+        if (!leg.city) {
+          isValid = false;
+          const cityInput = document.getElementById(`legCity_${leg.id}`);
+          if (cityInput) {
+            cityInput.classList.add('is-invalid');
+          }
+        }
+
+        // Validate dates - use date chip error styling
+        if (!leg.startDate) {
+          isValid = false;
+          const startChip = document.getElementById(`legStartChip_${leg.id}`);
+          if (startChip) {
+            startChip.classList.add('date-chip--error');
+          }
+        }
+
+        if (!leg.endDate) {
+          isValid = false;
+          const endChip = document.getElementById(`legEndChip_${leg.id}`);
+          if (endChip) {
+            endChip.classList.add('date-chip--error');
+          }
+        }
+
+        // Validate site name if client-site or contractor-site location type
+        if (requiresSiteName && !leg.siteName) {
+          isValid = false;
+          if (!missingFields.includes('site name')) {
+            missingFields.push('site name');
+          }
+          const siteInput = document.getElementById(`legSite_${leg.id}`);
+          if (siteInput) {
+            siteInput.classList.add('is-invalid');
+          }
+        }
+      });
+
+      if (!isValid) {
+        const stepElement = document.getElementById('accordionStep2');
+        let errorMsg = 'Please complete all destination details (city and dates)';
+        if (missingFields.includes('site name')) {
+          errorMsg = 'Please complete all destination details including site name for each stop';
+        }
+        this._showGeneralError(stepElement, errorMsg);
+        return false;
+      }
+
+      // Validate leg date sequence (each leg's start >= previous leg's end)
+      if (legs.length > 1 && window.TravelDateService?.validateLegDateSequence) {
+        const sequenceValidation = window.TravelDateService.validateLegDateSequence(legs);
+        if (!sequenceValidation.valid) {
+          const stepElement = document.getElementById('accordionStep2');
+          const errorMessages = sequenceValidation.errors.map(err =>
+            `Leg ${err.leg}: ${err.error}`
+          ).join('. ');
+          this._showGeneralError(stepElement, `Date sequence error: ${errorMessages}`);
+          return false;
+        }
+      }
+
+      return isValid;
+    },
+
+    /**
+     * Validate Step 3: Travelers
+     * Ensures at least one traveler exists and all travelers have required fields
+     */
+    _validateTravelers() {
+      const state = window.TravelRequest.State;
+      const travelers = state.getTravelers();
+      const stepElement = document.getElementById('accordionStep3');
+
+      if (travelers.length === 0) {
+        this._showGeneralError(stepElement, 'Please add at least one traveler');
+        return false;
+      }
+
+      // Validate all travelers have required fields using the existing validation
+      if (this._validateAllTravelers) {
+        const incomplete = this._validateAllTravelers();
+        if (incomplete) {
+          const { traveler, missing } = incomplete;
+
+          // Build user-friendly message
+          const fieldNames = {
+            'employee': 'employee name',
+            'funding': 'funding source',
+            'justification': 'function & role justification',
+            'transport': 'transportation costs'
+          };
+          const missingNames = missing.map(m => fieldNames[m] || m).join(', ');
+
+          this._showGeneralError(stepElement, `Please complete all traveler information. Missing: ${missingNames}`);
+
+          // Expand the incomplete traveler and highlight missing fields
+          if (!traveler.isExpanded && this._toggleTravelerExpanded) {
+            this._toggleTravelerExpanded(traveler.id);
+          }
+          if (this._highlightIncompleteFields) {
+            this._highlightIncompleteFields(traveler.id, missing);
+          }
+          return false;
+        }
+      }
+
+      return true;
+    },
+
+    /**
+     * Validate Step 4: Classification
+     * Both travel types and mission-critical types require at least one selection
+     */
+    _validateClassification() {
+      const state = window.TravelRequest.State;
+      const travelTypes = state.getField('travelTypes') || [];
+      const missionCriticalTypes = state.getField('missionCriticalTypes') || [];
+      const stepElement = document.getElementById('accordionStep4');
+
+      if (travelTypes.length === 0) {
+        this._showGeneralError(stepElement, 'Please select at least one Type of Travel');
+        return false;
+      }
+
+      if (missionCriticalTypes.length === 0) {
+        this._showGeneralError(stepElement, 'Please select at least one Mission-Critical Travel type');
+        return false;
+      }
+
+      return true;
+    },
+
+    // =========================================================================
+    // SHARED COSTS (kept in core for simplicity)
+    // =========================================================================
+
+    /**
+     * Initialize shared costs
+     */
+    _initSharedCosts() {
+      const self = this;
+
+      // Bind events on shared cost category cards
+      this._bindSharedCostRowEvents();
+    },
+
+    /**
+     * Bind events on shared cost categories
+     */
+    _bindSharedCostRowEvents() {
+      const self = this;
+
+      if (this._elements.sharedCostsList) {
+        this._elements.sharedCostsList.addEventListener('input', (e) => {
+          const row = e.target.closest('.sc-row');
+          if (!row) return;
+
+          const category = row.dataset.category;
+          const state = window.TravelRequest.State;
+
+          if (e.target.classList.contains('shared-cost-amount')) {
+            state.updateSharedCost(category, 'amount', parseFloat(e.target.value) || 0);
+            self._updateSharedCostsTotal();
+          } else if (e.target.classList.contains('shared-cost-desc')) {
+            state.updateSharedCost(category, 'description', e.target.value);
+          }
+        });
+      }
+    },
+
+    /**
+     * Update shared costs total display
+     */
+    _updateSharedCostsTotal() {
+      const state = window.TravelRequest.State;
+      const total = state.getSharedCostsTotal();
+      const totalEl = this._elements.sharedCostsTotal?.querySelector('.sc-total__value');
+      if (totalEl) {
+        totalEl.textContent = state.formatCurrency(total);
+      }
+    },
+
+    // =========================================================================
+    // REVIEW & SUBMIT
+    // =========================================================================
+
+    /**
+     * Render review step
+     */
+    _renderReviewStep() {
+      const state = window.TravelRequest.State;
+      const formData = state.getFormData();
+
+      const travelTypes = formData.travelTypes || [];
+      const missionCriticalTypes = formData.missionCriticalTypes || [];
+
+      let html = `
+        <!-- Trip Overview + Itinerary Side by Side -->
+        <div class="review-row">
+          <div class="review-section review-section--half">
+            <h6><i aria-hidden="true" class="fas fa-info-circle me-2"></i>Trip Overview</h6>
+            <dl class="review-dl">
+              <dt>Event Name</dt>
+              <dd>${this._escapeHtml(formData.tripName) || '-'}</dd>
+              <dt>Location Type</dt>
+              <dd>${this._formatLocationType(formData.locationType)}</dd>
+              <dt>Event Dates</dt>
+              <dd>${TravelDateService.formatDateRange(formData.eventStartDate, formData.eventEndDate)}</dd>
+            </dl>
+          </div>
+          <div class="review-section review-section--half">
+            <h6><i aria-hidden="true" class="fas fa-route me-2"></i>Itinerary</h6>
+            ${this._renderItineraryReview()}
+          </div>
+        </div>
+
+        <div class="review-section">
+          <h6><i aria-hidden="true" class="fas fa-users me-2"></i>Travelers (${state.getTravelerCount()})</h6>
+          ${this._renderTravelersReview()}
+        </div>
+
+        <div class="review-section">
+          <h6><i aria-hidden="true" class="fas fa-file-alt me-2"></i>Justification</h6>
+          <p class="review-bluf">${this._escapeHtml(formData.bluf) || '-'}</p>
+        </div>
+
+        <div class="review-section">
+          <h6><i aria-hidden="true" class="fas fa-tags me-2"></i>Travel Classification</h6>
+          <div class="review-classification">
+            <div class="review-classification__col">
+              <span class="review-classification__label">Type of Travel</span>
+              <div class="review-classification__tags">
+                ${travelTypes.length > 0
+                  ? travelTypes.map(t => `<span class="badge bg-primary">${t}</span>`).join('')
+                  : '<span class="text-muted">None selected</span>'}
+              </div>
+            </div>
+            <div class="review-classification__col">
+              <span class="review-classification__label">Mission-Critical</span>
+              <div class="review-classification__tags">
+                ${missionCriticalTypes.length > 0
+                  ? missionCriticalTypes.map(t => `<span class="badge bg-success">${t}</span>`).join('')
+                  : '<span class="text-muted">None selected</span>'}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      if (this._elements.reviewSummary) {
+        this._elements.reviewSummary.innerHTML = html;
+      }
+
+      this._updateReviewTotals();
+    },
+
+    /**
+     * Render itinerary for review with dates
+     */
+    _renderItineraryReview() {
+      const state = window.TravelRequest.State;
+      const legs = state.getLegs() || [];
+
+      if (legs.length === 0) {
+        return '<p class="text-muted">No destinations added</p>';
+      }
+
+      const self = this;
+      return `
+        <div class="review-itinerary-list">
+          ${legs.map((leg, index) => {
+            const location = self._escapeHtml(state.formatLegLocation(leg)) || 'Unknown';
+            const dates = TravelDateService.formatDateRange(leg.startDate, leg.endDate);
+            return `
+              <div class="review-itinerary-leg">
+                <span class="review-itinerary-leg__num">${index + 1}</span>
+                <div class="review-itinerary-leg__details">
+                  <span class="review-itinerary-leg__location">${location}</span>
+                  <span class="review-itinerary-leg__dates">${dates || 'Dates TBD'}</span>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    },
+
+    /**
+     * Render travelers for review with detailed cost breakdown
+     */
+    _renderTravelersReview() {
+      const state = window.TravelRequest.State;
+      const travelers = state.getTravelers();
+
+      if (travelers.length === 0) {
+        return '<p class="text-muted">No travelers added</p>';
+      }
+
+      const self = this;
+      return travelers.map(traveler => {
+        const transportCost = traveler.transportationTotal || traveler.ticketCost || 0;
+        const lodgingCost = traveler.lodgingTotal || 0;
+        const mieCost = traveler.mieTotal || 0;
+        const localTravelCost = traveler.localTravelTotal || 0;
+        const otherCost = traveler.otherTotal || 0;
+
+        // Subtotal already includes local travel from state calculation
+        const subtotal = traveler.subtotal || 0;
+
+        // Build breakdown - only show categories with values > 0
+        const breakdownParts = [];
+        if (transportCost > 0) {
+          breakdownParts.push(`<span><i aria-hidden="true" class="fas fa-plane-departure"></i> Transport: ${state.formatCurrency(transportCost)}</span>`);
+        }
+        if (lodgingCost > 0) {
+          breakdownParts.push(`<span><i aria-hidden="true" class="fas fa-bed"></i> Lodging: ${state.formatCurrency(lodgingCost)}</span>`);
+        }
+        if (mieCost > 0) {
+          breakdownParts.push(`<span><i aria-hidden="true" class="fas fa-utensils"></i> M&IE: ${state.formatCurrency(mieCost)}</span>`);
+        }
+        if (localTravelCost > 0) {
+          breakdownParts.push(`<span><i aria-hidden="true" class="fas fa-car"></i> Local: ${state.formatCurrency(localTravelCost)}</span>`);
+        }
+        if (otherCost > 0) {
+          breakdownParts.push(`<span><i aria-hidden="true" class="fas fa-plus-circle"></i> +15%: ${state.formatCurrency(otherCost)}</span>`);
+        }
+
+        // Build NFS status indicator
+        let nfsStatus = '';
+        if (traveler.receivingNFS) {
+          if (traveler.nfsFileId) {
+            nfsStatus = `
+              <div class="review-traveler-card__nfs review-traveler-card__nfs--complete">
+                <i aria-hidden="true" class="fas fa-check-circle"></i>
+                <span>NFS Worksheet: ${self._escapeHtml(traveler.nfsFileName || 'Uploaded')}</span>
+              </div>
+            `;
+          } else {
+            nfsStatus = `
+              <div class="review-traveler-card__nfs review-traveler-card__nfs--missing">
+                <i aria-hidden="true" class="fas fa-exclamation-triangle"></i>
+                <span>NFS Worksheet required</span>
+              </div>
+            `;
+          }
+        }
+
+        return `
+          <div class="review-traveler-card">
+            <div class="review-traveler-card__header">
+              <strong>${self._escapeHtml(traveler.employeeName) || 'Unknown'}</strong>
+              <span class="review-traveler-card__total">${state.formatCurrency(subtotal)}</span>
+            </div>
+            <div class="review-traveler-card__breakdown">
+              ${breakdownParts.join('\n              ')}
+            </div>
+            ${nfsStatus}
+          </div>
+        `;
+      }).join('');
+    },
+
+    /**
+     * Render documents for review
+     */
+    _renderDocumentsReview() {
+      const documents = this._uploadedDocuments || [];
+
+      if (documents.length === 0) {
+        return '<p class="text-muted">No documents uploaded</p>';
+      }
+
+      const self = this;
+      return `
+        <div class="review-documents">
+          ${documents.map(doc => `
+            <div class="review-document">
+              <i aria-hidden="true" class="fas ${self._getFileIcon(doc.fileName || doc.name)}"></i>
+              <span class="review-document__name">${self._escapeHtml(doc.fileName || doc.name)}</span>
+              <span class="review-document__size">${self._formatFileSize(doc.fileSize || doc.size)}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    },
+
+    /**
+     * Get icon class for file type
+     */
+    _getFileIcon(filename) {
+      if (!filename) return 'fa-file';
+      const ext = filename.split('.').pop().toLowerCase();
+      const iconMap = {
+        pdf: 'fa-file-pdf',
+        doc: 'fa-file-word',
+        docx: 'fa-file-word',
+        xls: 'fa-file-excel',
+        xlsx: 'fa-file-excel',
+        png: 'fa-file-image',
+        jpg: 'fa-file-image',
+        jpeg: 'fa-file-image',
+        gif: 'fa-file-image'
+      };
+      return iconMap[ext] || 'fa-file';
+    },
+
+    /**
+     * Format file size
+     */
+    _formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    },
+
+    // =========================================================================
+    // DOCUMENT UPLOAD (Google Drive Integration)
+    // =========================================================================
+
+    /**
+     * Initialize document upload functionality
+     * Files are uploaded to Google Drive immediately for draft persistence
+     */
+    _initDocumentUpload() {
+      const self = this;
+      this._uploadedDocuments = [];  // Array of { fileId, fileName, fileUrl, fileSize, mimeType, travelerId?, uploading? }
+      this._maxFileSize = 10 * 1024 * 1024; // 10MB
+      // Restrict to PDF and images only
+      this._allowedTypes = [
+        'application/pdf',
+        'image/png',
+        'image/jpeg'
+      ];
+
+      const uploadZone = this._elements.docUploadZone;
+      const fileInput = this._elements.docFileInput;
+      const browseBtn = this._elements.docBrowseBtn;
+
+      if (!uploadZone || !fileInput) return;
+
+      // Browse button click
+      if (browseBtn) {
+        browseBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          fileInput.click();
+        });
+      }
+
+      // File input change
+      fileInput.addEventListener('change', function() {
+        self._handleFileSelect(this.files);
+        this.value = ''; // Reset for same file selection
+      });
+
+      // Drag and drop events (drop zone is drag-only, not clickable)
+      uploadZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.classList.add('doc-upload-zone--dragover');
+      });
+
+      uploadZone.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.classList.remove('doc-upload-zone--dragover');
+      });
+
+      uploadZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.classList.remove('doc-upload-zone--dragover');
+        self._handleFileSelect(e.dataTransfer.files);
+      });
+
+    },
+
+    /**
+     * Handle file selection - uploads immediately to Google Drive
+     */
+    _handleFileSelect(files) {
+      const self = this;
+
+      Array.from(files).forEach(function(file) {
+        // Validate file type (PDF and images only)
+        if (!self._allowedTypes.includes(file.type)) {
+          self._showToast(`${file.name}: Only PDF, PNG, and JPG files are allowed`, 'error');
+          return;
+        }
+
+        // Validate file size
+        if (file.size > self._maxFileSize) {
+          self._showToast(`${file.name}: File exceeds 10MB limit`, 'error');
+          return;
+        }
+
+        // Check for duplicates by name
+        if (self._uploadedDocuments.some(function(doc) { return doc.fileName === file.name; })) {
+          self._showToast(`${file.name}: Already added`, 'warning');
+          return;
+        }
+
+        // Add placeholder with uploading state
+        const tempId = 'temp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+        const placeholder = {
+          tempId: tempId,
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type,
+          uploading: true
+        };
+        self._uploadedDocuments.push(placeholder);
+        self._renderUploadedDocuments();
+
+        // Read file as base64 and upload to Drive
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const base64Data = e.target.result.split(',')[1];
+
+          google.script.run
+            .withSuccessHandler(function(result) {
+              // Find and update the placeholder
+              const index = self._uploadedDocuments.findIndex(function(d) { return d.tempId === tempId; });
+              if (index === -1) return; // Already removed
+
+              if (result.success) {
+                // Replace placeholder with actual file data
+                self._uploadedDocuments[index] = {
+                  fileId: result.fileId,
+                  fileName: result.fileName,
+                  fileUrl: result.fileUrl,
+                  fileSize: result.fileSize,
+                  mimeType: result.mimeType,
+                  uploading: false
+                };
+                self._renderUploadedDocuments();
+                self._renderReviewStep();
+                self._triggerAutoSave(); // Save draft with new file
+              } else {
+                // Remove failed upload
+                self._uploadedDocuments.splice(index, 1);
+                self._renderUploadedDocuments();
+                self._showToast(`${file.name}: Upload failed - ${result.error}`, 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              // Remove failed upload
+              const index = self._uploadedDocuments.findIndex(function(d) { return d.tempId === tempId; });
+              if (index !== -1) {
+                self._uploadedDocuments.splice(index, 1);
+                self._renderUploadedDocuments();
+              }
+              self._showToast(`${file.name}: Upload failed`, 'error');
+              console.error('File upload error:', error);
+            })
+            .uploadTravelDraftFile({
+              name: file.name,
+              type: file.type,
+              data: base64Data,
+              draftId: self._currentDraftId || self._generateDraftId()
+            });
+        };
+        reader.readAsDataURL(file);
+      });
+    },
+
+    /**
+     * Render uploaded documents list
+     */
+    _renderUploadedDocuments() {
+      const self = this;
+      const listContainer = this._elements.docUploadList;
+      const countEl = this._elements.docUploadCount;
+      if (!listContainer) return;
+
+      // Update count
+      const uploadedCount = this._uploadedDocuments.filter(function(d) { return !d.uploading; }).length;
+      if (countEl) {
+        countEl.textContent = uploadedCount > 0 ? uploadedCount + ' file' + (uploadedCount !== 1 ? 's' : '') : '';
+      }
+
+      // Show empty state if no documents
+      if (this._uploadedDocuments.length === 0) {
+        listContainer.innerHTML = `
+          <div class="doc-upload-list__empty">
+            <i aria-hidden="true" class="fas fa-inbox"></i>
+            <span>No documents uploaded yet</span>
+          </div>
+        `;
+        this._updateSubmitButtonState();
+        return;
+      }
+
+      listContainer.innerHTML = this._uploadedDocuments.map(function(doc) {
+        const isUploading = doc.uploading;
+        const docId = doc.fileId || doc.tempId;
+
+        return `
+          <div class="doc-upload-item ${isUploading ? 'doc-upload-item--uploading' : ''}" data-doc-id="${docId}">
+            <div class="doc-upload-item__icon">
+              ${isUploading
+                ? '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i>'
+                : '<i aria-hidden="true" class="fas ' + self._getFileIcon(doc.fileName) + '"></i>'}
+            </div>
+            <div class="doc-upload-item__info">
+              <span class="doc-upload-item__name">${self._escapeHtml(doc.fileName)}</span>
+              <span class="doc-upload-item__size">${isUploading ? 'Uploading...' : self._formatFileSize(doc.fileSize)}</span>
+            </div>
+            ${isUploading ? '' : `
+              <a href="${doc.fileUrl}" target="_blank" class="doc-upload-item__link" title="Open file">
+                <i aria-hidden="true" class="fas fa-external-link-alt"></i>
+              </a>
+              <button type="button" class="doc-upload-item__remove" data-file-id="${doc.fileId}" title="Remove">
+                <i aria-hidden="true" class="fas fa-times"></i>
+              </button>
+            `}
+          </div>
+        `;
+      }).join('');
+
+      // Bind remove handlers
+      listContainer.querySelectorAll('.doc-upload-item__remove').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          self._removeDocument(this.dataset.fileId);
+        });
+      });
+
+      // Update submit button state based on upload status
+      this._updateSubmitButtonState();
+    },
+
+    // =========================================================================
+    // CUSTOM DRIVE BROWSER (No GCP Picker API Required)
+    // =========================================================================
+
+    /**
+     * Format a date string for display
+     */
+    _formatDate(dateStr) {
+      try {
+        const date = new Date(dateStr);
+        const now = new Date();
+        const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 0) return 'Today';
+        if (diffDays === 1) return 'Yesterday';
+        if (diffDays < 7) return diffDays + ' days ago';
+
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      } catch (e) {
+        return '';
+      }
+    },
+
+    /**
+     * Remove a document - also deletes from Google Drive
+     */
+    _removeDocument(fileId) {
+      const self = this;
+      const doc = this._uploadedDocuments.find(function(d) { return d.fileId === fileId; });
+
+      if (!doc) return;
+
+      // Remove from local array immediately for responsive UI
+      this._uploadedDocuments = this._uploadedDocuments.filter(function(d) {
+        return d.fileId !== fileId;
+      });
+      this._renderUploadedDocuments();
+      this._renderReviewStep();
+      this._triggerAutoSave();
+
+      // Delete from Drive in background
+      google.script.run
+        .withFailureHandler(function(error) {
+          console.warn('Failed to delete file from Drive:', error);
+          // File is already removed from UI, don't restore it
+        })
+        .deleteTravelDraftFile(fileId);
+    },
+
+    /**
+     * Get uploaded document file IDs for submission
+     * @returns {string[]} Array of Google Drive file IDs
+     */
+    _getUploadedDocumentIds() {
+      return this._uploadedDocuments
+        .filter(function(doc) { return doc.fileId && !doc.uploading; })
+        .map(function(doc) { return doc.fileId; });
+    },
+
+    /**
+     * Get uploaded documents data for draft storage
+     * @returns {Array} Array of { fileId, fileName, fileSize, mimeType }
+     */
+    _getUploadedDocumentsForDraft() {
+      return this._uploadedDocuments
+        .filter(function(doc) { return doc.fileId && !doc.uploading; })
+        .map(function(doc) {
+          return {
+            fileId: doc.fileId,
+            fileName: doc.fileName,
+            fileUrl: doc.fileUrl,
+            fileSize: doc.fileSize,
+            mimeType: doc.mimeType
+          };
+        });
+    },
+
+    /**
+     * Restore uploaded documents from draft data
+     * @param {Array} documents - Array of { fileId, fileName, ... } from draft
+     */
+    _restoreUploadedDocuments(documents) {
+      if (!documents || !Array.isArray(documents) || documents.length === 0) {
+        this._uploadedDocuments = [];
+        this._renderUploadedDocuments();
+        return;
+      }
+
+      // Set documents directly (they're already in Drive)
+      this._uploadedDocuments = documents.map(function(doc) {
+        return {
+          fileId: doc.fileId,
+          fileName: doc.fileName,
+          fileUrl: doc.fileUrl,
+          fileSize: doc.fileSize,
+          mimeType: doc.mimeType,
+          uploading: false
+        };
+      });
+      this._renderUploadedDocuments();
+    },
+
+    /**
+     * Update review totals
+     */
+    _updateReviewTotals() {
+      const state = window.TravelRequest.State;
+
+      if (this._elements.reviewTravelerTotal) {
+        this._elements.reviewTravelerTotal.textContent = state.formatCurrency(state.getTravelerTotal());
+      }
+      if (this._elements.reviewSharedCosts) {
+        this._elements.reviewSharedCosts.textContent = state.formatCurrency(state.getSharedCostsTotal());
+      }
+      if (this._elements.reviewGrandTotal) {
+        this._elements.reviewGrandTotal.textContent = state.formatCurrency(state.getGrandTotal());
+      }
+    },
+
+    // =========================================================================
+    // AUTO-SAVE & DRAFT MANAGEMENT
+    // =========================================================================
+
+    /**
+     * Initialize auto-save functionality
+     * Watches for form changes and saves to IndexedDB with debouncing
+     */
+    _initAutoSave() {
+      const self = this;
+
+      // Watch for form field changes via event delegation
+      document.addEventListener('input', (e) => {
+        // Only trigger auto-save for form inputs
+        if (e.target.matches('input, textarea, select')) {
+          self._triggerAutoSave();
+        }
+      });
+
+      // Watch for significant state changes (add/remove legs, travelers)
+      // These are triggered by button clicks, not input events
+      document.addEventListener('click', (e) => {
+        const actionBtn = e.target.closest('[data-action]');
+        if (actionBtn) {
+          const action = actionBtn.dataset.action;
+          // Trigger auto-save after actions that modify state
+          if (['add-leg', 'remove-leg', 'add-traveler', 'remove-traveler'].includes(action)) {
+            // Slight delay to let state update first
+            setTimeout(() => self._triggerAutoSave(), 100);
+          }
+        }
+      });
+    },
+
+    /**
+     * Trigger auto-save with debouncing (saves 2 seconds after last change)
+     */
+    _triggerAutoSave() {
+      // Clear existing timer
+      if (this._autoSaveTimer) {
+        clearTimeout(this._autoSaveTimer);
+      }
+
+      // Set new timer - save after 2 seconds of inactivity
+      this._autoSaveTimer = setTimeout(() => {
+        this._saveToIndexedDB(true); // silent save
+      }, 2000);
+    },
+
+    /**
+     * Generate a new draft ID if one doesn't exist
+     * Used when uploading files before the draft has been saved to IndexedDB
+     */
+    _generateDraftId() {
+      if (!this._currentDraftId) {
+        this._currentDraftId = 'draft_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      }
+      return this._currentDraftId;
+    },
+
+    /**
+     * Save form data to IndexedDB
+     * @param {boolean} silent - If true, don't show toast notification
+     */
+    async _saveToIndexedDB(silent = false) {
+      if (!window.TravelDraft) {
+        if (!silent) this._showToast('Draft storage not available', 'warning');
+        return;
+      }
+
+      const state = window.TravelRequest.State;
+      const formData = state.getFormData();
+
+      // Add current step for restoration
+      formData.currentStep = state.getCurrentStep();
+      formData.highestCompletedStep = state.getHighestCompletedStep();
+
+      // Add uploaded documents (file references, not base64 data)
+      formData.uploadedDocuments = this._getUploadedDocumentsForDraft();
+
+      // Only save if there's meaningful data
+      if (!formData.tripName && !formData.legs?.length && !formData.travelers?.length) {
+        return; // Nothing worth saving yet
+      }
+
+      try {
+        const result = await window.TravelDraft.saveDraft(formData, this._currentDraftId);
+
+        if (result.success) {
+          // Store the draft ID for future updates
+          this._currentDraftId = result.draftId;
+          state.updateField('draftId', result.draftId);
+
+          if (!silent) {
+            this._showToast('Draft saved', 'success');
+          }
+        } else {
+          if (!silent) {
+            this._showToast('Failed to save draft: ' + (result.error || 'Unknown error'), 'error');
+          }
+        }
+      } catch (error) {
+        if (!silent) {
+          this._showToast('Failed to save draft: ' + error.message, 'error');
+        }
+      }
+    },
+
+    /**
+     * Load a draft from IndexedDB and restore form state
+     * @param {string} draftId - The draft ID to load
+     */
+    async _loadDraft(draftId) {
+      if (!window.TravelDraft) {
+        console.warn('Draft storage not available');
+        return;
+      }
+
+      try {
+        const draft = await window.TravelDraft.getDraft(draftId);
+
+        if (!draft || !draft.formData) {
+          this._showToast('Draft not found', 'warning');
+          return;
+        }
+
+        // Store the draft ID
+        this._currentDraftId = draftId;
+
+        // Restore form data to state
+        const state = window.TravelRequest.State;
+        const formData = draft.formData;
+
+        // Restore basic fields
+        state.updateField('tripName', formData.tripName || '');
+        state.updateField('locationType', formData.locationType || '');
+        state.updateField('eventStartDate', formData.eventStartDate || '');
+        state.updateField('eventEndDate', formData.eventEndDate || '');
+        state.updateField('bluf', formData.bluf || '');
+        state.updateField('purpose', formData.purpose || '');
+        state.updateField('travelTypes', formData.travelTypes || []);
+        state.updateField('missionCriticalTypes', formData.missionCriticalTypes || []);
+        state.updateField('draftId', draftId);
+
+        // Clear existing legs (from auto-init) before restoring
+        const existingLegs = state.getLegs() || [];
+        existingLegs.forEach(leg => {
+          // Remove from DOM
+          const legCard = document.querySelector(`.leg-card[data-leg-id="${leg.id}"]`);
+          if (legCard) legCard.remove();
+        });
+        // Clear state legs array directly
+        state._formData.legs = [];
+
+        // Restore legs
+        if (formData.legs && formData.legs.length > 0) {
+          formData.legs.forEach(leg => {
+            state.addLeg(leg);
+          });
+        }
+
+        // Clear existing travelers before restoring
+        const existingTravelers = state.getTravelers() || [];
+        existingTravelers.forEach(traveler => {
+          // Remove from DOM
+          const travelerCard = document.querySelector(`.traveler-card[data-traveler-id="${traveler.id}"]`);
+          if (travelerCard) travelerCard.remove();
+        });
+        // Clear state travelers array directly
+        state._formData.travelers = [];
+
+        // Restore travelers
+        if (formData.travelers && formData.travelers.length > 0) {
+          formData.travelers.forEach(traveler => {
+            state.addTraveler(traveler);
+          });
+        }
+
+        // Restore shared costs
+        if (formData.sharedCosts) {
+          Object.keys(formData.sharedCosts).forEach(category => {
+            const cost = formData.sharedCosts[category];
+            state.updateSharedCost(category, 'amount', cost.amount || 0);
+            state.updateSharedCost(category, 'description', cost.description || '');
+          });
+        }
+
+        // Update UI with restored data
+        this._restoreFormUI(formData);
+
+        // Restore step position
+        if (formData.highestCompletedStep) {
+          state._highestCompletedStep = formData.highestCompletedStep;
+        }
+        const targetStep = formData.currentStep || 1;
+        this._expandStep(targetStep);
+
+        this._showToast('Draft loaded', 'success');
+
+        // Mark that we've loaded a draft (so init doesn't reset to step 1)
+        this._draftLoaded = true;
+
+      } catch (error) {
+        console.error('Error loading draft:', error);
+        this._showToast('Failed to load draft', 'error');
+      }
+    },
+
+    /**
+     * Restore form UI elements from loaded data
+     */
+    _restoreFormUI(formData) {
+      // Step 1: Trip Overview
+      if (this._elements.tripName) {
+        this._elements.tripName.value = formData.tripName || '';
+      }
+      if (this._elements.locationType) {
+        this._elements.locationType.value = formData.locationType || '';
+      }
+      if (this._elements.eventStartDate) {
+        this._elements.eventStartDate.value = formData.eventStartDate || '';
+        const startChip = document.getElementById('eventStartChip');
+        if (startChip && formData.eventStartDate) {
+          startChip.classList.add('date-chip--filled');
+        }
+      }
+      if (this._elements.eventEndDate) {
+        this._elements.eventEndDate.value = formData.eventEndDate || '';
+        const endChip = document.getElementById('eventEndChip');
+        if (endChip && formData.eventEndDate) {
+          endChip.classList.add('date-chip--filled');
+        }
+      }
+      // Update event date range display
+      this._updateEventDateRangeDisplay();
+
+      if (this._elements.justificationBluf) {
+        this._elements.justificationBluf.value = formData.bluf || '';
+        if (this._elements.blufCharCount) {
+          this._updateCharCount(this._elements.justificationBluf, this._elements.blufCharCount, 500);
+        }
+      }
+      if (this._elements.justificationPurpose) {
+        this._elements.justificationPurpose.value = formData.purpose || '';
+        if (this._elements.purposeCharCount) {
+          this._updateCharCount(this._elements.justificationPurpose, this._elements.purposeCharCount, 2000);
+        }
+      }
+
+      // Step 2: Itinerary - render leg cards (use state objects, not raw formData)
+      const state = window.TravelRequest.State;
+      const stateLegs = state.getLegs() || [];
+      if (stateLegs.length > 0 && this._renderLegCard) {
+        stateLegs.forEach(leg => {
+          this._renderLegCard(leg);
+        });
+        this._updateItineraryEmptyState();
+      }
+
+      // Step 3: Travelers - render traveler cards (use state objects, not raw formData)
+      const stateTravelers = state.getTravelers() || [];
+      if (stateTravelers.length > 0 && this._renderTravelerCard) {
+        stateTravelers.forEach(traveler => {
+          this._renderTravelerCard(traveler);
+        });
+        this._updateTravelersEmptyState();
+        this._updateTravelersTotal();
+      }
+
+      // Step 4: Classification - check appropriate boxes
+      if (formData.travelTypes && this._elements.travelTypesContainer) {
+        formData.travelTypes.forEach(type => {
+          const checkbox = this._elements.travelTypesContainer.querySelector(`input[value="${type}"]`);
+          if (checkbox) checkbox.checked = true;
+        });
+      }
+      if (formData.missionCriticalTypes && this._elements.missionCriticalContainer) {
+        formData.missionCriticalTypes.forEach(type => {
+          const checkbox = this._elements.missionCriticalContainer.querySelector(`input[value="${type}"]`);
+          if (checkbox) checkbox.checked = true;
+        });
+      }
+
+      // Step 5: Shared Costs
+      if (formData.sharedCosts && this._elements.sharedCostsList) {
+        Object.keys(formData.sharedCosts).forEach(category => {
+          const cost = formData.sharedCosts[category];
+          const row = this._elements.sharedCostsList.querySelector(`[data-category="${category}"]`);
+          if (row) {
+            const amountInput = row.querySelector('.shared-cost-amount');
+            const descInput = row.querySelector('.shared-cost-desc');
+            if (amountInput && cost.amount) amountInput.value = cost.amount;
+            if (descInput && cost.description) descInput.value = cost.description;
+          }
+        });
+        this._updateSharedCostsTotal();
+      }
+
+      // Step 6: Restore uploaded documents
+      if (formData.uploadedDocuments && formData.uploadedDocuments.length > 0) {
+        this._restoreUploadedDocuments(formData.uploadedDocuments);
+      }
+    },
+
+    // =========================================================================
+    // SAVE & SUBMIT
+    // =========================================================================
+
+    /**
+     * Handle save draft button click (manual save)
+     * Saves the draft and navigates back to the portal
+     */
+    async _handleSaveDraft() {
+      const state = window.TravelRequest.State;
+      const formData = state.getFormData();
+
+      // Check if there's anything to save
+      if (!formData.tripName && !formData.legs?.length && !formData.travelers?.length) {
+        this._showToast('Nothing to save yet - add some data first', 'warning');
+        return;
+      }
+
+      await this._saveToIndexedDB(false); // Show toast notification
+
+      // Navigate back to the portal after a brief delay to show the toast
+      setTimeout(() => {
+        this._navigateToPortal();
+      }, 800);
+    },
+
+    /**
+     * Navigate back to the travel portal
+     */
+    _navigateToPortal() {
+      const scriptUrl = this._scriptUrl || '';
+      if (scriptUrl) {
+        safeTopNavigate(scriptUrl + '?mode=travel');
+      } else {
+        // Fallback: try to construct URL from current location
+        try {
+          const baseUrl = window.top.location.href.split('?')[0];
+          safeTopNavigate(baseUrl + '?mode=travel');
+        } catch (e) {
+          console.error('Cannot navigate to portal:', e);
+          this._showToast('Draft saved! Go to Portal to see it.', 'success');
+        }
+      }
+    },
+
+    /**
+     * Check if any file uploads are in progress
+     */
+    _hasUploadsInProgress() {
+      return this._uploadedDocuments.some(function(doc) { return doc.uploading === true; });
+    },
+
+    /**
+     * Update submit button state based on upload status
+     */
+    _updateSubmitButtonState() {
+      const uploading = this._hasUploadsInProgress();
+
+      // Update both the accordion submit button and fixed footer submit button
+      const submitButtons = document.querySelectorAll('[data-action="submit"]');
+      submitButtons.forEach(function(btn) {
+        btn.disabled = uploading;
+        if (uploading) {
+          btn.classList.add('disabled');
+          btn.title = 'Please wait for uploads to complete';
+        } else {
+          btn.classList.remove('disabled');
+          btn.title = '';
+        }
+      });
+
+      // Also update fixed footer submit if it exists
+      if (this._elements.fixedFooterSubmit) {
+        this._elements.fixedFooterSubmit.disabled = uploading;
+        if (uploading) {
+          this._elements.fixedFooterSubmit.classList.add('disabled');
+        } else {
+          this._elements.fixedFooterSubmit.classList.remove('disabled');
+        }
+      }
+    },
+
+    /**
+     * Handle submit
+     */
+    async _handleSubmit() {
+      const self = this;
+      const state = window.TravelRequest.State;
+
+      // Check if uploads are still in progress
+      if (this._hasUploadsInProgress()) {
+        this._showToast('Please wait for file uploads to complete', 'warning');
+        return;
+      }
+
+      // Wait for any in-flight local-travel distance checks to settle before
+      // reading form data. Without this gate, a user fast enough to click
+      // Submit while geocoding is still in flight would submit with
+      // isLocalTravel=false (the stale default) when the eventual result
+      // would have been true. Background detail in Controller's
+      // _pendingLocalTravelChecks JSDoc + git history for REQ-2026-0166 fix.
+      if (window.TravelRequest &&
+          window.TravelRequest.Controller &&
+          Array.isArray(window.TravelRequest.Controller._pendingLocalTravelChecks) &&
+          window.TravelRequest.Controller._pendingLocalTravelChecks.length > 0) {
+        this._showToast('Verifying trip distances...', 'info');
+        try {
+          await Promise.all(window.TravelRequest.Controller._pendingLocalTravelChecks);
+        } catch (e) {
+          // Individual checks already swallow their errors and resolve to
+          // "not local travel" — Promise.all should never reject in practice.
+          // If it does, log and continue; submission still gets the latest
+          // state (whatever resolved) which is no worse than pre-fix behavior.
+          console.warn('Local-travel check awaited at submit threw:', e);
+        }
+      }
+
+      // Snapshot form data AFTER all local-travel checks have settled so we
+      // submit the correct isLocalTravel flags.
+      const formData = state.getFormData();
+
+      // Final validation
+      for (let step = 1; step <= 5; step++) {
+        if (!this._validateStep(step)) {
+          this._expandStep(step);
+          this._showToast('Please complete all required fields', 'error');
+          return;
+        }
+      }
+
+      // Validate NFS worksheets
+      const travelers = state.getTravelers();
+      const missingNfs = travelers.filter(t => t.receivingNFS && !t.nfsFileId);
+      if (missingNfs.length > 0) {
+        this._expandStep(3); // Travelers step
+        const names = missingNfs.map(t => t.employeeName || 'Unknown').join(', ');
+        this._showToast(`NFS worksheet required for: ${names}`, 'error');
+        return;
+      }
+
+      this._isLoading = true;
+
+      // Show nav loader with submitting text
+      if (window.showNavLoader) {
+        window.showNavLoader(0, 'Submitting');
+      }
+
+      // Add attachment file IDs to form data
+      formData.attachmentFileIds = this._getUploadedDocumentIds();
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          self._isLoading = false;
+          if (window.hideNavLoader) window.hideNavLoader();
+
+          if (result.success) {
+            // Delete the draft from IndexedDB after successful submission
+            if (self._currentDraftId && window.TravelDraft) {
+              window.TravelDraft.deleteDraft(self._currentDraftId)
+                .then(function() {
+                  console.log('Draft deleted after successful submission:', self._currentDraftId);
+                })
+                .catch(function(err) {
+                  console.warn('Could not delete draft:', err);
+                });
+            }
+
+            var newRequestId = (result.data && result.data.requestId) || result.requestId;
+            self._showSuccessPage(newRequestId, formData);
+          } else {
+            self._showToast('Submission failed: ' + (result.error || 'Unknown error'), 'error');
+          }
+        })
+        .withFailureHandler(function(error) {
+          self._isLoading = false;
+          if (window.hideNavLoader) window.hideNavLoader();
+          self._showToast('Submission failed: ' + error, 'error');
+        })
+        .submitTravelRequestV2(formData);
+    },
+
+    /**
+     * Show success page after submission
+     */
+    _showSuccessPage(requestId, formData) {
+      const container = document.querySelector('.travel-container');
+      if (!container) return;
+
+      const total = window.TravelRequest.State.formatCurrency(window.TravelRequest.State.getGrandTotal());
+
+      container.innerHTML = `
+        <div class="success-page">
+          <div class="success-page__icon">
+            <i aria-hidden="true" class="fas fa-check-circle"></i>
+          </div>
+          <h2>Request Submitted!</h2>
+          <div class="success-page__details">
+            <div class="success-page__detail-row">
+              <span class="success-page__label">Request ID</span>
+              <span class="success-page__value">${requestId}</span>
+            </div>
+            <div class="success-page__detail-row">
+              <span class="success-page__label">Event</span>
+              <span class="success-page__value">${this._escapeHtml(formData.tripName || 'Travel Request')}</span>
+            </div>
+            <div class="success-page__detail-row">
+              <span class="success-page__label">Total</span>
+              <span class="success-page__value">${total}</span>
+            </div>
+          </div>
+          ${window.TravelFeedback ? window.TravelFeedback.thumbsHtml('submission', requestId) : ''}
+          <div class="success-page__actions">
+            <button type="button" class="btn btn-primary" id="returnToPortalBtn" onclick="TravelRequest.Controller._navigateToPortal()">
+              <i aria-hidden="true" class="fas fa-home me-2"></i>Return to Portal
+            </button>
+          </div>
+        </div>
+      `;
+
+      // Hide fixed footer
+      if (this._elements.fixedFooter) {
+        this._elements.fixedFooter.classList.add('hidden');
+      }
+    },
+
+    // =========================================================================
+    // UTILITIES
+    // =========================================================================
+
+    /**
+     * Show toast notification
+     * Delegates to TravelUtils.showToast()
+     */
+    _showToast(message, type = 'info') {
+      if (window.TravelUtils && TravelUtils.showToast) {
+        TravelUtils.showToast(message, type);
+      }
+    },
+
+    /**
+     * Escape HTML to prevent XSS
+     */
+    _escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    },
+
+    /**
+     * Format location type for display
+     */
+    _formatLocationType(locationType) {
+      const typeLabels = {
+        'conference': 'Conference',
+        'client-site': 'Client Site',
+        'contractor-site': 'Contractor Site',
+        'teb': 'TEB',
+        'other': 'Other'
+      };
+      return typeLabels[locationType] || locationType || '-';
+    },
+
+    /**
+     * Format a single date to display format (e.g., "Jan 29, 2026")
+     * Handles both ISO format (yyyy-mm-dd) and already-formatted dates
+     */
+    _formatDisplayDate(dateStr) {
+      if (!dateStr) return '';
+      // If already in display format (contains month name), return as-is
+      if (/^[A-Za-z]{3}\s/.test(dateStr)) {
+        return dateStr;
+      }
+      // Convert ISO format (yyyy-mm-dd) to display format
+      if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+        const date = new Date(dateStr + 'T00:00:00');
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+          });
+        }
+      }
+      return dateStr;
+    },
+
+    /**
+     * Float Awesomplete dropdown (prevent clipping) and auto-scroll for visibility
+     * Delegates to TravelLocationService.floatAwesomplete()
+     * @param {Awesomplete} awInstance - The Awesomplete instance
+     * @param {Object} options - Optional configuration
+     */
+    _floatAwesomplete(awInstance, options = {}) {
+      if (window.TravelLocationService) {
+        TravelLocationService.floatAwesomplete(awInstance, options);
+      }
+    },
+
+    /**
+     * Ensure flatpickr calendar is visible in viewport when opened
+     * Delegates to TravelDateService.ensureFlatpickrVisible()
+     * @param {Element} inputElement - The input element that triggered the calendar
+     */
+    _ensureFlatpickrVisible(inputElement) {
+      if (window.TravelDateService && TravelDateService.ensureFlatpickrVisible) {
+        TravelDateService.ensureFlatpickrVisible(inputElement);
+      }
+    }
+
+  }; // End Controller
+
+})();
+</script>

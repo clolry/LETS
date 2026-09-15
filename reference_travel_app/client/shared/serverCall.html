@@ -1,0 +1,41 @@
+<!--
+  ================================================================
+  serverCall.html — Shared google.script.run Promise wrapper
+  ================================================================
+
+  Exposes one top-level global:
+
+    serverCall(functionName, ...args)  → Promise<result>
+
+  Wraps the callback-based google.script.run API in a Promise so
+  controllers can `await` server calls instead of nesting
+  withSuccessHandler/withFailureHandler. Replaces the admin
+  controller's `_serverCall` method (and provides the same pattern
+  for other controllers that currently hand-write the wrap inline).
+
+  Usage:
+    const result = await serverCall('getRequestForReview', requestId);
+    if (result.success) { ... } else { showError(result.error); }
+-->
+
+<script>
+/**
+ * Promise-wrap a google.script.run call. Resolves with the server
+ * function's return value; rejects with the server's Error object.
+ *
+ * Variadic — pass any number of args after the function name; they
+ * forward to the server function in order.
+ *
+ * @param {string} functionName - Name of the server-side function to invoke
+ * @returns {Promise<*>} Promise resolving to the server return value
+ */
+function serverCall(functionName) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  return new Promise(function(resolve, reject) {
+    var runner = google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(reject);
+    runner[functionName].apply(runner, args);
+  });
+}
+</script>

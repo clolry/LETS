@@ -1,0 +1,549 @@
+<!--
+  ================================================================
+  Travel Cost Service - Shared Cost Calculations
+  ================================================================
+
+  Provides shared cost calculation logic for travel requests:
+  - Mileage rates and calculations
+  - Local travel reimbursement
+  - Leg costs (lodging, M&IE)
+  - Traveler total costs
+  - Other costs (15% calculation)
+  - Grand total calculations
+
+  Used by both the form and review pages.
+-->
+
+<script>
+window.TravelCostService = (function() {
+  'use strict';
+
+  // ==========================================================================
+  // MILEAGE RATES
+  // ==========================================================================
+
+  // Default rates from centralized config (can be overridden by server values)
+  const CONFIG_RATES = TravelUtils?.TRAVEL_CONFIG?.MILEAGE_RATES || { PRIVATE: 0.70, GOVERNMENT: 0.22 };
+  let mileageRates = {
+    private: CONFIG_RATES.PRIVATE,
+    gov: CONFIG_RATES.GOVERNMENT
+  };
+
+  let ratesLoaded = false;
+  let ratesLoadPromise = null;
+
+  /**
+   * Load mileage rates from server
+   * Call this on page init
+   */
+  async function loadMileageRates() {
+    if (ratesLoaded) return mileageRates;
+    if (ratesLoadPromise) return ratesLoadPromise;
+
+    ratesLoadPromise = new Promise((resolve) => {
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(rates) {
+            if (rates) {
+              // Server returns { private, gov }
+              const fallback = TravelUtils?.TRAVEL_CONFIG?.MILEAGE_RATES || { PRIVATE: 0.70, GOVERNMENT: 0.22 };
+              mileageRates.private = rates.private || fallback.PRIVATE;
+              mileageRates.gov = rates.gov || fallback.GOVERNMENT;
+            }
+            ratesLoaded = true;
+            ratesLoadPromise = null;
+            resolve(mileageRates);
+          })
+          .withFailureHandler(function() {
+            ratesLoaded = true;
+            ratesLoadPromise = null;
+            resolve(mileageRates);
+          })
+          .getMileageRatesForClient();
+      } else {
+        ratesLoaded = true;
+        resolve(mileageRates);
+      }
+    });
+
+    return ratesLoadPromise;
+  }
+
+  /**
+   * Get mileage rate for vehicle type
+   */
+  function getMileageRate(vehicleType) {
+    return vehicleType === 'gov' ? mileageRates.gov : mileageRates.private;
+  }
+
+  /**
+   * Get both mileage rates
+   */
+  function getMileageRates() {
+    return { ...mileageRates };
+  }
+
+  // ==========================================================================
+  // LOCAL TRAVEL REIMBURSEMENT
+  // ==========================================================================
+
+  /**
+   * Calculate local travel reimbursement for a single leg
+   * Based on GSA Order OAS 5770.1B
+   *
+   * @param {Object} options
+   * @param {number} options.localMiles - Miles driven
+   * @param {number} options.localParking - Parking costs
+   * @param {number} options.localTolls - Toll costs
+   * @param {number} options.commuteDistance - Normal commute distance (0 for telework)
+   * @param {number} options.commuteParking - Normal commute parking (0 for telework)
+   * @param {boolean} options.wasGovVehicleAvailable - If gov vehicle was available
+   * @returns {Object} Calculated local travel amounts
+   */
+  function calculateLocalTravelReimbursement(options) {
+    const localMiles = parseFloat(options.localMiles) || 0;
+    const localParking = parseFloat(options.localParking) || 0;
+    const localTolls = parseFloat(options.localTolls) || 0;
+    const commuteDistance = parseFloat(options.commuteDistance) || 0;
+    const commuteParking = parseFloat(options.commuteParking) || 0;
+
+    // Reimbursable mileage = actual - commute (minimum 0)
+    const reimbursableMiles = Math.max(0, localMiles - commuteDistance);
+
+    // Mileage rate: reduced if gov vehicle was available but chose POV
+    const mileageRate = options.wasGovVehicleAvailable
+      ? mileageRates.gov
+      : mileageRates.private;
+
+    const mileageReimbursement = reimbursableMiles * mileageRate;
+
+    // Parking: reimburse excess over normal commute parking
+    const excessParking = Math.max(0, localParking - commuteParking);
+
+    // Tolls: fully reimbursable
+    const tollsReimbursement = localTolls;
+
+    // Total local travel reimbursement
+    const total = mileageReimbursement + excessParking + tollsReimbursement;
+
+    return {
+      reimbursableMiles,
+      mileageRate,
+      mileageReimbursement,
+      excessParking,
+      tollsReimbursement,
+      total
+    };
+  }
+
+  // ==========================================================================
+  // LEG COST CALCULATIONS
+  // ==========================================================================
+
+  /**
+   * Calculate leg costs from per diem data
+   *
+   * @param {Object} options
+   * @param {number} options.nights - Number of lodging nights
+   * @param {number} options.lodgingRate - Per night rate
+   * @param {number} options.days - Number of M&IE days
+   * @param {number} options.mieRate - Per day M&IE rate
+   * @param {number} [options.lodgingOverride] - Optional lodging override
+   * @param {number} [options.mieOverride] - Optional M&IE override
+   * @returns {Object} Calculated leg costs
+   */
+  function calculateLegCosts(options) {
+    const nights = parseInt(options.nights) || 0;
+    const lodgingRate = parseFloat(options.lodgingRate) || 0;
+    const days = parseInt(options.days) || 0;
+    const mieRate = parseFloat(options.mieRate) || 0;
+
+    const lodgingCalculated = nights * lodgingRate;
+    const mieCalculated = days * mieRate;
+
+    // Use override if provided, otherwise use calculated
+    const lodgingTotal = options.lodgingOverride !== undefined && options.lodgingOverride !== null
+      ? parseFloat(options.lodgingOverride)
+      : lodgingCalculated;
+
+    const mieTotal = options.mieOverride !== undefined && options.mieOverride !== null
+      ? parseFloat(options.mieOverride)
+      : mieCalculated;
+
+    return {
+      nights,
+      lodgingRate,
+      lodgingCalculated,
+      lodgingTotal,
+      days,
+      mieRate,
+      mieCalculated,
+      mieTotal,
+      legSubtotal: lodgingTotal + mieTotal
+    };
+  }
+
+  // ==========================================================================
+  // TRAVELER COST CALCULATIONS
+  // ==========================================================================
+
+  /**
+   * Calculate traveler transportation costs
+   *
+   * @param {Object} options
+   * @param {string} options.transportMode - 'air', 'private', 'gov', 'rental', 'rail', 'bus'
+   * @param {number} options.ticketCost - Air/rail/bus ticket cost
+   * @param {number} options.milesToDeparture - Miles to departure point (for POV)
+   * @param {number} options.milesFromArrival - Miles from arrival point (for POV)
+   * @param {boolean} options.needsRentalCar - Whether rental car is needed
+   * @param {number} options.rentalCarCost - Rental car cost
+   * @returns {Object} Transportation costs
+   */
+  function calculateTransportationCosts(options) {
+    const transportMode = options.transportMode || '';
+    const ticketCost = parseFloat(options.ticketCost) || 0;
+
+    // Only calculate mileage for private or gov vehicle
+    let mileageCost = 0;
+    let mileageRate = 0;
+    let totalMileage = 0;
+
+    if (transportMode === 'private' || transportMode === 'gov') {
+      const mileageTo = parseFloat(options.milesToDeparture) || 0;
+      const mileageFrom = parseFloat(options.milesFromArrival) || 0;
+      totalMileage = mileageTo + mileageFrom;
+      mileageRate = getMileageRate(transportMode);
+      mileageCost = totalMileage * mileageRate;
+    }
+
+    // Add rental car cost if applicable (not shown when primary mode is rental)
+    const rentalCarCost = (options.needsRentalCar && transportMode !== 'rental')
+      ? (parseFloat(options.rentalCarCost) || 0)
+      : 0;
+
+    const total = ticketCost + mileageCost + rentalCarCost;
+
+    return {
+      transportMode,
+      ticketCost,
+      totalMileage,
+      mileageRate,
+      mileageCost,
+      rentalCarCost,
+      total
+    };
+  }
+
+  /**
+   * Calculate "Other" costs (default 15% of transport + lodging + M&IE)
+   *
+   * @param {number} transportation - Transportation total
+   * @param {number} lodging - Lodging total
+   * @param {number} mie - M&IE total
+   * @param {number} [percentage=15] - Percentage to apply
+   * @returns {number} Other costs
+   */
+  function calculateOtherCosts(transportation, lodging, mie, percentage = 15) {
+    const base = (parseFloat(transportation) || 0) +
+                 (parseFloat(lodging) || 0) +
+                 (parseFloat(mie) || 0);
+    return base * (percentage / 100);
+  }
+
+  /**
+   * Calculate all costs for a traveler
+   *
+   * @param {Object} traveler - Traveler object with legCosts, transportMode, etc.
+   * @param {Array} attendingLegIds - Array of leg IDs the traveler is attending
+   * @returns {Object} All calculated costs for the traveler
+   */
+  function calculateTravelerTotals(traveler, attendingLegIds) {
+    let lodgingTotal = 0;
+    let mieTotal = 0;
+    let localTravelTotal = 0;
+
+    // Sum costs from attended legs
+    (attendingLegIds || []).forEach(legId => {
+      const legCost = traveler.legCosts?.[legId];
+      if (legCost) {
+        if (legCost.isLocalTravel) {
+          // Local travel leg
+          localTravelTotal += parseFloat(legCost.localTravelTotal) || parseFloat(legCost.legSubtotal) || 0;
+        } else {
+          // Normal TDY leg
+          lodgingTotal += parseFloat(legCost.lodgingTotal) || 0;
+          mieTotal += parseFloat(legCost.mieTotal) || 0;
+        }
+      }
+    });
+
+    // Transportation
+    const transportation = calculateTransportationCosts({
+      transportMode: traveler.transportMode,
+      ticketCost: traveler.ticketCost,
+      milesToDeparture: traveler.milesToDeparture,
+      milesFromArrival: traveler.milesFromArrival,
+      needsRentalCar: traveler.needsRentalCar,
+      rentalCarCost: traveler.rentalCarCost
+    });
+
+    // Other costs (15% default)
+    const otherPercentage = parseFloat(traveler.otherPercentage) || 15;
+    const otherTotal = calculateOtherCosts(
+      transportation.total,
+      lodgingTotal,
+      mieTotal,
+      otherPercentage
+    );
+
+    // Subtotal
+    const subtotal = transportation.total + lodgingTotal + mieTotal + otherTotal + localTravelTotal;
+
+    return {
+      lodgingTotal,
+      mieTotal,
+      localTravelTotal,
+      transportationTotal: transportation.total,
+      mileageTotal: transportation.mileageCost,
+      mileageRate: transportation.mileageRate,
+      otherPercentage,
+      otherTotal,
+      subtotal
+    };
+  }
+
+  // ==========================================================================
+  // SHARED COSTS
+  // ==========================================================================
+
+  /**
+   * Calculate shared costs total
+   *
+   * @param {Object} sharedCosts - Object with facilities, audioVisual, logistics, other
+   * @returns {number} Total shared costs
+   */
+  function calculateSharedCostsTotal(sharedCosts) {
+    if (!sharedCosts) return 0;
+
+    return (parseFloat(sharedCosts.facilities?.amount) || 0) +
+           (parseFloat(sharedCosts.audioVisual?.amount) || 0) +
+           (parseFloat(sharedCosts.logistics?.amount) || 0) +
+           (parseFloat(sharedCosts.other?.amount) || 0);
+  }
+
+  // ==========================================================================
+  // GRAND TOTAL
+  // ==========================================================================
+
+  /**
+   * Calculate grand total from travelers and shared costs
+   *
+   * @param {Array} travelers - Array of travelers with subtotals
+   * @param {Object} sharedCosts - Shared costs object
+   * @returns {number} Grand total
+   */
+  function calculateGrandTotal(travelers, sharedCosts) {
+    const travelerTotal = (travelers || []).reduce((sum, t) => {
+      return sum + (parseFloat(t.subtotal) || 0);
+    }, 0);
+
+    const sharedTotal = calculateSharedCostsTotal(sharedCosts);
+
+    return travelerTotal + sharedTotal;
+  }
+
+  // ==========================================================================
+  // PER DIEM RATE FETCHING
+  // ==========================================================================
+
+  /**
+   * Get per diem rates for a location
+   * Unified service that handles DOS (international), DoD (OCONUS), and GSA (CONUS)
+   * Returns normalized response regardless of source
+   *
+   * @param {Object} options
+   * @param {string} options.country - Country name
+   * @param {string} options.state - State abbreviation (for US)
+   * @param {string} options.city - City name
+   * @param {string} options.startDate - Leg start date (deprecated: use lodgingStartDate/mieStartDate)
+   * @param {string} options.endDate - Leg end date (deprecated: use lodgingEndDate/mieEndDate)
+   * @param {string} options.lodgingStartDate - Lodging start date (optional, defaults to startDate)
+   * @param {string} options.lodgingEndDate - Lodging end date (optional, defaults to endDate)
+   * @param {string} options.mieStartDate - M&IE start date (optional, defaults to startDate)
+   * @param {string} options.mieEndDate - M&IE end date (optional, defaults to endDate)
+   * @returns {Promise<Object>} Normalized per diem rates: { success, lodging, mie, source }
+   */
+  /**
+   * Get per diem rates from unified server function
+   * Server handles all location types (GSA, DoD, DOS) with day-by-day calculations
+   * Supports independent lodging and M&IE date ranges
+   */
+  async function getPerDiemRates(options) {
+    const { country, state, city } = options;
+
+    // Support independent lodging and M&IE dates (backward compatible with legacy startDate/endDate)
+    const lodgingStartDate = options.lodgingStartDate || options.startDate;
+    const lodgingEndDate = options.lodgingEndDate || options.endDate;
+    const mieStartDate = options.mieStartDate || options.startDate;
+    const mieEndDate = options.mieEndDate || options.endDate;
+
+    // Check if we need separate calculations
+    const datesMatch = lodgingStartDate === mieStartDate && lodgingEndDate === mieEndDate;
+
+    // Determine location type for the server
+    const isUS = !country || country === 'United States' || country === 'USA';
+    const isOCONUS = isUS && TravelUtils?.isOCONUS?.(state);
+
+    let locationType = 'CONUS';
+    if (!isUS) {
+      locationType = 'Foreign';
+    } else if (isOCONUS) {
+      locationType = 'OCONUS';
+    }
+
+    try {
+      if (datesMatch) {
+        // Same date range - single per diem call (original behavior)
+        const result = await new Promise((resolve, reject) => {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject)
+            .calculatePerDiem({
+              city: city,
+              state: state,
+              country: country || 'United States',
+              locationType: locationType,
+              startDate: lodgingStartDate,
+              endDate: lodgingEndDate
+            });
+        });
+
+        if (!result.success) {
+          return {
+            success: false,
+            error: result.error || 'No rates found',
+            source: result.source || locationType
+          };
+        }
+
+        // Server returns normalized format - pass through with legacy aliases
+        return {
+          success: true,
+          // Rates (averages for display)
+          lodgingRate: result.lodgingRate || 0,
+          mieRate: result.mieRate || 0,
+          // Legacy aliases
+          lodging: result.lodgingRate || 0,
+          mie: result.mieRate || 0,
+          // Pre-calculated totals (day-by-day calculation from server)
+          lodgingTotal: result.lodgingTotal || 0,
+          mieTotal: result.mieTotal || 0,
+          nights: result.nights || 0,
+          days: result.days || 0,
+          // Rate variation info
+          ratesVaried: result.ratesVaried || false,
+          breakdown: result.breakdown || null,
+          // Combined per diem rate
+          perDiem: (result.lodgingRate || 0) + (result.mieRate || 0),
+          source: result.source,
+          raw: result
+        };
+      } else {
+        // Different date ranges - separate calls for lodging and M&IE
+        const [lodgingResult, mieResult] = await Promise.all([
+          new Promise((resolve, reject) => {
+            google.script.run
+              .withSuccessHandler(resolve)
+              .withFailureHandler(reject)
+              .calculatePerDiem({
+                city: city,
+                state: state,
+                country: country || 'United States',
+                locationType: locationType,
+                startDate: lodgingStartDate,
+                endDate: lodgingEndDate
+              });
+          }),
+          new Promise((resolve, reject) => {
+            google.script.run
+              .withSuccessHandler(resolve)
+              .withFailureHandler(reject)
+              .calculatePerDiem({
+                city: city,
+                state: state,
+                country: country || 'United States',
+                locationType: locationType,
+                startDate: mieStartDate,
+                endDate: mieEndDate
+              });
+          })
+        ]);
+
+        const success = lodgingResult.success || mieResult.success;
+
+        return {
+          success: success,
+          error: success ? null : (lodgingResult.error || mieResult.error || 'No rates found'),
+          // Rates from respective calculations
+          lodgingRate: lodgingResult.success ? lodgingResult.lodgingRate || 0 : 0,
+          mieRate: mieResult.success ? mieResult.mieRate || 0 : 0,
+          // Legacy aliases
+          lodging: lodgingResult.success ? lodgingResult.lodgingRate || 0 : 0,
+          mie: mieResult.success ? mieResult.mieRate || 0 : 0,
+          // Pre-calculated totals from respective date ranges
+          lodgingTotal: lodgingResult.success ? lodgingResult.lodgingTotal || 0 : 0,
+          mieTotal: mieResult.success ? mieResult.mieTotal || 0 : 0,
+          nights: lodgingResult.nights || 0,
+          days: mieResult.days || 0,
+          // Rate variation info
+          ratesVaried: (lodgingResult.ratesVaried || mieResult.ratesVaried) || false,
+          breakdown: null, // Not available with separate calls
+          // Combined per diem rate
+          perDiem: (lodgingResult.lodgingRate || 0) + (mieResult.mieRate || 0),
+          source: lodgingResult.source || mieResult.source || locationType,
+          raw: { lodging: lodgingResult, mie: mieResult }
+        };
+      }
+
+    } catch (error) {
+      console.error('Error fetching per diem rates:', error);
+      return { success: false, error: error.message || 'Failed to fetch rates' };
+    }
+  }
+
+  // ==========================================================================
+  // EXPORTS
+  // ==========================================================================
+
+  return {
+    // Mileage
+    loadMileageRates,
+    getMileageRate,
+    getMileageRates,
+
+    // Local travel
+    calculateLocalTravelReimbursement,
+
+    // Leg costs
+    calculateLegCosts,
+
+    // Transportation
+    calculateTransportationCosts,
+
+    // Other costs
+    calculateOtherCosts,
+
+    // Traveler totals
+    calculateTravelerTotals,
+
+    // Shared costs
+    calculateSharedCostsTotal,
+
+    // Grand total
+    calculateGrandTotal,
+
+    // Per diem fetching
+    getPerDiemRates
+  };
+})();
+</script>

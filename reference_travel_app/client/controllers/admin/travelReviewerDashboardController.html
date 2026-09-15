@@ -1,0 +1,1818 @@
+<script>
+/**
+ * TravelReviewerDashboardController
+ * Client controller for ?mode=reviewer-dashboard.
+ *
+ * Phase 7a: init, sidebar nav, period toggle (with custom range), action center, stat cards.
+ * Phase 7b: charts.
+ * Phase 7c: requests table + slide-in detail.
+ */
+(function() {
+  'use strict';
+
+  window.TravelReviewerDash = window.TravelReviewerDash || {};
+
+  // ---- Static helpers (mirrored on the namespace for inline onclick handlers) ----
+  window.TravelReviewerDash.navigateTo = function(mode, params) {
+    params = params || {};
+    var base = window.TravelReviewerDash._scriptUrl || '';
+    var qs = ['mode=' + encodeURIComponent(mode)];
+    Object.keys(params).forEach(function(k) {
+      qs.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
+    });
+    var url = base + '?' + qs.join('&');
+    // Use safeTopNavigate from navLoader — Chrome's sandbox blocks
+    // raw window.top.location.href assignments inside the GAS iframe,
+    // so the previous code silently no-op'd. The hidden-anchor + target=_top
+    // form goes through.
+    if (typeof safeTopNavigate === 'function') {
+      safeTopNavigate(url);
+    } else {
+      var top = window.top || window;
+      top.location.href = url;
+    }
+  };
+
+  // =========================================================================
+  // CONTROLLER
+  // =========================================================================
+
+  window.TravelReviewerDash.Controller = {
+    // ---- State ----
+    _ctx: null,
+    _data: null,
+    _period: '30d',
+    _customStart: null,
+    _customEnd: null,
+    _currentView: 'dashboard',
+    _customPicker: null,
+
+    // Requests view
+    _allRequests: [],
+    _filters: { status: 'all', scopeValue: '', startDate: '', endDate: '', searchTerm: '' },
+    _sort: { sortBy: 'submittedAt', sortDir: 'desc' },
+    _scopeFilterValues: [],
+    _requestsRendered: false,
+
+    // Slide-in
+    _slideinRequestId: null,
+    _slideinData: null,
+
+    // =========================================================================
+    // INITIALIZATION
+    // =========================================================================
+
+    init(ctx) {
+      this._ctx = ctx || {};
+      window.TravelReviewerDash._scriptUrl = ctx.scriptUrl || '';
+
+      // Weave the role label into the page title as a prefix so it
+      // reads as one phrase: "Air Force · Dashboard",
+      // "Air Force · AF1 · Dashboard", "Front Office · Dashboard".
+      // Falls back to plain "Dashboard" when there's no label
+      // (admin landed here without a viewing-as override).
+      var headerLabel = document.getElementById('reviewerHeaderLabel');
+      if (headerLabel) {
+        var label = (ctx.label || '').trim();
+        headerLabel.textContent = label ? (label + ' · Dashboard') : 'Dashboard';
+      }
+
+      this._setupSidebarNav();
+      this._setupPeriodToggle();
+      this._setupCustomDatePicker();
+      this._setupActionRibbon();
+      this._setupFilters();
+      this._setupSorting();
+      this._setupSlideInPanel();
+
+      this._loadDashboard();
+    },
+
+    // =========================================================================
+    // NAVIGATION
+    // =========================================================================
+
+    _setupSidebarNav() {
+      var self = this;
+      var items = document.querySelectorAll('.admin-nav__item');
+      items.forEach(function(item) {
+        item.addEventListener('click', function() {
+          var view = item.dataset.view;
+          if (!view) return;
+          self._switchView(view);
+          items.forEach(function(i) { i.classList.remove('admin-nav__item--active'); });
+          item.classList.add('admin-nav__item--active');
+        });
+      });
+    },
+
+    _switchView(view) {
+      document.querySelectorAll('.admin-view').forEach(function(v) { v.classList.add('hidden'); });
+      var map = { dashboard: 'dashboardView', requests: 'requestsView' };
+      var el = document.getElementById(map[view]);
+      if (el) el.classList.remove('hidden');
+      this._currentView = view;
+
+      if (view === 'requests' && !this._requestsRendered) {
+        this._renderFilterPills();
+        this._populateScopeFilter();
+        this._applyFiltersAndRender();
+        this._requestsRendered = true;
+      }
+    },
+
+    // =========================================================================
+    // PERIOD TOGGLE (with custom date range)
+    // =========================================================================
+
+    _setupPeriodToggle() {
+      var self = this;
+      var container = document.getElementById('periodToggle');
+      if (!container) return;
+
+      container.querySelectorAll('.period-toggle__btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var period = btn.dataset.period;
+          if (!period) return;
+
+          container.querySelectorAll('.period-toggle__btn').forEach(function(b) {
+            b.classList.remove('period-toggle__btn--active');
+          });
+          btn.classList.add('period-toggle__btn--active');
+
+          if (period === 'custom') {
+            if (self._customPicker) self._customPicker.open();
+            return;
+          }
+          self._period = period;
+          self._customStart = null;
+          self._customEnd = null;
+          var customBtn = document.getElementById('customPeriodBtn');
+          if (customBtn) customBtn.textContent = 'Custom';
+          self._loadDashboard();
+        });
+      });
+    },
+
+    /**
+     * Custom date range picker — anchored to the Custom button via
+     * positionElement so it drops down from the toggle instead of the
+     * top-left of the screen. Selected range shows up as the Custom
+     * button's label after the user picks both dates.
+     */
+    _setupCustomDatePicker() {
+      var self = this;
+      var input = document.getElementById('customDateRange');
+      var customBtn = document.getElementById('customPeriodBtn');
+      if (!input || !customBtn || typeof flatpickr === 'undefined') return;
+
+      this._customPicker = flatpickr(input, {
+        mode: 'range',
+        dateFormat: 'Y-m-d',
+        positionElement: customBtn,
+        clickOpens: false,
+        onClose: function(selectedDates) {
+          if (selectedDates.length !== 2) return;
+          self._period = 'custom';
+          self._customStart = selectedDates[0].toISOString();
+          self._customEnd = selectedDates[1].toISOString();
+          customBtn.textContent = self._formatRangeLabel(selectedDates[0], selectedDates[1]);
+          self._loadDashboard();
+        }
+      });
+    },
+
+    _formatRangeLabel(start, end) {
+      var fmt = function(d, withYear) {
+        var opts = { month: 'short', day: 'numeric' };
+        if (withYear) opts.year = 'numeric';
+        return d.toLocaleDateString('en-US', opts);
+      };
+      var thisYear = new Date().getFullYear();
+      var sameYearAsNow = start.getFullYear() === thisYear && end.getFullYear() === thisYear;
+      return fmt(start, !sameYearAsNow) + ' – ' + fmt(end, !sameYearAsNow);
+    },
+
+    // =========================================================================
+    // ACTION RIBBON — same focus-filter pattern as the admin dashboard
+    // =========================================================================
+
+    _setupActionRibbon() {
+      var self = this;
+      var ribbon = document.getElementById('actionRibbon');
+      var detail = document.getElementById('actionDetail');
+      if (!ribbon || !detail) return;
+
+      var storedExpanded = null;
+      var storedFocus = null;
+      try {
+        storedExpanded = localStorage.getItem('reviewer_actionDetailExpanded');
+        storedFocus = localStorage.getItem('reviewer_actionDetailFocus');
+      } catch (e) {}
+      var initialFocus = (storedFocus === 'reviews' || storedFocus === 'stalled') ? storedFocus : 'reviews';
+      self._setActionDetailExpanded(storedExpanded === '1', initialFocus);
+
+      ribbon.querySelectorAll('.action-ribbon__chip').forEach(function(chip) {
+        chip.addEventListener('click', function() {
+          var section = chip.dataset.section;
+          if (section === 'denied') {
+            self._filters.status = 'DENIED';
+            self._switchView('requests');
+            document.querySelectorAll('.admin-nav__item').forEach(function(item) {
+              item.classList.remove('admin-nav__item--active');
+              if (item.dataset.view === 'requests') item.classList.add('admin-nav__item--active');
+            });
+            return;
+          }
+          // Active chip → collapse; otherwise expand and focus the section.
+          var alreadyFocused = chip.classList.contains('action-ribbon__chip--active');
+          var isExpanded = !detail.classList.contains('is-collapsed');
+          if (alreadyFocused && isExpanded) {
+            self._setActionDetailExpanded(false, section);
+          } else {
+            self._setActionDetailExpanded(true, section);
+          }
+        });
+      });
+    },
+
+    _setActionDetailExpanded(expanded, focus) {
+      var detail = document.getElementById('actionDetail');
+      var ribbon = document.getElementById('actionRibbon');
+      if (!detail) return;
+
+      if (expanded) {
+        detail.classList.remove('is-collapsed');
+      } else {
+        detail.classList.add('is-collapsed');
+      }
+
+      detail.classList.remove('action-detail--focus-reviews', 'action-detail--focus-stalled');
+      if (expanded && focus === 'reviews') detail.classList.add('action-detail--focus-reviews');
+      else if (expanded && focus === 'stalled') detail.classList.add('action-detail--focus-stalled');
+
+      if (ribbon) {
+        ribbon.querySelectorAll('.action-ribbon__chip').forEach(function(c) {
+          c.classList.remove('action-ribbon__chip--active');
+        });
+        if (expanded && (focus === 'reviews' || focus === 'stalled')) {
+          var activeChipId = focus === 'reviews' ? 'ribbonChipReviews' : 'ribbonChipStalled';
+          var active = document.getElementById(activeChipId);
+          if (active) active.classList.add('action-ribbon__chip--active');
+        }
+      }
+
+      try {
+        localStorage.setItem('reviewer_actionDetailExpanded', expanded ? '1' : '0');
+        localStorage.setItem('reviewer_actionDetailFocus', focus || 'reviews');
+      } catch (e) {}
+    },
+
+    _updateActionRibbon(reviews, stalled, deniedCount, cancelledCount) {
+      var self = this;
+      var reviewsCount = (reviews && reviews.length) || 0;
+      var stalledCount = (stalled && stalled.length) || 0;
+      var deniedTotal = (deniedCount || 0) + (cancelledCount || 0);
+
+      var urgent = 0;
+      if (reviews && reviews.length) {
+        reviews.forEach(function(r) {
+          var d = self._calcDaysUntilTravel(r.eventStartDate);
+          if (d !== null && d <= 10) urgent++;
+        });
+      }
+
+      var rc = document.getElementById('ribbonReviewsCount');
+      if (rc) rc.textContent = reviewsCount;
+      var rChip = document.getElementById('ribbonChipReviews');
+      if (rChip) rChip.classList.toggle('action-ribbon__chip--zero', reviewsCount === 0);
+
+      var ru = document.getElementById('ribbonReviewsUrgent');
+      var ruc = document.getElementById('ribbonReviewsUrgentCount');
+      if (ru && ruc) {
+        if (urgent > 0) {
+          ruc.textContent = urgent;
+          ru.classList.remove('hidden');
+        } else {
+          ru.classList.add('hidden');
+        }
+      }
+
+      var sc = document.getElementById('ribbonStalledCount');
+      if (sc) sc.textContent = stalledCount;
+      var sChip = document.getElementById('ribbonChipStalled');
+      if (sChip) sChip.classList.toggle('action-ribbon__chip--zero', stalledCount === 0);
+
+      var dChip = document.getElementById('ribbonChipDenied');
+      var dCount = document.getElementById('ribbonDeniedCount');
+      var dLabel = document.getElementById('ribbonDeniedLabel');
+      if (dChip && dCount && dLabel) {
+        if (deniedTotal === 0) {
+          dChip.classList.add('hidden');
+        } else {
+          dChip.classList.remove('hidden');
+          dCount.textContent = deniedTotal;
+          var parts = [];
+          if (deniedCount > 0) parts.push('Denied');
+          if (cancelledCount > 0) parts.push('Cancelled');
+          dLabel.textContent = parts.join(' / ');
+        }
+      }
+    },
+
+    // =========================================================================
+    // DATA LOAD
+    // =========================================================================
+
+    _loadDashboard() {
+      var self = this;
+
+      // Dim metrics during reload
+      var statCards = document.getElementById('statCards');
+      var chartsRow = document.getElementById('chartsRow');
+      if (statCards) statCards.style.opacity = '0.4';
+      if (chartsRow) chartsRow.style.opacity = '0.4';
+
+      var viewAs = (this._ctx && this._ctx.viewAsParams) || null;
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success) {
+            self._data = result;
+            self._renderAll(result);
+          } else {
+            self._showToast('Error', (result && result.error) || 'Failed to load dashboard', 'error');
+            self._renderActionCenterEmpty();
+          }
+          self._removeSkeletons();
+          if (statCards) statCards.style.opacity = '1';
+          if (chartsRow) chartsRow.style.opacity = '1';
+        })
+        .withFailureHandler(function(err) {
+          console.error('getReviewerDashboard failed:', err);
+          self._showToast('Error', err && err.message || 'Failed to load dashboard', 'error');
+          self._renderActionCenterEmpty();
+          self._removeSkeletons();
+          if (statCards) statCards.style.opacity = '1';
+          if (chartsRow) chartsRow.style.opacity = '1';
+        })
+        .getReviewerDashboard(this._period, this._customStart, this._customEnd, viewAs);
+    },
+
+    _renderAll(data) {
+      this._renderActionCenter(data.actionCenter || {});
+      this._renderStatCards(data.metrics || {});
+      this._renderCharts(data.metrics || {});
+      this._updateNavPendingCount(data.metrics || {});
+
+      // Cache requests for the table view (rendered lazily on first switch)
+      this._allRequests = data.requests || [];
+      var ctx = data.context || {};
+      if (ctx.role === 'admin' || ctx.role === 'oso') {
+        this._scopeFilterValues = data.distinctBUCodes || [];
+      } else if (ctx.role === 'bu') {
+        this._scopeFilterValues = data.distinctSectorCodes || [];
+      } else if (ctx.role === 'sector') {
+        this._scopeFilterValues = data.distinctDivisionCodes || [];
+      }
+
+      // If user has already opened the requests view, refresh it now
+      if (this._requestsRendered) {
+        this._renderFilterPills();
+        this._populateScopeFilter();
+        this._applyFiltersAndRender();
+      }
+    },
+
+    _removeSkeletons() {
+      var pipelineSkeleton = document.getElementById('pipelineSkeleton');
+      if (pipelineSkeleton) pipelineSkeleton.remove();
+      var statCardsSkeleton = document.getElementById('statCardsSkeleton');
+      if (statCardsSkeleton) statCardsSkeleton.remove();
+    },
+
+    // =========================================================================
+    // ACTION CENTER
+    // =========================================================================
+
+    _renderActionCenter(ac) {
+      var reviews = ac.yourReviews || [];
+      var stalled = ac.stalled || [];
+      var dc = ac.deniedCancelledCounts || {};
+      this._renderYourReviews(reviews);
+      this._renderStalled(stalled);
+      this._renderDeniedCancelledAlert(dc.denied || 0, dc.cancelled || 0);
+      this._renderPipeline(ac.pipelineCounts || {});
+      this._updateActionRibbon(reviews, stalled, dc.denied || 0, dc.cancelled || 0);
+    },
+
+    _renderActionCenterEmpty() {
+      var reviewsList = document.getElementById('yourReviewsList');
+      if (reviewsList) {
+        reviewsList.innerHTML = '<div class="admin-empty" style="padding: var(--space-5);">' +
+          '<i aria-hidden="true" class="fas fa-check-circle"></i><p>No reviews waiting for you</p></div>';
+      }
+      var stalledList = document.getElementById('stalledRequestsList');
+      if (stalledList) {
+        stalledList.innerHTML = '<div class="admin-empty" style="padding: var(--space-5);">' +
+          '<i aria-hidden="true" class="fas fa-check-circle"></i><p>No stalled requests</p></div>';
+      }
+      this._updateActionRibbon([], [], 0, 0);
+    },
+
+    _renderYourReviews(reviews) {
+      var self = this;
+      var container = document.getElementById('yourReviewsList');
+      if (!container) return;
+
+      if (reviews.length === 0) {
+        container.innerHTML = '<div class="admin-empty" style="padding: var(--space-5);">' +
+          '<i aria-hidden="true" class="fas fa-check-circle"></i><p>No reviews waiting for you</p></div>';
+        return;
+      }
+
+      var html = '<div class="action-list">';
+      reviews.forEach(function(item) {
+        var statusDisplay = self._getStatusDisplay(item.status);
+        var days = self._getDaysAtStage(item.updatedAt);
+        var daysClass = self._getDaysClass(days);
+        var daysUntil = self._calcDaysUntilTravel(item.eventStartDate);
+        var urgentTag = (daysUntil !== null && daysUntil <= 10)
+          ? '<span class="action-item__urgent"><i aria-hidden="true" class="fas fa-bolt"></i>Urgent</span>'
+          : '';
+
+        html += '<div class="action-item" data-request-id="' + self._escapeHtml(item.requestId) + '">' +
+          '<div class="action-item__info">' +
+            '<div class="action-item__name">' + self._escapeHtml(item.submitterName || 'Unknown') + '</div>' +
+            '<div class="action-item__sub">' +
+              self._escapeHtml(item.tripName || 'Untitled') +
+              ' <span class="status-badge status-badge--' + statusDisplay.class + '">' + statusDisplay.label + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="action-item__meta">' +
+            urgentTag +
+            '<span class="action-item__days action-item__days--' + daysClass + '">' +
+              '<i aria-hidden="true" class="fas fa-clock"></i>' + days + 'd' +
+            '</span>' +
+          '</div>' +
+          '<div class="action-item__amount">' + self._formatCurrency(item.grandTotal) + '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+      container.innerHTML = html;
+
+      container.querySelectorAll('.action-item').forEach(function(el) {
+        el.addEventListener('click', function() {
+          var rid = el.dataset.requestId;
+          if (rid) self._openRequest(rid);
+        });
+      });
+    },
+
+    _renderStalled(stalled) {
+      var self = this;
+      var container = document.getElementById('stalledRequestsList');
+      if (!container) return;
+
+      if (stalled.length === 0) {
+        container.innerHTML = '<div class="admin-empty" style="padding: var(--space-5);">' +
+          '<i aria-hidden="true" class="fas fa-check-circle"></i><p>No stalled requests</p></div>';
+        return;
+      }
+
+      var html = '<div class="action-list">';
+      stalled.forEach(function(item) {
+        var statusDisplay = self._getStatusDisplay(item.status);
+        var days = self._getDaysAtStage(item.updatedAt);
+        var daysClass = self._getDaysClass(days);
+
+        html += '<div class="action-item" data-request-id="' + self._escapeHtml(item.requestId) + '">' +
+          '<div class="action-item__info">' +
+            '<div class="action-item__name">' +
+              self._escapeHtml(item.tripName || 'Untitled') +
+              ' <span class="status-badge status-badge--' + statusDisplay.class + '">' + statusDisplay.label + '</span>' +
+            '</div>' +
+            '<div class="action-item__sub">' +
+              '<i aria-hidden="true" class="fas fa-user" style="font-size:0.6rem; margin-right:3px;"></i>' +
+              self._escapeHtml(item.currentReviewerName || 'Unassigned') +
+            '</div>' +
+          '</div>' +
+          '<div class="action-item__meta">' +
+            '<span class="action-item__days action-item__days--' + daysClass + '">' +
+              '<i aria-hidden="true" class="fas fa-clock"></i>' + days + 'd' +
+            '</span>' +
+          '</div>' +
+          '<div class="action-item__amount">' + self._formatCurrency(item.grandTotal) + '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+      container.innerHTML = html;
+
+      container.querySelectorAll('.action-item').forEach(function(el) {
+        el.addEventListener('click', function() {
+          var rid = el.dataset.requestId;
+          if (rid) self._openRequest(rid);
+        });
+      });
+    },
+
+    _renderDeniedCancelledAlert(denied, cancelled) {
+      // Legacy alert stays hidden — the ribbon chip is the visible
+      // surface now. We still update its text + click handler so any
+      // external consumer that targets the same IDs keeps working.
+      var alertEl = document.getElementById('deniedCancelledAlert');
+      var textEl = document.getElementById('deniedCancelledText');
+      var linkEl = document.getElementById('viewDeniedLink');
+      if (!alertEl || !textEl) return;
+
+      if (denied === 0 && cancelled === 0) return;
+
+      var parts = [];
+      if (denied > 0) parts.push(denied + ' Denied');
+      if (cancelled > 0) parts.push(cancelled + ' Cancelled');
+
+      textEl.textContent = parts.join(' · ') + ' this month';
+
+      var self = this;
+      if (linkEl) {
+        linkEl.onclick = function(e) {
+          e.preventDefault();
+          self._filters.status = 'DENIED';
+          self._switchView('requests');
+          document.querySelectorAll('.admin-nav__item').forEach(function(item) {
+            item.classList.remove('admin-nav__item--active');
+            if (item.dataset.view === 'requests') item.classList.add('admin-nav__item--active');
+          });
+          self._renderFilterPills();
+          self._applyFiltersAndRender();
+        };
+      }
+    },
+
+    _renderPipeline(pipeline) {
+      var container = document.getElementById('pipelineRow');
+      if (!container) return;
+
+      var stages = [
+        { key: 'sector', label: 'Sector', cssClass: 'pending', status: 'PENDING_SECTOR' },
+        { key: 'bu', label: 'BU', cssClass: 'pending', status: 'PENDING_BU' },
+        { key: 'oso', label: 'AAS FO', cssClass: 'oso', status: 'PENDING_OSO' },
+        { key: 'fas', label: 'FAS', cssClass: 'oso', status: 'PENDING_FAS' },
+        { key: 'approved', label: 'Approved', cssClass: 'approved', status: 'APPROVED_GOGOV' }
+      ];
+
+      var html = '';
+      stages.forEach(function(stage) {
+        var count = (pipeline && pipeline[stage.key] !== undefined) ? pipeline[stage.key] : 0;
+        html += '<div class="pipeline-card pipeline-card--' + stage.cssClass + '" data-status="' + stage.status + '">' +
+          '<div class="pipeline-card__count">' + count + '</div>' +
+          '<div class="pipeline-card__label">' + stage.label + '</div>' +
+        '</div>';
+      });
+      container.innerHTML = html;
+
+      var self = this;
+      container.querySelectorAll('.pipeline-card').forEach(function(card) {
+        card.addEventListener('click', function() {
+          var status = card.dataset.status;
+          self._filters.status = status;
+          self._switchView('requests');
+          document.querySelectorAll('.admin-nav__item').forEach(function(item) {
+            item.classList.remove('admin-nav__item--active');
+            if (item.dataset.view === 'requests') item.classList.add('admin-nav__item--active');
+          });
+          self._renderFilterPills();
+          self._applyFiltersAndRender();
+        });
+      });
+    },
+
+    _updateNavPendingCount(metrics) {
+      var badge = document.getElementById('navPendingCount');
+      if (!badge) return;
+      var n = metrics.pendingInMyStage || 0;
+      if (n > 0) {
+        badge.textContent = n;
+        badge.style.display = '';
+      } else {
+        badge.textContent = '';
+        badge.style.display = 'none';
+      }
+    },
+
+    // =========================================================================
+    // STAT CARDS
+    // =========================================================================
+
+    _renderStatCards(metrics) {
+      var container = document.getElementById('statCards');
+      if (!container) return;
+
+      // Same 4 KPIs as the admin dashboard so reviewers and admins read
+      // the same aggregate health metrics. The values are already
+      // role-scoped on the server (BU reviewers see their BU's numbers,
+      // sector directors see their sector's, OSO/admins see all).
+      // Pending/Stalled/Denied counts live in the action ribbon, so the
+      // KPI strip only carries period-aware aggregates that don't
+      // duplicate ribbon state.
+      var totals = metrics.totals || {};
+      var avgApproval = metrics.avgApprovalTime || 0;
+      var avgLeadTime = metrics.avgLeadTime || 0;
+      var totalApprovedAmount = metrics.totalSpend || 0;
+      var totalApprovedCount = totals.approved || 0;
+      var approvalRate = metrics.approvalRate || 0;
+
+      var avgApprovalFmt = this._formatReviewDuration(avgApproval);
+      var avgLeadTimeFmt = this._formatReviewDuration(avgLeadTime);
+
+      var html =
+        '<div class="stat-card">' +
+          '<div class="stat-card__icon stat-card__icon--primary"><i aria-hidden="true" class="fas fa-stopwatch"></i></div>' +
+          '<div class="stat-card__label">Submit → Approval</div>' +
+          '<div class="stat-card__value">' + avgApprovalFmt.value + '</div>' +
+          '<div class="stat-card__sub">' + avgApprovalFmt.unit + ' end-to-end</div>' +
+        '</div>' +
+        '<div class="stat-card">' +
+          '<div class="stat-card__icon stat-card__icon--success"><i aria-hidden="true" class="fas fa-circle-check"></i></div>' +
+          '<div class="stat-card__label">Total Approved</div>' +
+          '<div class="stat-card__value">' + this._formatCurrency(totalApprovedAmount) + '</div>' +
+          '<div class="stat-card__sub">' + totalApprovedCount + ' request' + (totalApprovedCount === 1 ? '' : 's') + '</div>' +
+        '</div>' +
+        '<div class="stat-card">' +
+          '<div class="stat-card__icon stat-card__icon--warning"><i aria-hidden="true" class="fas fa-chart-pie"></i></div>' +
+          '<div class="stat-card__label">Approval Rate</div>' +
+          '<div class="stat-card__value">' + approvalRate + '%</div>' +
+          '<div class="stat-card__sub">of decided requests</div>' +
+        '</div>' +
+        '<div class="stat-card">' +
+          '<div class="stat-card__icon stat-card__icon--info"><i aria-hidden="true" class="fas fa-route"></i></div>' +
+          '<div class="stat-card__label">Avg Advance Notice</div>' +
+          '<div class="stat-card__value">' + avgLeadTimeFmt.value + '</div>' +
+          '<div class="stat-card__sub">' + avgLeadTimeFmt.unit + ' before event</div>' +
+        '</div>';
+
+      container.innerHTML = html;
+    },
+
+    // =========================================================================
+    // CHARTS
+    // =========================================================================
+
+    _renderCharts(metrics) {
+      var container = document.getElementById('chartsRow');
+      if (!container) return;
+
+      var spendLabel = metrics.spendByGroupLabel || 'Spend';
+
+      // Pre-compute totals so they sit in the card header beside the title.
+      var byStage = metrics.approvalTimeByStage || {};
+      var stageTotal = (byStage.sector || 0) + (byStage.bu || 0) + (byStage.oso || 0) + (byStage.fas || 0);
+      var stageTotalLabel = stageTotal > 0
+        ? '<span class="admin-card__header-total">' + stageTotal.toFixed(1) + ' <span class="admin-card__header-total-label">days avg</span></span>'
+        : '';
+
+      var spendByGroup = metrics.spendByGroup || {};
+      var spendGrandTotal = 0;
+      Object.keys(spendByGroup).forEach(function(k) { spendGrandTotal += (spendByGroup[k].total || 0); });
+      var spendTotalLabel = spendGrandTotal > 0
+        ? '<span class="admin-card__header-total">' + this._formatCurrency(spendGrandTotal) + ' <span class="admin-card__header-total-label">total approved</span></span>'
+        : '';
+
+      // Two charts side-by-side. Funding-source split lives in the pulse
+      // strip above the Live divider since it's a glance metric, not an
+      // analytical chart — keeps this row clean for the two charts that
+      // actually need horizontal bar-chart room.
+      var html =
+        '<div class="admin-card admin-card--chart">' +
+          '<div class="admin-card__header">' +
+            '<div>' +
+              '<h3 class="admin-card__title"><i aria-hidden="true" class="fas fa-clock"></i> Time per Stage</h3>' +
+              '<div class="admin-card__caption">Avg time each reviewer actively held the request</div>' +
+            '</div>' +
+            stageTotalLabel +
+          '</div>' +
+          '<div class="admin-card__body">' +
+            this._buildApprovalTimePipeline(metrics) +
+          '</div>' +
+        '</div>' +
+
+        '<div class="admin-card admin-card--chart">' +
+          '<div class="admin-card__header">' +
+            '<div>' +
+              '<h3 class="admin-card__title"><i aria-hidden="true" class="fas fa-dollar-sign"></i> ' + this._escapeHtml(spendLabel) + '</h3>' +
+              '<div class="admin-card__caption">Approved obligations in selected period</div>' +
+            '</div>' +
+            spendTotalLabel +
+          '</div>' +
+          '<div class="admin-card__body">' +
+            this._buildSpendByGroupChart(metrics) +
+          '</div>' +
+        '</div>';
+
+      container.innerHTML = html;
+
+      // Render the funding split into the pulse strip's funding row.
+      this._renderFundingSplitInPulse(metrics);
+    },
+
+    _renderFundingSplitInPulse(metrics) {
+      var container = document.getElementById('pulseFundingRow');
+      if (!container) return;
+
+      var fts = metrics.fundingTypeSpend || {};
+      var clientPaid = fts.clientPaid || { total: 0, count: 0 };
+      var overhead = fts.overhead || { total: 0, count: 0 };
+      var total = (clientPaid.total || 0) + (overhead.total || 0);
+
+      if (total === 0) {
+        container.innerHTML = '<div class="funding-strip funding-strip--empty">No approved spend yet</div>';
+        return;
+      }
+
+      var clientPct = (clientPaid.total / total) * 100;
+      var overheadPct = 100 - clientPct;
+      var clientColor = '#286D3B';
+      var overheadColor = '#004f87';
+      var self = this;
+
+      var html = '<div class="funding-strip">';
+      html += '<div class="funding-strip__head">' +
+        '<span class="funding-strip__label">Funding Source</span>' +
+        '<span class="funding-strip__total">' + self._formatCurrency(total) + ' approved</span>' +
+        '</div>';
+      html += '<div class="funding-strip__bar">';
+      if (clientPaid.total > 0) {
+        html += '<div class="funding-strip__seg" style="width:' + clientPct.toFixed(2) + '%; background:' + clientColor + ';" title="Client-Paid: ' + self._formatCurrency(clientPaid.total) + '"></div>';
+      }
+      if (overhead.total > 0) {
+        html += '<div class="funding-strip__seg" style="width:' + overheadPct.toFixed(2) + '%; background:' + overheadColor + ';" title="Overhead: ' + self._formatCurrency(overhead.total) + '"></div>';
+      }
+      html += '</div>';
+      html += '<div class="funding-strip__legend">';
+      html += '<span class="funding-strip__legend-item">' +
+        '<span class="funding-strip__dot" style="background:' + clientColor + ';"></span>' +
+        '<span class="funding-strip__legend-name">Client-Paid</span>' +
+        '<span class="funding-strip__legend-pct">' + Math.round(clientPct) + '%</span>' +
+        '<span class="funding-strip__legend-value">' + self._formatCurrency(clientPaid.total) + '</span>' +
+        '</span>';
+      html += '<span class="funding-strip__legend-item">' +
+        '<span class="funding-strip__dot" style="background:' + overheadColor + ';"></span>' +
+        '<span class="funding-strip__legend-name">Overhead</span>' +
+        '<span class="funding-strip__legend-pct">' + Math.round(overheadPct) + '%</span>' +
+        '<span class="funding-strip__legend-value">' + self._formatCurrency(overhead.total) + '</span>' +
+        '</span>';
+      html += '</div>';
+      html += '</div>';
+
+      container.innerHTML = html;
+    },
+
+    _buildApprovalTimePipeline(metrics) {
+      var byStage = metrics.approvalTimeByStage || {};
+      var stages = [
+        { key: 'sector', label: 'Sector', color: '#004f87' },
+        { key: 'bu', label: 'BU', color: '#1B7CAC' },
+        { key: 'oso', label: 'AAS FO', color: '#CF4817' },
+        { key: 'fas', label: 'FAS', color: '#286D3B' }
+      ];
+
+      var total = 0;
+      var stageData = [];
+      stages.forEach(function(s) {
+        var val = byStage[s.key] || 0;
+        total += val;
+        stageData.push({ label: s.label, value: val, color: s.color });
+      });
+
+      if (total === 0) {
+        return '<p style="font-size:0.8rem; color:var(--color-slate-400); text-align:center;">No approval data yet</p>';
+      }
+
+      // Format helper: sub-day values render as hours (e.g. "46m" / "8.2h"),
+      // multi-day values as days. Server now sends raw fractional business
+      // days so we can pick the right unit without losing same-day reviews
+      // to rounding. A truly empty stage shows '—'.
+      function _fmt(daysVal) {
+        if (!daysVal || daysVal <= 0) return '—';
+        var hours = daysVal * 24;
+        if (hours < 1) return Math.round(hours * 60) + 'm';
+        if (daysVal < 1) return hours.toFixed(1) + 'h';
+        return daysVal.toFixed(1) + 'd';
+      }
+
+      // Total renders in the card header (see _renderCharts); body-only here.
+      var html = '<div class="pipeline">';
+      html += '<div class="pipeline__bar">';
+      stageData.forEach(function(s) {
+        var pct = (s.value / total) * 100;
+        if (pct < 1 && s.value > 0) pct = 1;
+        html += '<div class="pipeline__segment" style="width:' + pct + '%; background:' + s.color + ';" title="' + s.label + ': ' + _fmt(s.value) + '"></div>';
+      });
+      html += '</div>';
+
+      html += '<div class="pipeline__legend">';
+      stageData.forEach(function(s) {
+        var pct = total > 0 ? ((s.value / total) * 100).toFixed(0) : 0;
+        html += '<div class="pipeline__legend-item">' +
+          '<span class="pipeline__dot" style="background:' + s.color + ';"></span>' +
+          '<span class="pipeline__legend-label">' + s.label + '</span>' +
+          '<span class="pipeline__legend-value">' + _fmt(s.value) + '</span>' +
+          '<span class="pipeline__legend-pct">' + (s.value > 0 ? pct + '%' : '') + '</span>' +
+        '</div>';
+      });
+      html += '</div>';
+      html += '</div>';
+
+      return html;
+    },
+
+    _buildSpendByGroupChart(metrics) {
+      var self = this;
+      var spend = metrics.spendByGroup || {};
+      var entries = Object.keys(spend)
+        .map(function(k) { return { label: k, value: spend[k].total || 0, count: spend[k].count || 0 }; })
+        .filter(function(e) { return e.value > 0; });
+
+      if (entries.length === 0) {
+        return '<p style="font-size:0.8rem; color:var(--color-slate-400); text-align:center;">No approved spend yet</p>';
+      }
+
+      // Alphabetical so the order is predictable across reloads.
+      // 'FO' sorts before 'Sector N' naturally (F < S).
+      entries.sort(function(a, b) { return a.label.localeCompare(b.label); });
+
+      var grandTotal = 0;
+      entries.forEach(function(e) { grandTotal += e.value; });
+
+      var maxValue = Math.max.apply(null, entries.map(function(e) { return e.value; }));
+      if (maxValue === 0) maxValue = 1;
+
+      // Total renders in the card header (see _renderCharts); body-only here.
+      var html = '<div class="bar-chart">';
+
+      entries.forEach(function(item) {
+        var pct = (item.value / maxValue) * 100;
+        html += '<div class="bar-chart__row">' +
+          '<div class="bar-chart__label">' + self._escapeHtml(item.label) + '</div>' +
+          '<div class="bar-chart__track">' +
+            '<div class="bar-chart__fill" style="width:' + pct + '%"></div>' +
+          '</div>' +
+          '<div class="bar-chart__value">' + self._formatCurrency(item.value) +
+            ' <span class="bar-chart__count">(' + item.count + ')</span></div>' +
+        '</div>';
+      });
+      html += '</div>';
+
+      return html;
+    },
+
+    // =========================================================================
+    // ROUTING (request detail — full slide-in panel comes in 7c)
+    // =========================================================================
+
+    _openRequest(requestId) {
+      this._openSlideIn(requestId);
+    },
+
+    // =========================================================================
+    // HELPERS
+    // =========================================================================
+
+    _escapeHtml(text) {
+      if (!text && text !== 0) return '';
+      var div = document.createElement('div');
+      div.textContent = String(text);
+      return div.innerHTML;
+    },
+
+    _formatCurrency(amount) {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(amount || 0);
+    },
+
+    /**
+     * Format a duration in days into a stat-card-friendly object — used
+     * by the unified KPI strip so reviewer numbers render the same way
+     * the admin dashboard does (hours under 1 day, otherwise days).
+     */
+    _formatReviewDuration(days) {
+      var n = parseFloat(days) || 0;
+      if (n <= 0) return { value: '0', unit: 'days', short: '—', full: '—' };
+      if (n < 1) {
+        var hrs = Math.round(n * 24 * 10) / 10;
+        var hStr = (hrs < 10 ? hrs.toFixed(1) : Math.round(hrs).toString());
+        return { value: hStr, unit: 'hours', short: hStr + 'h', full: hStr + (hrs === 1 ? ' hour' : ' hours') };
+      }
+      var dStr = n.toFixed(1);
+      return { value: dStr, unit: 'days', short: dStr + 'd', full: dStr + (n === 1 ? ' day' : ' days') };
+    },
+
+    _getStatusDisplay(status) {
+      var map = {
+        'PENDING_SECTOR': { label: 'Sector Review', class: 'pending' },
+        'PENDING_BU': { label: 'BU Review', class: 'pending' },
+        'PENDING_OSO': { label: 'AAS FO Review', class: 'pending-oso' },
+        'PENDING_FAS': { label: 'FAS Review', class: 'pending-oso' },
+        'NEEDS_INFO_SECTOR': { label: 'Needs Info', class: 'needs-info' },
+        'NEEDS_INFO_BU': { label: 'Needs Info', class: 'needs-info' },
+        'NEEDS_INFO_OSO': { label: 'Needs Info', class: 'needs-info' },
+        'APPROVED_GOGOV': { label: 'Approved', class: 'approved' },
+        'COMPLETED': { label: 'Completed', class: 'completed' },
+        'DENIED': { label: 'Denied', class: 'denied' },
+        'CANCELLED': { label: 'Cancelled', class: 'cancelled' }
+      };
+      return map[status] || { label: status || 'Unknown', class: 'pending' };
+    },
+
+    /**
+     * Whether a status is "terminal" — request is finalized; Days at
+     * Stage and Reviewer no longer apply. Mirrors admin dashboard.
+     */
+    _isTerminalStatus(status) {
+      return status === 'APPROVED_GOGOV'
+          || status === 'COMPLETED'
+          || status === 'DENIED'
+          || status === 'CANCELLED'
+          || status === 'SUBMITTER_CANCELLED';
+    },
+
+    _getDaysAtStage(updatedAt) {
+      if (!updatedAt) return 0;
+      try {
+        var d = new Date(updatedAt);
+        if (isNaN(d.getTime())) return 0;
+        return Math.round((new Date() - d) / (1000 * 60 * 60 * 24));
+      } catch (e) { return 0; }
+    },
+
+    _getDaysClass(days) {
+      if (days < 2) return 'ok';
+      if (days < 5) return 'warn';
+      return 'critical';
+    },
+
+    _calcDaysUntilTravel(eventStartDate) {
+      if (!eventStartDate) return null;
+      try {
+        var s = new Date(eventStartDate);
+        if (isNaN(s.getTime())) return null;
+        var now = new Date();
+        now.setHours(0, 0, 0, 0);
+        s.setHours(0, 0, 0, 0);
+        return Math.round((s - now) / (1000 * 60 * 60 * 24));
+      } catch (e) { return null; }
+    },
+
+    /**
+     * Build the travel-status chip for the slide-in panel.
+     * Returns the HTML for a chip describing the trip's date posture
+     * (upcoming-soon / today / currently-traveling), or '' when there's
+     * nothing time-sensitive to call out (no dates, far-future trip,
+     * or trip already concluded).
+     */
+    _buildTravelChip(eventStartDate, eventEndDate) {
+      if (!eventStartDate) return '';
+      var daysUntil = this._calcDaysUntilTravel(eventStartDate);
+      if (daysUntil === null) return '';
+
+      // Currently traveling — today is between start and end (inclusive).
+      // We compare end to today; daysUntil < 0 means start was in the past.
+      if (daysUntil < 0 && eventEndDate) {
+        var end = new Date(eventEndDate);
+        var today = new Date();
+        today.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+        if (!isNaN(end.getTime()) && end >= today) {
+          return '<span class="slidein__urgent-tag slidein__urgent-tag--current"><i aria-hidden="true" class="fas fa-plane"></i> Currently traveling</span>';
+        }
+        // Past trip — chip would be misleading, hide.
+        return '';
+      }
+
+      if (daysUntil < 0) return '';            // Past trip with no end date
+      if (daysUntil === 0) return '<span class="slidein__urgent-tag"><i aria-hidden="true" class="fas fa-bolt"></i> Travel today</span>';
+      if (daysUntil <= 10) return '<span class="slidein__urgent-tag"><i aria-hidden="true" class="fas fa-bolt"></i> Travel in ' + daysUntil + ' day' + (daysUntil === 1 ? '' : 's') + '</span>';
+      return '';                               // Far-future trip — not urgent enough
+    },
+
+    // =========================================================================
+    // REQUESTS VIEW — filter pills, filters, sort, table
+    // =========================================================================
+
+    _renderFilterPills() {
+      var self = this;
+      var container = document.getElementById('statusFilterPills');
+      if (!container) return;
+
+      // Pills grouped: quick filters → in-flight stages → decided
+      // outcomes. Mirrors the admin dashboard. Subtle dividers between
+      // clusters parse "what's still moving" vs "what's settled".
+      var pillGroups = [
+        { items: [
+          { key: 'all', label: 'All' },
+          { key: 'pending', label: 'Pending' }
+        ]},
+        { items: [
+          { key: 'PENDING_SECTOR', label: 'Sector' },
+          { key: 'PENDING_BU', label: 'BU' },
+          { key: 'PENDING_OSO', label: 'AAS FO' },
+          { key: 'PENDING_FAS', label: 'FAS' }
+        ]},
+        { items: [
+          { key: 'APPROVED_GOGOV', label: 'Approved' },
+          { key: 'DENIED', label: 'Denied' },
+          { key: 'CANCELLED', label: 'Cancelled' }
+        ]}
+      ];
+
+      var html = '';
+      pillGroups.forEach(function(group, gi) {
+        if (gi > 0) html += '<span class="filter-pills__divider" aria-hidden="true"></span>';
+        group.items.forEach(function(p) {
+          var isActive = self._filters.status === p.key;
+          html += '<button class="filter-pill' + (isActive ? ' filter-pill--active' : '') + '" data-status="' + p.key + '">' +
+            self._escapeHtml(p.label) +
+          '</button>';
+        });
+      });
+      container.innerHTML = html;
+
+      container.querySelectorAll('.filter-pill[data-status]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          container.querySelectorAll('.filter-pill').forEach(function(b) { b.classList.remove('filter-pill--active'); });
+          btn.classList.add('filter-pill--active');
+          self._filters.status = btn.dataset.status;
+          self._applyFiltersAndRender();
+        });
+      });
+    },
+
+    _setupFilters() {
+      var self = this;
+
+      // Scope (Group) filter — wraps in .filter-input-wrap for the X.
+      var scopeEl = document.getElementById('filterScope');
+      var scopeWrap = document.getElementById('filterScopeWrap');
+      var scopeClear = document.getElementById('filterScopeClear');
+      var setScopeHasValue = function() {
+        if (!scopeWrap) return;
+        if (scopeEl && scopeEl.value) scopeWrap.classList.add('has-value');
+        else scopeWrap.classList.remove('has-value');
+      };
+      if (scopeEl) {
+        scopeEl.addEventListener('change', function() {
+          self._filters.scopeValue = scopeEl.value;
+          setScopeHasValue();
+          self._applyFiltersAndRender();
+        });
+      }
+      if (scopeClear && scopeEl) {
+        scopeClear.addEventListener('click', function() {
+          scopeEl.value = '';
+          self._filters.scopeValue = '';
+          setScopeHasValue();
+          self._applyFiltersAndRender();
+        });
+      }
+
+      // Date range — same wrap pattern + clear-X.
+      var dateRangeEl = document.getElementById('filterDateRange');
+      var dateWrap = document.getElementById('filterDateRangeWrap');
+      var dateClear = document.getElementById('filterDateRangeClear');
+      var setDateHasValue = function() {
+        if (!dateWrap) return;
+        if (dateRangeEl && dateRangeEl.value) dateWrap.classList.add('has-value');
+        else dateWrap.classList.remove('has-value');
+      };
+      if (dateRangeEl && typeof flatpickr !== 'undefined') {
+        var datePicker = flatpickr(dateRangeEl, {
+          mode: 'range',
+          dateFormat: 'Y-m-d',
+          onChange: function(selectedDates) {
+            if (selectedDates.length === 2) {
+              self._filters.startDate = selectedDates[0].toISOString().split('T')[0];
+              self._filters.endDate = selectedDates[1].toISOString().split('T')[0];
+            } else {
+              self._filters.startDate = '';
+              self._filters.endDate = '';
+            }
+            setDateHasValue();
+            self._applyFiltersAndRender();
+          }
+        });
+        self._dateRangePicker = datePicker;
+      }
+      if (dateClear && dateRangeEl) {
+        dateClear.addEventListener('click', function() {
+          if (self._dateRangePicker) self._dateRangePicker.clear();
+          dateRangeEl.value = '';
+          self._filters.startDate = '';
+          self._filters.endDate = '';
+          setDateHasValue();
+          self._applyFiltersAndRender();
+        });
+      }
+
+      var searchEl = document.getElementById('filterSearch');
+      if (searchEl) {
+        var t;
+        searchEl.addEventListener('input', function() {
+          clearTimeout(t);
+          t = setTimeout(function() {
+            self._filters.searchTerm = searchEl.value;
+            self._applyFiltersAndRender();
+          }, 300);
+        });
+      }
+    },
+
+    _setupSorting() {
+      var self = this;
+      document.querySelectorAll('.admin-table th.sortable').forEach(function(th) {
+        th.addEventListener('click', function() {
+          var sortBy = th.dataset.sort;
+          if (!sortBy) return;
+          if (self._sort.sortBy === sortBy) {
+            self._sort.sortDir = self._sort.sortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            self._sort.sortBy = sortBy;
+            self._sort.sortDir = 'desc';
+          }
+          self._applyFiltersAndRender();
+        });
+      });
+    },
+
+    _populateScopeFilter() {
+      var role = (this._ctx && this._ctx.role) || 'admin';
+      var labelEl = document.getElementById('filterScopeLabel');
+      var thScopeEl = document.getElementById('thScope');
+      var selectEl = document.getElementById('filterScope');
+      if (!labelEl || !selectEl) return;
+
+      var label, allText;
+      if (role === 'admin' || role === 'oso') {
+        label = 'BU'; allText = 'All BUs';
+      } else if (role === 'bu') {
+        label = 'Sector'; allText = 'All Sectors';
+      } else if (role === 'sector') {
+        label = 'Division'; allText = 'All Divisions';
+      } else {
+        label = 'Group'; allText = 'All';
+      }
+
+      labelEl.textContent = label;
+      if (thScopeEl) thScopeEl.textContent = label;
+
+      var html = '<option value="">' + allText + '</option>';
+      (this._scopeFilterValues || []).forEach(function(v) {
+        html += '<option value="' + v + '">' + v + '</option>';
+      });
+      selectEl.innerHTML = html;
+      selectEl.value = this._filters.scopeValue || '';
+    },
+
+    _scopeMatch(req, scopeValue) {
+      if (!scopeValue) return true;
+      var role = (this._ctx && this._ctx.role) || 'admin';
+      if (role === 'admin' || role === 'oso') return req.buCode === scopeValue;
+      if (role === 'bu') return req.sectorCode === scopeValue;
+      if (role === 'sector') return req.submitterOrgCode === scopeValue;
+      return true;
+    },
+
+    _applyFiltersAndRender() {
+      var self = this;
+
+      // Split before filtering. The main table is for "Requests you
+      // manage" — rows where the submitter is in the user's scope.
+      // Traveler-only matches go into the "Trips involving your staff"
+      // section below, which doesn't share the filter UI (it's
+      // awareness-only and the count is always small).
+      var manageRequests = [];
+      var tripsInvolving = [];
+      (this._allRequests || []).forEach(function(r) {
+        // submitterInScope flag is set server-side. Older payloads might
+        // not have it; default to true so behavior degrades to the old
+        // "show everything in scope in the main table."
+        if (r.submitterInScope === false) {
+          tripsInvolving.push(r);
+        } else {
+          manageRequests.push(r);
+        }
+      });
+
+      var filtered = manageRequests.filter(function(r) {
+        if (self._filters.status && self._filters.status !== 'all') {
+          if (self._filters.status === 'pending') {
+            if (r.status.indexOf('PENDING_') !== 0 && r.status.indexOf('NEEDS_INFO_') !== 0) return false;
+          } else if (r.status !== self._filters.status) {
+            return false;
+          }
+        }
+        if (!self._scopeMatch(r, self._filters.scopeValue)) return false;
+        if (self._filters.startDate) {
+          if (new Date(r.submittedAt) < new Date(self._filters.startDate)) return false;
+        }
+        if (self._filters.endDate) {
+          var end = new Date(self._filters.endDate);
+          end.setHours(23, 59, 59, 999);
+          if (new Date(r.submittedAt) > end) return false;
+        }
+        if (self._filters.searchTerm) {
+          var q = self._filters.searchTerm.toLowerCase();
+          var fields = [r.requestId, r.tripName, r.submitterName, r.submitterEmail, r.currentReviewerName].join(' ').toLowerCase();
+          if (fields.indexOf(q) === -1) return false;
+        }
+        return true;
+      });
+
+      var sortBy = this._sort.sortBy || 'submittedAt';
+      var sortDir = this._sort.sortDir || 'desc';
+      var dateFields = { submittedAt: 1, updatedAt: 1, eventStartDate: 1 };
+      var numFields = { grandTotal: 1, travelerCount: 1 };
+
+      filtered.sort(function(a, b) {
+        var aVal = a[sortBy], bVal = b[sortBy];
+        if (dateFields[sortBy]) {
+          aVal = aVal ? new Date(aVal).getTime() : 0;
+          bVal = bVal ? new Date(bVal).getTime() : 0;
+        } else if (numFields[sortBy]) {
+          aVal = parseFloat(aVal) || 0;
+          bVal = parseFloat(bVal) || 0;
+        }
+        if (sortDir === 'desc') return bVal > aVal ? 1 : bVal < aVal ? -1 : 0;
+        return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+      });
+
+      this._renderRequestsTable(filtered);
+      this._updateRequestsCount(filtered.length, manageRequests.length);
+      this._renderTripsInvolvingStaff(tripsInvolving);
+    },
+
+    /**
+     * Render the awareness-only "Trips involving your staff" list below
+     * the main table. Trips are split into:
+     *   - upcoming/current: event end date >= today (or no end date set)
+     *   - recent past: event end date within the last 30 days
+     *   - older: dropped (not surfaced anywhere — they're not relevant)
+     * The recent-past list is hidden behind a "Show past trips (N)"
+     * toggle so the default view stays forward-looking. Section hides
+     * entirely when both buckets are empty.
+     */
+    _renderTripsInvolvingStaff(trips) {
+      var self = this;
+      var section = document.getElementById('tripsInvolvingSection');
+      var list = document.getElementById('tripsInvolvingList');
+      var countEl = document.getElementById('tripsInvolvingCount');
+      if (!section || !list) return;
+
+      // Date thresholds — all comparisons against midnight today, so a
+      // trip that ends "today" still counts as upcoming/current.
+      var todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      var pastCutoff = new Date(todayStart.getTime() - (30 * 24 * 60 * 60 * 1000));
+
+      var upcoming = [];
+      var pastRecent = [];
+      (trips || []).forEach(function(r) {
+        var endStr = r.eventEndDate || r.eventStartDate;
+        if (!endStr) { upcoming.push(r); return; }  // no date → assume upcoming
+        var endDate = new Date(endStr);
+        if (isNaN(endDate.getTime())) { upcoming.push(r); return; }
+        if (endDate >= todayStart) upcoming.push(r);
+        else if (endDate >= pastCutoff) pastRecent.push(r);
+        // else: older than 30 days, drop
+      });
+
+      // Hide entirely when there's nothing to show in either bucket.
+      if (upcoming.length === 0 && pastRecent.length === 0) {
+        section.classList.add('hidden');
+        list.innerHTML = '';
+        if (countEl) countEl.textContent = '';
+        return;
+      }
+
+      // Soonest upcoming first, then by trip start ascending.
+      upcoming.sort(function(a, b) {
+        var aT = a.eventStartDate ? new Date(a.eventStartDate).getTime() : Number.POSITIVE_INFINITY;
+        var bT = b.eventStartDate ? new Date(b.eventStartDate).getTime() : Number.POSITIVE_INFINITY;
+        return aT - bT;
+      });
+      // Most-recently-ended past first.
+      pastRecent.sort(function(a, b) {
+        var aE = a.eventEndDate || a.eventStartDate;
+        var bE = b.eventEndDate || b.eventStartDate;
+        var aT = aE ? new Date(aE).getTime() : 0;
+        var bT = bE ? new Date(bE).getTime() : 0;
+        return bT - aT;
+      });
+
+      function _rowHtml(r) {
+        var staffNames = (r.inScopeTravelerNames || []).map(function(n) {
+          return self._escapeHtml(n);
+        }).join(', ') || self._escapeHtml(r.submitterName || '');
+        var statusDisplay = self._getStatusDisplay(r.status);
+        var startStr = r.eventStartDate ? self._formatDate(r.eventStartDate) : '';
+        var endStr = r.eventEndDate ? self._formatDate(r.eventEndDate) : '';
+        var dateRange = startStr && endStr && startStr !== endStr
+          ? (startStr + ' – ' + endStr)
+          : (startStr || endStr || '');
+        return '<div class="trips-involving__row" data-request-id="' + self._escapeHtml(r.requestId) + '">' +
+          '<div class="trips-involving__row-main">' +
+            '<span class="trips-involving__staff"><i aria-hidden="true" class="fas fa-user"></i> ' + staffNames + '</span>' +
+            '<span class="trips-involving__trip">' + self._escapeHtml(r.tripName || 'Untitled') + '</span>' +
+          '</div>' +
+          '<div class="trips-involving__row-meta">' +
+            (dateRange ? '<span class="trips-involving__dates">' + dateRange + '</span>' : '') +
+            '<span class="status-badge status-badge--' + statusDisplay.class + '">' + statusDisplay.label + '</span>' +
+            '<span class="trips-involving__submitter">via ' + self._escapeHtml(r.submitterName || 'Unknown') + '</span>' +
+          '</div>' +
+        '</div>';
+      }
+
+      var html = upcoming.map(_rowHtml).join('');
+      if (pastRecent.length > 0) {
+        html += '<button type="button" class="trips-involving__past-toggle" id="tripsInvolvingPastToggle" aria-expanded="false">' +
+          '<i aria-hidden="true" class="fas fa-chevron-right" id="tripsInvolvingPastChevron"></i> ' +
+          'Show past trips (' + pastRecent.length + ')' +
+          '</button>' +
+          '<div class="trips-involving__past hidden" id="tripsInvolvingPast">' +
+          pastRecent.map(_rowHtml).join('') +
+          '</div>';
+      }
+      list.innerHTML = html;
+
+      if (countEl) countEl.textContent = '(' + upcoming.length + ')';
+      section.classList.remove('hidden');
+
+      // Click on a row → slide-in detail panel. Same UX as the main table.
+      list.querySelectorAll('.trips-involving__row').forEach(function(rowEl) {
+        rowEl.addEventListener('click', function() {
+          var rid = rowEl.dataset.requestId;
+          if (rid && self._openSlideIn) self._openSlideIn(rid);
+        });
+      });
+
+      // Wire up the past-trips toggle.
+      var toggleBtn = document.getElementById('tripsInvolvingPastToggle');
+      var pastEl = document.getElementById('tripsInvolvingPast');
+      var chevron = document.getElementById('tripsInvolvingPastChevron');
+      if (toggleBtn && pastEl) {
+        toggleBtn.addEventListener('click', function() {
+          var isOpen = !pastEl.classList.contains('hidden');
+          pastEl.classList.toggle('hidden', isOpen);
+          toggleBtn.setAttribute('aria-expanded', String(!isOpen));
+          if (chevron) {
+            chevron.classList.toggle('fa-chevron-right', isOpen);
+            chevron.classList.toggle('fa-chevron-down', !isOpen);
+          }
+          // Update label to reflect open/closed state
+          var label = (!isOpen ? 'Hide' : 'Show') + ' past trips (' + pastRecent.length + ')';
+          toggleBtn.innerHTML = '<i aria-hidden="true" class="fas ' + (!isOpen ? 'fa-chevron-down' : 'fa-chevron-right') +
+            '" id="tripsInvolvingPastChevron"></i> ' + label;
+        });
+      }
+    },
+
+    _updateRequestsCount(shown, total) {
+      var el = document.getElementById('requestsRowCount');
+      if (!el) return;
+      if (!total) { el.textContent = ''; return; }
+      var fmt = function(n) { return Number(n).toLocaleString('en-US'); };
+      el.textContent = (shown === total)
+        ? fmt(total) + (total === 1 ? ' request' : ' requests')
+        : 'Showing ' + fmt(shown) + ' of ' + fmt(total);
+    },
+
+    _renderRequestsTable(requests) {
+      var self = this;
+      var tbody = document.getElementById('requestsTableBody');
+      if (!tbody) return;
+
+      document.querySelectorAll('.admin-table th.sortable').forEach(function(th) {
+        th.classList.remove('sorted-asc', 'sorted-desc');
+        if (th.dataset.sort === self._sort.sortBy) {
+          th.classList.add('sorted-' + self._sort.sortDir);
+        }
+      });
+
+      if (requests.length === 0) {
+        tbody.innerHTML = '<tr class="admin-table__empty-row"><td colspan="9" class="admin-table__empty">' +
+          '<i aria-hidden="true" class="fas fa-filter-circle-xmark"></i>' +
+          '<div class="admin-table__empty-title">No requests match your filters</div>' +
+          '<div class="admin-table__empty-help">Try clearing the date range or selecting a different status</div>' +
+        '</td></tr>';
+        this._updateRequestsCount(0, (this._allRequests || []).length);
+        return;
+      }
+
+      var role = (this._ctx && this._ctx.role) || 'admin';
+
+      var rows = requests.map(function(r) {
+        var statusDisplay = self._getStatusDisplay(r.status);
+        var days = self._getDaysAtStage(r.updatedAt);
+        var daysClass = self._getDaysClass(days);
+        var isTerminal = self._isTerminalStatus(r.status);
+
+        var scopeCell;
+        if (role === 'admin' || role === 'oso') scopeCell = self._escapeHtml(r.buCode || '');
+        else if (role === 'bu') scopeCell = self._escapeHtml(r.sectorCode || '');
+        else if (role === 'sector') scopeCell = self._escapeHtml(r.submitterOrgCode || '');
+        else scopeCell = self._escapeHtml(r.buCode || '');
+
+        // Terminal rows suppress active-stage fields (Days at Stage,
+        // Reviewer) — same treatment as the admin dashboard.
+        var daysCellHtml = isTerminal
+          ? '<td class="days-cell days-cell--terminal">—</td>'
+          : '<td class="days-cell days-cell--' + daysClass + '">' + days + 'd</td>';
+        var reviewerCellHtml = isTerminal
+          ? '<td class="reviewer-cell reviewer-cell--terminal">—</td>'
+          : '<td class="reviewer-cell">' + self._escapeHtml(r.currentReviewerName || '') + '</td>';
+
+        return '<tr data-request-id="' + self._escapeHtml(r.requestId) + '"' + (isTerminal ? ' class="is-terminal"' : '') + '>' +
+          '<td><code style="font-size:0.7rem;">' + self._escapeHtml(r.requestId) + '</code></td>' +
+          '<td title="' + self._escapeHtml(r.tripName || 'Untitled') + '"><div class="trip-name-clamp">' + self._escapeHtml(r.tripName || 'Untitled') + '</div></td>' +
+          '<td class="submitter-cell">' +
+            '<div class="submitter-cell__name">' + self._escapeHtml(r.submitterName || 'Unknown') + '</div>' +
+            '<div class="submitter-cell__email">' + self._escapeHtml(r.submitterEmail || '') + '</div>' +
+          '</td>' +
+          '<td><span class="status-badge status-badge--' + statusDisplay.class + '">' + statusDisplay.label + '</span></td>' +
+          '<td>' + scopeCell + '</td>' +
+          '<td class="amount-cell">' + self._formatCurrency(r.grandTotal) + '</td>' +
+          '<td>' + self._formatDate(r.submittedAt) + '</td>' +
+          daysCellHtml +
+          reviewerCellHtml +
+        '</tr>';
+      }).join('');
+
+      tbody.innerHTML = rows;
+
+      tbody.querySelectorAll('tr[data-request-id]').forEach(function(row) {
+        row.addEventListener('click', function() {
+          var rid = row.dataset.requestId;
+          if (rid) self._openSlideIn(rid);
+        });
+      });
+    },
+
+    // =========================================================================
+    // SLIDE-IN DETAIL PANEL (read-only — view full review for actions)
+    // =========================================================================
+
+    _setupSlideInPanel() {
+      var self = this;
+      var backdrop = document.getElementById('slideinBackdrop');
+      var closeBtn = document.getElementById('slideinClose');
+      var openBtn = document.getElementById('slideinOpenReview');
+
+      if (backdrop) backdrop.addEventListener('click', function() { self._closeSlideIn(); });
+      if (closeBtn) closeBtn.addEventListener('click', function() { self._closeSlideIn(); });
+      if (openBtn) {
+        openBtn.addEventListener('click', function() {
+          if (self._slideinRequestId) {
+            window.TravelReviewerDash.navigateTo('review', { requestId: self._slideinRequestId, viewMode: 'reviewer' });
+          }
+        });
+      }
+    },
+
+    _openSlideIn(requestId) {
+      var self = this;
+      this._slideinRequestId = requestId;
+      this._slideinData = null;
+
+      var backdrop = document.getElementById('slideinBackdrop');
+      var panel = document.getElementById('slideinPanel');
+      var loadingEl = document.getElementById('slideinLoading');
+      var contentEl = document.getElementById('slideinContent');
+
+      if (backdrop) backdrop.classList.add('open');
+      if (panel) panel.classList.add('open');
+
+      // Find cached request — instant render, skeletons for async-only fields
+      var cached = null;
+      for (var i = 0; i < (this._allRequests || []).length; i++) {
+        if (this._allRequests[i].requestId === requestId) { cached = this._allRequests[i]; break; }
+      }
+
+      if (loadingEl) loadingEl.classList.add('hidden');
+      if (contentEl) contentEl.classList.remove('hidden');
+
+      this._renderSlideInOptimistic(cached, requestId);
+
+      // Async-fetch the parts we don't have: funding source + approval log
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (self._slideinRequestId !== requestId) return; // user closed/switched
+          if (!result || !result.success) {
+            self._renderTimelineError((result && result.error) || 'Failed to load timeline');
+            return;
+          }
+          var merged = Object.assign({}, cached || {}, result.request || {});
+          merged.approvalLog = result.approvalLog || [];
+          merged.allClientPaid = result.allClientPaid === true;
+          self._slideinData = merged;
+          self._renderSlideInComplete(merged);
+        })
+        .withFailureHandler(function(err) {
+          if (self._slideinRequestId !== requestId) return;
+          console.error('getReviewerRequestSummary failed:', err);
+          self._renderTimelineError(err && err.message || 'Failed to load timeline');
+        })
+        .getReviewerRequestSummary(requestId, (this._ctx && this._ctx.viewAsParams) || null);
+    },
+
+    /**
+     * Render the slide-in immediately from cached request data.
+     * Funding source + approval timeline get skeleton placeholders that
+     * are filled in by _renderSlideInComplete once the server call returns.
+     */
+    _renderSlideInOptimistic(cached, requestId) {
+      var ridEl = document.getElementById('slideinRequestId');
+      var tripEl = document.getElementById('slideinTripName');
+      var subEl = document.getElementById('slideinSubmitter');
+      if (ridEl) ridEl.textContent = (cached && cached.requestId) || requestId || '';
+      if (tripEl) tripEl.textContent = (cached && cached.tripName) || 'Untitled';
+      if (subEl) subEl.textContent = (cached && cached.submitterName) || '';
+
+      var contentEl = document.getElementById('slideinContent');
+      if (!contentEl) return;
+
+      // If we have no cached data at all, show full skeleton
+      if (!cached) {
+        contentEl.innerHTML = this._buildSlideInSkeleton();
+        return;
+      }
+
+      var statusDisplay = this._getStatusDisplay(cached.status);
+      var isTerminal = this._isTerminalStatus(cached.status);
+      var days = this._getDaysAtStage(cached.updatedAt);
+      var daysClass = this._getDaysClass(days);
+      var travelChip = this._buildTravelChip(cached.eventStartDate, cached.eventEndDate);
+
+      var travelDates = '';
+      if (cached.eventStartDate) {
+        travelDates = this._formatDate(cached.eventStartDate);
+        if (cached.eventEndDate) travelDates += ' – ' + this._formatDate(cached.eventEndDate);
+      }
+
+      var html = '';
+
+      html += '<div class="slidein__status-row">' +
+        '<span class="status-badge status-badge--' + statusDisplay.class + '">' + statusDisplay.label + '</span>';
+      // Days-at-stage is meaningless once a request reaches a terminal
+      // state — there's no "stage" anymore. Hide for COMPLETED /
+      // APPROVED_GOGOV / CANCELLED / DENIED.
+      if (!isTerminal) {
+        html += '<span class="slidein__days-indicator days-cell--' + daysClass + '">' +
+          '<i aria-hidden="true" class="fas fa-clock"></i> ' + days + ' days at stage' +
+        '</span>';
+      }
+      if (travelChip) html += travelChip;
+      html += '</div>';
+
+      html += '<div class="slidein__details">' +
+        '<div class="slidein__detail">' +
+          '<div class="slidein__detail-label">Travel Dates</div>' +
+          '<div class="slidein__detail-value">' + (travelDates || 'Not set') + '</div>' +
+        '</div>' +
+        '<div class="slidein__detail">' +
+          '<div class="slidein__detail-label">Amount</div>' +
+          '<div class="slidein__detail-value">' + this._formatCurrency(cached.grandTotal) + '</div>' +
+        '</div>' +
+        '<div class="slidein__detail">' +
+          '<div class="slidein__detail-label">BU</div>' +
+          '<div class="slidein__detail-value">' + this._escapeHtml(cached.buCode || '') + '</div>' +
+        '</div>' +
+        '<div class="slidein__detail">' +
+          '<div class="slidein__detail-label">Funding Source</div>' +
+          '<div class="slidein__detail-value" id="slideinFundingValue">' +
+            '<div class="skeleton" style="width:90px; height:14px;"></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="slidein__detail">' +
+          '<div class="slidein__detail-label">Travelers</div>' +
+          '<div class="slidein__detail-value">' + (cached.travelerCount || 1) + '</div>' +
+        '</div>' +
+      '</div>';
+
+      // Timeline placeholder — replaced by _renderSlideInComplete
+      html += '<div id="slideinTimelineWrap">' + this._buildTimelineSkeleton() + '</div>';
+
+      contentEl.innerHTML = html;
+    },
+
+    _buildTimelineSkeleton() {
+      var html = '<div class="slidein__timeline-title">Approval Timeline</div>';
+      html += '<div class="approval-timeline">';
+      for (var i = 0; i < 4; i++) {
+        html += '<div class="timeline-step">' +
+          '<div class="timeline-step__dot"></div>' +
+          '<div class="timeline-step__content" style="flex:1;">' +
+            '<div class="skeleton" style="width:140px; height:11px; margin-bottom:6px;"></div>' +
+            '<div class="skeleton" style="width:100px; height:9px;"></div>' +
+          '</div>' +
+        '</div>';
+      }
+      html += '</div>';
+      return html;
+    },
+
+    _buildSlideInSkeleton() {
+      var html = '<div class="slidein__status-row">' +
+        '<div class="skeleton" style="width:90px; height:20px; border-radius:8px;"></div>' +
+        '<div class="skeleton" style="width:110px; height:14px; margin-left:8px;"></div>' +
+      '</div>';
+      html += '<div class="slidein__details">';
+      for (var i = 0; i < 5; i++) {
+        html += '<div class="slidein__detail">' +
+          '<div class="skeleton" style="width:80px; height:9px; margin-bottom:6px;"></div>' +
+          '<div class="skeleton" style="width:120px; height:14px;"></div>' +
+        '</div>';
+      }
+      html += '</div>';
+      html += '<div id="slideinTimelineWrap">' + this._buildTimelineSkeleton() + '</div>';
+      return html;
+    },
+
+    /**
+     * Patch the slide-in with server-loaded fields: funding source + timeline.
+     * Cached fields stay where they are — no full re-render.
+     */
+    _renderSlideInComplete(data) {
+      // 1. Funding source — replace skeleton with real value
+      var fundingEl = document.getElementById('slideinFundingValue');
+      if (fundingEl) {
+        fundingEl.innerHTML = this._escapeHtml(data.fundingSource || 'Overhead');
+      }
+
+      // 2. Denied/Cancelled callout (only appears when status warrants)
+      // Insert AFTER the details grid, BEFORE the timeline
+      var contentEl = document.getElementById('slideinContent');
+      var timelineWrap = document.getElementById('slideinTimelineWrap');
+      if (contentEl && timelineWrap && (data.status === 'DENIED' || data.status === 'CANCELLED' || data.status === 'SUBMITTER_CANCELLED')) {
+        var existingCallout = contentEl.querySelector('.slidein__callout');
+        if (existingCallout) existingCallout.remove();
+        var calloutHtml = this._buildDeniedCancelledCallout(data);
+        if (calloutHtml) {
+          var wrapper = document.createElement('div');
+          wrapper.innerHTML = calloutHtml;
+          timelineWrap.parentNode.insertBefore(wrapper.firstChild, timelineWrap);
+        }
+      }
+
+      // 3. Timeline — swap skeleton for real timeline
+      if (timelineWrap) {
+        timelineWrap.innerHTML = this._renderApprovalTimeline(data);
+      }
+    },
+
+    _renderTimelineError(message) {
+      var fundingEl = document.getElementById('slideinFundingValue');
+      if (fundingEl) fundingEl.textContent = '—';
+      var timelineWrap = document.getElementById('slideinTimelineWrap');
+      if (timelineWrap) {
+        timelineWrap.innerHTML = '<div class="slidein__timeline-title">Approval Timeline</div>' +
+          '<div class="admin-empty" style="padding:var(--space-4);">' +
+            '<i aria-hidden="true" class="fas fa-exclamation-triangle"></i>' +
+            '<p>' + this._escapeHtml(message) + '</p>' +
+          '</div>';
+      }
+    },
+
+    _buildDeniedCancelledCallout(data) {
+      var log = data.approvalLog || [];
+      var last = log.length ? log[log.length - 1] : null;
+      var actionBy = last ? (last.actorName || last.actorEmail || 'Unknown') : 'Unknown';
+      var actionAt = last ? last.timestamp : '';
+      var reason = last ? (last.notes || '') : '';
+      var calloutClass = data.status === 'DENIED' ? 'slidein__callout--denied' : 'slidein__callout--cancelled';
+      var iconClass = data.status === 'DENIED' ? 'fa-ban' : 'fa-times-circle';
+      var titleText = data.status === 'DENIED' ? 'Denied' : 'Cancelled';
+      return '<div class="slidein__callout ' + calloutClass + '">' +
+        '<div class="slidein__callout-title"><i aria-hidden="true" class="fas ' + iconClass + '"></i> ' + titleText + '</div>' +
+        '<div class="slidein__callout-text">By: ' + this._escapeHtml(actionBy) +
+          (actionAt ? ' on ' + this._formatDate(actionAt) : '') + '</div>' +
+        (reason ? '<div class="slidein__callout-text" style="margin-top:4px;">' + this._escapeHtml(reason) + '</div>' : '') +
+      '</div>';
+    },
+
+    _closeSlideIn() {
+      var backdrop = document.getElementById('slideinBackdrop');
+      var panel = document.getElementById('slideinPanel');
+      if (backdrop) backdrop.classList.remove('open');
+      if (panel) panel.classList.remove('open');
+      this._slideinRequestId = null;
+      this._slideinData = null;
+    },
+
+    _renderApprovalTimeline(data) {
+      var self = this;
+      var approvalLog = data.approvalLog || [];
+      var currentStatus = data.status || '';
+      var isClientPaid = data.allClientPaid === true;
+
+      var stages = [
+        { status: 'PENDING_SECTOR', label: 'Sector Review' },
+        { status: 'PENDING_BU', label: 'BU Review' },
+        { status: 'PENDING_OSO', label: 'AAS FO Review' }
+      ];
+      if (!isClientPaid) stages.push({ status: 'PENDING_FAS', label: 'FAS Review' });
+
+      var statusOrder = isClientPaid
+        ? ['PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'APPROVED_GOGOV', 'COMPLETED']
+        : ['PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS', 'APPROVED_GOGOV', 'COMPLETED'];
+      var currentIdx = statusOrder.indexOf(currentStatus);
+
+      var html = '<div class="slidein__timeline-title">Approval Timeline</div>';
+      html += '<div class="approval-timeline">';
+
+      stages.forEach(function(stage) {
+        var stageIdx = statusOrder.indexOf(stage.status);
+        var stepClass = '', dotContent = '', actionText = stage.label, actorText = '', dateText = '';
+
+        var logEntry = null;
+        for (var i = 0; i < approvalLog.length; i++) {
+          var e = approvalLog[i];
+          if (e.previousStatus === stage.status || e.prevStatus === stage.status) { logEntry = e; break; }
+        }
+
+        if (currentStatus === 'DENIED' && logEntry && (logEntry.action === 'DENY' || logEntry.newStatus === 'DENIED')) {
+          stepClass = 'timeline-step--denied';
+          dotContent = '<i aria-hidden="true" class="fas fa-times"></i>';
+          actionText = 'Denied at ' + stage.label;
+          actorText = logEntry.actorName || '';
+          dateText = logEntry.timestamp ? self._formatDate(logEntry.timestamp) : '';
+        } else if (stageIdx < currentIdx || currentStatus === 'APPROVED_GOGOV' || currentStatus === 'COMPLETED') {
+          stepClass = 'timeline-step--completed';
+          dotContent = '<i aria-hidden="true" class="fas fa-check"></i>';
+          actionText = stage.label + ' Approved';
+          if (logEntry) {
+            actorText = logEntry.actorName || '';
+            dateText = logEntry.timestamp ? self._formatDate(logEntry.timestamp) : '';
+          }
+        } else if (stageIdx === currentIdx || currentStatus === stage.status) {
+          stepClass = 'timeline-step--current';
+          dotContent = '<i aria-hidden="true" class="fas fa-hourglass-half"></i>';
+          actionText = 'Awaiting ' + stage.label;
+          actorText = data.currentReviewerName ? 'Awaiting review by ' + self._escapeHtml(data.currentReviewerName) : 'Awaiting reviewer assignment...';
+        }
+
+        html += '<div class="timeline-step ' + stepClass + '">' +
+          '<div class="timeline-step__dot">' + dotContent + '</div>' +
+          '<div class="timeline-step__content">' +
+            '<div class="timeline-step__action">' + self._escapeHtml(actionText) + '</div>' +
+            (actorText ? '<div class="timeline-step__actor">' + actorText + '</div>' : '') +
+            (dateText ? '<div class="timeline-step__date">' + dateText + '</div>' : '') +
+          '</div>' +
+        '</div>';
+      });
+
+      html += '</div>';
+      return html;
+    },
+
+    _formatDate(dateStr) {
+      if (!dateStr) return '';
+      try {
+        var d = new Date(dateStr);
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      } catch (e) { return ''; }
+    },
+
+    _showToast(title, message, type) {
+      type = type || 'info';
+      document.querySelectorAll('.travel-toast').forEach(function(t) { t.remove(); });
+      var toast = document.createElement('div');
+      toast.className = 'travel-toast travel-toast--' + type;
+      toast.innerHTML =
+        '<div class="travel-toast__title">' + this._escapeHtml(title) + '</div>' +
+        '<div class="travel-toast__body">' + this._escapeHtml(message) + '</div>';
+      document.body.appendChild(toast);
+      setTimeout(function() { toast.classList.add('travel-toast--show'); }, 10);
+      setTimeout(function() {
+        toast.classList.remove('travel-toast--show');
+        setTimeout(function() { toast.remove(); }, 300);
+      }, 4000);
+    }
+  };
+
+  // =========================================================================
+  // BOOT
+  // =========================================================================
+
+  document.addEventListener('DOMContentLoaded', function() {
+    if (window.REVIEWER_CTX) {
+      window.TravelReviewerDash.Controller.init(window.REVIEWER_CTX);
+    } else {
+      console.error('TravelReviewerDash: missing REVIEWER_CTX');
+    }
+  });
+})();
+</script>

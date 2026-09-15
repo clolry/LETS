@@ -1,0 +1,3147 @@
+<script>
+/**
+ * TravelUsers.Controller — admin Users page (Phase 5)
+ *
+ * Replaces the legacy Reviewers tab with a unified roster reading from
+ * Travel_Users + Travel_User_Roles. Loaded by the admin shell; admin
+ * sidebar nav-click → admin controller → activate() here.
+ *
+ * Server calls are minimal — only what isn't cacheable client-side:
+ *   listTravelUsers           — user/role rows (the only Travel-DB thing
+ *                              the client doesn't already have)
+ *   addTravelUser / addRoleToUser / setRolePrimary / setRoleActive /
+ *   updateTravelUser / deleteRole — write paths
+ *
+ * Everything HC-derived (sector directors, employee lookup for the Add
+ * User typeahead) reads from window.HCDataCenter — IndexedDB-cached on
+ * page load, no server roundtrip per render.
+ *
+ * Public surface:
+ *   activate()   — view becomes visible
+ *   refresh()    — force reload
+ *
+ * All other state under self._*. CSS lives in travelUsersStyles.html
+ * under .users-* — no leakage.
+ */
+(function() {
+  'use strict';
+
+  if (window.TravelUsers && window.TravelUsers.Controller) return;
+  window.TravelUsers = window.TravelUsers || {};
+
+  // --------------------------------------------------------------------------
+  // ROLE METADATA — single source of truth for dropdowns + scope gating.
+  //   displayLong — admin-friendly full name used in role-type dropdowns
+  //   hasScope    — does this role need a BU/sector picker?
+  //   grantable   — show in the role-type dropdowns?
+  //   hint        — tooltip on the dropdown option
+  //
+  // Per-row labels in the slidein and warn panels go through
+  // _humanRoleLabel(role) which builds 'Army Reviewer · Primary' style
+  // strings; that helper is the only consumer of role-shape labelling.
+  // --------------------------------------------------------------------------
+  var ROLE_META = {
+    'admin':            { displayLong: 'Admin',           hasScope: false, grantable: true,
+                          hint: 'Full access to the admin console.' },
+    'aas_fo_reviewer':  { displayLong: 'AAS-FO Reviewer', hasScope: false, grantable: true,
+                          hint: 'Reviews requests at the AAS Front Office stage.' },
+    'fas_fo_reviewer':  { displayLong: 'FAS-FO Reviewer', hasScope: false, grantable: true,
+                          hint: 'Reviews overhead-funded requests at the FAS Front Office stage.' },
+    'bu_reviewer':      { displayLong: 'BU Reviewer',     hasScope: true,  grantable: true,
+                          hint: 'Reviews requests for a specific business unit.' },
+    'sector_override':  { displayLong: 'Sector Reviewer', hasScope: true,  grantable: true,
+                          hint: 'Overrides the synced sector director for a specific sector.' },
+    'approved_user':    { displayLong: 'Site Access',     hasScope: false, grantable: true,
+                          hint: 'Grants TRIP access to a non-supervisor. No admin or reviewer privileges.' }
+  };
+
+  /**
+   * Build dropdown <option> markup from grantable roles. Each option
+   * carries the role's hint as a `title` tooltip so admins can hover
+   * to see what the role does without leaving the form.
+   */
+  function _buildGrantableRoleOptions(includePlaceholder) {
+    var html = includePlaceholder ? '<option value="">— select role —</option>' : '';
+    for (var rt in ROLE_META) {
+      var meta = ROLE_META[rt];
+      if (!meta.grantable) continue;
+      var titleAttr = meta.hint ? ' title="' + meta.hint + '"' : '';
+      html += '<option value="' + rt + '"' + titleAttr + '>' + meta.displayLong + '</option>';
+    }
+    return html;
+  }
+
+  var POLL_INTERVAL_MS = 30000; // 30s — matches nucleus DataSyncService cadence
+
+  var self = {
+    _loaded: false,
+    _loading: false,
+    _users: [],
+    _filter: 'all',
+    _search: '',
+    _selectedUserId: null,
+    _eventsBound: false,
+    _hcReady: false,         // HCDataCenter loaded?
+
+    // AAS scope derived from the staffing bundle. Single source of truth
+    // for "which BUs and sectors exist + who's the SD per (BU, sector)".
+    // Cache is invalidated when _hcReady flips. Shape:
+    //   { businessUnits: [{name, codes:[]}, ...],
+    //     sectorsByBU:   { 'Defense': [{sectorName, sd: {employeeName, email, source}|null, codes:[]}], ... } }
+    _aasScopeCache: null,
+
+    // Routing dashboard state
+    _expandedRoutingRows: {},   // { 'bu:Army': true } — which BU rows show sectors
+    _lastRoutingSig: null,      // diff-skip signature; null forces re-render
+
+
+    // Add User prefill — set by routing-dashboard CTAs ("Add backup",
+    // "Activate replacement") so the slidein opens with role + scope
+    // pre-selected and a context banner explaining what's being added.
+    // Cleared after submit / cancel / close.
+    //   { roleType, scope, isPrimary, ctaLabel, contextLabel }
+    _addUserPrefill: null,
+
+    // Sync state
+    _knownVersion: null,    // last broadcastTravelUsersChange timestamp we've seen
+    _pollTimer: null,
+    _pollActive: false,
+    _syncing: false,        // currently fetching a refresh due to broadcast?
+
+    activate: function() {
+      this._bindOnce();
+      this._initHC();
+      // _pollActive flips true here so any in-flight _load (warmCache)
+      // will render its result when it returns.
+      this._startPolling();
+      if (!this._loaded && !this._loading) {
+        this._load();
+      } else {
+        // Render whatever current state we have. If _loading is true
+        // (warmCache in flight), _render shows the loading state. If
+        // _loaded is true, _render shows the table.
+        this._render();
+      }
+    },
+
+    /**
+     * Background warm-cache called from admin shell shortly after page
+     * render. Same path as activate() — _load decides whether to render
+     * based on whether the user is currently on the Users tab
+     * (self._pollActive). When admin is on the dashboard, no render;
+     * when they hop to Users mid-fetch, the response handler renders.
+     */
+    warmCache: function() {
+      if (this._loaded || this._loading) return;
+      this._initHC();
+      this._load();
+    },
+
+    /**
+     * Called by admin shell when admin navigates AWAY from Users tab.
+     * Stops the poll. activate() will start it again on re-entry.
+     */
+    deactivate: function() {
+      this._stopPolling();
+    },
+
+    refresh: function() {
+      this._loaded = false;
+      this._load();
+    },
+
+    // ----------------------------------------------------------------------
+    // BROADCAST POLLING — mirrors nucleus DataSyncService pattern
+    // ----------------------------------------------------------------------
+
+    _startPolling: function() {
+      if (this._pollActive) return;
+      this._pollActive = true;
+      // Seed the version baseline immediately so the first poll hit is a
+      // real comparison, not an unnecessary refetch.
+      this._fetchVersionAndCompare(/* seedOnly */ true);
+      this._pollTimer = setInterval(function() {
+        self._fetchVersionAndCompare(false);
+      }, POLL_INTERVAL_MS);
+    },
+
+    _stopPolling: function() {
+      this._pollActive = false;
+      if (this._pollTimer) {
+        clearInterval(this._pollTimer);
+        this._pollTimer = null;
+      }
+    },
+
+    _fetchVersionAndCompare: function(seedOnly) {
+      if (!this._pollActive) return;
+      google.script.run
+        .withSuccessHandler(function(version) {
+          if (!self._pollActive) return;
+          var v = version || '0';
+          if (seedOnly || self._knownVersion === null) {
+            self._knownVersion = v;
+            return;
+          }
+          if (v !== self._knownVersion) {
+            self._knownVersion = v;
+            self._silentRefresh();
+          }
+        })
+        .withFailureHandler(function() { /* silent — best-effort */ })
+        .getTravelUsersUpdateTimestamp();
+    },
+
+    /**
+     * Polling-cadence refresh (every 30s when Users tab is active).
+     * Updates self._users + table render, NOT the slidein body, for
+     * the same reason as _silentReconcile: don't disrupt active editing.
+     * Subtle ↻ indicator next to the user count shows during the fetch
+     * so admin knows sync is happening.
+     */
+    _silentRefresh: function() {
+      if (this._syncing) return;
+      this._syncing = true;
+      this._renderSyncIndicator();
+      google.script.run
+        .withSuccessHandler(function(res) {
+          self._syncing = false;
+          if (res && res.success) {
+            self._users = (res.data && res.data.users) || [];
+            if (res.data && res.data.version) self._knownVersion = res.data.version;
+            self._render();
+          }
+          self._renderSyncIndicator();
+        })
+        .withFailureHandler(function() {
+          self._syncing = false;
+          self._renderSyncIndicator();
+        })
+        .listTravelUsers();
+    },
+
+    _renderSyncIndicator: function() {
+      var count = document.getElementById('usersCount');
+      if (!count) return;
+      count.classList.toggle('users-count--syncing', !!this._syncing);
+    },
+
+    // ----------------------------------------------------------------------
+    // BOOTSTRAP
+    // ----------------------------------------------------------------------
+
+    _bindOnce: function() {
+      if (this._eventsBound) return;
+      this._eventsBound = true;
+
+      var search = document.getElementById('usersSearch');
+      var filter = document.getElementById('usersFilter');
+      var addBtn = document.getElementById('usersAddBtn');
+      var slideinClose = document.getElementById('usersSlideinClose');
+      var slideinBackdrop = document.getElementById('usersSlideinBackdrop');
+
+      if (search) {
+        var debounceTimer = null;
+        search.addEventListener('input', function() {
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(function() {
+            self._search = (search.value || '').trim().toLowerCase();
+            self._render();
+          }, 120);
+        });
+      }
+      if (filter) {
+        filter.addEventListener('change', function() {
+          self._filter = filter.value || 'all';
+          self._render();
+        });
+      }
+      if (addBtn) {
+        addBtn.addEventListener('click', function() { self._openAddUser(); });
+      }
+      if (slideinClose) {
+        slideinClose.addEventListener('click', function() { self._closeSlidein(); });
+      }
+      if (slideinBackdrop) {
+        slideinBackdrop.addEventListener('click', function() { self._closeSlidein(); });
+      }
+
+    },
+
+    _initHC: function() {
+      if (this._hcReady) return;
+      if (!window.HCDataCenter) {
+        console.warn('TravelUsers: HCDataCenter not on window — sector grouping will be empty');
+        return;
+      }
+      window.HCDataCenter.init().then(function() {
+        self._hcReady = true;
+        self._aasScopeCache = null;  // invalidate; re-derived on next read
+        // If a slidein is currently waiting on the dropdown, refresh it
+        if (self._addUserState === 'hc-picked') self._renderAddUserView();
+        if (self._loaded && self._pollActive) self._render();
+      }).catch(function(err) {
+        console.warn('TravelUsers: HCDataCenter.init failed:', err);
+      });
+    },
+
+    /**
+     * Single source of truth for AAS BUs + sectors + SD per (BU, sector).
+     * Walks HCDataCenter.getStaffed() once and groups positions by their
+     * canonical (BU, sector) pair. Vacant SDs surface naturally as
+     * `sd: null` records, so admins see "this sector has no reviewer"
+     * without extra plumbing. Result cached on _aasScopeCache; _initHC
+     * invalidates on bundle reload.
+     *
+     * Why client-side instead of getAASOrgScope server call:
+     *   - the staffing bundle is already loaded for the page
+     *   - position.org.{businessUnit,sector} is HC's canonical mapping;
+     *     using it directly sidesteps the sector-name-collision class of
+     *     bug ("Sector 1" exists in Army, Defense, AF/Navy/SF, ...)
+     *   - one walk, no round trip
+     */
+    _deriveAasScope: function() {
+      if (this._aasScopeCache) return this._aasScopeCache;
+      // BUs that exist in HC staffing but aren't TRIP-routable.
+      //   Commissioner's Office — AAS FO Primary sits here; submissions
+      //                           route via the AAS FO stage directly.
+      //   Innovation            — flagged Not In Use; going away.
+      var EXCLUDED_BUS = { "Commissioner's Office": true, "Innovation": true };
+      var BU_ORDER = ['OSO', 'Army', 'AF/Navy/SF', 'Civilian', 'Defense'];
+
+      if (!this._hcReady || !window.HCDataCenter || !window.HCDataCenter.isLoaded()) {
+        return { businessUnits: [], sectorsByBU: {} };
+      }
+
+      var buMap = {};   // buName -> { name, codes:{set}, sectors:{ sName -> { sectorName, sd, codes:{set} } } }
+      var positions = window.HCDataCenter.getStaffed() || [];
+      for (var i = 0; i < positions.length; i++) {
+        var p = positions[i];
+        if (!p || !p.org) continue;
+        var buName = p.org.businessUnit || '';
+        if (!buName || EXCLUDED_BUS[buName]) continue;
+        var orgCode = String(p.orgCode || '');
+        var buCode = orgCode.substring(0, 3).toUpperCase();
+
+        if (!buMap[buName]) {
+          buMap[buName] = { name: buName, codes: {}, sectors: {} };
+        }
+        if (buCode) buMap[buName].codes[buCode] = true;
+
+        var sectorName = p.org.sector || '';
+        if (!sectorName) continue;  // BU-level position; routes through BU stage
+
+        if (!buMap[buName].sectors[sectorName]) {
+          buMap[buName].sectors[sectorName] = { sectorName: sectorName, sd: null, codes: {} };
+        }
+        if (orgCode) buMap[buName].sectors[sectorName].codes[orgCode] = true;
+
+        // First staffed SD position wins for this (BU, sector) bucket.
+        if (!buMap[buName].sectors[sectorName].sd) {
+          var titleLower = String(p.officeTitle || '').toLowerCase();
+          if (titleLower.indexOf('sector director') === -1) continue;
+          if (String(p.grade) !== '15') continue;
+          if (String(p.supervisoryStatus) !== '2') continue;
+          var occ = String(p.occupancyStatus || '').toUpperCase();
+          if (occ === 'VACANT' || occ === 'OBLIGATED') continue;
+          if (!p.emailAddress) continue;
+          buMap[buName].sectors[sectorName].sd = {
+            employeeName: p.employeeName || '',
+            email: p.emailAddress,
+            source: 'HC'
+          };
+        }
+      }
+
+      // Format output: arrays in canonical display order
+      var orderIdx = {};
+      for (var oi = 0; oi < BU_ORDER.length; oi++) orderIdx[BU_ORDER[oi]] = oi;
+      var businessUnits = [];
+      var sectorsByBU = {};
+      for (var name in buMap) {
+        if (!buMap.hasOwnProperty(name)) continue;
+        var bu = buMap[name];
+        businessUnits.push({ name: name, codes: Object.keys(bu.codes).sort() });
+        var list = [];
+        for (var sn in bu.sectors) {
+          if (!bu.sectors.hasOwnProperty(sn)) continue;
+          var s = bu.sectors[sn];
+          list.push({
+            sectorName: s.sectorName,
+            sd: s.sd,
+            codes: Object.keys(s.codes).sort()
+          });
+        }
+        list.sort(function(a, b) { return (a.sectorName || '').localeCompare(b.sectorName || ''); });
+        sectorsByBU[name] = list;
+      }
+      businessUnits.sort(function(a, b) {
+        var ai = (a.name in orderIdx) ? orderIdx[a.name] : BU_ORDER.length + 1;
+        var bi = (b.name in orderIdx) ? orderIdx[b.name] : BU_ORDER.length + 1;
+        if (ai !== bi) return ai - bi;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+
+      this._aasScopeCache = { businessUnits: businessUnits, sectorsByBU: sectorsByBU };
+      return this._aasScopeCache;
+    },
+
+    // ----------------------------------------------------------------------
+    // LOAD
+    // ----------------------------------------------------------------------
+
+    /**
+     * Fetch the user/role data. Renders the result if the admin is
+     * currently on the Users tab (self._pollActive), otherwise stays
+     * silent — warmCache calls this before the user clicks the tab,
+     * activate() calls it when they do. activate() also calls _render()
+     * directly so the loading spinner appears immediately, and this
+     * handler re-renders with the fresh data when the RPC returns.
+     */
+    _load: function() {
+      this._loading = true;
+      // If the admin is currently looking at Users, show the loading
+      // state right now — _render checks _loading and toggles the
+      // spinner accordingly.
+      if (this._pollActive) this._render();
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          self._loading = false;
+          if (!res || !res.success) {
+            console.error('listTravelUsers failed:', res && res.error);
+            self._users = [];
+          } else {
+            self._users = (res.data && res.data.users) || [];
+            if (res.data && res.data.version) self._knownVersion = res.data.version;
+          }
+          self._loaded = true;
+          // Always render if the admin is on the Users tab — they're
+          // waiting for this. If they're not, defer; activate() will
+          // render with fresh data when they navigate to the tab.
+          if (self._pollActive) self._render();
+        })
+        .withFailureHandler(function(err) {
+          self._loading = false;
+          console.error('listTravelUsers error:', err);
+          self._users = [];
+          self._loaded = true;
+          if (self._pollActive) self._render();
+        })
+        .listTravelUsers();
+    },
+
+    // ----------------------------------------------------------------------
+    // CLIENT-SIDE DERIVATION
+    // ----------------------------------------------------------------------
+
+    /**
+     * Single-source derivation for the routing dashboard.
+     *
+     * Returns:
+     *   {
+     *     aasFo: { primary, backup, hasGap },        // FO pair
+     *     fasFo: { primary, hasGap },                // single, no backup concept
+     *     bus:   [
+     *       {
+     *         name, codes,                            // 'Army', ['QFA', ...]
+     *         primary, backup,                        // each: {userId, name, email, isActive} or null
+     *         hasPrimaryGap, hasBackupGap,
+     *         sectors: [
+     *           { sectorName, employeeName, email, source: 'HC'|'override', userId? }
+     *         ]
+     *       }
+     *     ]
+     *   }
+     *
+     * Each `primary`/`backup` entry is { userId, name, email, isActive } or null.
+     * `isActive: false` means the role row exists but the user is deactivated —
+     * surface as an amber "stragglers" gap on the dashboard.
+     *
+     * BU rows are seeded from HC's AAS scope (every active BU appears even
+     * with no reviewers configured), in the canonical display order
+     * (OSO, Army, AF/Navy/SF, Civilian, Defense, then alphabetical).
+     */
+    _deriveRoutingFull: function() {
+      // BU names that aren't TRIP-routable. Mirrors the EXCLUDED_BUS list
+      // in _deriveAasScope so an inactive bu_reviewer role on a deprecated
+      // BU can't reintroduce a row through ensureBU.
+      var EXCLUDED_BUS = { "Commissioner's Office": true, "Innovation": true };
+
+      // ---- AAS FO + FAS FO (single-active) ----
+      var aasPrimary = null, aasBackup = null, fasPrimary = null;
+      for (var i = 0; i < this._users.length; i++) {
+        var u = this._users[i];
+        for (var j = 0; j < (u.roles || []).length; j++) {
+          var r = u.roles[j];
+          if (!r.isActive) continue;
+          var entry = { userId: u.userId, name: u.name, email: u.email, isActive: u.isActive };
+          if (r.roleType === 'aas_fo_reviewer') {
+            if (r.isPrimary && !aasPrimary) aasPrimary = entry;
+            else if (!r.isPrimary && !aasBackup) aasBackup = entry;
+          } else if (r.roleType === 'fas_fo_reviewer') {
+            if ((r.isPrimary || !fasPrimary) && !fasPrimary) fasPrimary = entry;
+          }
+        }
+      }
+
+      // ---- BU pairs (one per BU) seeded from the AAS scope ----
+      // _deriveAasScope walks the staffing bundle once and returns the
+      // canonical (BU, sector, SD) tree. Display order is already applied.
+      var aas = this._deriveAasScope();
+      var byBU = {};
+      function ensureBU(name, codes) {
+        if (!name) return null;
+        if (EXCLUDED_BUS[name]) return null;
+        if (!byBU[name]) {
+          byBU[name] = { name: name, codes: codes || [], primary: null, backup: null, sectors: [] };
+        } else if (codes && codes.length && !byBU[name].codes.length) {
+          byBU[name].codes = codes;
+        }
+        return byBU[name];
+      }
+      for (var ob = 0; ob < aas.businessUnits.length; ob++) {
+        ensureBU(aas.businessUnits[ob].name, aas.businessUnits[ob].codes);
+      }
+
+      // Layer in bu_reviewer rows. First-active-primary wins; first-active-
+      // backup wins. Skips BUs not in the AAS scope (typo in role.scope).
+      for (var ui = 0; ui < this._users.length; ui++) {
+        var user = this._users[ui];
+        for (var rj = 0; rj < (user.roles || []).length; rj++) {
+          var role = user.roles[rj];
+          if (role.roleType !== 'bu_reviewer' || !role.scope) continue;
+          if (!role.isActive) continue;
+          var bucket = byBU[role.scope];
+          if (!bucket) continue;
+          var entry2 = { userId: user.userId, name: user.name, email: user.email, isActive: user.isActive };
+          if (role.isPrimary && !bucket.primary) bucket.primary = entry2;
+          else if (!role.isPrimary && !bucket.backup) bucket.backup = entry2;
+        }
+      }
+
+      // ---- Sector subrows: layer sector_override roles on top of HC SDs ----
+      // Schema limitation: sector_override.Scope is the bare sector name.
+      // Same name resolves to the first BU we know of with that sector;
+      // cross-BU disambiguation needs a scope=BU::Sector migration.
+      var sectorNameToBu = {};
+      for (var bn0 = 0; bn0 < aas.businessUnits.length; bn0++) {
+        var bn0Name = aas.businessUnits[bn0].name;
+        var bn0Sectors = aas.sectorsByBU[bn0Name] || [];
+        for (var bn0i = 0; bn0i < bn0Sectors.length; bn0i++) {
+          var sn0 = bn0Sectors[bn0i].sectorName;
+          if (!sectorNameToBu[sn0]) sectorNameToBu[sn0] = bn0Name;
+        }
+      }
+      var overrides = {};   // 'BU::sector' -> { employeeName, email, source, userId }
+      for (var ru = 0; ru < this._users.length; ru++) {
+        var ruser = this._users[ru];
+        if (!ruser.isActive) continue;
+        for (var rr = 0; rr < (ruser.roles || []).length; rr++) {
+          var rrole = ruser.roles[rr];
+          if (rrole.roleType !== 'sector_override' || !rrole.isActive) continue;
+          if (!rrole.scope) continue;
+          var rBu = sectorNameToBu[rrole.scope];
+          if (!rBu) continue;
+          overrides[rBu + '::' + rrole.scope] = {
+            employeeName: ruser.name,
+            email: ruser.email,
+            source: 'override',
+            userId: ruser.userId
+          };
+        }
+      }
+
+      // Assemble each BU's sector list. _deriveAasScope already attached
+      // an HC SD per (BU, sector) where one exists; layer overrides on top
+      // and emit 'vacant' for sectors with neither.
+      for (var bn1 = 0; bn1 < aas.businessUnits.length; bn1++) {
+        var bn1Name = aas.businessUnits[bn1].name;
+        var bn1Bu = byBU[bn1Name];
+        if (!bn1Bu) continue;
+        var bn1Sectors = aas.sectorsByBU[bn1Name] || [];
+        for (var si = 0; si < bn1Sectors.length; si++) {
+          var s = bn1Sectors[si];
+          var ovKey = bn1Name + '::' + s.sectorName;
+          var sd = overrides[ovKey] || s.sd;   // override wins; else HC SD; else null
+          bn1Bu.sectors.push({
+            sectorName: s.sectorName,
+            codes: s.codes || [],
+            employeeName: sd ? sd.employeeName : '',
+            email: sd ? (sd.email || '') : '',
+            source: sd ? sd.source : 'vacant',
+            userId: sd ? (sd.userId || null) : null
+          });
+        }
+      }
+
+      // Display order: aas.businessUnits is already sorted in canonical
+      // order, so just iterate and keep that order.
+      var bus = [];
+      for (var bo = 0; bo < aas.businessUnits.length; bo++) {
+        var b = byBU[aas.businessUnits[bo].name];
+        if (!b) continue;
+        b.hasPrimaryGap = !b.primary;
+        b.hasBackupGap = !b.backup;
+        bus.push(b);
+      }
+
+      return {
+        aasFo: {
+          primary: aasPrimary,
+          backup: aasBackup,
+          hasGap: !aasPrimary || !aasBackup
+        },
+        fasFo: {
+          primary: fasPrimary,
+          hasGap: !fasPrimary
+        },
+        bus: bus
+      };
+    },
+
+    // ----------------------------------------------------------------------
+    // ROUTING-IMPACT HELPERS — protect against deactivations that create
+    // routing gaps. Per the protection spec:
+    //   silent  — no routing impact (approved_user, admin if not last,
+    //             backup deactivation when primary still active)
+    //   inform  — passive notice, deactivation proceeds (sector_override
+    //             revert to HC, backup deactivation when primary inactive)
+    //   warn    — inline expansion required, force-ack if gap forms
+    //             (any primary in routing pair)
+    //   block   — no UI option to proceed (last active admin)
+    // ----------------------------------------------------------------------
+
+    /**
+     * Compute the routing impact of deactivating a single role.
+     * Returns { level, gap, paired, isLastAdmin, isPrimary }.
+     *
+     *   level      — 'silent' | 'inform' | 'warn' | 'block'
+     *   gap        — true if no active partner remains in the pair after
+     *   paired     — array of {user, role} for active partners in same pair
+     *                (excluding the role being deactivated)
+     *   isLastAdmin — true only for the admin block case
+     *   isPrimary  — convenience: was this role primary?
+     */
+    _routingImpactOfDeactivation: function(roleId) {
+      var loc = this._findRole(roleId);
+      if (!loc) return { level: 'silent', gap: false, paired: [], isLastAdmin: false, isPrimary: false };
+      var role = loc.role;
+      var roleType = role.roleType;
+
+      // approved_user — no routing implication ever
+      if (roleType === 'approved_user') {
+        return { level: 'silent', gap: false, paired: [], isLastAdmin: false, isPrimary: false };
+      }
+
+      // admin — block only if this is the last active admin role across users
+      if (roleType === 'admin') {
+        var activeAdminCount = 0;
+        for (var ai = 0; ai < this._users.length; ai++) {
+          var au = this._users[ai];
+          if (!au.isActive) continue;
+          for (var aj = 0; aj < (au.roles || []).length; aj++) {
+            var ar = au.roles[aj];
+            if (ar.roleType === 'admin' && ar.isActive) activeAdminCount++;
+          }
+        }
+        // If <= 1, this role IS the last (we're about to deactivate it)
+        if (activeAdminCount <= 1) {
+          return { level: 'block', gap: true, paired: [], isLastAdmin: true, isPrimary: !!role.isPrimary };
+        }
+        return { level: 'silent', gap: false, paired: [], isLastAdmin: false, isPrimary: !!role.isPrimary };
+      }
+
+      // sector_override — single-role concept; turning off reverts to HC
+      // default. Inform-only, not a gap.
+      if (roleType === 'sector_override') {
+        return { level: 'inform', gap: false, paired: [], isLastAdmin: false, isPrimary: !!role.isPrimary };
+      }
+
+      // bu_reviewer / aas_fo_reviewer / fas_fo_reviewer — primary/backup pair.
+      // Find the active partners in the same (Role_Type, Scope) tuple.
+      var paired = [];
+      for (var ui = 0; ui < this._users.length; ui++) {
+        var u = this._users[ui];
+        for (var rj = 0; rj < (u.roles || []).length; rj++) {
+          var r = u.roles[rj];
+          if (r.roleId === roleId) continue;          // exclude self
+          if (r.roleType !== roleType) continue;
+          if ((r.scope || '') !== (role.scope || '')) continue;
+          if (!r.isActive) continue;
+          paired.push({ user: u, role: r });
+        }
+      }
+      var isPrimary = !!role.isPrimary;
+      var partnerExists = paired.length > 0;
+
+      if (isPrimary) {
+        // Always warn — primary deactivation is a routing transition.
+        // Force-ack if no active backup remains.
+        return {
+          level: 'warn',
+          gap: !partnerExists,
+          paired: paired,
+          isLastAdmin: false,
+          isPrimary: true
+        };
+      } else {
+        // Backup deactivation — silent if primary still active, inform
+        // if primary already inactive (full gap forming).
+        if (partnerExists) {
+          // there IS still an active partner (primary) — silent
+          return { level: 'silent', gap: false, paired: paired, isLastAdmin: false, isPrimary: false };
+        }
+        // no active partner — primary already off, this leaves a gap
+        return { level: 'inform', gap: true, paired: [], isLastAdmin: false, isPrimary: false };
+      }
+    },
+
+    /**
+     * Aggregate routing impact of deactivating an entire user. Iterates the
+     * user's active roles, computes per-role impact, returns:
+     *   { isLastAdmin, hasBlocker, hasWarn, hasInform, perRole: [...] }
+     * perRole carries per-role impact + role + meta for rendering.
+     */
+    _routingImpactOfUserDeactivation: function(userId) {
+      var user = this._findUser(userId);
+      if (!user) return { isLastAdmin: false, hasBlocker: false, hasWarn: false, hasInform: false, perRole: [] };
+
+      var perRole = [];
+      var hasBlocker = false, hasWarn = false, hasInform = false, isLastAdmin = false;
+
+      for (var i = 0; i < (user.roles || []).length; i++) {
+        var r = user.roles[i];
+        if (!r.isActive) continue;     // already off — no impact from this row
+        var impact = this._routingImpactOfDeactivation(r.roleId);
+        if (impact.level === 'silent') continue;
+        perRole.push({ role: r, impact: impact, meta: ROLE_META[r.roleType] || {} });
+        if (impact.level === 'block') { hasBlocker = true; isLastAdmin = isLastAdmin || impact.isLastAdmin; }
+        else if (impact.level === 'warn') hasWarn = true;
+        else if (impact.level === 'inform') hasInform = true;
+      }
+
+      return { isLastAdmin: isLastAdmin, hasBlocker: hasBlocker, hasWarn: hasWarn, hasInform: hasInform, perRole: perRole };
+    },
+
+    /** sector name -> bu name map, derived from the AAS scope. First-BU
+     *  match wins for collision-prone names. */
+    _sectorNameToBuName: function() {
+      var map = {};
+      var aas = this._deriveAasScope();
+      for (var i = 0; i < aas.businessUnits.length; i++) {
+        var bn = aas.businessUnits[i].name;
+        var list = aas.sectorsByBU[bn] || [];
+        for (var j = 0; j < list.length; j++) {
+          var sn = list[j].sectorName;
+          if (sn && !map[sn]) map[sn] = bn;
+        }
+      }
+      return map;
+    },
+
+    // ----------------------------------------------------------------------
+    // RENDER
+    // ----------------------------------------------------------------------
+
+    _render: function() {
+      var loading = document.getElementById('usersLoading');
+      var emptyEl = document.getElementById('usersEmpty');
+      var roster = document.getElementById('usersRoster');
+
+      this._renderRouting();
+
+      if (this._loading && !this._loaded) {
+        if (loading) loading.classList.remove('hidden');
+        if (emptyEl) emptyEl.classList.add('hidden');
+        if (roster) roster.classList.add('hidden');
+        var countLoading = document.getElementById('usersCount');
+        if (countLoading) countLoading.textContent = '';
+        return;
+      }
+      if (loading) loading.classList.add('hidden');
+
+      this._renderRoster();
+    },
+
+    /**
+     * Role-grouped roster. Replaces the flat user table.
+     * Each role assignment is its own row (multi-role users appear in
+     * every relevant section). The slidein aggregates the user's full
+     * role list when opened, so duplication on the roster is intentional.
+     *
+     * Section ordering matches the routing dashboard's mental model:
+     *   Administrators → AAS FO → FAS FO → BU Reviewers → Sector
+     *   Overrides → Approved Users
+     *
+     * Filter dropdown narrows visible sections (no more grouped/table
+     * branching). Search input filters rows within visible sections.
+     */
+    _renderRoster: function() {
+      var roster = document.getElementById('usersRoster');
+      var emptyEl = document.getElementById('usersEmpty');
+      var countEl = document.getElementById('usersCount');
+      if (!roster) return;
+
+      var search = (this._search || '').toLowerCase();
+      var filter = this._filter || 'all';
+      var sections = this._buildRosterSections(search, filter);
+
+      // Total visible row count for the toolbar
+      var total = 0;
+      for (var s = 0; s < sections.length; s++) total += sections[s].count;
+
+      if (!total) {
+        roster.classList.add('hidden');
+        if (emptyEl) emptyEl.classList.remove('hidden');
+        if (countEl) countEl.textContent = '';
+        return;
+      }
+      roster.classList.remove('hidden');
+      if (emptyEl) emptyEl.classList.add('hidden');
+      if (countEl) countEl.textContent = total + (total === 1 ? ' role assignment' : ' role assignments');
+
+      var html = '';
+      for (var i = 0; i < sections.length; i++) {
+        if (sections[i].count === 0) continue;
+        html += this._rosterSectionHtml(sections[i]);
+      }
+      roster.innerHTML = html;
+
+      // Wire interactions — sections always expanded, only row clicks.
+      var self2 = this;
+      Array.prototype.forEach.call(roster.querySelectorAll('[data-user-id]'), function(row) {
+        row.addEventListener('click', function() {
+          var uid = row.getAttribute('data-user-id');
+          if (uid) self2._openSlidein(uid);
+        });
+      });
+    },
+
+    /**
+     * Build the section list for the roster. Returns an array in display
+     * order; each entry is { key, title, count, render: function() -> html }.
+     * Filter narrows which sections appear; search narrows rows within.
+     */
+    _buildRosterSections: function(search, filter) {
+      var users = this._users || [];
+      var self2 = this;
+
+      // Bucket users by role-type → list of { user, role }.
+      // Routing roles (aas_fo / fas_fo / bu_reviewer / sector_override)
+      // belong to the routing dashboard above; the roster only carries
+      // the non-routing role types (admin + approved_user).
+      var byRole = {
+        admin: [],
+        approved_user: []
+      };
+      for (var i = 0; i < users.length; i++) {
+        var u = users[i];
+        if (search) {
+          var hay = ((u.name || '') + ' ' + (u.email || '')).toLowerCase();
+          if (hay.indexOf(search) === -1) continue;
+        }
+        var roles = u.roles || [];
+        for (var j = 0; j < roles.length; j++) {
+          var r = roles[j];
+          if (!byRole[r.roleType]) continue;
+          byRole[r.roleType].push({ user: u, role: r });
+        }
+      }
+
+      function visible(sectionKey) {
+        if (filter === 'all') return true;
+        if (filter === 'admin') return sectionKey === 'admin';
+        if (filter === 'approved') return sectionKey === 'approved';
+        if (filter === 'inactive') return true;  // row filter below
+        return true;
+      }
+
+      function maybeFilterInactive(entries) {
+        if (filter !== 'inactive') return entries;
+        return entries.filter(function(e) { return !e.user.isActive || !e.role.isActive; });
+      }
+
+      var sections = [];
+
+      if (visible('admin')) {
+        var admins = maybeFilterInactive(byRole.admin);
+        admins.sort(self2._rosterUserSort);
+        sections.push({
+          key: 'admin',
+          title: 'Administrators',
+          icon: 'fa-shield-halved',
+          count: admins.length,
+          renderBody: function() { return self2._rosterFlatListHtml(admins, 'admin'); }
+        });
+      }
+
+      if (visible('approved')) {
+        var approved = maybeFilterInactive(byRole.approved_user);
+        approved.sort(self2._rosterUserSort);
+        sections.push({
+          key: 'approved',
+          title: 'Approved Users',
+          icon: 'fa-user-check',
+          count: approved.length,
+          renderBody: function() { return self2._rosterFlatListHtml(approved, 'approved'); }
+        });
+      }
+
+      return sections;
+    },
+
+    _rosterUserSort: function(a, b) {
+      // Active first, then by name
+      if (a.user.isActive !== b.user.isActive) return a.user.isActive ? -1 : 1;
+      var an = (a.user.name || a.user.email || '');
+      var bn = (b.user.name || b.user.email || '');
+      return an.localeCompare(bn);
+    },
+
+    _rosterSectionHtml: function(section) {
+      // Sections always-expanded; long lists scroll inside their own
+      // body via overflow:auto. No collapse chevron — both columns
+      // stay scannable side-by-side without an extra click.
+      var subCount = section.subCount ? ' · ' + _esc(section.subCount) : '';
+      return (
+        '<section class="users-roster__section">' +
+          '<div class="users-roster__head">' +
+            '<i aria-hidden="true" class="fas ' + section.icon + ' users-roster__head-icon"></i>' +
+            '<span class="users-roster__head-title">' + _esc(section.title) + '</span>' +
+            '<span class="users-roster__head-count">' + section.count + subCount + '</span>' +
+          '</div>' +
+          '<div class="users-roster__body">' + section.renderBody() + '</div>' +
+        '</section>'
+      );
+    },
+
+    _rosterFlatListHtml: function(entries, sectionKey) {
+      if (!entries.length) {
+        return '<div class="users-roster__empty">No assignments.</div>';
+      }
+      var html = '<ul class="users-roster__list">';
+      for (var i = 0; i < entries.length; i++) {
+        html += this._rosterRowHtml(entries[i], sectionKey);
+      }
+      html += '</ul>';
+      return html;
+    },
+
+    _rosterRowHtml: function(entry, sectionKey) {
+      var u = entry.user;
+      var role = entry.role;
+      var rowClass = 'users-roster__row';
+      if (u.userId === this._selectedUserId) rowClass += ' users-roster__row--selected';
+      if (!u.isActive || !role.isActive) rowClass += ' users-roster__row--inactive';
+
+      // Source badge — admin-facing taxonomy ("Synced" / "Manual"),
+      // never the raw HC/External token.
+      var sourceLabel = u.source === 'HC' ? 'Synced'
+                      : u.source === 'External' ? 'Manual'
+                      : (u.source || '');
+      var sourceCls = u.source === 'HC' ? 'synced' : 'manual';
+      var sourceBadge = sourceLabel
+        ? '<span class="users-roster__source users-roster__source--' + sourceCls + '">' + _esc(sourceLabel) + '</span>'
+        : '';
+
+      // Inactive indicators
+      var inactiveTags = '';
+      if (!u.isActive) {
+        inactiveTags += '<span class="users-roster__tag users-roster__tag--off">User inactive</span>';
+      } else if (!role.isActive) {
+        inactiveTags += '<span class="users-roster__tag users-roster__tag--off">Role inactive</span>';
+      }
+
+      return (
+        '<li class="' + rowClass + '" data-user-id="' + _esc(u.userId) + '" tabindex="0">' +
+          '<span class="users-roster__row-name">' + _esc(u.name || u.email || '—') + '</span>' +
+          '<span class="users-roster__row-email">' + _esc(u.email || '') + '</span>' +
+          '<span class="users-roster__row-tags">' + inactiveTags + sourceBadge + '</span>' +
+        '</li>'
+      );
+    },
+
+    _renderRouting: function() {
+      var routing = document.getElementById('usersRouting');
+      if (!routing) return;
+      var data = this._deriveRoutingFull();
+
+      // Coarse diff: skip render if the routing signature hasn't changed.
+      // Reduces 30s-poll DOM churn to a no-op when nothing material changed.
+      var sig = this._routingSignature(data);
+      if (sig === this._lastRoutingSig && routing.dataset.rendered === '1') return;
+      this._lastRoutingSig = sig;
+      routing.dataset.rendered = '1';
+
+      var html = '';
+      html += '<div class="users-routing__head">';
+      html +=   '<i aria-hidden="true" class="fas fa-route"></i>';
+      html +=   '<span>Routing</span>';
+      html += '</div>';
+
+      html += '<div class="users-routing__body">';
+
+      // ---- Front Office pairs (AAS FO, FAS FO) ----
+      html += this._routingRowHtml('aasFo', 'AAS FO', data.aasFo.primary, data.aasFo.backup, {
+        showBackupSlot: true,
+        roleType: 'aas_fo_reviewer',
+        scope: '',
+        contextLabel: 'AAS FO'
+      });
+      html += this._routingRowHtml('fasFo', 'FAS FO', data.fasFo.primary, null, {
+        showBackupSlot: false,
+        roleType: 'fas_fo_reviewer',
+        scope: '',
+        contextLabel: 'FAS FO'
+      });
+
+      // ---- BU pairs (one per BU, sectors nested) ----
+      if (data.bus.length) {
+        html += '<div class="users-routing__divider"></div>';
+        for (var i = 0; i < data.bus.length; i++) {
+          var bu = data.bus[i];
+          var rowKey = 'bu:' + bu.name;
+          var isOpen = !!this._expandedRoutingRows[rowKey];
+          html += this._routingRowHtml(rowKey, bu.name, bu.primary, bu.backup, {
+            showBackupSlot: true,
+            sectorCount: bu.sectors.length,
+            sectorsExpanded: isOpen,
+            roleType: 'bu_reviewer',
+            scope: bu.name,
+            contextLabel: bu.name + ' BU Reviewer'
+          });
+          if (isOpen && bu.sectors.length) {
+            for (var k = 0; k < bu.sectors.length; k++) {
+              html += this._routingSectorRowHtml(bu.sectors[k]);
+            }
+          }
+        }
+      }
+
+      html += '</div>';
+      routing.innerHTML = html;
+
+      // Wire interactions
+      var self2 = this;
+      Array.prototype.forEach.call(routing.querySelectorAll('[data-routing-toggle]'), function(btn) {
+        btn.addEventListener('click', function() {
+          var key = btn.getAttribute('data-routing-toggle');
+          self2._expandedRoutingRows[key] = !self2._expandedRoutingRows[key];
+          self2._lastRoutingSig = null;  // force re-render on toggle
+          self2._renderRouting();
+        });
+      });
+      Array.prototype.forEach.call(routing.querySelectorAll('[data-open-user]'), function(el) {
+        el.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var uid = el.getAttribute('data-open-user');
+          if (uid) self2._openSlidein(uid);
+        });
+      });
+      // Inline gap CTAs — open the Add User slidein with role + scope
+      // pre-selected. Replace CTAs prefer searching existing TRIP users
+      // first (a former reviewer or approved_user is the typical pick).
+      Array.prototype.forEach.call(routing.querySelectorAll('[data-cta-action]'), function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var action = btn.getAttribute('data-cta-action');
+          var roleType = btn.getAttribute('data-cta-role');
+          var scope = btn.getAttribute('data-cta-scope');
+          if (!roleType) return;
+
+          // Swap action — two-click confirmation pattern (no native modal):
+          //   click 1 → button morphs to "Confirm" with auto-revert timer
+          //   click 2 within 5s → fires _makeRolePrimary, button shows spinner
+          //   wait 5s or click elsewhere → reverts back to "Swap"
+          if (action === 'swap-pair') {
+            var targetUserId = btn.getAttribute('data-cta-target-user');
+            if (!targetUserId) return;
+            if (btn.dataset.armed === '1') {
+              // Second click — flip to loading state, then fire.
+              // The routing dashboard re-renders after _silentReconcile
+              // returns, replacing this button entirely.
+              btn.dataset.armed = '0';
+              btn.disabled = true;
+              btn.classList.remove('users-routing__swap-btn--armed');
+              btn.classList.add('users-routing__swap-btn--loading');
+              btn.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i><span>Swapping…</span>';
+              self2._makeRolePrimary(targetUserId, roleType, scope || '');
+              return;
+            }
+            // First click — arm + show confirm prompt + start auto-revert
+            self2._armSwapConfirm(btn);
+            return;
+          }
+
+          // All remaining actions open the Add User flow with prefill.
+          var isPrimary = btn.getAttribute('data-cta-isprimary') === '1';
+          var contextLabel = btn.getAttribute('data-cta-context');
+          var ctaCopy = {
+            'add-primary':      'Adding primary',
+            'add-backup':       'Adding backup',
+            'replace-primary':  'Replacing primary',
+            'replace-backup':   'Replacing backup'
+          }[action] || 'Adding';
+          self2._openAddUser({
+            roleType: roleType,
+            scope: scope,
+            isPrimary: isPrimary,
+            ctaAction: action,
+            ctaCopy: ctaCopy,
+            contextLabel: contextLabel
+          });
+        });
+      });
+    },
+
+    /**
+     * Arm a swap-pair button for two-click confirmation. First click
+     * morphs the button into a "Confirm" state with auto-revert after
+     * 5 seconds. Second click within the window fires the swap. Click
+     * outside (or just wait) reverts. No native modal — inline only.
+     *
+     * @param {HTMLButtonElement} btn
+     */
+    _armSwapConfirm: function(btn) {
+      if (!btn) return;
+      // Save original markup so we can restore on cancel/timeout
+      var originalHTML = btn.innerHTML;
+      var originalTitle = btn.getAttribute('title') || '';
+      btn.dataset.armed = '1';
+      btn.classList.add('users-routing__swap-btn--armed');
+      btn.innerHTML = '<i aria-hidden="true" class="fas fa-check"></i><span>Confirm</span>';
+      btn.setAttribute('title', 'Click again to confirm the swap');
+
+      // Auto-revert after 5s
+      var revertTimer = setTimeout(disarm, 5000);
+
+      // Click anywhere else → cancel
+      function onOutsideClick(e) {
+        if (e.target === btn || (btn.contains && btn.contains(e.target))) return;
+        disarm();
+      }
+      document.addEventListener('click', onOutsideClick, true);
+
+      function disarm() {
+        clearTimeout(revertTimer);
+        document.removeEventListener('click', onOutsideClick, true);
+        if (!btn) return;
+        btn.dataset.armed = '0';
+        btn.classList.remove('users-routing__swap-btn--armed');
+        btn.innerHTML = originalHTML;
+        if (originalTitle) btn.setAttribute('title', originalTitle);
+      }
+    },
+
+    /** Compute a stable signature of routing-affecting data for diff-skip. */
+    _routingSignature: function(data) {
+      function entrySig(e) {
+        return e ? (e.userId + ':' + (e.isActive ? '1' : '0')) : '_';
+      }
+      var bits = [];
+      bits.push('aas:' + entrySig(data.aasFo.primary) + '/' + entrySig(data.aasFo.backup));
+      bits.push('fas:' + entrySig(data.fasFo.primary));
+      for (var i = 0; i < data.bus.length; i++) {
+        var b = data.bus[i];
+        var sectorBits = b.sectors.map(function(s) {
+          return s.sectorName + ':' + s.source + ':' + (s.userId || '_');
+        }).join(';');
+        bits.push('bu:' + b.name + ':' + entrySig(b.primary) + '/' + entrySig(b.backup) + '|' + sectorBits);
+      }
+      // Expand-state is part of the signature so toggles re-render.
+      bits.push('exp:' + Object.keys(this._expandedRoutingRows).filter(function(k) {
+        return self._expandedRoutingRows[k];
+      }).sort().join(','));
+      return bits.join('||');
+    },
+
+    /**
+     * Render a single routing row (AAS FO, FAS FO, or one BU). Includes
+     * primary, backup (if showBackupSlot), and inline gap CTAs that open
+     * the Add User flow with role + scope pre-selected. Sector subrows
+     * render separately via _routingSectorRowHtml; this row carries the
+     * sector toggle button when sectorCount > 0.
+     *
+     * opts:
+     *   showBackupSlot   bool
+     *   sectorCount      number  — BU rows only
+     *   sectorsExpanded  bool    — BU rows only
+     *   roleType         string  — 'aas_fo_reviewer'|'fas_fo_reviewer'|'bu_reviewer'
+     *   scope            string  — BU name for bu_reviewer, '' for FO roles
+     *   contextLabel     string  — human-readable for the context banner
+     */
+    _routingRowHtml: function(key, label, primary, backup, opts) {
+      opts = opts || {};
+      var hasPrimaryGap = !primary;
+      var hasBackupGap = opts.showBackupSlot && !backup;
+      var hasInactivePrimary = primary && !primary.isActive;
+      var hasInactiveBackup = backup && !backup.isActive;
+      var rowClass = 'users-routing__row';
+      if (hasPrimaryGap || hasInactivePrimary) rowClass += ' users-routing__row--gap-primary';
+      else if (hasBackupGap || hasInactiveBackup) rowClass += ' users-routing__row--gap-backup';
+
+      var html = '<div class="' + rowClass + '">';
+      html +=   '<span class="users-routing__row-label">' + _esc(label) + '</span>';
+
+      // ---- Primary slot ----
+      html += '<span class="users-routing__row-slot users-routing__row-slot--primary">';
+      if (primary) {
+        var pName = primary.name || primary.email || '—';
+        html += '<a class="users-routing__person" data-open-user="' + _esc(primary.userId) + '" title="Open user details">' +
+                  '<i aria-hidden="true" class="fas fa-user-tie"></i>' +
+                  '<span>' + _esc(pName) + '</span>' +
+                '</a>';
+        if (!primary.isActive) {
+          html += this._gapCtaHtml('replace-primary', opts, 'Replace');
+        }
+      } else if (opts.roleType) {
+        html += this._gapCtaHtml('add-primary', opts, 'Add primary');
+      }
+      html += '</span>';
+
+      // ---- Backup slot ----
+      html += '<span class="users-routing__row-slot users-routing__row-slot--backup">';
+      if (opts.showBackupSlot) {
+        if (backup) {
+          var bName = backup.name || backup.email || '—';
+          html += '<span class="users-routing__backup-label">Backup</span>' +
+                  '<a class="users-routing__person" data-open-user="' + _esc(backup.userId) + '" title="Open user details">' +
+                    '<i aria-hidden="true" class="fas fa-user"></i>' +
+                    '<span>' + _esc(bName) + '</span>' +
+                  '</a>';
+          if (!backup.isActive) {
+            html += this._gapCtaHtml('replace-backup', opts, 'Replace');
+          } else if (primary && primary.isActive) {
+            // Both primary and backup are active — offer a one-click swap.
+            // Backend setRolePrimary already handles the bulk pending
+            // reassignment + ADMIN_REASSIGN logging + summary email.
+            html += '<button type="button" class="users-routing__swap-btn"' +
+                    ' data-cta-action="swap-pair"' +
+                    ' data-cta-role="' + _esc(opts.roleType || '') + '"' +
+                    ' data-cta-scope="' + _esc(opts.scope || '') + '"' +
+                    ' data-cta-target-user="' + _esc(backup.userId) + '"' +
+                    ' title="Promote ' + _esc(bName) + ' to primary">' +
+                      '<i aria-hidden="true" class="fas fa-arrow-right-arrow-left"></i>' +
+                      '<span>Swap</span>' +
+                    '</button>';
+          }
+        } else if (opts.roleType) {
+          html += '<span class="users-routing__backup-label">Backup</span>' +
+                  this._gapCtaHtml('add-backup', opts, 'Add backup');
+        }
+      }
+      html += '</span>';
+
+      // ---- Sector toggle (BU rows with sectors) ----
+      html += '<span class="users-routing__row-actions">';
+      if (opts.sectorCount) {
+        var caret = opts.sectorsExpanded ? 'fa-chevron-down' : 'fa-chevron-right';
+        html += '<button type="button" class="users-routing__sector-toggle" data-routing-toggle="' + _esc(key) + '" title="Show sector directors">' +
+                  '<i aria-hidden="true" class="fas ' + caret + '"></i>' +
+                  '<span>' + opts.sectorCount + ' sector' + (opts.sectorCount === 1 ? '' : 's') + '</span>' +
+                '</button>';
+      }
+      html += '</span>';
+
+      html += '</div>';
+      return html;
+    },
+
+    /**
+     * Gap CTA button. Opens the Add User slidein with role + scope
+     * pre-selected. ctaAction is a label-only hint for context copy;
+     * the prefill payload is read from data-* attrs by the click wiring.
+     */
+    _gapCtaHtml: function(ctaAction, opts, label) {
+      var isPrimary = (ctaAction === 'add-primary' || ctaAction === 'replace-primary');
+      var isReplace = (ctaAction === 'replace-primary' || ctaAction === 'replace-backup');
+      var icon = isReplace ? 'fa-rotate' : 'fa-plus';
+      var btnClass = 'users-routing__gap-cta';
+      if (isReplace) btnClass += ' users-routing__gap-cta--replace';
+      return '<button type="button" class="' + btnClass + '"' +
+        ' data-cta-action="' + _esc(ctaAction) + '"' +
+        ' data-cta-role="' + _esc(opts.roleType || '') + '"' +
+        ' data-cta-scope="' + _esc(opts.scope || '') + '"' +
+        ' data-cta-isprimary="' + (isPrimary ? '1' : '0') + '"' +
+        ' data-cta-context="' + _esc(opts.contextLabel || '') + '"' +
+        '>' +
+          '<i aria-hidden="true" class="fas ' + icon + '"></i>' +
+          '<span>' + _esc(label) + '</span>' +
+        '</button>';
+    },
+
+    /** Render one nested sector subrow. Three flavors:
+     *    'HC'        — Synced from staffing (filled SD position)
+     *    'override'  — sector_override role from Travel_User_Roles
+     *    'vacant'    — sector exists in HC but has no filled SD position;
+     *                  routing for that sector cascades to the BU stage.
+     */
+    _routingSectorRowHtml: function(sd) {
+      var rowClass = 'users-routing__sector-row';
+      if (sd.source === 'vacant') rowClass += ' users-routing__sector-row--vacant';
+
+      var clickAttr = (sd.userId)
+        ? ' data-open-user="' + _esc(sd.userId) + '" role="button" tabindex="0"'
+        : '';
+      if (sd.userId) rowClass += ' users-routing__sector-row--clickable';
+
+      var personHtml;
+      if (sd.source === 'vacant') {
+        personHtml = '<span class="users-routing__sector-person users-routing__sector-person--vacant">' +
+          '<i aria-hidden="true" class="fas fa-triangle-exclamation"></i>' +
+          'No SD on file' +
+        '</span>';
+      } else {
+        personHtml = '<span class="users-routing__sector-person">' +
+          '<i aria-hidden="true" class="fas fa-user-shield"></i>' +
+          _esc(sd.employeeName || '—') +
+        '</span>';
+      }
+
+      var badgeMap = { 'HC': { label: 'Synced', cls: 'hc' }, 'override': { label: 'Override', cls: 'override' }, 'vacant': { label: 'Vacant', cls: 'vacant' } };
+      var badge = badgeMap[sd.source] || badgeMap['vacant'];
+
+      // Sector code badge: first sub-org code (e.g. 'QFAA') inline next to
+      // the sector name, with all codes in a tooltip if there's more than
+      // one. Gives admin context without bloating the row.
+      var codeBadge = '';
+      if (sd.codes && sd.codes.length) {
+        var firstCode = String(sd.codes[0]).substring(0, 4).toUpperCase();
+        var titleAttr = (sd.codes.length > 1)
+          ? ' title="Codes: ' + _esc(sd.codes.join(', ')) + '"'
+          : '';
+        codeBadge = '<span class="users-routing__sector-code"' + titleAttr + '>' + _esc(firstCode) + '</span>';
+      }
+
+      return '<div class="' + rowClass + '"' + clickAttr + '>' +
+        '<span class="users-routing__sector-indent"></span>' +
+        '<span class="users-routing__sector-name">' + _esc(sd.sectorName) + codeBadge + '</span>' +
+        personHtml +
+        '<span class="users-routing__sector-source users-routing__sector-source--' + badge.cls + '">' +
+          _esc(badge.label) +
+        '</span>' +
+      '</div>';
+    },
+
+
+    // ----------------------------------------------------------------------
+    // SLIDEIN — full user + role management
+    // ----------------------------------------------------------------------
+
+    _findUser: function(userId) {
+      for (var i = 0; i < this._users.length; i++) {
+        if (this._users[i].userId === userId) return this._users[i];
+      }
+      return null;
+    },
+
+    /** Lookup a user by email (case-insensitive). Used by the Add User
+     *  search to mark HC results that are already in TRIP, and by the
+     *  manual-entry email blur to prevent duplicate creates. */
+    _findUserByEmail: function(email) {
+      if (!email) return null;
+      var lower = String(email).toLowerCase();
+      for (var i = 0; i < this._users.length; i++) {
+        if ((this._users[i].email || '').toLowerCase() === lower) return this._users[i];
+      }
+      return null;
+    },
+
+    /**
+     * Open a user's slidein with the Add Role form pre-expanded and
+     * pre-filled. Used by the routing-dashboard CTAs when admin picks an
+     * existing TRIP user from the search (e.g. promoting an approved_user
+     * to BU reviewer in one click).
+     *
+     * Implementation: open the slidein normally, then in the next tick
+     * (after _renderSlideinBody mounts the DOM), expand the form and
+     * populate the role + scope selects from the prefill payload.
+     */
+    _openSlideinWithRolePrefill: function(userId, prefill) {
+      this._openSlidein(userId);
+      setTimeout(function() {
+        var body = document.getElementById('usersSlideinBody');
+        if (!body) return;
+        var addRoleForm = body.querySelector('#slideinAddRoleForm');
+        if (addRoleForm) addRoleForm.classList.remove('hidden');
+        var typeSel = body.querySelector('#slideinNewRoleType');
+        var scopeSel = body.querySelector('#slideinNewRoleScope');
+        var scopeWrap = body.querySelector('#slideinNewRoleScopeWrap');
+        var roleRow = body.querySelector('#slideinNewRoleRow');
+        if (typeSel && prefill.roleType) {
+          typeSel.value = prefill.roleType;
+          typeSel.disabled = true;
+          // Trigger the change handler so scope-conditional UI updates
+          var evt = document.createEvent('HTMLEvents');
+          evt.initEvent('change', true, false);
+          typeSel.dispatchEvent(evt);
+          if (prefill.scope && scopeSel) {
+            scopeSel.value = prefill.scope;
+            scopeSel.disabled = true;
+            if (scopeWrap) scopeWrap.classList.remove('hidden');
+            if (roleRow) roleRow.classList.add('users-form-row--2col');
+          }
+        }
+        if (addRoleForm && addRoleForm.scrollIntoView) {
+          try { addRoleForm.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) {}
+        }
+      }, 0);
+    },
+
+    _openSlidein: function(userId) {
+      this._selectedUserId = userId;
+      var sl = document.getElementById('usersSlidein');
+      var bd = document.getElementById('usersSlideinBackdrop');
+      var u = this._findUser(userId);
+      if (!u) {
+        // Most common cause: the just-added User_ID was returned with one
+        // shape but the loaded list has a different shape (e.g. leading
+        // zeros coerced by Sheets before text-format was applied). Toast
+        // it instead of an alert, log diagnostics, and bail without
+        // opening the slidein.
+        console.warn('TravelUsers: _openSlidein cannot find userId=' + userId,
+          'in', this._users.length, 'loaded users');
+        this._showToast(
+          'Could not open user detail. The list may be stale — try refreshing.',
+          'error'
+        );
+        this._selectedUserId = null;
+        return;
+      }
+
+      this._renderSlideinHeader(u);
+      this._renderSlideinBody(u);
+
+      if (sl) sl.classList.add('users-slidein--open');
+      if (bd) bd.classList.add('users-slidein__backdrop--open');
+      // Selected-highlight refresh is purely visual; defer to a later tick
+      // so we don't add another DOM-rebuilding pass to the current message
+      // handler. Reduces sync work blocking the main thread.
+      setTimeout(function() { self._render(); }, 0);
+    },
+
+    _closeSlidein: function() {
+      this._selectedUserId = null;
+      this._addUserPrefill = null;   // prevent stale prefill on next open
+      this._addUserState = null;
+      this._addUserPicked = null;
+      var sl = document.getElementById('usersSlidein');
+      var bd = document.getElementById('usersSlideinBackdrop');
+      if (sl) sl.classList.remove('users-slidein--open');
+      if (bd) bd.classList.remove('users-slidein__backdrop--open');
+      this._render();
+    },
+
+    /** After any write, reload from server then re-render slidein for the same user. */
+    _reloadAndKeepSlideinOpen: function() {
+      var keepUid = this._selectedUserId;
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.success) {
+            self._users = (res.data && res.data.users) || [];
+            if (res.data && res.data.version) self._knownVersion = res.data.version;
+          } else {
+            self._users = [];
+          }
+          self._render();
+          if (keepUid) {
+            var u = self._findUser(keepUid);
+            if (u) {
+              self._renderSlideinHeader(u);
+              self._renderSlideinBody(u);
+            }
+          }
+        })
+        .withFailureHandler(function() { /* keep open silently */ })
+        .listTravelUsers();
+    },
+
+    _renderSlideinHeader: function(u) {
+      var nameEl = document.getElementById('usersSlideinName');
+      var metaEl = document.getElementById('usersSlideinMeta');
+      if (nameEl) nameEl.textContent = u.name || u.email || u.userId;
+      if (metaEl) {
+        // Source uses the admin-facing taxonomy ('Synced' / 'Manual'),
+        // not the raw internal value. User_ID stays in monospace.
+        var sourceLabel = u.source === 'HC' ? 'Synced'
+                        : u.source === 'External' ? 'Manual'
+                        : (u.source || '');
+        var parts = [];
+        if (u.email) parts.push(_esc(u.email));
+        if (sourceLabel) parts.push(_esc(sourceLabel));
+        if (u.userId) parts.push('<code>' + _esc(u.userId) + '</code>');
+        metaEl.innerHTML = parts.join(' · ');
+      }
+    },
+
+    _renderSlideinBody: function(u) {
+      var body = document.getElementById('usersSlideinBody');
+      if (!body) return;
+
+      // Identity (name, email, source, User_ID) lives in the slidein header
+      // exclusively per UX brief #7 — no duplication in the body. The body
+      // is purely actionable: Status toggle (immediate), Roles, Edit
+      // details (collapsed, only for the rare email/name change case).
+      var html = '';
+
+      // ---- STATUS — single-row immediate toggle ----
+      html += '<section class="users-slidein__section users-slidein__section--status">';
+      html +=   '<label class="users-slidein__status-toggle">';
+      html +=     '<input type="checkbox" id="slideinActiveToggle"' + (u.isActive ? ' checked' : '') + '>';
+      html +=     '<span class="users-slidein__status-label">';
+      html +=       '<strong>' + (u.isActive ? 'Active' : 'Inactive') + '</strong>';
+      html +=       '<span class="users-slidein__status-hint">' +
+                     (u.isActive
+                       ? 'User can access TRIP based on their role assignments.'
+                       : 'User is blocked from TRIP. Roles preserved.') +
+                   '</span>';
+      html +=     '</span>';
+      html +=   '</label>';
+      html += '</section>';
+
+      // ---- ROLES (primary, most-used section) ----
+      html += '<section class="users-slidein__section">';
+      html +=   '<div class="users-slidein__section-head">';
+      html +=     '<h3 class="users-slidein__section-title">Roles</h3>';
+      html +=     '<button type="button" class="users-btn users-btn--ghost" id="slideinAddRoleBtn"><i aria-hidden="true" class="fas fa-plus"></i> Add role</button>';
+      html +=   '</div>';
+
+      var roles = u.roles || [];
+      if (!roles.length) {
+        html += '<p class="users-slidein__empty">No roles assigned.</p>';
+      } else {
+        html += '<ul class="users-slidein__roles">';
+        for (var i = 0; i < roles.length; i++) {
+          html += this._renderSlideinRoleRow(u, roles[i]);
+        }
+        html += '</ul>';
+      }
+
+      // Add-role inline form (hidden by default)
+      html += '<div class="users-slidein__add-role hidden" id="slideinAddRoleForm">';
+      html +=   this._renderAddRoleFormHtml();
+      html += '</div>';
+      html += '</section>';
+
+      // ---- EDIT DETAILS — only for External users. HC users have nothing
+      // editable here (name + email auto-sync from HC), so the section
+      // is omitted entirely rather than shown disabled.
+      if (u.source !== 'HC') {
+        html += '<section class="users-slidein__section users-slidein__section--collapsible">';
+        html +=   '<button type="button" class="users-slidein__collapse-toggle" id="slideinEditDetailsToggle" aria-expanded="false">';
+        html +=     '<i aria-hidden="true" class="fas fa-chevron-right"></i>';
+        html +=     '<span>Edit details</span>';
+        html +=   '</button>';
+        html +=   '<div class="users-slidein__collapse-body hidden" id="slideinEditDetailsBody">';
+        html +=     '<div class="users-slidein__form">';
+        html +=       '<label class="users-slidein__field">';
+        html +=         '<span>Name</span>';
+        html +=         '<input type="text" id="slideinName" value="' + _esc(u.name || '') + '">';
+        html +=       '</label>';
+        html +=       '<label class="users-slidein__field">';
+        html +=         '<span>Email</span>';
+        html +=         '<input type="email" id="slideinEmail" value="' + _esc(u.email || '') + '">';
+        html +=       '</label>';
+        html +=       '<div class="users-slidein__field-row" style="justify-content:flex-end;">';
+        html +=         '<button type="button" class="users-btn users-btn--primary" id="slideinSaveUser">Save changes</button>';
+        html +=       '</div>';
+        html +=     '</div>';
+        html +=   '</div>';
+        html += '</section>';
+      }
+
+      body.innerHTML = html;
+
+      // ---- WIRE EVENTS ----
+
+      // Status toggle — fires immediately, optimistic update
+      var statusToggle = body.querySelector('#slideinActiveToggle');
+      if (statusToggle) {
+        statusToggle.addEventListener('change', function() {
+          self._toggleUserActive(u.userId, statusToggle.checked);
+        });
+      }
+
+      // Edit details collapse
+      var collapseBtn = body.querySelector('#slideinEditDetailsToggle');
+      var collapseBody = body.querySelector('#slideinEditDetailsBody');
+      if (collapseBtn && collapseBody) {
+        collapseBtn.addEventListener('click', function() {
+          var nowOpen = collapseBody.classList.toggle('hidden') === false;
+          collapseBtn.setAttribute('aria-expanded', String(nowOpen));
+          collapseBtn.classList.toggle('users-slidein__collapse-toggle--open', nowOpen);
+        });
+      }
+
+      // Save user (only fires from inside Edit Details)
+      var saveUserBtn = body.querySelector('#slideinSaveUser');
+      if (saveUserBtn) saveUserBtn.addEventListener('click', function() { self._saveUserFields(u.userId); });
+
+      // Roles — Add Role expand
+      var addRoleBtn = body.querySelector('#slideinAddRoleBtn');
+      var addRoleForm = body.querySelector('#slideinAddRoleForm');
+      if (addRoleBtn && addRoleForm) {
+        addRoleBtn.addEventListener('click', function() {
+          addRoleForm.classList.toggle('hidden');
+          // Brief item 8: scroll the form into view + auto-focus the
+          // role-type select on open. Layout-stable, two-line fix.
+          if (!addRoleForm.classList.contains('hidden')) {
+            setTimeout(function() {
+              addRoleForm.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              var typeSel = addRoleForm.querySelector('#slideinNewRoleType');
+              if (typeSel) { try { typeSel.focus(); } catch (e) {} }
+            }, 50);
+          }
+        });
+      }
+      this._wireAddRoleForm(body, u);
+
+      // Per-role action buttons
+      Array.prototype.forEach.call(body.querySelectorAll('[data-role-action]'), function(btn) {
+        var action = btn.getAttribute('data-role-action');
+        var roleId = btn.getAttribute('data-role-id');
+        var roleType = btn.getAttribute('data-role-type');
+        var scope = btn.getAttribute('data-role-scope') || '';
+        btn.addEventListener('click', function() {
+          if (action === 'toggle-active') self._toggleRoleActive(roleId, btn.getAttribute('data-next-active') === 'true');
+          else if (action === 'delete')    self._confirmDeleteRole(roleId, roleType, scope);
+          else if (action === 'make-primary') self._makeRolePrimary(u.userId, roleType, scope);
+        });
+      });
+    },
+
+    /**
+     * Toggle the user's Active flag. Re-activation fires directly. Deactivation
+     * computes the aggregate routing impact across the user's active roles
+     * and may show an inline expansion below the status toggle requiring
+     * acknowledgment, OR be hard-blocked if the user is the last active admin.
+     */
+    _toggleUserActive: function(userId, nextActive) {
+      var user = this._findUser(userId);
+      if (!user) return;
+      if (nextActive) {
+        return this._executeToggleUserActive(userId, true);
+      }
+      var aggregate = this._routingImpactOfUserDeactivation(userId);
+      if (!aggregate.hasBlocker && !aggregate.hasWarn && !aggregate.hasInform) {
+        // No routing-impacting roles — fire directly
+        return this._executeToggleUserActive(userId, false);
+      }
+      // Show expansion below the status toggle, revert the visual checkbox
+      this._showUserWarnPanel(user, aggregate);
+    },
+
+    /** Direct user toggle RPC — same shape as before, no gating logic. */
+    _executeToggleUserActive: function(userId, nextActive) {
+      var user = this._findUser(userId);
+      if (!user) return;
+      var prev = user.isActive;
+      user.isActive = nextActive;
+      this._renderSlideinBody(user);
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            user.isActive = prev;
+            self._renderSlideinBody(user);
+            self._showSlideinError('Toggle failed: ' + (res && res.error));
+            return;
+          }
+          // User-deactivation may have walked multiple primary roles;
+          // surface combined reassign + orphan counts in the toast.
+          if (!nextActive) {
+            var rc = (res.data && res.data.reassignedCount) || 0;
+            var oc = (res.data && res.data.orphanedCount) || 0;
+            if (rc) self._announceReassignment(rc, 'reassigned to backup');
+            if (oc) self._announceReassignment(oc, 'orphaned (no backup configured)');
+          }
+          self._silentReconcile();
+        })
+        .withFailureHandler(function(err) {
+          user.isActive = prev;
+          self._renderSlideinBody(user);
+          self._showSlideinError('Toggle failed: ' + (err && err.message));
+        })
+        .updateTravelUser(userId, { isActive: nextActive });
+    },
+
+    /**
+     * Human-readable role label used by every role-rendering surface.
+     * Routing roles lead with their scope ('Army Reviewer · Primary');
+     * unscoped routing roles lead with the role name ('AAS FO · Primary');
+     * non-routing roles render the role itself ('Admin', 'Site Access').
+     *
+     * Optional opts: { includePosition: false } drops the Primary/Backup
+     * suffix when the caller renders the position separately.
+     */
+    _humanRoleLabel: function(role, opts) {
+      opts = opts || {};
+      var pp = role.isPrimary ? 'Primary' : 'Backup';
+      var withPos = function(base) {
+        return opts.includePosition === false ? base : base + ' · ' + pp;
+      };
+      switch (role.roleType) {
+        case 'admin':            return 'Admin';
+        case 'approved_user':    return 'Site Access';
+        case 'aas_fo_reviewer':  return withPos('AAS FO');
+        case 'fas_fo_reviewer':  return withPos('FAS FO');
+        case 'bu_reviewer':      return withPos((role.scope || 'BU') + ' Reviewer');
+        case 'sector_override':  return (role.scope || 'Sector') + ' Reviewer';
+        default:                 return role.roleType;
+      }
+    },
+
+    _renderSlideinRoleRow: function(user, role) {
+      var classes = ['users-role-row'];
+      if (!role.isActive) classes.push('users-role-row--inactive');
+      if (role._pending) classes.push('users-role-row--pending');
+
+      var label = this._humanRoleLabel(role);
+
+      var actions = '';
+      // Make primary action — for aas_fo_reviewer non-primary
+      if (role.roleType === 'aas_fo_reviewer' && role.isActive && !role.isPrimary) {
+        actions += '<button class="users-role-row__action" data-role-action="make-primary"' +
+          ' data-role-id="' + _esc(role.roleId) + '" data-role-type="aas_fo_reviewer" data-role-scope=""' +
+          ' title="Make primary AAS FO">' +
+          '<i aria-hidden="true" class="fas fa-star"></i>' +
+        '</button>';
+      }
+      // Active toggle
+      var nextActive = role.isActive ? 'false' : 'true';
+      actions += '<button class="users-role-row__action" data-role-action="toggle-active"' +
+        ' data-role-id="' + _esc(role.roleId) + '" data-next-active="' + nextActive + '"' +
+        ' title="' + (role.isActive ? 'Deactivate role' : 'Reactivate role') + '">' +
+        '<i aria-hidden="true" class="fas ' + (role.isActive ? 'fa-toggle-on' : 'fa-toggle-off') + '"></i>' +
+      '</button>';
+      // Delete
+      actions += '<button class="users-role-row__action users-role-row__action--danger" data-role-action="delete"' +
+        ' data-role-id="' + _esc(role.roleId) + '" data-role-type="' + _esc(role.roleType) + '" data-role-scope="' + _esc(role.scope) + '"' +
+        ' title="Delete role">' +
+        '<i aria-hidden="true" class="fas fa-trash"></i>' +
+      '</button>';
+
+      var inactiveTag = role.isActive
+        ? ''
+        : '<span class="users-role-row__inactive-tag">Inactive</span>';
+      var notesLine = role.notes
+        ? '<span class="users-role-row__notes">' + _esc(role.notes) + '</span>'
+        : '';
+      // The <li> is column-flex. __top holds the existing label + actions
+      // row layout. The routing-warn panel (when visible) gets appended
+      // as a second child of <li> by _showRoleWarnPanel — inside the
+      // same row so the triggering context stays anchored.
+      return '<li class="' + classes.join(' ') + '" data-role-id="' + _esc(role.roleId) + '">' +
+        '<div class="users-role-row__top">' +
+          '<span class="users-role-row__main">' +
+            '<span class="users-role-row__label">' +
+              _esc(label) + inactiveTag +
+            '</span>' +
+            notesLine +
+          '</span>' +
+          '<span class="users-role-row__actions">' + actions + '</span>' +
+        '</div>' +
+      '</li>';
+    },
+
+    _renderAddRoleFormHtml: function() {
+      var typeOptions = _buildGrantableRoleOptions(true);
+      return (
+        '<div class="users-slidein__form">' +
+          '<div class="users-form-row" id="slideinNewRoleRow">' +
+            '<label class="users-slidein__field">' +
+              '<span>Role</span>' +
+              '<select id="slideinNewRoleType">' + typeOptions + '</select>' +
+            '</label>' +
+            '<label class="users-slidein__field hidden" id="slideinNewRoleScopeWrap">' +
+              '<span id="slideinNewRoleScopeLabel">Scope</span>' +
+              '<select id="slideinNewRoleScope"><option value="">— select —</option></select>' +
+            '</label>' +
+          '</div>' +
+          '<label class="users-slidein__field">' +
+            '<span>Note for this role assignment</span>' +
+            '<input type="text" id="slideinNewRoleNotes" placeholder="Why granted">' +
+            '<span class="users-slidein__hint">Optional. Shown on the role record after creation.</span>' +
+          '</label>' +
+          '<div class="users-slidein__field-row">' +
+            '<button type="button" class="users-btn users-btn--ghost" id="slideinCancelAddRole">Cancel</button>' +
+            '<button type="button" class="users-btn users-btn--primary" id="slideinSubmitAddRole">Add role</button>' +
+          '</div>' +
+        '</div>'
+      );
+    },
+
+    _wireAddRoleForm: function(body, user) {
+      var typeSel = body.querySelector('#slideinNewRoleType');
+      var scopeWrap = body.querySelector('#slideinNewRoleScopeWrap');
+      var scopeLabel = body.querySelector('#slideinNewRoleScopeLabel');
+      var scopeSel = body.querySelector('#slideinNewRoleScope');
+      var roleRow = body.querySelector('#slideinNewRoleRow');
+      var cancelBtn = body.querySelector('#slideinCancelAddRole');
+      var submitBtn = body.querySelector('#slideinSubmitAddRole');
+      var notesInp = body.querySelector('#slideinNewRoleNotes');
+      var formEl = body.querySelector('#slideinAddRoleForm');
+      if (!typeSel || !scopeWrap || !scopeSel) return;
+
+      function refreshConditionals() {
+        var roleType = typeSel.value;
+        var meta = ROLE_META[roleType] || {};
+        if (roleType && meta.hasScope) {
+          scopeWrap.classList.remove('hidden');
+          if (roleRow) roleRow.classList.add('users-form-row--2col');
+          if (roleType === 'bu_reviewer') {
+            scopeLabel.textContent = 'Business unit';
+            self._populateBUOptions(scopeSel);
+          } else if (roleType === 'sector_override') {
+            scopeLabel.textContent = 'Sector';
+            self._populateSectorOptions(scopeSel);
+          }
+        } else {
+          scopeWrap.classList.add('hidden');
+          if (roleRow) roleRow.classList.remove('users-form-row--2col');
+        }
+      }
+      typeSel.addEventListener('change', refreshConditionals);
+      refreshConditionals();
+
+      if (cancelBtn) cancelBtn.addEventListener('click', function() {
+        if (formEl) formEl.classList.add('hidden');
+      });
+
+      if (submitBtn) submitBtn.addEventListener('click', function() {
+        var roleType = typeSel.value;
+        var scope = scopeWrap.classList.contains('hidden') ? '' : (scopeSel.value || '').trim();
+        var meta = ROLE_META[roleType] || {};
+        if (!roleType) {
+          self._showSlideinError('Pick a role to grant.');
+          try { typeSel.focus(); } catch (e) {}
+          return;
+        }
+        if (meta.hasScope && !scope) {
+          self._showSlideinError('Pick a ' + (roleType === 'bu_reviewer' ? 'business unit' : 'sector') + '.');
+          try { scopeSel.focus(); } catch (e) {}
+          return;
+        }
+        var notes = (notesInp && notesInp.value || '').trim();
+        var origLabel = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i> Adding…';
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (!res || !res.success) {
+              self._restoreSubmit(submitBtn, origLabel);
+              self._showSlideinError('Add role failed: ' + (res && res.error));
+              return;
+            }
+            // Optimistic insert: push the server's returned role straight
+            // into local state and re-render the slidein body NOW. The
+            // button's spinner clears at the same moment the new role row
+            // appears — no decouple gap. Background _silentReconcile then
+            // catches any cross-user state changes (e.g. another AAS FO
+            // demoted from primary by the server's atomic swap).
+            var newRole = res.data && res.data.role;
+            var currentUser = self._findUser(user.userId);
+            if (currentUser && newRole) {
+              var exists = false;
+              for (var ri = 0; ri < (currentUser.roles || []).length; ri++) {
+                if (currentUser.roles[ri].roleId === newRole.roleId) { exists = true; break; }
+              }
+              if (!exists) {
+                currentUser.roles = currentUser.roles || [];
+                currentUser.roles.push(newRole);
+              }
+              self._renderSlideinBody(currentUser);
+            } else {
+              // Edge: missing currentUser — fall back to the old reload path
+              self._restoreSubmit(submitBtn, origLabel);
+              self._reloadAndKeepSlideinOpen();
+              return;
+            }
+            // Background reconcile for cross-user state (e.g. demoted
+            // primary on a different AAS FO when this is the new primary)
+            self._announceReassignment((res.data && res.data.reassignedCount) || 0, 'reassigned to new primary');
+            self._silentReconcile();
+          })
+          .withFailureHandler(function(err) {
+            self._restoreSubmit(submitBtn, origLabel);
+            self._showSlideinError('Add role failed: ' + (err && err.message));
+          })
+          // No isPrimary in payload — server smart-defaults
+          .addRoleToUser(user.userId, {
+            roleType: roleType,
+            scope: scope,
+            notes: notes
+          });
+      });
+    },
+
+    /**
+     * Populate the BU dropdown. Options render as 'Business Unit Name (CODE)'
+     * with the human-readable name leading. If ensureCode/ensureName are
+     * provided (typically the picked HC user's own BU), the option is
+     * inserted even if it wasn't in the HC-derived map — guarantees the
+     * pre-fill always has an option to select.
+     */
+    /**
+     * Populate the BU dropdown. NAME is the option value (and the Scope
+     * value stored in Travel_User_Roles) — codes are unstable across the
+     * upcoming org code restructure. Codes still appear as a hover
+     * tooltip via the title attribute, so admins who need code context
+     * can see it but the dropdown stays clean.
+     */
+    _populateBUOptions: function(select, ensureName) {
+      if (!select) return;
+      var aas = this._deriveAasScope();
+      var entries = aas.businessUnits.slice();
+      var seen = {};
+      for (var i = 0; i < entries.length; i++) seen[entries[i].name] = true;
+      if (ensureName && !seen[ensureName]) {
+        entries.push({ name: ensureName, codes: [] });
+      }
+
+      var options = '<option value="">— select business unit —</option>';
+      if (entries.length === 0 && !this._hcReady) {
+        options = '<option value="">Loading…</option>';
+      }
+      for (var j = 0; j < entries.length; j++) {
+        var e = entries[j];
+        var titleAttr = (e.codes && e.codes.length)
+          ? ' title="Codes: ' + _esc(e.codes.join(', ')) + '"'
+          : '';
+        options += '<option value="' + _esc(e.name) + '"' + titleAttr + '>' + _esc(e.name) + '</option>';
+      }
+      select.innerHTML = options;
+    },
+
+    /**
+     * Populate the Sector dropdown. Sector NAMES collide across BUs (every
+     * BU has its own "Sector 1"); the label includes the BU so admin can
+     * disambiguate. The value remains the sector NAME because
+     * Travel_User_Roles.Scope stores names — schema preserved.
+     *
+     * Limitation: a sector_override with scope='Sector 1' applies to the
+     * first BU that resolves to that name. Cross-BU disambiguation needs
+     * a scope=code schema migration.
+     */
+    _populateSectorOptions: function(select, ensureName) {
+      if (!select) return;
+      var aas = this._deriveAasScope();
+      // Flatten sectorsByBU into a list with buName attached, in BU order.
+      var entries = [];
+      for (var bi = 0; bi < aas.businessUnits.length; bi++) {
+        var bn = aas.businessUnits[bi].name;
+        var list = aas.sectorsByBU[bn] || [];
+        for (var li = 0; li < list.length; li++) {
+          entries.push({
+            name: list[li].sectorName,
+            buName: bn,
+            codes: list[li].codes || []
+          });
+        }
+      }
+
+      var options = '<option value="">— select sector —</option>';
+      if (entries.length === 0 && !this._hcReady) {
+        options = '<option value="">Loading…</option>';
+      }
+      var ensureFound = false;
+      for (var j = 0; j < entries.length; j++) {
+        var e = entries[j];
+        if (ensureName && e.name === ensureName) ensureFound = true;
+        var label = e.buName ? (e.name + ' — ' + e.buName) : e.name;
+        var titleAttr = (e.codes && e.codes.length)
+          ? ' title="Codes: ' + _esc(e.codes.join(', ')) + '"'
+          : '';
+        options += '<option value="' + _esc(e.name) + '"' + titleAttr + '>' + _esc(label) + '</option>';
+      }
+      if (ensureName && !ensureFound) {
+        options += '<option value="' + _esc(ensureName) + '">' + _esc(ensureName) + '</option>';
+      }
+      select.innerHTML = options;
+    },
+
+    _saveUserFields: function(userId) {
+      var nameEl = document.getElementById('slideinName');
+      var emailEl = document.getElementById('slideinEmail');
+      var activeEl = document.getElementById('slideinActive');
+      var saveBtn = document.getElementById('slideinSaveUser');
+      var origLabel = saveBtn ? saveBtn.innerHTML : '';
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i> Saving…';
+      }
+      google.script.run
+        .withSuccessHandler(function(res) {
+          self._restoreSubmit(saveBtn, origLabel);
+          if (!res || !res.success) {
+            self._showSlideinError('Save failed: ' + (res && res.error));
+            return;
+          }
+          self._reloadAndKeepSlideinOpen();
+        })
+        .withFailureHandler(function(err) {
+          self._restoreSubmit(saveBtn, origLabel);
+          self._showSlideinError('Save failed: ' + (err && err.message));
+        })
+        .updateTravelUser(userId, {
+          name: nameEl ? nameEl.value : '',
+          email: emailEl ? emailEl.value : '',
+          isActive: activeEl ? !!activeEl.checked : true
+        });
+    },
+
+    /**
+     * Find a role in the currently-loaded user list by Role_ID.
+     * Returns { user, role } or null.
+     */
+    _findRole: function(roleId) {
+      for (var i = 0; i < this._users.length; i++) {
+        var u = this._users[i];
+        for (var j = 0; j < (u.roles || []).length; j++) {
+          if (u.roles[j].roleId === roleId) return { user: u, role: u.roles[j] };
+        }
+      }
+      return null;
+    },
+
+    /**
+     * Optimistic toggle with routing-impact gating.
+     *
+     * Re-activate (nextActive=true) → fires immediately, no checks.
+     * Deactivate (nextActive=false) → routes through _routingImpactOfDeactivation:
+     *   silent  → fires immediately, optimistic
+     *   inform  → fires immediately + toast after success
+     *   warn    → expands the role row inline; admin must confirm or cancel
+     *   block   → expands the row inline with no proceed option (last admin)
+     */
+    _toggleRoleActive: function(roleId, nextActive) {
+      var loc = this._findRole(roleId);
+      if (!loc) return;
+      if (nextActive) {
+        // Re-activation never gates — fire directly
+        return this._executeToggleRoleActive(roleId, true);
+      }
+      var impact = this._routingImpactOfDeactivation(roleId);
+      if (impact.level === 'silent') {
+        return this._executeToggleRoleActive(roleId, false);
+      }
+      if (impact.level === 'inform') {
+        var self2 = this;
+        this._executeToggleRoleActive(roleId, false, function() {
+          self2._showToast(self2._informMessageFor(loc.role, impact), 'success');
+        });
+        return;
+      }
+      // 'warn' or 'block' — expand the row
+      this._showRoleWarnPanel(loc.user, loc.role, impact);
+    },
+
+    /** Pulls the actual RPC into its own function so the gate decides
+     *  whether/when to call it. onAfterSuccess optional — runs after
+     *  successful round-trip + reconcile.
+     *
+     *  Server may auto-promote the backup to primary when a routing-pair
+     *  primary is deactivated; res.promoted carries the promoted role's
+     *  id + userId. Apply that to local state too so the UI reflects
+     *  the swap immediately.
+     */
+    _executeToggleRoleActive: function(roleId, nextActive, onAfterSuccess) {
+      var loc = this._findRole(roleId);
+      if (!loc) return;
+      var user = loc.user, role = loc.role;
+      var prevActive = role.isActive;
+      var prevPrimary = role.isPrimary;
+
+      role.isActive = nextActive;
+      role._pending = true;
+      this._renderSlideinBody(user);
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          role._pending = false;
+          if (!res || !res.success) {
+            role.isActive = prevActive;
+            role.isPrimary = prevPrimary;
+            self._renderSlideinBody(user);
+            self._showSlideinError('Toggle failed: ' + (res && res.error));
+            return;
+          }
+          // Apply server's response: deactivated role gets isPrimary=false
+          // when a partner was promoted; the partner gets isPrimary=true.
+          var resData = res.data || {};
+          if (resData.role && typeof resData.role.isPrimary === 'boolean') {
+            role.isPrimary = resData.role.isPrimary;
+          }
+          if (resData.promoted) {
+            var promotedLoc = self._findRole(resData.promoted.roleId);
+            if (promotedLoc) promotedLoc.role.isPrimary = true;
+          }
+          self._renderSlideinBody(user);
+          var verb = resData.promoted ? 'reassigned to backup' : 'orphaned (no backup)';
+          self._announceReassignment(resData.reassignedCount || 0, verb);
+          self._silentReconcile();
+          if (typeof onAfterSuccess === 'function') {
+            try { onAfterSuccess(); } catch (e) { /* harmless */ }
+          }
+        })
+        .withFailureHandler(function(err) {
+          role._pending = false;
+          role.isActive = prevActive;
+          role.isPrimary = prevPrimary;
+          self._renderSlideinBody(user);
+          self._showSlideinError('Toggle failed: ' + (err && err.message));
+        })
+        .setRoleActive(roleId, nextActive);
+    },
+
+    /**
+     * Expand a role row inline with a routing-warn panel. Admin must
+     * either confirm (with explicit ack if it creates a gap), activate
+     * the backup first, or cancel. Block-level (last admin) shows only
+     * Cancel — no proceed option exists.
+     *
+     * The panel injects inside the existing role-row <li> so the
+     * triggering row remains visible as context.
+     */
+    _showRoleWarnPanel: function(user, role, impact) {
+      var rowEl = document.querySelector('.users-role-row[data-role-id="' + role.roleId + '"]');
+      if (!rowEl) return;
+      // Drop any existing warn panel before adding a fresh one
+      var existing = rowEl.querySelector('.users-role-row__warn');
+      if (existing) existing.parentNode.removeChild(existing);
+      rowEl.classList.add(impact.level === 'block'
+        ? 'users-role-row--block-deactivate'
+        : 'users-role-row--warn-deactivate');
+
+      var roleLabel = this._humanRoleLabel(role, { includePosition: false });
+
+      var statusLines = '';
+      var actionsHtml = '';
+
+      if (impact.level === 'block') {
+        // Last active admin
+        statusLines =
+          '<div class="users-role-row__warn-line">' +
+            '<i aria-hidden="true" class="fas fa-shield"></i>' +
+            '<span>You are the last active admin. Deactivating this role would lock the admin UI for everyone.</span>' +
+          '</div>' +
+          '<div class="users-role-row__warn-line users-role-row__warn-line--muted">' +
+            'Promote another user to admin first, then return to deactivate this one.' +
+          '</div>';
+        actionsHtml =
+          '<button type="button" class="users-btn" data-warn-action="cancel">Cancel</button>';
+      } else {
+        // warn — primary deactivation. Show what swap will happen.
+        if (impact.paired.length > 0) {
+          var p = impact.paired[0];
+          statusLines +=
+            '<div class="users-role-row__warn-line">' +
+              '<i aria-hidden="true" class="fas fa-arrow-right-arrow-left"></i>' +
+              '<span>' + _esc(p.user.name || p.user.email) +
+              ' will become the primary ' + _esc(roleLabel) + '.</span>' +
+            '</div>';
+        } else {
+          statusLines +=
+            '<div class="users-role-row__warn-line users-role-row__warn-line--gap">' +
+              '<i aria-hidden="true" class="fas fa-triangle-exclamation"></i>' +
+              '<span>No active backup configured for ' + _esc(roleLabel) +
+              '. Deactivating creates a routing gap.</span>' +
+            '</div>';
+        }
+        // Action buttons
+        if (impact.gap) {
+          // TODO(v1-followup): "Activate <backup> first" inline action.
+          // Edge cases — backup is the same user being deactivated;
+          // backup user is globally inactive (needs a 2-step activation);
+          // admin lacks permission to flip the backup. For v1 we ask
+          // admin to activate gaps manually first (one of three paths).
+          actionsHtml =
+            '<button type="button" class="users-btn" data-warn-action="cancel">Cancel</button>' +
+            '<button type="button" class="users-btn users-btn--danger" data-warn-action="confirm-gap">' +
+              'Acknowledge gap &amp; deactivate' +
+            '</button>';
+        } else {
+          actionsHtml =
+            '<button type="button" class="users-btn" data-warn-action="cancel">Cancel</button>' +
+            '<button type="button" class="users-btn users-btn--primary" data-warn-action="confirm">' +
+              'Confirm deactivate' +
+            '</button>';
+        }
+      }
+
+      var panel = document.createElement('div');
+      panel.className = 'users-role-row__warn';
+      panel.innerHTML =
+        '<div class="users-role-row__warn-status">' + statusLines + '</div>' +
+        '<div class="users-role-row__warn-actions">' + actionsHtml + '</div>';
+      rowEl.appendChild(panel);
+
+      // Wire actions
+      var self2 = this;
+      panel.querySelectorAll('[data-warn-action]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var action = btn.getAttribute('data-warn-action');
+          self2._dismissRoleWarnPanel(role.roleId);
+          if (action === 'cancel') return;
+          if (action === 'confirm' || action === 'confirm-gap') {
+            self2._executeToggleRoleActive(role.roleId, false);
+          }
+        });
+      });
+    },
+
+    _dismissRoleWarnPanel: function(roleId) {
+      var rowEl = document.querySelector('.users-role-row[data-role-id="' + roleId + '"]');
+      if (!rowEl) return;
+      rowEl.classList.remove('users-role-row--warn-deactivate', 'users-role-row--block-deactivate');
+      var panel = rowEl.querySelector('.users-role-row__warn');
+      if (panel) panel.parentNode.removeChild(panel);
+    },
+
+    /**
+     * Aggregate user-deactivation expansion. Lives below the status toggle
+     * inside the existing status section. When admin un-checks the toggle
+     * and any role has impact, we revert the visual checkbox and show
+     * this panel — admin confirms or cancels.
+     */
+    _showUserWarnPanel: function(user, aggregate) {
+      // Re-check the visual checkbox so it doesn't look like the toggle
+      // already happened. The mutation only commits on confirm.
+      var statusToggle = document.getElementById('slideinActiveToggle');
+      if (statusToggle) statusToggle.checked = true;
+
+      var section = document.querySelector('.users-slidein__section--status');
+      if (!section) return;
+      var existing = section.querySelector('.users-slidein__status-warn');
+      if (existing) existing.parentNode.removeChild(existing);
+
+      var html = '';
+
+      if (aggregate.isLastAdmin) {
+        html +=
+          '<div class="users-slidein__status-warn-head">' +
+            '<i aria-hidden="true" class="fas fa-shield"></i>' +
+            '<span>Cannot deactivate the last active admin</span>' +
+          '</div>' +
+          '<p class="users-slidein__status-warn-body">' +
+            'This user holds the only active admin role. Deactivating them would lock the admin UI for everyone. Promote another user to admin first, then return.' +
+          '</p>' +
+          '<div class="users-slidein__status-warn-actions">' +
+            '<button type="button" class="users-btn" data-warn-action="cancel">Got it</button>' +
+          '</div>';
+      } else {
+        var roleLines = '';
+        for (var i = 0; i < aggregate.perRole.length; i++) {
+          var item = aggregate.perRole[i];
+          var label = this._humanRoleLabel(item.role, { includePosition: false });
+          var lineClass = 'users-slidein__status-warn-row';
+          var icon = '<i aria-hidden="true" class="fas fa-circle-check"></i>';
+          var detail = '';
+          if (item.impact.level === 'warn' && item.impact.gap) {
+            lineClass += ' users-slidein__status-warn-row--gap';
+            icon = '<i aria-hidden="true" class="fas fa-triangle-exclamation"></i>';
+            detail = 'no active backup — routing gap';
+          } else if (item.impact.level === 'warn') {
+            var p = item.impact.paired[0];
+            detail = (p.user.name || p.user.email) + ' becomes primary';
+          } else if (item.impact.level === 'inform') {
+            detail = 'reverts to default routing';
+          }
+          roleLines +=
+            '<li class="' + lineClass + '">' +
+              icon +
+              '<span class="users-slidein__status-warn-row-label">' + _esc(label) + '</span>' +
+              '<span class="users-slidein__status-warn-row-detail">' + _esc(detail) + '</span>' +
+            '</li>';
+        }
+        var hasGap = !!aggregate.hasWarn && aggregate.perRole.some(function(it) { return it.impact.gap; });
+        html +=
+          '<div class="users-slidein__status-warn-head">' +
+            '<i aria-hidden="true" class="fas fa-triangle-exclamation"></i>' +
+            '<span>Deactivating ' + _esc(user.name || user.email) + ' will affect routing</span>' +
+          '</div>' +
+          '<ul class="users-slidein__status-warn-list">' + roleLines + '</ul>' +
+          '<div class="users-slidein__status-warn-actions">' +
+            '<button type="button" class="users-btn" data-warn-action="cancel">Cancel</button>' +
+            (hasGap
+              ? '<button type="button" class="users-btn users-btn--danger" data-warn-action="confirm-gap">Acknowledge gaps &amp; deactivate</button>'
+              : '<button type="button" class="users-btn users-btn--primary" data-warn-action="confirm">Deactivate</button>'
+            ) +
+          '</div>';
+      }
+
+      var panel = document.createElement('div');
+      panel.className = 'users-slidein__status-warn';
+      panel.innerHTML = html;
+      section.appendChild(panel);
+
+      var self2 = this;
+      panel.querySelectorAll('[data-warn-action]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var action = btn.getAttribute('data-warn-action');
+          self2._dismissUserWarnPanel();
+          if (action === 'cancel') return;
+          if (action === 'confirm' || action === 'confirm-gap') {
+            self2._executeToggleUserActive(user.userId, false);
+          }
+        });
+      });
+    },
+
+    _dismissUserWarnPanel: function() {
+      var section = document.querySelector('.users-slidein__section--status');
+      if (!section) return;
+      var panel = section.querySelector('.users-slidein__status-warn');
+      if (panel) panel.parentNode.removeChild(panel);
+    },
+
+    /** Build a short toast message for inform-level deactivations. */
+    _informMessageFor: function(role, impact) {
+      if (role.roleType === 'sector_override') {
+        return 'Sector override deactivated. Routing for ' +
+          (role.scope || 'this sector') + ' reverts to the synced default director.';
+      }
+      // Backup deactivation when primary already inactive
+      var label = this._humanRoleLabel(role, { includePosition: false });
+      return label + ' is now fully inactive — no primary or backup remaining.';
+    },
+
+    _confirmDeleteRole: function(roleId, roleType, scope) {
+      // Inline two-step confirm in the role row instead of native confirm().
+      // The first click on the trash icon turns the row into a "Confirm
+      // delete?" prompt with explicit yes/no; second click commits.
+      var btn = document.querySelector(
+        '[data-role-action="delete"][data-role-id="' + roleId + '"]'
+      );
+      if (!btn) {
+        // Fallback if the button isn't in DOM (race) — just commit
+        self._executeDeleteRole(roleId);
+        return;
+      }
+      var row = btn.closest('.users-role-row');
+      if (!row) { self._executeDeleteRole(roleId); return; }
+      if (row.classList.contains('users-role-row--confirm-delete')) {
+        // Already armed — this click is the confirm
+        self._executeDeleteRole(roleId);
+        return;
+      }
+      // Arm the confirm state. Auto-disarm after 5s.
+      row.classList.add('users-role-row--confirm-delete');
+      var origInner = btn.innerHTML;
+      btn.innerHTML = '<i aria-hidden="true" class="fas fa-check"></i>';
+      btn.title = 'Confirm delete';
+      var disarm = function() {
+        row.classList.remove('users-role-row--confirm-delete');
+        btn.innerHTML = origInner;
+        btn.title = 'Delete role';
+        document.removeEventListener('click', outsideClickHandler, true);
+      };
+      var outsideClickHandler = function(e) {
+        if (!row.contains(e.target)) disarm();
+      };
+      setTimeout(function() {
+        document.addEventListener('click', outsideClickHandler, true);
+      }, 0);
+      setTimeout(disarm, 5000);
+    },
+
+    /**
+     * Optimistic delete — removes the role locally, fires RPC. On failure
+     * restores it. Server may auto-promote a backup to primary if the
+     * deleted role was an active primary in a routing pair; res.promoted
+     * applied to local state on success.
+     */
+    _executeDeleteRole: function(roleId) {
+      var loc = this._findRole(roleId);
+      if (!loc) return;
+      var user = loc.user, role = loc.role;
+      var roleIdx = user.roles.indexOf(role);
+      if (roleIdx === -1) return;
+
+      var snapshot = user.roles.slice();
+      user.roles.splice(roleIdx, 1);
+      this._renderSlideinBody(user);
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            user.roles = snapshot;
+            self._renderSlideinBody(user);
+            self._showSlideinError('Delete failed: ' + (res && res.error));
+            return;
+          }
+          // Apply auto-promote to local state if server swapped a backup
+          var deleteResData = res.data || {};
+          if (deleteResData.promoted) {
+            var promotedLoc = self._findRole(deleteResData.promoted.roleId);
+            if (promotedLoc) {
+              promotedLoc.role.isPrimary = true;
+              self._renderSlideinBody(promotedLoc.user);
+            }
+          }
+          self._silentReconcile();
+        })
+        .withFailureHandler(function(err) {
+          user.roles = snapshot;
+          self._renderSlideinBody(user);
+          self._showSlideinError('Delete failed: ' + (err && err.message));
+        })
+        .deleteRole(roleId);
+    },
+
+    /**
+     * Optimistic primary swap — flips Is_Primary locally on the target role
+     * AND demotes any other active aas_fo_reviewer to non-primary in the
+     * SAME local update so the UI matches what the server will do
+     * atomically. On failure: revert all touched rows.
+     */
+    _makeRolePrimary: function(userId, roleType, scope) {
+      // Snapshot every aas_fo_reviewer Is_Primary across all users so we
+      // can revert on failure
+      var touched = [];
+      var matched = false;
+      for (var i = 0; i < this._users.length; i++) {
+        var u = this._users[i];
+        for (var j = 0; j < (u.roles || []).length; j++) {
+          var r = u.roles[j];
+          if (r.roleType !== roleType) continue;
+          if ((r.scope || '') !== (scope || '')) continue;
+          touched.push({ role: r, prevPrimary: r.isPrimary });
+          if (u.userId === userId && r.isActive) {
+            r.isPrimary = true;
+            r._pending = true;
+            matched = true;
+          } else if (r.isActive) {
+            r.isPrimary = false;
+          }
+        }
+      }
+      if (!matched) {
+        self._showSlideinError('Cannot promote: no active role for that user');
+        return;
+      }
+      // Re-render whatever slidein is open (likely the target user)
+      var current = this._findUser(this._selectedUserId);
+      if (current) this._renderSlideinBody(current);
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          // Clear pending markers
+          for (var t = 0; t < touched.length; t++) touched[t].role._pending = false;
+          if (!res || !res.success) {
+            // Revert all
+            for (var rt = 0; rt < touched.length; rt++) touched[rt].role.isPrimary = touched[rt].prevPrimary;
+            if (current) self._renderSlideinBody(current);
+            self._renderRouting();
+            self._showSlideinError('Promote failed: ' + (res && res.error));
+            return;
+          }
+          if (current) self._renderSlideinBody(current);
+          self._announceReassignment((res.data && res.data.reassignedCount) || 0, 'reassigned to new primary');
+          self._silentReconcile();
+        })
+        .withFailureHandler(function(err) {
+          for (var t2 = 0; t2 < touched.length; t2++) {
+            touched[t2].role.isPrimary = touched[t2].prevPrimary;
+            touched[t2].role._pending = false;
+          }
+          if (current) self._renderSlideinBody(current);
+          self._renderRouting();
+          self._showSlideinError('Promote failed: ' + (err && err.message));
+        })
+        .setRolePrimary(userId, roleType, scope || '');
+    },
+
+    /**
+     * Toast the bulk-reassignment result. Server returns reassignedCount
+     * after every routing-affecting role write. Silent if zero.
+     */
+    _announceReassignment: function(count, verb) {
+      if (!count || count <= 0) return;
+      var msg = count + ' pending request' + (count === 1 ? '' : 's') + ' ' + (verb || 'reassigned');
+      try { this._showToast(msg, 'success'); } catch (e) { /* toast helper missing — silent */ }
+    },
+
+    /**
+     * Background reconcile after optimistic mutations succeed. Pulls fresh
+     * data into self._users + updates the table render, but DOES NOT
+     * re-render the slidein body. The slidein is the admin's active
+     * workspace — auto-rendering it on every reconcile blows away any
+     * in-progress UI state (warn panels, add-role form, confirm-delete
+     * arming, scroll position, in-flight typing).
+     *
+     * Stale slidein rendering refreshes on the next deliberate action
+     * (close/reopen, save, delete, add) since those paths re-render via
+     * _renderSlideinBody anyway. The 30s polling catches cross-admin
+     * changes for the table view; the slidein view is owned by whoever
+     * has it open until they leave.
+     */
+    _silentReconcile: function() {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) return;
+          self._users = (res.data && res.data.users) || [];
+          if (res.data && res.data.version) self._knownVersion = res.data.version;
+          self._render();
+        })
+        .withFailureHandler(function() { /* harmless */ })
+        .listTravelUsers();
+    },
+
+    // ----------------------------------------------------------------------
+    // ADD USER — state-driven slidein (search → preview → create, or manual)
+    // ----------------------------------------------------------------------
+    //
+    // States:
+    //   'search'     — hero search input, inline results, "add manually" link
+    //   'hc-picked'  — HC verified preview card + notes + create
+    //   'manual'     — external user form (name, email, ext_<slug>) + create
+    //
+    // Each state renders the slidein header subtitle + body to match.
+    // Submit always goes through addTravelUser; HC-picked state lets the
+    // server re-resolve User_ID from HC by email so we never pass a
+    // userIdOverride for HC users.
+
+    _addUserState: null,    // current state
+    _addUserPicked: null,   // HC record once chosen
+
+    _openAddUser: function(prefill) {
+      this._selectedUserId = null;
+      this._addUserState = 'search';
+      this._addUserPicked = null;
+      this._addUserPrefill = prefill || null;
+      this._renderAddUserView();
+
+      var sl = document.getElementById('usersSlidein');
+      var bd = document.getElementById('usersSlideinBackdrop');
+      if (sl) sl.classList.add('users-slidein--open');
+      if (bd) bd.classList.add('users-slidein__backdrop--open');
+    },
+
+    _renderAddUserView: function() {
+      var nameEl = document.getElementById('usersSlideinName');
+      var metaEl = document.getElementById('usersSlideinMeta');
+      var body = document.getElementById('usersSlideinBody');
+      if (!body) return;
+
+      // Prefill context banner — present when the slidein was opened from
+      // a routing-dashboard CTA. Tells admin what they're configuring so
+      // the role + scope pre-fills don't feel arbitrary.
+      var prefillBanner = '';
+      if (this._addUserPrefill) {
+        var pf = this._addUserPrefill;
+        prefillBanner =
+          '<div class="users-add__prefill-banner">' +
+            '<i aria-hidden="true" class="fas fa-bullseye"></i>' +
+            '<span class="users-add__prefill-banner-action">' + _esc(pf.ctaCopy || 'Adding') + '</span>' +
+            '<span class="users-add__prefill-banner-context">' + _esc(pf.contextLabel || '') + '</span>' +
+            '<button type="button" class="users-add__prefill-banner-clear" id="addUserPrefillClear" title="Clear and add a different role">' +
+              '<i aria-hidden="true" class="fas fa-times"></i>' +
+            '</button>' +
+          '</div>';
+      }
+
+      if (this._addUserState === 'hc-picked' && this._addUserPicked) {
+        var p = this._addUserPicked;
+        if (nameEl) nameEl.textContent = p.employeeName || 'AAS staff member';
+        if (metaEl) {
+          var headerBits = [];
+          if (p.emailAddress) headerBits.push(_esc(p.emailAddress));
+          headerBits.push('Synced');
+          if (p.employeeId) headerBits.push('<code>' + _esc(p.employeeId) + '</code>');
+          metaEl.innerHTML = headerBits.join(' · ');
+        }
+        body.innerHTML = prefillBanner + this._renderAddHcPickedHtml(p);
+        this._wireAddHcPicked(body);
+      } else if (this._addUserState === 'manual') {
+        if (nameEl) nameEl.textContent = 'Add user manually';
+        if (metaEl) metaEl.textContent = 'For FAS reviewers, consultants, testers, or others outside the AAS staffing data';
+        body.innerHTML = prefillBanner + this._renderAddManualHtml();
+        this._wireAddManual(body);
+      } else {
+        if (nameEl) nameEl.textContent = 'Add user';
+        if (metaEl) {
+          metaEl.textContent = this._addUserPrefill
+            ? 'Search AAS staff or existing TRIP users — first match wins'
+            : 'Search AAS staff, or add a user manually';
+        }
+        body.innerHTML = prefillBanner + this._renderAddSearchHtml();
+        this._wireAddSearch(body);
+      }
+
+      // Wire the prefill banner clear button (clears prefill + re-renders).
+      var clearBtn = body.querySelector('#addUserPrefillClear');
+      if (clearBtn) {
+        clearBtn.addEventListener('click', function() {
+          self._addUserPrefill = null;
+          self._renderAddUserView();
+        });
+      }
+    },
+
+    // ---- STATE: search ---------------------------------------------------
+
+    _renderAddSearchHtml: function() {
+      // No HTML autofocus attribute — Chromium blocks it inside cross-origin
+      // iframes (GAS web apps). _wireAddSearch focuses programmatically
+      // after mount; that path is allowed because the +Add User click is
+      // the user gesture that opens the slidein.
+      return (
+        '<div class="users-add">' +
+          '<div class="users-add__hero">' +
+            '<i aria-hidden="true" class="fas fa-search users-add__hero-icon"></i>' +
+            '<input type="text" id="addUserSearch" placeholder="Search by name or email" autocomplete="off">' +
+          '</div>' +
+          '<div class="users-add__results" id="addUserResults">' +
+            '<p class="users-add__hint">Type at least 2 characters to search AAS staff.</p>' +
+          '</div>' +
+          '<div class="users-add__divider"><span>or</span></div>' +
+          '<button type="button" class="users-add__manual-link" id="addUserManualLink">' +
+            '<i aria-hidden="true" class="fas fa-user-plus"></i>' +
+            '<span>Add user manually</span>' +
+            '<span class="users-add__manual-link-hint">For FAS reviewers, consultants, testers, or others outside AAS staffing data</span>' +
+          '</button>' +
+        '</div>'
+      );
+    },
+
+    _wireAddSearch: function(body) {
+      var searchInp = body.querySelector('#addUserSearch');
+      var resultsEl = body.querySelector('#addUserResults');
+      var manualLink = body.querySelector('#addUserManualLink');
+
+      if (manualLink) {
+        manualLink.addEventListener('click', function() {
+          self._addUserState = 'manual';
+          self._renderAddUserView();
+        });
+      }
+
+      if (!searchInp || !resultsEl) return;
+      var debounce = null;
+      searchInp.addEventListener('input', function() {
+        if (debounce) clearTimeout(debounce);
+        debounce = setTimeout(function() {
+          self._renderAddSearchResults(searchInp.value || '', resultsEl);
+        }, 100);
+      });
+      // Render once on mount with whatever's there (empty)
+      this._renderAddSearchResults(searchInp.value || '', resultsEl);
+      // Programmatic focus AFTER mount — allowed because the +Add User
+      // click counted as the user gesture. Wrapped in setTimeout(0) to
+      // run after the slidein open animation starts.
+      setTimeout(function() {
+        try { searchInp.focus(); } catch (e) { /* harmless if blocked */ }
+      }, 0);
+    },
+
+    _renderAddSearchResults: function(query, resultsEl) {
+      var q = (query || '').trim();
+      if (!q || q.length < 2) {
+        resultsEl.innerHTML = '<p class="users-add__hint">Type at least 2 characters to search AAS staff.</p>';
+        return;
+      }
+      if (!window.HCDataCenter || !window.HCDataCenter.isLoaded()) {
+        resultsEl.innerHTML = '<p class="users-add__hint">Staff data still loading…</p>';
+        return;
+      }
+      var matches = window.HCDataCenter.search(q) || [];
+      var seen = {};
+      var picked = [];
+      for (var i = 0; i < matches.length && picked.length < 8; i++) {
+        var p = matches[i];
+        if (!p || !p.employeeId || !p.emailAddress) continue;
+        if (seen[p.employeeId]) continue;
+        seen[p.employeeId] = true;
+        // Annotate with existing-user info so the renderer can mark
+        // duplicates and the click handler redirects to edit mode.
+        var existing = self._findUserByEmail(p.emailAddress);
+        p._existingUserId = existing ? existing.userId : null;
+        picked.push(p);
+      }
+      if (!picked.length) {
+        resultsEl.innerHTML =
+          '<p class="users-add__hint users-add__hint--empty">' +
+            'No AAS staff matches for &quot;' + _esc(q) + '&quot;. Try fewer characters, or add manually below.' +
+          '</p>';
+        return;
+      }
+      var html = '<ul class="users-add__list">';
+      for (var j = 0; j < picked.length; j++) {
+        var p2 = picked[j];
+        var existingTag = p2._existingUserId
+          ? '<span class="users-add__result-existing">Already added</span>'
+          : '';
+        var liClasses = 'users-add__result' + (p2._existingUserId ? ' users-add__result--existing' : '');
+        html +=
+          '<li class="' + liClasses + '" data-pick-idx="' + j + '">' +
+            '<div class="users-add__result-name">' +
+              _esc(p2.employeeName || '—') + existingTag +
+            '</div>' +
+            '<div class="users-add__result-meta">' +
+              _esc(p2.emailAddress) +
+              (p2.officeTitle ? ' · ' + _esc(p2.officeTitle) : '') +
+            '</div>' +
+          '</li>';
+      }
+      html += '</ul>';
+      resultsEl.innerHTML = html;
+
+      Array.prototype.forEach.call(resultsEl.querySelectorAll('[data-pick-idx]'), function(li) {
+        li.addEventListener('click', function() {
+          var idx = parseInt(li.getAttribute('data-pick-idx'), 10);
+          if (isNaN(idx) || !picked[idx]) return;
+          // Already-added user → close the Add User flow and open the
+          // existing user's slidein. If a routing-dashboard CTA seeded
+          // a prefill, forward it so the slidein opens with the Add Role
+          // form expanded and the role + scope filled in (one-click
+          // promotion path: approved_user → BU reviewer).
+          if (picked[idx]._existingUserId) {
+            var existingId = picked[idx]._existingUserId;
+            var prefill = self._addUserPrefill;
+            self._addUserState = 'search';
+            self._addUserPicked = null;
+            self._addUserPrefill = null;
+            if (prefill) self._openSlideinWithRolePrefill(existingId, prefill);
+            else self._openSlidein(existingId);
+            return;
+          }
+          self._addUserPicked = picked[idx];
+          self._addUserState = 'hc-picked';
+          self._renderAddUserView();
+        });
+      });
+    },
+
+    // ---- STATE: hc-picked ------------------------------------------------
+
+    _renderAddHcPickedHtml: function(p) {
+      // Body strips the duplicated identity (name/email/HC-verified badge
+      // already in the slidein header). What's left is the metadata that
+      // gives admin context for the decision: title + BU name. Codes are
+      // hidden here — admin sees plain language. The User_ID (employee
+      // number) lives in the slidein header for traceability.
+      var contextBits = [];
+      if (p.officeTitle) contextBits.push(_esc(p.officeTitle));
+      var buName = (p.org && p.org.businessUnit) ? p.org.businessUnit : '';
+      if (buName) {
+        contextBits.push(_esc(buName));
+      } else if (p.orgCode) {
+        // Fallback when HC didn't populate businessUnit on this position
+        contextBits.push(_esc(p.orgCode));
+      }
+      var contextLine = contextBits.length
+        ? '<span class="users-add__context-text">' + contextBits.join(' · ') + '</span>'
+        : '<span class="users-add__context-text users-add__context-text--muted">No additional staff context</span>';
+
+      return (
+        '<div class="users-add">' +
+          '<div class="users-add__context">' +
+            '<i aria-hidden="true" class="fas fa-id-badge"></i>' +
+            contextLine +
+            '<button type="button" class="users-add__change-link" id="addUserChange">Change selection</button>' +
+          '</div>' +
+
+          this._renderInitialRoleHtml() +
+
+          '<label class="users-slidein__field" style="margin-top:14px;">' +
+            '<span>Note for this role assignment</span>' +
+            '<input type="text" id="addUserNotes" placeholder="e.g. New BU reviewer for Army">' +
+            '<span class="users-slidein__hint">Optional. Shown on the role record after creation.</span>' +
+          '</label>' +
+
+          '<div class="users-add__footer">' +
+            '<button type="button" class="users-btn users-btn--primary" id="addUserSubmit">' +
+              '<i aria-hidden="true" class="fas fa-check"></i> Create user' +
+            '</button>' +
+          '</div>' +
+        '</div>'
+      );
+    },
+
+    _wireAddHcPicked: function(body) {
+      var changeBtn = body.querySelector('#addUserChange');
+      var submitBtn = body.querySelector('#addUserSubmit');
+      var notesInp = body.querySelector('#addUserNotes');
+
+      if (changeBtn) changeBtn.addEventListener('click', function() {
+        self._addUserPicked = null;
+        self._addUserState = 'search';
+        self._renderAddUserView();
+      });
+      this._wireInitialRoleSelector(body);
+      if (submitBtn) submitBtn.addEventListener('click', function() {
+        if (!self._addUserPicked) return;
+        var p = self._addUserPicked;
+        var role = self._collectInitialRole(body);
+        if (!role) return; // _collectInitialRole already showed the error
+        var notes = (notesInp && notesInp.value || '').trim();
+        if (notes) role.notes = notes;
+        self._submitAddUser({
+          email: p.emailAddress,
+          name: p.employeeName || '',
+          initialRole: role
+          // No userIdOverride — server resolves from HC by email
+        }, submitBtn);
+      });
+    },
+
+    /**
+     * Required Initial Role picker. Layout collapses to a single 2-column
+     * row when the picked role has scope (Role type | BU/Sector); single
+     * column otherwise. No primary checkbox — server applies smart default
+     * (first one of a scope = primary, else backup; admin swaps via star
+     * later). No default role — admin picks explicitly.
+     */
+    _renderInitialRoleHtml: function() {
+      var typeOptions = _buildGrantableRoleOptions(true);
+      return (
+        '<div class="users-slidein__form" style="margin-top:8px;">' +
+          '<div class="users-slidein__field-group-label">Grant role · required</div>' +
+          '<div class="users-form-row" id="addUserRoleRow">' +
+            '<label class="users-slidein__field">' +
+              '<span>Role</span>' +
+              '<select id="addUserRoleType">' + typeOptions + '</select>' +
+            '</label>' +
+            '<label class="users-slidein__field hidden" id="addUserRoleScopeWrap">' +
+              '<span id="addUserRoleScopeLabel">Scope</span>' +
+              '<select id="addUserRoleScope"><option value="">— select —</option></select>' +
+            '</label>' +
+          '</div>' +
+        '</div>'
+      );
+    },
+
+    /**
+     * Wire the role-type onchange so Scope appears only when needed, and
+     * pre-fill BU/Sector based on the picked HC user's org code (the
+     * common case is "review your own BU"). Manual mode has no picked
+     * user, so no pre-fill there.
+     */
+    _wireInitialRoleSelector: function(body) {
+      var typeSel = body.querySelector('#addUserRoleType');
+      var scopeWrap = body.querySelector('#addUserRoleScopeWrap');
+      var scopeLabel = body.querySelector('#addUserRoleScopeLabel');
+      var scopeSel = body.querySelector('#addUserRoleScope');
+      var roleRow = body.querySelector('#addUserRoleRow');
+      if (!typeSel || !scopeWrap || !scopeSel) return;
+
+      // Routing-dashboard prefill takes priority. When set, role + scope
+      // are forced to the prefill values and locked (admin chose this CTA
+      // explicitly; switching role here would defeat the context).
+      var prefill = self._addUserPrefill;
+
+      // Pre-fill from the picked HC user's BU + sector NAMES directly.
+      // No prefix slicing — names are the canonical scope identifier.
+      var picked = self._addUserPicked;
+      var pickedBUName = (picked && picked.org && picked.org.businessUnit) || '';
+      var pickedSectorName = (picked && picked.org && picked.org.sector) || '';
+
+      // Apply prefill: force role select to the prefill value and disable
+      // it so admin can't switch away from the routing CTA they invoked.
+      if (prefill && prefill.roleType) {
+        typeSel.value = prefill.roleType;
+        typeSel.disabled = true;
+      }
+
+      function refresh() {
+        var roleType = typeSel.value;
+        var meta = ROLE_META[roleType] || {};
+        if (roleType && meta.hasScope) {
+          scopeWrap.classList.remove('hidden');
+          if (roleRow) roleRow.classList.add('users-form-row--2col');
+          if (roleType === 'bu_reviewer') {
+            scopeLabel.textContent = 'Business unit';
+            self._populateBUOptions(scopeSel, prefill && prefill.scope ? prefill.scope : pickedBUName);
+            if (prefill && prefill.scope) {
+              scopeSel.value = prefill.scope;
+              scopeSel.disabled = true;
+            } else if (pickedBUName && !scopeSel.value) {
+              scopeSel.value = pickedBUName;
+            }
+          } else if (roleType === 'sector_override') {
+            scopeLabel.textContent = 'Sector';
+            self._populateSectorOptions(scopeSel, prefill && prefill.scope ? prefill.scope : pickedSectorName);
+            if (prefill && prefill.scope) {
+              scopeSel.value = prefill.scope;
+              scopeSel.disabled = true;
+            } else if (pickedSectorName && !scopeSel.value) {
+              scopeSel.value = pickedSectorName;
+            }
+          }
+        } else {
+          scopeWrap.classList.add('hidden');
+          if (roleRow) roleRow.classList.remove('users-form-row--2col');
+        }
+      }
+      typeSel.addEventListener('change', refresh);
+      refresh();
+    },
+
+    /**
+     * Validate + collect the initial role. Scope holds the BU or sector
+     * NAME (e.g. "Army" or "Sector 1"), preserving HC's casing. No
+     * isPrimary in the payload — server applies smart default.
+     */
+    _collectInitialRole: function(body) {
+      var typeSel = body.querySelector('#addUserRoleType');
+      var scopeSel = body.querySelector('#addUserRoleScope');
+      if (!typeSel) return null;
+      var roleType = (typeSel.value || '').trim();
+      if (!roleType) {
+        self._showSlideinError('Pick a role to grant.');
+        try { typeSel.focus(); } catch (e) {}
+        return null;
+      }
+      var meta = ROLE_META[roleType] || {};
+      var scope = '';
+      if (meta.hasScope) {
+        scope = ((scopeSel && scopeSel.value) || '').trim();
+        if (!scope) {
+          self._showSlideinError('Pick a ' + (roleType === 'bu_reviewer' ? 'business unit' : 'sector') + '.');
+          try { scopeSel.focus(); } catch (e) {}
+          return null;
+        }
+      }
+      return { roleType: roleType, scope: scope };
+    },
+
+    // ---- STATE: manual ---------------------------------------------------
+
+    _renderAddManualHtml: function() {
+      return (
+        '<div class="users-add">' +
+          '<div class="users-slidein__form">' +
+            '<label class="users-slidein__field">' +
+              '<span>Name</span>' +
+              '<input type="text" id="addUserName" placeholder="Jane Smith">' +
+            '</label>' +
+            '<label class="users-slidein__field">' +
+              '<span>Email</span>' +
+              '<input type="email" id="addUserEmail" placeholder="jane.smith@gsa.gov">' +
+            '</label>' +
+            // User_ID with non-editable ext_ prefix adornment. The input
+            // value is just the slug (e.g. "smith"); the controller
+            // prepends ext_ on submit.
+            '<label class="users-slidein__field">' +
+              '<span>User_ID</span>' +
+              '<div class="users-input-with-prefix">' +
+                '<span class="users-input-with-prefix__prefix">ext_</span>' +
+                '<input type="text" id="addUserIdSlug" placeholder="smith" autocomplete="off">' +
+              '</div>' +
+              '<span class="users-slidein__hint">2–40 letters, numbers, hyphens or underscores. Used as the stable ID for manually added users.</span>' +
+            '</label>' +
+          '</div>' +
+
+          this._renderInitialRoleHtml() +
+
+          '<label class="users-slidein__field" style="margin-top:12px;">' +
+            '<span>Notes</span>' +
+            '<input type="text" id="addUserNotes" placeholder="e.g. Contractor on the QFAA project">' +
+            '<span class="users-slidein__hint">Optional.</span>' +
+          '</label>' +
+
+          '<div class="users-add__footer">' +
+            '<button type="button" class="users-btn" id="addUserBack"><i aria-hidden="true" class="fas fa-arrow-left"></i> Back to search</button>' +
+            '<button type="button" class="users-btn users-btn--primary" id="addUserSubmit">' +
+              '<i aria-hidden="true" class="fas fa-check"></i> Create user' +
+            '</button>' +
+          '</div>' +
+        '</div>'
+      );
+    },
+
+    _wireAddManual: function(body) {
+      var backBtn = body.querySelector('#addUserBack');
+      var submitBtn = body.querySelector('#addUserSubmit');
+      var nameInp = body.querySelector('#addUserName');
+      var emailInp = body.querySelector('#addUserEmail');
+      var slugInp = body.querySelector('#addUserIdSlug');
+      var notesInp = body.querySelector('#addUserNotes');
+
+      if (backBtn) backBtn.addEventListener('click', function() {
+        self._addUserState = 'search';
+        self._renderAddUserView();
+      });
+
+      this._wireInitialRoleSelector(body);
+
+      if (submitBtn) submitBtn.addEventListener('click', function() {
+        var name = (nameInp.value || '').trim();
+        var email = (emailInp.value || '').trim();
+        var slug = (slugInp.value || '').trim();
+        if (!name) { self._showSlideinError('Name required'); return; }
+        if (!email) { self._showSlideinError('Email required'); return; }
+        if (!/^[A-Za-z0-9_-]{2,40}$/.test(slug)) {
+          self._showSlideinError('User_ID slug must be 2-40 letters, numbers, hyphens, or underscores.');
+          return;
+        }
+        var role = self._collectInitialRole(body);
+        if (!role) return; // _collectInitialRole already showed the error
+        var notes = (notesInp && notesInp.value || '').trim();
+        if (notes) role.notes = notes;
+        var uid = 'ext_' + slug;
+        self._submitAddUser({
+          email: email,
+          name: name,
+          userIdOverride: uid,
+          initialRole: role
+        }, submitBtn);
+      });
+    },
+
+    // ---- shared submit ---------------------------------------------------
+
+    _submitAddUser: function(payload, submitBtn) {
+      var origLabel = submitBtn ? submitBtn.innerHTML : '';
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i> Creating…';
+      }
+      google.script.run
+        .withSuccessHandler(function(res) {
+          self._restoreSubmit(submitBtn, origLabel);
+          if (!res || !res.success) {
+            self._showSlideinError('Create failed: ' + (res && res.error));
+            return;
+          }
+          // Use the server's response data directly to switch the slidein
+          // into detail mode IMMEDIATELY. We don't wait for listTravelUsers
+          // round-trip — the user object returned from addTravelUser has
+          // everything _renderSlideinBody needs ({userId, email, name,
+          // source, isActive, roles: []}). This makes the post-create
+          // transition feel instant AND avoids the "stuck on create form"
+          // case where _findUser couldn't locate the just-added user
+          // because of a race or coercion issue.
+          var newUser = res.data && res.data.user;
+          if (!newUser || !newUser.userId) {
+            self._showSlideinError('Create succeeded but server returned no user data — try refreshing.');
+            return;
+          }
+          // Optimistically add to local list so the table reflects the new
+          // row right away (sorted by name on next _render).
+          self._users.push(newUser);
+          self._users.sort(function(a, b) {
+            return (a.name || a.email || '').localeCompare(b.name || b.email || '');
+          });
+          self._selectedUserId = newUser.userId;
+          // Clear the routing-CTA prefill — the role has been created.
+          self._addUserPrefill = null;
+          self._renderSlideinHeader(newUser);
+          self._renderSlideinBody(newUser);
+          self._render();
+          self._announceReassignment((res.data && res.data.reassignedCount) || 0, 'reassigned to new primary');
+          // Background reconcile — picks up any other admins' concurrent
+          // changes and refreshes our knownVersion to match the server.
+          setTimeout(function() {
+            google.script.run
+              .withSuccessHandler(function(listRes) {
+                if (!listRes || !listRes.success) return;
+                self._users = (listRes.data && listRes.data.users) || [];
+                if (listRes.data && listRes.data.version) self._knownVersion = listRes.data.version;
+                self._render();
+                // If the slidein still shows our new user, refresh its body
+                // so any concurrent edits (someone added a role to them?)
+                // appear without a manual refresh.
+                var current = self._findUser(self._selectedUserId);
+                if (current) {
+                  self._renderSlideinHeader(current);
+                  self._renderSlideinBody(current);
+                }
+              })
+              .withFailureHandler(function() { /* harmless — user is in slidein */ })
+              .listTravelUsers();
+          }, 0);
+        })
+        .withFailureHandler(function(err) {
+          self._restoreSubmit(submitBtn, origLabel);
+          self._showSlideinError('Create failed: ' + (err && err.message));
+        })
+        .addTravelUser(payload);
+    }
+  };
+
+  function _esc(s) {
+    if (s === null || s === undefined) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ---------------------------------------------------------------------------
+  // ERROR / TOAST UI — replaces window.alert across the module.
+  //   _showSlideinError → in-slidein banner above body content. Auto-fades.
+  //   _showToast        → page-level toast bottom-right when slidein not open.
+  // ---------------------------------------------------------------------------
+
+  self._showSlideinError = function(message) {
+    var body = document.getElementById('usersSlideinBody');
+    if (!body) {
+      self._showToast(message, 'error');
+      return;
+    }
+    var banner = document.getElementById('usersSlideinError');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'usersSlideinError';
+      banner.className = 'users-slidein__error';
+      body.insertBefore(banner, body.firstChild);
+    }
+    banner.innerHTML =
+      '<i aria-hidden="true" class="fas fa-exclamation-triangle"></i>' +
+      '<span class="users-slidein__error-msg">' + _esc(message) + '</span>' +
+      '<button type="button" class="users-slidein__error-close" aria-label="Dismiss">' +
+        '<i aria-hidden="true" class="fas fa-times"></i>' +
+      '</button>';
+    banner.classList.add('users-slidein__error--visible');
+    var closeBtn = banner.querySelector('.users-slidein__error-close');
+    if (closeBtn) closeBtn.addEventListener('click', function() {
+      banner.classList.remove('users-slidein__error--visible');
+    });
+    if (self._slideinErrorTimer) clearTimeout(self._slideinErrorTimer);
+    self._slideinErrorTimer = setTimeout(function() {
+      if (banner) banner.classList.remove('users-slidein__error--visible');
+    }, 7000);
+  };
+
+  self._showToast = function(message, kind) {
+    var holder = document.getElementById('usersToastHolder');
+    if (!holder) {
+      holder = document.createElement('div');
+      holder.id = 'usersToastHolder';
+      holder.className = 'users-toast-holder';
+      // Mount on documentElement (the <html> root) instead of body so any
+      // transform/filter on body or layout grid can't make our
+      // position:fixed snap to a parent containing block.
+      document.documentElement.appendChild(holder);
+    }
+    var toast = document.createElement('div');
+    toast.className = 'users-toast users-toast--' + (kind || 'error');
+    toast.innerHTML =
+      '<i aria-hidden="true" class="fas ' + (kind === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle') + '"></i>' +
+      '<span>' + _esc(message) + '</span>';
+    holder.appendChild(toast);
+    setTimeout(function() { toast.classList.add('users-toast--visible'); }, 16);
+    setTimeout(function() {
+      toast.classList.remove('users-toast--visible');
+      setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 200);
+    }, 5000);
+  };
+
+  /**
+   * Restore a submit button to its original label/disabled state. Use this
+   * in EVERY success-with-error and failure handler — guarantees spinner
+   * state never stays stuck on a failed write.
+   */
+  self._restoreSubmit = function(btn, origHtml) {
+    if (!btn) return;
+    btn.disabled = false;
+    if (origHtml !== undefined && origHtml !== null) btn.innerHTML = origHtml;
+  };
+
+  window.TravelUsers.Controller = self;
+})();
+</script>

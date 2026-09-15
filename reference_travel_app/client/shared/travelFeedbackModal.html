@@ -1,0 +1,749 @@
+<!-- Feedback System: Shared Component -->
+<!-- Include this in every Travel page AFTER travelBaseStyles and BEFORE page-specific scripts -->
+
+<!-- ==================== STYLES ==================== -->
+<style>
+/* --- Thumbs inline widget (injected into success modals/pages) --- */
+.tf-thumbs {
+  margin: 16px 0 8px;
+  text-align: center;
+}
+.tf-thumbs__prompt {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #6c757d);
+  margin-bottom: 8px;
+}
+.tf-thumbs__buttons {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+.tf-thumbs__btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--border-color, #dee2e6);
+  background: var(--bg-primary, #fff);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  transition: all 0.15s ease;
+  color: var(--text-secondary, #6c757d);
+}
+.tf-thumbs__btn:hover {
+  transform: scale(1.15);
+}
+.tf-thumbs__btn--up:hover,
+.tf-thumbs__btn--up.selected {
+  border-color: #22c55e;
+  background: #f0fdf4;
+  color: #22c55e;
+}
+.tf-thumbs__btn--down:hover,
+.tf-thumbs__btn--down.selected {
+  border-color: #ef4444;
+  background: #fef2f2;
+  color: #ef4444;
+}
+.tf-thumbs__btn.selected {
+  pointer-events: none;
+}
+.tf-thumbs__comment {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease;
+}
+.tf-thumbs__comment.open {
+  max-height: 120px;
+}
+.tf-thumbs__comment-inner {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 0 12px;
+}
+.tf-thumbs__input {
+  flex: 1;
+  border: 1px solid var(--border-color, #dee2e6);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  outline: none;
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #212529);
+}
+.tf-thumbs__input:focus {
+  border-color: var(--primary, #0d6efd);
+}
+.tf-thumbs__send {
+  border: none;
+  background: var(--primary, #0d6efd);
+  color: #fff;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tf-thumbs__send:hover {
+  opacity: 0.9;
+}
+.tf-thumbs__thanks {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #6c757d);
+  margin-top: 8px;
+  display: none;
+}
+.tf-thumbs__thanks.visible {
+  display: block;
+}
+
+/* --- NPS slim bar --- */
+.tf-nps-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--bg-secondary, #f8f9fa);
+  border: 1px solid var(--border-color, #dee2e6);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 0.82rem;
+}
+.tf-nps-bar__label {
+  color: var(--text-primary, #212529);
+  white-space: nowrap;
+  font-weight: 500;
+}
+.tf-nps-bar__scores {
+  display: flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+.tf-nps-bar__score {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: var(--bg-primary, #fff);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s ease;
+  color: var(--text-primary, #212529);
+}
+.tf-nps-bar__score:hover {
+  transform: scale(1.12);
+}
+.tf-nps-bar__score--low { border-color: #fca5a5; color: #dc2626; }
+.tf-nps-bar__score--low:hover,
+.tf-nps-bar__score--low.selected { background: #fef2f2; border-color: #ef4444; }
+.tf-nps-bar__score--mid { border-color: #fcd34d; color: #d97706; }
+.tf-nps-bar__score--mid:hover,
+.tf-nps-bar__score--mid.selected { background: #fffbeb; border-color: #f59e0b; }
+.tf-nps-bar__score--high { border-color: #86efac; color: #16a34a; }
+.tf-nps-bar__score--high:hover,
+.tf-nps-bar__score--high.selected { background: #f0fdf4; border-color: #22c55e; }
+.tf-nps-bar__comment {
+  flex: 1;
+  max-width: 0;
+  overflow: hidden;
+  transition: max-width 0.3s ease, opacity 0.2s ease;
+  opacity: 0;
+}
+.tf-nps-bar__comment.open {
+  max-width: 300px;
+  opacity: 1;
+}
+.tf-nps-bar__comment input {
+  width: 100%;
+  border: 1px solid var(--border-color, #dee2e6);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  outline: none;
+}
+.tf-nps-bar__comment input:focus {
+  border-color: var(--primary, #0d6efd);
+}
+.tf-nps-bar__actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.tf-nps-bar__submit {
+  border: none;
+  background: var(--primary, #0d6efd);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: none;
+}
+.tf-nps-bar__submit.visible { display: inline-block; }
+.tf-nps-bar__submit:hover { opacity: 0.9; }
+.tf-nps-bar__close {
+  background: none;
+  border: none;
+  color: var(--text-secondary, #6c757d);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0 4px;
+  line-height: 1;
+}
+.tf-nps-bar__close:hover { color: var(--text-primary, #212529); }
+.tf-nps-bar__thanks {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #6c757d);
+}
+
+/* --- Bug/Feature Report Modal --- */
+.tf-report-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 10000;
+  justify-content: center;
+  align-items: center;
+}
+.tf-report-backdrop.active {
+  display: flex;
+}
+.tf-report-modal {
+  background: var(--bg-primary, #fff);
+  border-radius: 12px;
+  width: 460px;
+  max-width: 92vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+.tf-report-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border-color, #dee2e6);
+}
+.tf-report-modal__title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary, #212529);
+  margin: 0;
+}
+.tf-report-modal__close {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  color: var(--text-secondary, #6c757d);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+.tf-report-modal__close:hover { color: var(--text-primary, #212529); }
+.tf-report-modal__body {
+  padding: 16px 20px;
+}
+.tf-report-modal__field {
+  margin-bottom: 14px;
+}
+.tf-report-modal__label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-primary, #212529);
+  margin-bottom: 4px;
+}
+.tf-report-modal__select,
+.tf-report-modal__textarea {
+  width: 100%;
+  border: 1px solid var(--border-color, #dee2e6);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #212529);
+  outline: none;
+  font-family: inherit;
+}
+.tf-report-modal__select:focus,
+.tf-report-modal__textarea:focus {
+  border-color: var(--primary, #0d6efd);
+}
+.tf-report-modal__textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+.tf-report-modal__charcount {
+  font-size: 0.7rem;
+  color: var(--text-secondary, #6c757d);
+  text-align: right;
+  margin-top: 2px;
+}
+.tf-report-modal__footer {
+  padding: 12px 20px 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.tf-report-modal__btn {
+  border: none;
+  border-radius: 6px;
+  padding: 8px 18px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+.tf-report-modal__btn--cancel {
+  background: var(--bg-secondary, #f8f9fa);
+  color: var(--text-primary, #212529);
+  border: 1px solid var(--border-color, #dee2e6);
+}
+.tf-report-modal__btn--cancel:hover { background: #e9ecef; }
+.tf-report-modal__btn--submit {
+  background: var(--primary, #0d6efd);
+  color: #fff;
+}
+.tf-report-modal__btn--submit:hover { opacity: 0.9; }
+.tf-report-modal__btn--submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.tf-report-modal__success {
+  text-align: center;
+  padding: 32px 20px;
+}
+.tf-report-modal__success i {
+  font-size: 2.5rem;
+  color: #22c55e;
+  margin-bottom: 12px;
+}
+.tf-report-modal__success p {
+  font-size: 0.9rem;
+  color: var(--text-secondary, #6c757d);
+}
+</style>
+
+<!-- ==================== BUG/FEATURE REPORT MODAL ==================== -->
+<div class="tf-report-backdrop" id="tfReportBackdrop">
+  <div class="tf-report-modal">
+    <!-- Form state -->
+    <div id="tfReportFormState">
+      <div class="tf-report-modal__header">
+        <h3 class="tf-report-modal__title" id="tfReportTitle">Report a Bug</h3>
+        <button class="tf-report-modal__close" onclick="TravelFeedback.closeReport()">&times;</button>
+      </div>
+      <div class="tf-report-modal__body">
+        <div class="tf-report-modal__field">
+          <label class="tf-report-modal__label">Category</label>
+          <select class="tf-report-modal__select" id="tfReportCategory">
+            <option value="Form">Form</option>
+            <option value="Review">Review Page</option>
+            <option value="Portal">Portal</option>
+            <option value="Notifications">Notifications</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="tf-report-modal__field">
+          <label class="tf-report-modal__label">Description <span style="color:#dc2626;">*</span></label>
+          <textarea class="tf-report-modal__textarea" id="tfReportDescription" maxlength="2000"
+            placeholder="Describe the issue or feature..."></textarea>
+          <div class="tf-report-modal__charcount"><span id="tfReportCharCount">0</span> / 2000</div>
+        </div>
+      </div>
+      <div class="tf-report-modal__footer">
+        <button class="tf-report-modal__btn tf-report-modal__btn--cancel" onclick="TravelFeedback.closeReport()">Cancel</button>
+        <button class="tf-report-modal__btn tf-report-modal__btn--submit" id="tfReportSubmitBtn" onclick="TravelFeedback.submitReport()">
+          Submit
+        </button>
+      </div>
+    </div>
+    <!-- Success state -->
+    <div id="tfReportSuccessState" style="display:none;">
+      <div class="tf-report-modal__success">
+        <i aria-hidden="true" class="fas fa-check-circle"></i>
+        <h4>Thanks for your feedback!</h4>
+        <p>We'll review it shortly.</p>
+      </div>
+      <div class="tf-report-modal__footer" style="justify-content:center;">
+        <button class="tf-report-modal__btn tf-report-modal__btn--cancel" onclick="TravelFeedback.closeReport()">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+(function() {
+  'use strict';
+
+  var TravelFeedback = {
+
+    // Config — set by page init
+    _contextPage: '',
+    _userEmail: '',
+    _userName: '',
+    _reportType: 'bug_report', // current report modal type
+    _npsScore: null,
+    _cooldownMs: 10000, // client-side cooldown after submission
+    _lastSubmitTime: 0,
+
+    /**
+     * Initialize feedback system. Call from page controller init.
+     * @param {Object} config
+     * @param {string} config.contextPage - portal | form | review | admin
+     * @param {string} config.userEmail
+     * @param {string} config.userName
+     */
+    init: function(config) {
+      this._contextPage = config.contextPage || '';
+      this._userEmail = config.userEmail || '';
+      this._userName = config.userName || '';
+
+      // Wire up char counter for report modal
+      var desc = document.getElementById('tfReportDescription');
+      var counter = document.getElementById('tfReportCharCount');
+      if (desc && counter) {
+        desc.addEventListener('input', function() {
+          counter.textContent = desc.value.length;
+        });
+      }
+    },
+
+    // ================================================================
+    // THUMBS WIDGET — inject into success modals/pages
+    // ================================================================
+
+    /**
+     * Generate thumbs widget HTML. Insert this into a success modal/page.
+     * @param {string} contextAction - submission | approve | deny | request_info | resubmit
+     * @param {string} [requestId] - Optional request ID
+     * @returns {string} HTML string
+     */
+    thumbsHtml: function(contextAction, requestId) {
+      var id = 'tf_' + contextAction + '_' + Date.now();
+      return '<div class="tf-thumbs" id="' + id + '">' +
+        '<div class="tf-thumbs__prompt">How was your experience?</div>' +
+        '<div class="tf-thumbs__buttons">' +
+          '<button class="tf-thumbs__btn tf-thumbs__btn--up" onclick="TravelFeedback.thumbsClick(\'' + id + '\', \'thumbs_up\', \'' + contextAction + '\', \'' + (requestId || '') + '\')" title="Good">' +
+            '<i aria-hidden="true" class="fas fa-thumbs-up"></i>' +
+          '</button>' +
+          '<button class="tf-thumbs__btn tf-thumbs__btn--down" onclick="TravelFeedback.thumbsClick(\'' + id + '\', \'thumbs_down\', \'' + contextAction + '\', \'' + (requestId || '') + '\')" title="Needs improvement">' +
+            '<i aria-hidden="true" class="fas fa-thumbs-down"></i>' +
+          '</button>' +
+        '</div>' +
+        '<div class="tf-thumbs__comment" id="' + id + '_comment">' +
+          '<div class="tf-thumbs__comment-inner">' +
+            '<input class="tf-thumbs__input" id="' + id + '_input" placeholder="Anything else? (optional)" maxlength="500">' +
+            '<button class="tf-thumbs__send" onclick="TravelFeedback.thumbsSend(\'' + id + '\', \'' + contextAction + '\', \'' + (requestId || '') + '\')">Send</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="tf-thumbs__thanks" id="' + id + '_thanks">Thanks for your feedback!</div>' +
+      '</div>';
+    },
+
+    /**
+     * Handle thumbs button click.
+     */
+    thumbsClick: function(widgetId, type, contextAction, requestId) {
+      var widget = document.getElementById(widgetId);
+      if (!widget) return;
+
+      // Highlight selected button
+      var btns = widget.querySelectorAll('.tf-thumbs__btn');
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.remove('selected');
+      }
+      var selectedClass = type === 'thumbs_up' ? 'tf-thumbs__btn--up' : 'tf-thumbs__btn--down';
+      var btn = widget.querySelector('.' + selectedClass);
+      if (btn) btn.classList.add('selected');
+
+      // Store the type on the widget for send
+      widget.dataset.thumbsType = type;
+
+      // Open comment field
+      var commentEl = document.getElementById(widgetId + '_comment');
+      if (commentEl) commentEl.classList.add('open');
+
+      // Focus input
+      var input = document.getElementById(widgetId + '_input');
+      if (input) input.focus();
+
+      // Submit immediately (comment is optional — can add later with Send)
+      this._submitFeedback({
+        type: type,
+        contextAction: contextAction,
+        requestId: requestId
+      });
+    },
+
+    /**
+     * Send optional comment after thumbs click.
+     */
+    thumbsSend: function(widgetId, contextAction, requestId) {
+      var widget = document.getElementById(widgetId);
+      if (!widget) return;
+
+      var input = document.getElementById(widgetId + '_input');
+      var comment = input ? input.value.trim() : '';
+      if (!comment) {
+        // No comment — just show thanks
+        this._showThumbsThanks(widgetId);
+        return;
+      }
+
+      var type = widget.dataset.thumbsType || 'thumbs_up';
+      this._submitFeedback({
+        type: type,
+        comment: comment,
+        contextAction: contextAction,
+        requestId: requestId
+      });
+      this._showThumbsThanks(widgetId);
+    },
+
+    _showThumbsThanks: function(widgetId) {
+      var comment = document.getElementById(widgetId + '_comment');
+      var thanks = document.getElementById(widgetId + '_thanks');
+      if (comment) comment.classList.remove('open');
+      if (thanks) thanks.classList.add('visible');
+    },
+
+    // ================================================================
+    // NPS BAR — slim dismissable bar for portal page
+    // ================================================================
+
+    /**
+     * Check NPS eligibility and render bar if eligible.
+     *
+     * Off the critical path of portal bootstrap. checkNpsEligibility is
+     * UserProperties-backed — ~10ms for repeat users, ~1500ms only on
+     * first-ever check (acceptable since it doesn't block page render).
+     *
+     * @param {string} containerId - ID of element to prepend the bar into
+     */
+    initNps: function(containerId) {
+      var self = this;
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success && result.data && result.data.eligible) {
+            self._renderNpsBar(containerId);
+          }
+        })
+        .withFailureHandler(function() {
+          // Fail silently — don't block portal
+        })
+        .checkNpsEligibility();
+    },
+
+    _renderNpsBar: function(containerId) {
+      var container = document.getElementById(containerId);
+      if (!container) return;
+
+      var bar = document.createElement('div');
+      bar.className = 'tf-nps-bar';
+      bar.id = 'tfNpsBar';
+
+      var scoresHtml = '';
+      for (var i = 0; i <= 10; i++) {
+        var cls = i <= 6 ? 'tf-nps-bar__score--low' : (i <= 8 ? 'tf-nps-bar__score--mid' : 'tf-nps-bar__score--high');
+        scoresHtml += '<button class="tf-nps-bar__score ' + cls + '" onclick="TravelFeedback.npsSelect(' + i + ')">' + i + '</button>';
+      }
+
+      bar.innerHTML =
+        '<span class="tf-nps-bar__label">How likely are you to recommend TRIP to a colleague?</span>' +
+        '<div class="tf-nps-bar__scores">' + scoresHtml + '</div>' +
+        '<div class="tf-nps-bar__comment" id="tfNpsComment">' +
+          '<input placeholder="Any thoughts? (optional)" maxlength="500" id="tfNpsCommentInput">' +
+        '</div>' +
+        '<div class="tf-nps-bar__actions">' +
+          '<button class="tf-nps-bar__submit" id="tfNpsSubmitBtn" onclick="TravelFeedback.npsSubmit()">Submit</button>' +
+          '<button class="tf-nps-bar__close" onclick="TravelFeedback.npsDismiss()" title="Dismiss">&times;</button>' +
+        '</div>';
+
+      container.insertBefore(bar, container.firstChild);
+    },
+
+    npsSelect: function(score) {
+      this._npsScore = score;
+
+      // Highlight selected
+      var btns = document.querySelectorAll('.tf-nps-bar__score');
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.remove('selected');
+      }
+      btns[score].classList.add('selected');
+
+      // Show comment + submit
+      var commentEl = document.getElementById('tfNpsComment');
+      var submitBtn = document.getElementById('tfNpsSubmitBtn');
+      if (commentEl) commentEl.classList.add('open');
+      if (submitBtn) submitBtn.classList.add('visible');
+
+      var input = document.getElementById('tfNpsCommentInput');
+      if (input) input.focus();
+    },
+
+    npsSubmit: function() {
+      if (this._npsScore === null) return;
+
+      var input = document.getElementById('tfNpsCommentInput');
+      var comment = input ? input.value.trim() : '';
+
+      this._submitFeedback({
+        type: 'nps',
+        npsScore: this._npsScore,
+        comment: comment,
+        contextAction: 'nps_prompt'
+      });
+
+      // Replace bar with thanks
+      var bar = document.getElementById('tfNpsBar');
+      if (bar) {
+        bar.innerHTML = '<span class="tf-nps-bar__thanks"><i aria-hidden="true" class="fas fa-check" style="color:#22c55e;margin-right:6px;"></i>Thanks for your feedback!</span>';
+        setTimeout(function() {
+          bar.style.transition = 'opacity 0.3s ease';
+          bar.style.opacity = '0';
+          setTimeout(function() { bar.remove(); }, 300);
+        }, 2000);
+      }
+    },
+
+    npsDismiss: function() {
+      google.script.run.dismissNpsPrompt();
+      var bar = document.getElementById('tfNpsBar');
+      if (bar) {
+        bar.style.transition = 'opacity 0.2s ease';
+        bar.style.opacity = '0';
+        setTimeout(function() { bar.remove(); }, 200);
+      }
+    },
+
+    // ================================================================
+    // BUG / FEATURE REPORT MODAL
+    // ================================================================
+
+    /**
+     * Open bug report modal.
+     */
+    openBugReport: function() {
+      this._reportType = 'bug_report';
+      this._showReportModal('Report a Bug');
+    },
+
+    /**
+     * Open feature request modal.
+     */
+    openFeatureRequest: function() {
+      this._reportType = 'feature_request';
+      this._showReportModal('Request a Feature');
+    },
+
+    _showReportModal: function(title) {
+      // Close help dropdown
+      if (window.TravelHelp) TravelHelp.closeDropdown();
+
+      document.getElementById('tfReportTitle').textContent = title;
+      document.getElementById('tfReportDescription').value = '';
+      document.getElementById('tfReportCharCount').textContent = '0';
+      document.getElementById('tfReportCategory').selectedIndex = 0;
+      document.getElementById('tfReportSubmitBtn').disabled = false;
+      document.getElementById('tfReportFormState').style.display = '';
+      document.getElementById('tfReportSuccessState').style.display = 'none';
+      document.getElementById('tfReportBackdrop').classList.add('active');
+    },
+
+    closeReport: function() {
+      document.getElementById('tfReportBackdrop').classList.remove('active');
+    },
+
+    submitReport: function() {
+      var desc = document.getElementById('tfReportDescription').value.trim();
+      if (!desc) {
+        document.getElementById('tfReportDescription').style.borderColor = '#dc2626';
+        return;
+      }
+      document.getElementById('tfReportDescription').style.borderColor = '';
+
+      var category = document.getElementById('tfReportCategory').value;
+      var btn = document.getElementById('tfReportSubmitBtn');
+      btn.disabled = true;
+      btn.textContent = 'Submitting...';
+
+      var self = this;
+      this._submitFeedback({
+        type: this._reportType,
+        comment: desc,
+        category: category,
+        contextAction: 'help_menu'
+      }, function() {
+        document.getElementById('tfReportFormState').style.display = 'none';
+        document.getElementById('tfReportSuccessState').style.display = '';
+        setTimeout(function() { self.closeReport(); }, 2500);
+      });
+    },
+
+    // ================================================================
+    // CORE SUBMIT
+    // ================================================================
+
+    _submitFeedback: function(data, onSuccess) {
+      // Client-side cooldown (per-type)
+      var now = Date.now();
+      if (now - this._lastSubmitTime < this._cooldownMs && data.type === this._lastSubmitType) {
+        if (onSuccess) onSuccess();
+        return;
+      }
+      this._lastSubmitTime = now;
+      this._lastSubmitType = data.type;
+
+      var payload = {
+        type: data.type,
+        comment: data.comment || '',
+        npsScore: data.npsScore != null ? data.npsScore : null,
+        category: data.category || '',
+        contextPage: this._contextPage,
+        contextAction: data.contextAction || '',
+        requestId: data.requestId || '',
+        browserInfo: navigator.userAgent.substring(0, 200),
+        pageUrl: window.location.href,
+        userName: this._userName
+      };
+
+      google.script.run
+        .withSuccessHandler(function() {
+          if (onSuccess) onSuccess();
+        })
+        .withFailureHandler(function(err) {
+          console.error('Feedback submit error:', err);
+          if (onSuccess) onSuccess(); // Don't block UX on failure
+        })
+        .submitTravelFeedback(payload);
+    }
+  };
+
+  window.TravelFeedback = TravelFeedback;
+
+  // Close report modal on backdrop click
+  var backdrop = document.getElementById('tfReportBackdrop');
+  if (backdrop) {
+    backdrop.addEventListener('click', function(e) {
+      if (e.target === backdrop) TravelFeedback.closeReport();
+    });
+  }
+
+  // Close report modal on Escape
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && backdrop && backdrop.classList.contains('active')) {
+      TravelFeedback.closeReport();
+    }
+  });
+})();
+</script>

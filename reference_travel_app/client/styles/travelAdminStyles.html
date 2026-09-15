@@ -1,0 +1,5054 @@
+<!-- client/styles/travelAdminStyles.html -->
+<!-- Admin console styles — uses travelBaseStyles variables exclusively -->
+<style>
+/* ============================================
+   ADMIN LAYOUT
+   ============================================ */
+:root {
+  --admin-sidebar-width: 210px;
+  --admin-sidebar-collapsed: 52px;
+  --admin-slidein-width: 400px;
+}
+
+html, body { height: 100%; overflow: hidden; }
+
+.admin-body {
+  background: var(--color-slate-50);
+  height: 100vh;
+  overflow: hidden;
+}
+
+.admin-layout {
+  display: grid;
+  grid-template-columns: var(--admin-sidebar-collapsed) 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* (Header removed — merged into sidebar + view headers) */
+
+/* ============================================
+   DARK SIDEBAR — Hover-expand
+   ============================================ */
+.admin-sidebar {
+  background: var(--color-slate-800);
+  height: 100%;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  width: var(--admin-sidebar-collapsed);
+  transition: width var(--transition-base);
+  z-index: 100;
+}
+
+.admin-sidebar:hover {
+  width: var(--admin-sidebar-width);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Sidebar brand/logo area */
+.admin-sidebar__brand {
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  min-height: 48px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.admin-sidebar:hover .admin-sidebar__brand {
+  gap: var(--space-2);
+}
+
+.admin-sidebar__brand-icon {
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-sidebar__brand-text {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: white;
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  transition: opacity var(--transition-base), width var(--transition-base);
+}
+
+.admin-sidebar:hover .admin-sidebar__brand-text {
+  opacity: 1;
+  width: auto;
+}
+
+/* Navigation */
+.admin-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--space-2) 6px;
+  flex: 1;
+}
+
+.admin-nav__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px var(--space-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  color: var(--color-slate-400);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+  width: 100%;
+  position: relative;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.admin-nav__item:hover {
+  background: rgba(255,255,255,0.06);
+  color: var(--color-slate-200);
+}
+
+.admin-nav__item--active {
+  background: rgba(255,255,255,0.1);
+  color: white;
+}
+
+.admin-nav__item--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px; bottom: 6px;
+  width: 3px;
+  background: var(--color-primary);
+  border-radius: 0 2px 2px 0;
+}
+
+.admin-nav__item--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.admin-nav__item i {
+  width: 18px;
+  text-align: center;
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+
+/* Labels, badges, coming-soon hidden by default, shown on hover */
+.admin-nav__item span,
+.admin-nav__badge,
+.admin-nav__coming-soon {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  transition: opacity var(--transition-base);
+}
+
+.admin-sidebar:hover .admin-nav__item span,
+.admin-sidebar:hover .admin-nav__badge,
+.admin-sidebar:hover .admin-nav__coming-soon {
+  opacity: 1;
+  width: auto;
+}
+
+.admin-nav__badge {
+  margin-left: auto;
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--border-radius-full);
+  background: rgba(255,255,255,0.15);
+  color: var(--color-slate-300);
+}
+
+.admin-nav__item--active .admin-nav__badge {
+  background: var(--color-primary);
+  color: white;
+}
+
+.admin-nav__coming-soon {
+  font-size: 0.55rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-slate-500);
+  margin-left: auto;
+}
+
+/* Sidebar footer — back link + user info */
+.admin-sidebar__footer {
+  padding: var(--space-2) var(--space-2);
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.admin-sidebar__user {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px var(--space-1);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.admin-sidebar__user-icon {
+  flex-shrink: 0;
+  width: 24px; height: 24px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-slate-400);
+  font-size: 0.65rem;
+}
+
+.admin-sidebar__user-name {
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--color-slate-300);
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity var(--transition-base), width var(--transition-base);
+}
+
+.admin-sidebar:hover .admin-sidebar__user-name {
+  opacity: 1;
+  width: auto;
+}
+
+.admin-sidebar__back {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-2);
+  color: var(--color-slate-500);
+  text-decoration: none;
+  font-size: 0.68rem;
+  font-weight: 500;
+  border-radius: var(--border-radius-sm);
+  transition: all var(--transition-fast);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.admin-sidebar__back:hover {
+  background: rgba(255,255,255,0.06);
+  color: var(--color-slate-300);
+}
+
+.admin-sidebar__back i {
+  width: 18px;
+  text-align: center;
+  font-size: 0.72rem;
+  flex-shrink: 0;
+}
+
+.admin-sidebar__back span {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  transition: opacity var(--transition-base);
+}
+
+.admin-sidebar:hover .admin-sidebar__back span {
+  opacity: 1;
+  width: auto;
+}
+
+/* Secondary variant for the in-admin "Action Center (test)" link.
+   Same dimensions/transitions as the back link but with a subtle
+   accent so it reads as a separate dev/admin tool, not navigation. */
+.admin-sidebar__back--secondary {
+  color: var(--color-slate-400);
+}
+
+.admin-sidebar__back--secondary:hover {
+  background: rgba(96, 165, 250, 0.10);
+  color: var(--color-slate-200);
+}
+
+.admin-sidebar__back--secondary i {
+  color: var(--color-slate-400);
+}
+
+.admin-sidebar__back--secondary:hover i {
+  color: #93c5fd;
+}
+
+/* ============================================
+   MAIN CONTENT AREA
+   ============================================ */
+/*
+ * Layout architecture:
+ *   .admin-main       — scroll container, NO padding (so sticky chrome
+ *                       sits flush at scroll edge)
+ *   .admin-view       — flex column inside main; one per page
+ *   .admin-view-header — sticky page header (title + actions),
+ *                        edge-to-edge, has its own padding
+ *   .admin-view-body  — scrollable content container, has its own
+ *                       padding so the page content breathes
+ *
+ * Everything that wraps the per-page header + body lives inside
+ * .admin-view. This avoids the older negative-margin hack where the
+ * sticky bar had to bleed across .admin-main's padding.
+ */
+.admin-main {
+  background: var(--color-slate-50);
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: 100%;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.admin-main::-webkit-scrollbar {
+  display: none;
+}
+
+.admin-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+/* Scroll-body variant — for views where only the data area scrolls,
+   not the whole page (e.g., the requests table). admin-view fills the
+   viewport (height:100%, not min-height) so admin-view-body has a
+   bounded height to cap its inner scroll container against. The body
+   then becomes a flex column with overflow:hidden, and one child
+   inside (the table wrap or container) gets flex:1 + overflow-y:auto
+   to scroll independently. The page-level header stays sticky on top. */
+.admin-view--scroll-body {
+  height: 100%;
+  min-height: 0;
+}
+
+.admin-view--scroll-body .admin-view-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.admin-view--scroll-body .admin-table-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.admin-view--scroll-body .admin-table-container {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* In the scroll-body variant, thead sticks at the TOP of its own
+   scroll container (admin-table-container), not below the page
+   header — so override the global top:52px back to 0 here. */
+.admin-view--scroll-body .admin-table thead th {
+  top: 0;
+}
+
+.admin-view-body {
+  padding: var(--space-3);
+  flex: 1;
+}
+
+/* ============================================
+   VIEW HEADER — sticky page chrome (title + actions)
+   Flush at the top of .admin-main (no padding battle), edge-to-edge,
+   gets a subtle bottom border so it separates from scrolling content.
+   ============================================ */
+.admin-view-header {
+  position: sticky;
+  top: 0;
+  z-index: 11;
+  background: var(--color-slate-50);
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--color-slate-200);
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Action ribbon now lives inside .admin-view-header (which is itself
+   sticky), so the ribbon doesn't need its own sticky positioning or
+   edge-to-edge bleed — it's a normal flex child sitting between the
+   title and the period toggle. */
+.admin-view-header .action-ribbon {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  flex-wrap: wrap;
+  /* Soak up middle-flex space so chips center between h2 and actions. */
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+/* Slimmer chips when sitting in a compact header — keeps the title +
+   chips + toggle on a single row at 1280px without dominating
+   vertically. The standalone .action-ribbon styles still apply
+   anywhere a chip lives outside a sticky header. */
+.admin-view-header .action-ribbon__chip {
+  padding: 3px 10px 3px 9px;
+  gap: 6px;
+  font-size: 0.7rem;
+  line-height: 1.15;
+}
+
+.admin-view-header .action-ribbon__chip i { font-size: 0.7rem; }
+.admin-view-header .action-ribbon__count { font-size: 0.82rem; }
+.admin-view-header .action-ribbon__label { font-size: 0.62rem; }
+.admin-view-header .action-ribbon__urgent {
+  font-size: 0.55rem;
+  padding: 1px 5px;
+}
+.admin-view-header .action-ribbon__urgent i { font-size: 0.55rem; }
+
+.admin-view-header h2 {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--color-slate-800);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.admin-view-header h2 i {
+  color: var(--color-primary);
+  font-size: 0.82rem;
+}
+
+.admin-view-header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ============================================
+   ADMIN CARD — Foundation component
+   ============================================ */
+.admin-card {
+  background: white;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-base);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.admin-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-slate-100);
+}
+
+.admin-card__title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-slate-700);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.admin-card__title i {
+  color: var(--color-primary);
+  font-size: 0.7rem;
+}
+
+.admin-card__body {
+  padding: var(--space-2) var(--space-3);
+}
+
+.admin-card__footer {
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--color-slate-100);
+  background: var(--color-slate-50);
+}
+
+/* Action center card variants */
+.admin-card--urgent {
+  border-left: 3px solid var(--status-needs-info);
+}
+
+.admin-card--stalled {
+  border-left: 3px solid var(--status-pending);
+}
+
+.admin-card--info {
+  border-left: 3px solid var(--status-pending-oso);
+}
+
+/* ============================================
+   STAT CARDS (Metrics)
+   ============================================ */
+.stat-cards {
+  display: grid;
+  /* auto-fit + minmax lets the same grid carry 4 KPIs (admin) or 5
+     (reviewer) without a separate modifier — falls back to 2-up if
+     the viewport gets too narrow for 4×160px. */
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-2);
+}
+
+.stat-card {
+  background: white;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-base);
+  padding: var(--space-3);
+  box-shadow: var(--shadow-sm);
+}
+
+.stat-card__label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--color-slate-500);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.stat-card__value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-slate-800);
+  line-height: 1.2;
+}
+
+.stat-card__sub {
+  font-size: 0.62rem;
+  color: var(--color-slate-500);
+  margin-top: 1px;
+}
+
+.stat-card__icon {
+  float: right;
+  width: 28px; height: 28px;
+  border-radius: var(--border-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  background: var(--color-slate-100);
+  color: var(--color-slate-500);
+}
+
+.stat-card__icon--primary { background: #dbeafe; color: var(--color-primary); }
+.stat-card__icon--success { background: var(--color-success-light); color: var(--color-success); }
+.stat-card__icon--warning { background: var(--color-warning-light); color: var(--color-warning); }
+.stat-card__icon--info { background: #e0f2fe; color: var(--color-accent); }
+
+/* ============================================
+   PIPELINE STAGE CARDS
+   ============================================ */
+.pipeline-row {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.pipeline-card {
+  flex: 1;
+  min-width: 70px;
+  background: white;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-sm);
+  padding: var(--space-2) var(--space-3);
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+  overflow: hidden;
+}
+
+.pipeline-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--color-slate-200);
+}
+
+.pipeline-card:hover {
+  border-color: var(--color-slate-300);
+  box-shadow: var(--shadow-base);
+}
+
+.pipeline-card--active {
+  border-color: var(--color-primary);
+}
+
+.pipeline-card--active::before {
+  background: var(--color-primary);
+}
+
+.pipeline-card__count {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-slate-800);
+  line-height: 1.1;
+}
+
+.pipeline-card__label {
+  font-size: 0.58rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-slate-500);
+  margin-top: 1px;
+}
+
+/* Color variants for pipeline cards */
+.pipeline-card--pending::before { background: var(--status-pending); }
+.pipeline-card--oso::before { background: var(--status-pending-oso); }
+.pipeline-card--approved::before { background: var(--status-approved); }
+.pipeline-card--completed::before { background: var(--status-completed); }
+
+/* ============================================
+   PULSE STRIP — unified KPI surface (period stats + live pipeline)
+   Wraps stat cards and pipeline cards into one card container so the
+   dashboard reads as a single "at-a-glance" panel. Inner tiles drop
+   their own border/shadow so the strip looks unified, not nested.
+   ============================================ */
+.pulse-strip {
+  background: white;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-base);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.pulse-strip__row {
+  position: relative;
+}
+
+.pulse-strip__row--pipeline {
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--color-slate-200);
+}
+
+/* Funding row sits between KPIs and pipeline with no extra divider —
+   the dashed line below it (on the pipeline row) cleanly separates
+   period-aware metrics from the live load. Hide while empty during
+   the initial skeleton so it doesn't add a phantom gap. */
+.pulse-strip__row--funding:empty {
+  display: none;
+}
+
+.pulse-strip__live-tag {
+  position: absolute;
+  top: -10px;
+  right: 0;
+  font-size: 0.55rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-slate-500);
+  background: white;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  pointer-events: none;
+}
+
+.pulse-strip__live-tag::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.18);
+  animation: pulseDot 2.4s ease-in-out infinite;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* Tighten stat cards inside the strip — flatter, denser, no inner shadow.
+   Keeps the visual hierarchy of value + label but loses the standalone
+   card chrome since the strip itself provides the surface. */
+.pulse-strip .stat-cards {
+  gap: var(--space-2);
+}
+
+.pulse-strip .stat-card {
+  background: var(--color-slate-50);
+  border-color: transparent;
+  box-shadow: none;
+  padding: var(--space-2) var(--space-3);
+}
+
+.pulse-strip .stat-card__label {
+  font-size: 0.58rem;
+}
+
+.pulse-strip .stat-card__value {
+  font-size: 1.1rem;
+}
+
+.pulse-strip .stat-card__sub {
+  font-size: 0.6rem;
+}
+
+.pulse-strip .stat-card__icon {
+  width: 22px;
+  height: 22px;
+  font-size: 0.65rem;
+}
+
+/* Tighten pipeline chips inside the strip — same rationale. */
+.pulse-strip .pipeline-row {
+  gap: var(--space-2);
+  padding-bottom: 0;
+}
+
+.pulse-strip .pipeline-card {
+  background: var(--color-slate-50);
+  border-color: transparent;
+  padding: 6px var(--space-2);
+}
+
+.pulse-strip .pipeline-card:hover {
+  background: white;
+  border-color: var(--color-slate-200);
+  box-shadow: none;
+}
+
+.pulse-strip .pipeline-card__count {
+  font-size: 1rem;
+}
+
+.pulse-strip .pipeline-card__label {
+  font-size: 0.55rem;
+}
+
+/* ============================================
+   ACTION RIBBON — compact summary chips above the (collapsible) action
+   detail panel. Replaces the always-on two-card layout that ate ~250px
+   of fold for an admin who just wants a quick pulse.
+   ============================================ */
+.action-ribbon {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.action-ribbon__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--color-slate-200);
+  background: white;
+  border-radius: 999px;
+  padding: 6px 14px 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--color-slate-700);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  line-height: 1.2;
+}
+
+.action-ribbon__chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.action-ribbon__chip i {
+  font-size: 0.78rem;
+  color: var(--color-slate-500);
+}
+
+.action-ribbon__chip:hover i { color: var(--color-primary); }
+
+.action-ribbon__count {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-slate-800);
+  min-width: 1ch;
+}
+
+.action-ribbon__label {
+  font-size: 0.72rem;
+  color: var(--color-slate-500);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.action-ribbon__urgent {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--color-warning-light);
+  color: var(--color-warning);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  margin-left: 2px;
+}
+
+.action-ribbon__urgent i {
+  font-size: 0.6rem;
+  color: var(--color-warning);
+}
+
+.action-ribbon__chip--zero {
+  opacity: 0.55;
+}
+
+.action-ribbon__chip--zero .action-ribbon__count {
+  color: var(--color-slate-400);
+}
+
+.action-ribbon__chip--denied {
+  border-color: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.04);
+}
+
+.action-ribbon__chip--denied i,
+.action-ribbon__chip--denied .action-ribbon__count {
+  color: var(--color-danger, #ef4444);
+}
+
+.action-ribbon__chip--denied:hover {
+  border-color: var(--color-danger, #ef4444);
+  color: var(--color-danger, #ef4444);
+}
+
+/* Collapsible detail panel — uses max-height for animation since the
+   inner content height is dynamic (skeleton vs populated). 600px is a
+   generous ceiling that handles both renderings without clipping. */
+.action-detail {
+  overflow: hidden;
+  max-height: 600px;
+  transition: max-height 0.28s ease, opacity 0.2s ease, margin-bottom 0.28s ease;
+  opacity: 1;
+}
+
+.action-detail.is-collapsed {
+  max-height: 0;
+  opacity: 0;
+  margin-bottom: 0 !important;
+  pointer-events: none;
+}
+
+/* Focus filter — when a chip is "active", expand the detail panel but
+   show only that section's column at full width. Hides the irrelevant
+   half so the user gets exactly what they asked for. */
+.action-detail--focus-reviews .col-lg-6:nth-child(2),
+.action-detail--focus-stalled .col-lg-6:nth-child(1) {
+  display: none;
+}
+
+.action-detail--focus-reviews .col-lg-6:nth-child(1),
+.action-detail--focus-stalled .col-lg-6:nth-child(2) {
+  flex: 0 0 100%;
+  max-width: 100%;
+}
+
+/* Active chip = currently focused. Slightly stronger than hover so it's
+   clear which one drove the panel state. */
+.action-ribbon__chip--active {
+  border-color: var(--color-primary);
+  background: rgba(15, 79, 135, 0.06);
+  color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(15, 79, 135, 0.6);
+}
+
+.action-ribbon__chip--active i,
+.action-ribbon__chip--active .action-ribbon__count,
+.action-ribbon__chip--active .action-ribbon__label {
+  color: var(--color-primary);
+}
+
+/* Polish the cards inside the detail panel — they now sit beneath a
+   ribbon, so the heavy admin-card chrome is too much. Lighten the
+   header and dial back the shadow so the ribbon stays the headliner. */
+.action-detail .admin-card {
+  box-shadow: none;
+  border-color: var(--color-slate-200);
+}
+
+.action-detail .admin-card__header {
+  background: transparent;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-slate-100);
+}
+
+.action-detail .admin-card__title {
+  font-size: 0.7rem;
+}
+
+/* ============================================
+   ACTION CENTER LIST ITEMS
+   ============================================ */
+.action-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.action-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px var(--space-3);
+  background: white;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.action-item:hover {
+  background: var(--color-slate-50);
+}
+
+.action-item__info {
+  min-width: 0;
+}
+
+.action-item__name {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-slate-800);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.action-item__sub {
+  font-size: 0.65rem;
+  color: var(--color-slate-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 0;
+}
+
+.action-item__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.action-item__days {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--color-slate-500);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.action-item__days--warn { color: var(--status-pending); }
+.action-item__days--critical { color: var(--status-needs-info); }
+
+.action-item__amount {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--color-slate-700);
+  text-align: right;
+  min-width: 50px;
+}
+
+.action-item__urgent {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--status-needs-info);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* ============================================
+   STATUS FILTER PILLS
+   ============================================ */
+.filter-pills {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+}
+
+/* Visual divider between pill groups — quick filters | in-flight |
+   decided | toggle. Subtle vertical bar so the cluster boundaries
+   read at a glance without screaming. */
+.filter-pills--grouped {
+  margin-bottom: 0;  /* lives in sticky header, no gap below needed */
+}
+
+.filter-pills__divider {
+  display: inline-block;
+  width: 1px;
+  height: 16px;
+  background: var(--color-slate-200);
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+
+/* Requests view header layout — title left, status pills middle, search right.
+   Same pattern as the dashboard's three-section header. */
+.admin-view-header--requests {
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.admin-view-header--requests .filter-pills--grouped {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: center;
+}
+
+/* Search input variant for the sticky header — narrower than the
+   in-body version. */
+.search-input--header {
+  position: relative;
+  width: 280px;
+  flex-shrink: 0;
+}
+
+.search-input--header i {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-slate-400);
+  font-size: 0.7rem;
+  pointer-events: none;
+}
+
+.search-input--header input {
+  width: 100%;
+  padding-left: 28px;
+  height: 28px;
+  font-size: 0.75rem;
+  border-radius: var(--border-radius-base);
+  border: 1px solid var(--color-slate-200);
+  background: white;
+}
+
+.search-input--header input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(15, 79, 135, 0.12);
+}
+
+.filter-pill {
+  padding: 3px 9px;
+  background: white;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-full);
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--color-slate-600);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.filter-pill:hover {
+  border-color: var(--color-slate-300);
+  background: var(--color-slate-50);
+}
+
+.filter-pill--active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+}
+
+.filter-pill--active:hover {
+  background: var(--color-primary-dark);
+  border-color: var(--color-primary-dark);
+}
+
+.filter-pill__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: var(--border-radius-full);
+  font-size: 0.6rem;
+  font-weight: 700;
+  margin-left: 4px;
+  background: var(--color-slate-100);
+  color: var(--color-slate-600);
+}
+
+.filter-pill--active .filter-pill__count {
+  background: rgba(255,255,255,0.25);
+  color: white;
+}
+
+.filter-pill--toggle {
+  margin-left: 8px;
+  border-style: dashed;
+}
+
+/* ============================================
+   ENHANCED TABLE
+   ============================================ */
+.admin-table-wrap {
+  background: white;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-base);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+/* Requests view: page doesn't scroll — only the table body does */
+#requestsView {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+#requestsView .admin-table-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#requestsView .admin-table-container {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+#requestsView .admin-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--color-slate-50);
+}
+
+.admin-table-filters {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-slate-100);
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+/* Row count — sits at the right end of the filters row, so users
+   see live feedback as they narrow the set. Subtle slate color so
+   it doesn't compete with the controls. */
+.admin-table-filters__count {
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: var(--color-slate-500);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  padding-bottom: 4px;  /* visually align with form-select-sm baseline */
+}
+
+.admin-table-filters__count:empty {
+  display: none;
+}
+
+.admin-table-filters .filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 200px;
+}
+
+.admin-table-filters .filter-group label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--color-slate-500);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.admin-table-filters .filter-group--grow {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* Modernized filter inputs — match the sticky-header search pill style:
+   slim, rounded, focus-ring on brand color. Applied uniformly to the
+   BU select and the Date Range flatpickr input. */
+.admin-table-filters .form-select,
+.admin-table-filters .form-control,
+.admin-table-filters .flatpickr-input {
+  height: 30px;
+  font-size: 0.75rem;
+  border-radius: var(--border-radius-base);
+  border: 1px solid var(--color-slate-200);
+  background: white;
+  color: var(--color-slate-700);
+  padding: 0 10px;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.admin-table-filters .form-select:focus,
+.admin-table-filters .form-control:focus,
+.admin-table-filters .flatpickr-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(15, 79, 135, 0.12);
+}
+
+/* Wrap host for input + clear (X) button. Controller toggles
+   .has-value when a filter is set, which reveals the X. */
+.filter-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.filter-input-wrap .form-control,
+.filter-input-wrap .flatpickr-input {
+  flex: 1;
+  padding-right: 28px;
+}
+
+.filter-input-wrap__clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  color: var(--color-slate-400);
+  cursor: pointer;
+  font-size: 0.7rem;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  z-index: 2;
+}
+
+.filter-input-wrap.has-value .filter-input-wrap__clear {
+  display: inline-flex;
+}
+
+.filter-input-wrap__clear:hover {
+  background: var(--color-slate-100);
+  color: var(--color-slate-700);
+}
+
+.admin-table-filters .search-input {
+  position: relative;
+}
+
+.admin-table-filters .search-input i {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-slate-400);
+  font-size: 0.72rem;
+}
+
+.admin-table-filters .search-input input {
+  padding-left: 30px;
+}
+
+.admin-table-container {
+  overflow-x: auto;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+
+/* Request ID column — keep on a single line. Scoped to admin's
+   #requestsView because that table has a checkbox at column 1, putting
+   the ID at column 2. The reviewer dashboard reuses .admin-table but
+   has no checkbox column, so this used to force its Trip Name column
+   (the actual nth-child(2) there) into nowrap and cause horizontal
+   scroll for long event titles. */
+#requestsView .admin-table td:nth-child(2),
+#requestsView .admin-table th:nth-child(2) {
+  white-space: nowrap;
+  width: 1%;  /* shrink to content; nowrap prevents wrap */
+}
+
+/* Reviewer dashboard's table: ID at column 1, Trip Name at column 2.
+   Pin ID to a single line so the request code never wraps; let Trip Name
+   wrap aggressively so a long event title doesn't blow out the table
+   width and force a horizontal scrollbar. word-break: break-word lets
+   the cell break inside a long word if needed (some event titles are
+   one giant string with no spaces). */
+#requestsTableContainer .admin-table td:nth-child(1),
+#requestsTableContainer .admin-table th:nth-child(1) {
+  white-space: nowrap;
+  width: 1%;
+}
+/* Trip Name column wraps long titles instead of forcing horizontal
+   scroll. No max-width — matches admin, lets the table-layout
+   algorithm distribute space naturally so the column gets whatever
+   room is left after the other (mostly fixed-width) columns. The
+   word-break/overflow-wrap pair keeps unbreakable strings from
+   blowing out the cell. */
+#requestsTableContainer .admin-table td:nth-child(2),
+#requestsTableContainer .admin-table th:nth-child(2) {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 220px;
+}
+
+/* Trip name clamp — wraps to 2 lines max, then ellipsis. Applied to a
+   wrapper div inside the <td>, NOT the <td> itself, because
+   display: -webkit-box would override display: table-cell and break
+   the table's column layout (adjacent columns end up bleeding in).
+   Used by both admin and reviewer dashboards. */
+.admin-table .trip-name-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Actions kebab — single button replaces the older 3-button row.
+   Opens an action menu (.action-menu) anchored fixed-position beneath. */
+.action-kebab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: var(--border-radius-sm);
+  color: var(--color-slate-500);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.action-kebab:hover {
+  background: var(--color-slate-100);
+  color: var(--color-slate-800);
+  border-color: var(--color-slate-200);
+}
+
+.action-kebab[aria-expanded="true"] {
+  background: var(--color-slate-100);
+  color: var(--color-slate-800);
+  border-color: var(--color-slate-300);
+}
+
+/* Floating menu spawned beneath the kebab. Position is set inline by
+   the controller; only the visual chrome lives here. */
+.action-menu {
+  background: white;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-base);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+}
+
+.action-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  font-size: 0.78rem;
+  color: var(--color-slate-700);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+.action-menu__item:hover {
+  background: var(--color-slate-100);
+  color: var(--color-slate-900);
+}
+
+.action-menu__item i {
+  width: 14px;
+  text-align: center;
+  color: var(--color-slate-500);
+  font-size: 0.78rem;
+}
+
+.action-menu__item:hover i {
+  color: var(--color-primary);
+}
+
+.admin-table th {
+  background: var(--color-slate-50);
+  padding: 5px var(--space-2);
+  text-align: left;
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--color-slate-500);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--color-slate-200);
+  /* Stick the table header just below the sticky page header (~52px).
+     The whole page scrolls in admin-main, but the column headers stay
+     pinned so users can read the columns while scrolling rows. z-index
+     keeps them under the page header (z-11) but above table rows. */
+  position: sticky;
+  top: 52px;
+  z-index: 5;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.admin-table th.sortable {
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.admin-table th.sortable:hover {
+  background: var(--color-slate-100);
+  color: var(--color-slate-700);
+}
+
+.admin-table th.sortable::after {
+  content: '\f0dc';
+  font-family: 'Font Awesome 6 Free';
+  font-weight: 900;
+  margin-left: 4px;
+  opacity: 0.3;
+  font-size: 0.6rem;
+}
+
+.admin-table th.sorted-asc::after {
+  content: '\f0de';
+  opacity: 1;
+  color: var(--color-primary);
+}
+
+.admin-table th.sorted-desc::after {
+  content: '\f0dd';
+  opacity: 1;
+  color: var(--color-primary);
+}
+
+.admin-table td {
+  padding: 7px var(--space-2);
+  border-bottom: 1px solid var(--color-slate-100);
+  color: var(--color-slate-700);
+  vertical-align: middle;
+}
+
+.admin-table th {
+  padding: 7px var(--space-2);
+}
+
+.admin-table tbody tr {
+  cursor: pointer;
+  transition: background var(--transition-fast), box-shadow var(--transition-fast);
+  position: relative;
+}
+
+/* Subtle zebra striping for scan-ability on long lists. Hover takes
+   priority via specificity below. */
+.admin-table tbody tr:nth-child(even) {
+  background: rgba(15, 23, 42, 0.014);
+}
+
+.admin-table tbody tr:hover {
+  background: var(--color-slate-50);
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Selected row state — brand-tinted bg + a primary-color left border
+   bar. Toggled by the controller when the row checkbox flips. */
+.admin-table tbody tr.is-selected {
+  background: rgba(15, 79, 135, 0.06);
+  box-shadow: inset 3px 0 0 var(--color-primary);
+}
+
+.admin-table tbody tr.is-selected:hover {
+  background: rgba(15, 79, 135, 0.10);
+}
+
+/* Terminal rows — slightly muted text so finalized requests don't
+   compete visually with active ones. Just a subtle de-emphasis. */
+.admin-table tbody tr.is-terminal td {
+  color: var(--color-slate-500);
+}
+
+.admin-table tbody tr.is-terminal .submitter-cell__name {
+  color: var(--color-slate-600);
+}
+
+/* Cells where terminal-state suppresses the value (Days at Stage,
+   Reviewer) get a faint placeholder color so the dash reads as
+   "intentionally empty" rather than missing data. */
+.days-cell--terminal,
+.reviewer-cell--terminal {
+  color: var(--color-slate-300) !important;
+  font-weight: 400 !important;
+  text-align: center;
+}
+
+.admin-table .submitter-cell {
+  min-width: 130px;
+}
+
+.admin-table .submitter-cell__name {
+  font-weight: 500;
+  color: var(--color-slate-800);
+}
+
+.admin-table .submitter-cell__email {
+  font-size: 0.6rem;
+  color: var(--color-slate-400);
+}
+
+.admin-table .days-cell {
+  font-weight: 600;
+  font-size: 0.68rem;
+}
+
+.admin-table .days-cell--ok { color: var(--color-slate-500); }
+.admin-table .days-cell--warn { color: var(--status-pending); }
+.admin-table .days-cell--critical { color: var(--status-needs-info); }
+
+.admin-table .amount-cell {
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Right-align the Amount column header so it lines up with the
+   right-aligned values below. The data-sort attribute identifies it. */
+.admin-table th[data-sort="grandTotal"] {
+  text-align: right;
+}
+
+.admin-table th[data-sort="grandTotal"].sortable::after {
+  margin-left: 4px;
+}
+
+/* Submitter cell — name primary, email secondary. Truncate long
+   emails to keep the row tight; full string available on hover. */
+.admin-table .submitter-cell__email {
+  font-size: 0.6rem;
+  color: var(--color-slate-400);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+/* Empty-state row — shown when filters narrow to nothing. Larger
+   padding, an icon, a title + helper instead of bare text. */
+.admin-table__empty {
+  text-align: center;
+  /* Top padding clears the sticky thead with breathing room — 80px got
+     the icon out from under the header but the title sat too close.
+     120px lets the empty state read as its own block. */
+  padding: 120px var(--space-3) var(--space-7) !important;
+  color: var(--color-slate-500);
+}
+
+.admin-table__empty i {
+  font-size: 2rem;
+  color: var(--color-slate-300);
+  margin-bottom: 12px;
+  display: block;
+}
+
+.admin-table__empty-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-slate-700);
+  margin-bottom: 2px;
+}
+
+.admin-table__empty-help {
+  font-size: 0.72rem;
+  color: var(--color-slate-500);
+}
+
+.admin-table__empty-row {
+  cursor: default !important;
+}
+
+.admin-table__empty-row:hover {
+  background: transparent !important;
+}
+
+.admin-table .actions-cell {
+  white-space: nowrap;
+}
+
+.admin-table .action-btn-group {
+  display: flex;
+  gap: 4px;
+}
+
+.admin-table .action-btn-group .btn {
+  padding: 3px 7px;
+  font-size: 0.68rem;
+}
+
+/* ============================================
+   TRIPS INVOLVING YOUR STAFF
+   Awareness-only section that lives below the main "Requests you
+   manage" table on the reviewer dashboard. Compact list, lighter
+   visual treatment than the table so users instantly understand
+   "this is context, not work."
+   ============================================ */
+
+/* Awareness-callout treatment: left accent stripe in the brand
+   primary, soft blue-tinted background, tighter padding than a full
+   card so it reads as "callout" rather than "section." */
+.trips-involving {
+  margin-top: var(--space-4);
+  padding: 10px 14px 12px;
+  border: 1px solid var(--color-slate-200);
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--border-radius-sm);
+  background: rgba(0, 79, 135, 0.03);
+}
+
+/* Title + count + sub all live on one line. Sub is muted text after
+   the count, separated by spacing only — no second row. */
+.trips-involving__title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-slate-700);
+  flex-wrap: wrap;
+}
+
+.trips-involving__title i {
+  color: var(--color-primary);
+  font-size: 0.75rem;
+}
+
+.trips-involving__count {
+  color: var(--color-slate-500);
+  font-weight: 500;
+  font-size: 0.78rem;
+}
+
+.trips-involving__sub {
+  margin-left: auto;
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--color-slate-500);
+  font-style: italic;
+}
+
+.trips-involving__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: var(--space-2);
+}
+
+.trips-involving__row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 7px 12px;
+  background: #fff;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.trips-involving__row:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 1px 3px rgba(0, 79, 135, 0.08);
+}
+
+/* Left side: staff + trip name. Stays compact and readable, will
+   wrap if both strings are long but normally fits one line. */
+.trips-involving__row-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.trips-involving__staff {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-slate-800);
+}
+
+.trips-involving__staff i {
+  color: var(--color-slate-400);
+  font-size: 0.7rem;
+}
+
+.trips-involving__trip {
+  font-size: 0.78rem;
+  color: var(--color-slate-600);
+}
+
+/* Right side: dates, status, submitter. justify-self pushes everything
+   to the row's right edge so the layout fills the full width instead
+   of leaving white space hanging on the right. */
+.trips-involving__row-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  font-size: 0.7rem;
+  color: var(--color-slate-500);
+  flex: 0 0 auto;
+}
+
+.trips-involving__dates {
+  color: var(--color-slate-600);
+  font-weight: 500;
+}
+
+.trips-involving__submitter {
+  font-style: italic;
+  color: var(--color-slate-500);
+}
+
+/* "Show past trips" disclosure: a quiet button-as-link that toggles
+   the recent-past list. Sits at the bottom of the list, doesn't get
+   any heavier styling than necessary. */
+.trips-involving__past-toggle {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 6px 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--color-slate-500);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.15s ease;
+}
+
+.trips-involving__past-toggle:hover {
+  color: var(--color-primary);
+}
+
+.trips-involving__past-toggle i {
+  font-size: 0.65rem;
+  width: 10px;
+  text-align: center;
+}
+
+/* Past trips share the row styling but with a muted left border so
+   they read as "less actionable" than the upcoming list above. */
+.trips-involving__past {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.trips-involving__past .trips-involving__row {
+  background: rgba(248, 250, 252, 0.85);
+  border-left: 2px solid var(--color-slate-300);
+}
+
+.trips-involving__past .trips-involving__staff,
+.trips-involving__past .trips-involving__trip {
+  color: var(--color-slate-500);
+}
+
+/* ============================================
+   SLIDE-IN DETAIL PANEL
+   ============================================ */
+.slidein-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 1100;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--transition-base), visibility var(--transition-base);
+}
+
+.slidein-backdrop.open {
+  opacity: 1;
+  visibility: visible;
+}
+
+.slidein-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--admin-slidein-width);
+  max-width: 100vw;
+  background: white;
+  z-index: 1101;
+  box-shadow: var(--shadow-xl);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform var(--transition-base);
+}
+
+.slidein-panel.open {
+  transform: translateX(0);
+}
+
+.slidein__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-slate-200);
+  flex-shrink: 0;
+}
+
+.slidein__header-info {
+  min-width: 0;
+}
+
+.slidein__request-id {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--color-slate-400);
+  font-family: var(--font-mono);
+}
+
+.slidein__trip-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-slate-800);
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slidein__submitter {
+  font-size: 0.68rem;
+  color: var(--color-slate-500);
+  margin-top: 1px;
+}
+
+.slidein__close {
+  background: none;
+  border: none;
+  color: var(--color-slate-400);
+  cursor: pointer;
+  padding: var(--space-1);
+  font-size: 0.9rem;
+  line-height: 1;
+  transition: color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.slidein__close:hover {
+  color: var(--color-slate-600);
+}
+
+.slidein__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+
+/* Status section */
+.slidein__status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.slidein__days-indicator {
+  font-size: 0.65rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.slidein__urgent-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: var(--border-radius-full);
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--status-needs-info-bg);
+  color: var(--status-needs-info);
+}
+
+/* Currently-traveling variant: green-ish, signals "in progress" rather
+   than the urgent/warning tone of an upcoming-soon trip. */
+.slidein__urgent-tag--current {
+  background: var(--status-approved-bg, rgba(40, 109, 59, 0.10));
+  color: var(--status-approved, #286D3B);
+}
+
+/* Details grid */
+.slidein__details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.slidein__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.slidein__detail-label {
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: var(--color-slate-400);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.slidein__detail-value {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-slate-800);
+}
+
+/* Denied/Cancelled callout */
+.slidein__callout {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--border-radius-sm);
+  margin-bottom: var(--space-3);
+  font-size: 0.72rem;
+}
+
+.slidein__callout--denied {
+  background: var(--status-denied-bg);
+  border: 1px solid rgba(153,27,27,0.2);
+  color: var(--status-denied);
+}
+
+.slidein__callout--cancelled {
+  background: var(--color-slate-100);
+  border: 1px solid var(--color-slate-200);
+  color: var(--color-slate-600);
+}
+
+.slidein__callout-title {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.slidein__callout-text {
+  font-size: 0.65rem;
+  opacity: 0.85;
+}
+
+/* Approval Timeline Stepper */
+.slidein__timeline-title {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--color-slate-500);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: var(--space-2);
+}
+
+.approval-timeline {
+  position: relative;
+  padding-left: 24px;
+}
+
+.timeline-step {
+  position: relative;
+  padding-bottom: var(--space-2);
+  padding-left: var(--space-2);
+}
+
+.timeline-step:last-child {
+  padding-bottom: 0;
+}
+
+/* Vertical line */
+.timeline-step::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 12px;
+  bottom: 0;
+  width: 2px;
+  background: var(--color-slate-200);
+}
+
+.timeline-step:last-child::before {
+  display: none;
+}
+
+/* Circle */
+.timeline-step__dot {
+  position: absolute;
+  left: -30px;
+  top: 3px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--color-slate-300);
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.45rem;
+  z-index: 1;
+}
+
+.timeline-step--completed .timeline-step__dot {
+  background: var(--status-approved);
+  border-color: var(--status-approved);
+  color: white;
+}
+
+.timeline-step--current .timeline-step__dot {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.timeline-step--denied .timeline-step__dot {
+  background: var(--status-needs-info);
+  border-color: var(--status-needs-info);
+  color: white;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0,79,135,0.3); }
+  50% { box-shadow: 0 0 0 5px rgba(0,79,135,0); }
+}
+
+.timeline-step__content {
+  min-width: 0;
+}
+
+.timeline-step__action {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-slate-700);
+}
+
+.timeline-step--current .timeline-step__action {
+  color: var(--color-primary);
+}
+
+.timeline-step__actor {
+  font-size: 0.62rem;
+  color: var(--color-slate-500);
+}
+
+.timeline-step__date {
+  font-size: 0.58rem;
+  color: var(--color-slate-400);
+}
+
+.timeline-step__note {
+  font-size: 0.62rem;
+  color: var(--color-slate-600);
+  margin-top: 2px;
+  font-style: italic;
+  padding: 4px 8px;
+  background: var(--color-slate-50);
+  border-radius: var(--border-radius-sm);
+  border-left: 2px solid var(--color-slate-200);
+}
+
+/* Sticky footer */
+.slidein__footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--color-slate-200);
+  background: var(--color-slate-50);
+}
+
+.slidein__footer .btn {
+  font-size: 0.68rem;
+}
+
+.slidein__footer-actions {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.slidein__footer-danger {
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  border-top: 1px solid var(--color-slate-100);
+}
+
+.slidein__footer-danger .btn {
+  font-size: 0.65rem;
+  opacity: 0.7;
+}
+
+.slidein__footer-danger .btn:hover {
+  opacity: 1;
+}
+
+/* ============================================
+   CHECKBOX COLUMN & BULK ACTIONS
+   ============================================ */
+.th-checkbox,
+.td-checkbox {
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
+  text-align: center;
+  padding: 4px 6px !important;
+}
+
+.th-checkbox input[type="checkbox"],
+.td-checkbox input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+/* Slim modernized bulk action bar — appears when rows are selected.
+   Sits inline above the table; brand-tinted background instead of
+   the heavier blue, rounded pill, tighter padding. */
+.bulk-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(15, 79, 135, 0.06);
+  border: 1px solid rgba(15, 79, 135, 0.18);
+  border-radius: 999px;
+  margin: 0 var(--space-3) var(--space-2);
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.bulk-action-bar__info {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.bulk-action-bar__info i {
+  font-size: 0.72rem;
+}
+
+.bulk-action-bar__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Bulk action bar's button override — slim, pill-shaped to match the
+   bar itself, rather than the default chunky btn-danger. */
+.bulk-action-bar .btn {
+  height: 26px;
+  padding: 0 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 999px;
+}
+
+/* ============================================
+   DELETE PREVIEW MODAL
+   ============================================ */
+.delete-preview__warning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--border-radius-sm);
+  color: #991b1b;
+  font-size: 0.78rem;
+  margin-bottom: var(--space-3);
+}
+
+.delete-preview__warning i {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.delete-preview__requests {
+  max-height: 180px;
+  overflow-y: auto;
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-sm);
+}
+
+.delete-preview__request-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-2);
+  font-size: 0.75rem;
+  border-bottom: 1px solid var(--color-slate-100);
+}
+
+.delete-preview__request-item:last-child {
+  border-bottom: none;
+}
+
+.delete-preview__request-item code {
+  font-size: 0.65rem;
+  color: var(--color-slate-500);
+  background: var(--color-slate-100);
+  padding: 1px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.delete-preview__request-item .status-badge {
+  font-size: 0.6rem;
+  flex-shrink: 0;
+}
+
+.delete-preview__table {
+  width: 100%;
+  font-size: 0.75rem;
+  margin-bottom: var(--space-3);
+  border-collapse: collapse;
+}
+
+.delete-preview__table td {
+  padding: 5px var(--space-2);
+  border-bottom: 1px solid var(--color-slate-100);
+}
+
+.delete-preview__table td:first-child {
+  color: var(--color-slate-600);
+}
+
+.delete-preview__table td:last-child {
+  text-align: right;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.delete-preview__total td {
+  border-top: 2px solid var(--color-slate-300);
+  border-bottom: none;
+  font-weight: 700;
+  color: var(--status-denied) !important;
+  padding-top: 8px;
+}
+
+.delete-preview__drive {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-slate-50);
+  border-radius: var(--border-radius-sm);
+  font-size: 0.75rem;
+}
+
+.delete-preview__drive label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  margin: 0;
+}
+
+.delete-preview__drive input[type="checkbox"] {
+  accent-color: var(--color-primary);
+}
+
+/* ============================================
+   CHARTS (CSS-only bar charts)
+   align-items:start lets each card take its natural height — without it
+   the shorter chart was being stretched up to match the taller one.
+   ============================================ */
+.chart-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.bar-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.bar-chart__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 1px 0;
+}
+
+.bar-chart__label {
+  width: 140px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-slate-700);
+  flex-shrink: 0;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bar-chart__track {
+  flex: 1;
+  height: 10px;
+  background: var(--color-slate-100);
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 1px rgba(15, 23, 42, 0.04);
+  min-width: 0;
+}
+
+.bar-chart__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-accent) 100%);
+  transition: width 0.5s ease;
+  min-width: 3px;
+  box-shadow: 0 1px 2px rgba(15, 79, 135, 0.15);
+}
+
+.bar-chart__value {
+  width: 110px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-slate-800);
+  text-align: right;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar-chart__row--clickable {
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background var(--transition-fast);
+}
+
+.bar-chart__row--clickable:hover {
+  background: var(--color-slate-50);
+}
+
+.bar-chart__chevron {
+  font-size: 0.5rem;
+  margin-right: 2px;
+  transition: transform 0.2s ease;
+  color: var(--color-slate-400);
+}
+
+.bar-chart__sector-group {
+  padding-left: 0;
+}
+
+.bar-chart__row--sector .bar-chart__label {
+  padding-left: 16px;
+  font-size: 0.66rem;
+  color: var(--color-slate-500);
+}
+
+.bar-chart__row--sector .bar-chart__track {
+  height: 7px;
+}
+
+.bar-chart__fill--sector {
+  background: linear-gradient(90deg, var(--color-primary-light, var(--color-primary)) 0%, var(--color-accent) 100%) !important;
+  opacity: 0.7;
+}
+
+.bar-chart__count {
+  font-size: 0.6rem;
+  font-weight: 400;
+  color: var(--color-slate-400);
+}
+
+.bar-chart__footnote {
+  font-size: 0.5rem;
+  font-style: italic;
+  color: var(--color-slate-400);
+  padding-left: 16px;
+  padding-top: 2px;
+  padding-bottom: 4px;
+}
+
+/* ============================================
+   TIME PER STAGE (stacked bar — class name "pipeline" predates the
+   broader pipeline-card terminology used elsewhere in the dashboard)
+   ============================================ */
+.pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pipeline__total {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-slate-800);
+  letter-spacing: -0.01em;
+}
+
+.pipeline__bar {
+  display: flex;
+  height: 18px;
+  border-radius: 999px;
+  overflow: hidden;
+  gap: 2px;
+  box-shadow: inset 0 1px 1px rgba(15, 23, 42, 0.05);
+}
+
+.pipeline__segment {
+  transition: width 0.6s ease, opacity 0.2s ease;
+  position: relative;
+}
+
+.pipeline__segment:first-child {
+  border-radius: 999px 0 0 999px;
+}
+
+.pipeline__segment:last-child {
+  border-radius: 0 999px 999px 0;
+}
+
+.pipeline__segment:only-child {
+  border-radius: 999px;
+}
+
+.pipeline__segment:hover {
+  opacity: 0.85;
+}
+
+.pipeline__legend {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+}
+
+.pipeline__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  min-width: 0;
+}
+
+.pipeline__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.pipeline__legend-label {
+  font-weight: 500;
+  color: var(--color-slate-600);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pipeline__legend-value {
+  font-weight: 700;
+  color: var(--color-slate-800);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.pipeline__legend-pct {
+  font-weight: 500;
+  color: var(--color-slate-400);
+  font-size: 0.6rem;
+  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+  text-align: right;
+}
+
+/* ============================================
+   SPEND BY BU
+   ============================================ */
+.spend-chart__total {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-slate-800);
+  letter-spacing: -0.01em;
+  margin-bottom: 4px;
+}
+
+.spend-chart__total-label {
+  font-size: 0.62rem;
+  font-weight: 400;
+  color: var(--color-slate-400);
+  letter-spacing: 0;
+}
+
+/* ============================================
+   CHART CARD — tighter padding + caption row under title
+   ============================================ */
+.admin-card--chart .admin-card__header {
+  padding-bottom: var(--space-2);
+}
+
+.admin-card--chart .admin-card__body {
+  padding-top: var(--space-3);
+}
+
+/* Chart card header total — title sits left, total sits right (same
+   justify-content:space-between as any admin-card__header). The total
+   replaces the in-body .pipeline__total / .spend-chart__total since
+   showing a hero number both at the top of the body and beside the
+   title was redundant. */
+.admin-card__header-total {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-slate-800);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.admin-card__header-total-label {
+  font-size: 0.6rem;
+  font-weight: 500;
+  color: var(--color-slate-400);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* For dashboards with an odd number of charts (reviewer = 3): the
+   trailing card spans the full grid width so it doesn't sit alone in
+   one column. */
+.admin-card--chart-full {
+  grid-column: 1 / -1;
+}
+
+/* ============================================
+   FUNDING STRIP — Client-Paid vs Overhead split rendered inside the
+   pulse strip's funding row. Compact stacked bar + inline legend.
+   ============================================ */
+.funding-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.funding-strip--empty {
+  font-size: 0.7rem;
+  color: var(--color-slate-400);
+  padding: 4px 0;
+}
+
+.funding-strip__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.funding-strip__label {
+  font-size: 0.55rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-slate-500);
+}
+
+.funding-strip__total {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-slate-700);
+  font-variant-numeric: tabular-nums;
+}
+
+.funding-strip__bar {
+  display: flex;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  gap: 2px;
+  background: var(--color-slate-100);
+  box-shadow: inset 0 1px 1px rgba(15, 23, 42, 0.05);
+}
+
+.funding-strip__seg {
+  transition: width 0.6s ease, opacity 0.2s ease;
+}
+
+.funding-strip__seg:first-child { border-radius: 999px 0 0 999px; }
+.funding-strip__seg:last-child { border-radius: 0 999px 999px 0; }
+.funding-strip__seg:only-child { border-radius: 999px; }
+.funding-strip__seg:hover { opacity: 0.85; }
+
+.funding-strip__legend {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.funding-strip__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+}
+
+.funding-strip__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.funding-strip__legend-name {
+  color: var(--color-slate-600);
+  font-weight: 500;
+}
+
+.funding-strip__legend-pct {
+  color: var(--color-slate-800);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.funding-strip__legend-value {
+  color: var(--color-slate-500);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-card__caption {
+  font-size: 0.6rem;
+  color: var(--color-slate-500);
+  font-weight: 400;
+  margin-top: 2px;
+  letter-spacing: 0;
+}
+
+.bar-chart__fill--shared {
+  background: linear-gradient(90deg, #94A3B8 0%, #B0BEC5 100%) !important;
+  opacity: 0.6;
+}
+
+/* ============================================
+   PERIOD TOGGLE
+   ============================================ */
+.period-toggle {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--color-slate-100);
+  border-radius: var(--border-radius-full);
+  padding: 2px;
+}
+
+.period-toggle__btn {
+  padding: 3px 9px;
+  border: none;
+  background: transparent;
+  border-radius: var(--border-radius-full);
+  font-size: 0.62rem;
+  font-weight: 500;
+  color: var(--color-slate-500);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.period-toggle__btn:hover {
+  color: var(--color-slate-700);
+}
+
+.period-toggle__btn--active {
+  background: white;
+  color: var(--color-slate-800);
+  box-shadow: var(--shadow-sm);
+}
+
+/* The flatpickr handle for the Custom date range. Kept off-screen but
+   not display:none so flatpickr can still treat it as a valid form
+   anchor; positioning is done relative to the Custom button via the
+   positionElement option in _setupCustomDatePicker. */
+.period-toggle__hidden-anchor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* Period toggle Custom pill: when it shows a chosen range it gets
+   wider, so let the toggle wrap nicely on tight headers. */
+.period-toggle {
+  flex-wrap: wrap;
+}
+
+#customPeriodBtn {
+  white-space: nowrap;
+}
+
+/* ============================================
+   REVIEWER PERFORMANCE LIST
+   Two-column layout: primary reviewers on the left, sector directors
+   on the right (compact). Replaces the older .perf-table — old class
+   still appears in this stylesheet's history but is no longer rendered.
+   ============================================ */
+.perf-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  padding: var(--space-3);
+}
+
+.perf-list:has(.perf-list__col--sector) {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: var(--space-4);
+}
+
+.perf-list__col {
+  min-width: 0;
+}
+
+.perf-list__col--sector {
+  border-left: 1px dashed var(--color-slate-200);
+  padding-left: var(--space-4);
+  /* Sector director list is typically much longer than the primary
+     column. Cap it and let it scroll independently so the BU column
+     doesn't drag down to 30+ rows tall. Heading stays pinned outside
+     the scroll area via the inner __rows wrapper. */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.perf-list__col--sector .perf-list__rows {
+  max-height: 360px;
+  overflow-y: auto;
+  /* Subtle inset scroll affordance — slim, blends with the card chrome. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-slate-300) transparent;
+}
+
+.perf-list__col--sector .perf-list__rows::-webkit-scrollbar {
+  width: 6px;
+}
+
+.perf-list__col--sector .perf-list__rows::-webkit-scrollbar-thumb {
+  background: var(--color-slate-300);
+  border-radius: 3px;
+}
+
+.perf-list__col--sector .perf-list__rows::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.perf-list__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-slate-500);
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--color-slate-100);
+}
+
+.perf-list__count {
+  font-weight: 500;
+  color: var(--color-slate-400);
+  font-size: 0.6rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.perf-list__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.perf-list__empty {
+  font-size: 0.7rem;
+  color: var(--color-slate-400);
+  padding: var(--space-2) 0;
+}
+
+.perf-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--color-slate-100);
+}
+
+.perf-row:last-child {
+  border-bottom: none;
+}
+
+.perf-row:hover {
+  background: var(--color-slate-50);
+  border-radius: 4px;
+}
+
+.perf-row--compact {
+  padding: 6px 4px;
+}
+
+.perf-row__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.perf-row__name {
+  font-weight: 600;
+  color: var(--color-slate-800);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.perf-row--compact .perf-row__name {
+  font-size: 0.74rem;
+}
+
+.perf-row__scope {
+  font-size: 0.65rem;
+  color: var(--color-slate-500);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.perf-row__metrics {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.perf-row__metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  line-height: 1;
+}
+
+.perf-row__metric-value {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-slate-800);
+  font-variant-numeric: tabular-nums;
+}
+
+.perf-row__metric-label {
+  margin-top: 3px;
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: var(--color-slate-500);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.perf-row--compact .perf-row__metric-value {
+  font-size: 0.78rem;
+}
+
+.perf-row--compact .perf-row__metric-label {
+  font-size: 0.52rem;
+}
+
+.perf-row__metric--zero .perf-row__metric-value {
+  color: var(--color-slate-300);
+}
+
+.perf-row__metric--pending .perf-row__metric-value {
+  color: var(--color-warning);
+}
+
+.perf-row__metric--pending.perf-row__metric--zero .perf-row__metric-value {
+  color: var(--color-slate-300);
+}
+
+.perf-row__metric--warn .perf-row__metric-value {
+  color: var(--status-pending);
+}
+
+/* Clickable pending metric — drilling into "show me what's pending
+   for this reviewer" via the Requests view. Hover shows it's
+   actionable; the chip-y rounded outline differentiates from the
+   non-clickable Reviewed / Avg time tiles. */
+.perf-row__metric--clickable {
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  transition: background var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.perf-row__metric--clickable:hover {
+  background: var(--color-warning-light);
+  box-shadow: 0 0 0 1px rgba(207, 72, 23, 0.2);
+}
+
+@media (max-width: 1100px) {
+  .perf-list:has(.perf-list__col--sector) {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+  .perf-list__col--sector {
+    border-left: none;
+    border-top: 1px dashed var(--color-slate-200);
+    padding-left: 0;
+    padding-top: var(--space-3);
+  }
+}
+
+/* ============================================
+   REVIEWER SUBTABS (Reviewers | Admin Access)
+   ============================================ */
+.reviewer-subtabs {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--color-slate-100);
+  border-radius: 10px;
+  padding: 4px;
+  margin-bottom: var(--space-3);
+}
+
+.reviewer-subtab {
+  padding: 7px 18px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-slate-500);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.reviewer-subtab:hover {
+  color: var(--color-slate-700);
+}
+
+.reviewer-subtab--active {
+  background: white;
+  color: var(--color-slate-800);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
+
+.reviewer-tab-content {
+  display: none;
+}
+
+.reviewer-tab-content--active {
+  display: block;
+}
+
+/* Info banner for admin access tab */
+.reviewer-info-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: 12px 16px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  color: var(--color-slate-600);
+  line-height: 1.5;
+  margin-bottom: var(--space-3);
+}
+
+.reviewer-info-banner i {
+  color: var(--color-primary);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+/* Save button spinner state */
+.btn--saving {
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+.btn--saving .fa-save,
+.btn--saving .fa-check,
+.btn--saving .fa-trash-alt {
+  display: none;
+}
+
+.btn--saving::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin 0.6s linear infinite;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   REVIEWER VIEW HEADER
+   ============================================ */
+.reviewer-view-subtitle {
+  font-size: 0.72rem;
+  color: var(--color-slate-500);
+  margin-top: 2px;
+  font-weight: 400;
+}
+
+/* ============================================
+   REVIEWER MANAGEMENT SECTION (v2)
+   ============================================ */
+.reviewer-section {
+  margin-bottom: 18px;
+}
+
+.reviewer-card {
+  background: white;
+  border: 1px solid var(--color-slate-200);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.reviewer-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--color-slate-100);
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.reviewer-card__title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-slate-800);
+  margin: 0;
+}
+
+.reviewer-card__subtitle {
+  font-size: 0.68rem;
+  color: var(--color-slate-500);
+  margin-top: 1px;
+  font-weight: 400;
+}
+
+.reviewer-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.reviewer-card__actions .btn {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all var(--transition-fast);
+  background: var(--color-primary);
+  color: white;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+
+.reviewer-card__actions .btn:hover {
+  background: var(--color-primary-dark, #003d6b);
+  box-shadow: 0 2px 6px rgba(0,79,135,0.2);
+}
+
+.reviewer-card__body {
+  padding: 0;
+}
+
+.reviewer-card__body--padded {
+  padding: 20px;
+}
+
+/* FO Delegation Toggle — refined */
+.delegation-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.delegation-toggle__label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-slate-500);
+}
+
+.delegation-toggle--active .delegation-toggle__label {
+  color: var(--color-warning);
+}
+
+.delegation-toggle__switch {
+  position: relative;
+  width: 44px; height: 24px;
+}
+
+.delegation-toggle__switch input {
+  opacity: 0;
+  width: 0; height: 0;
+}
+
+.delegation-toggle__switch .slider {
+  position: absolute;
+  inset: 0;
+  background: var(--color-slate-200);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.delegation-toggle__switch .slider::before {
+  content: '';
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 18px; height: 18px;
+  background: white;
+  border-radius: 50%;
+  transition: left 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.delegation-toggle__switch input:checked + .slider {
+  background: var(--color-primary);
+}
+
+.delegation-toggle__switch input:checked + .slider::before {
+  left: 23px;
+}
+
+.delegation-toggle__switch input:disabled + .slider {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.delegation-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px 14px;
+  background: #fffbeb;
+  border: 1px solid rgba(251,191,36,0.25);
+  border-radius: 8px;
+  font-size: 0.72rem;
+  color: #92400e;
+  font-weight: 500;
+  margin: 14px 20px 6px;
+}
+
+.delegation-warning i {
+  color: #f59e0b;
+  flex-shrink: 0;
+}
+
+/* FO Reviewer Cards — modern */
+.fo-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 20px;
+}
+
+.fo-card {
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid var(--color-slate-200);
+  background: var(--color-slate-50);
+  position: relative;
+  transition: all var(--transition-fast);
+}
+
+.fo-card--active {
+  border: 2px solid var(--color-primary);
+  background: #eff6ff;
+}
+
+.fo-card--dimmed {
+  opacity: 0.5;
+}
+
+.fo-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.fo-card__role-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fo-card__role {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-slate-500);
+}
+
+.fo-card--active .fo-card__role {
+  color: var(--color-primary);
+}
+
+.fo-card__active-badge {
+  font-size: 0.52rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--status-approved);
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.fo-card__name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--color-slate-800);
+}
+
+.fo-card__email {
+  font-size: 0.72rem;
+  color: var(--color-slate-500);
+  margin-top: 2px;
+}
+
+.fo-card__badges {
+  display: none;
+}
+
+.fo-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fo-card__actions .btn {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background var(--transition-fast);
+}
+
+.fo-card__actions .btn:hover {
+  background: rgba(0,79,135,0.08);
+}
+
+.fo-card__actions .btn-outline-danger {
+  color: var(--color-slate-400);
+}
+
+.fo-card__actions .btn-outline-danger:hover {
+  color: var(--status-denied);
+  background: var(--status-denied-bg);
+}
+
+/* BU Reviewer rows — compact clickable list */
+.bu-reviewer-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--color-slate-100);
+  transition: background var(--transition-fast);
+  cursor: pointer;
+}
+
+.bu-reviewer-row:last-child {
+  border-bottom: none;
+}
+
+.bu-reviewer-row:hover {
+  background: var(--color-slate-50);
+}
+
+.bu-reviewer-row__code {
+  width: 44px;
+  padding: 3px 0;
+  text-align: center;
+  border-radius: 6px;
+  background: var(--color-slate-100);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--color-slate-600);
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.bu-reviewer-row__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.bu-reviewer-row__name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-slate-800);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bu-reviewer-row__detail {
+  font-size: 0.68rem;
+  color: var(--color-slate-500);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bu-reviewer-row__detail .backup-text {
+  color: var(--color-slate-400);
+}
+
+.bu-reviewer-row__status {
+  flex-shrink: 0;
+}
+
+.bu-reviewer-row__edit {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--color-primary);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.bu-reviewer-row:hover .bu-reviewer-row__edit {
+  opacity: 1;
+}
+
+.bu-reviewer-row__edit:hover {
+  background: rgba(0,79,135,0.08);
+}
+
+/* Modal delete link — sits left in footer */
+.admin-modal__delete-link {
+  background: none;
+  border: none;
+  color: var(--color-slate-400);
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 0;
+  transition: color var(--transition-fast);
+}
+
+.admin-modal__delete-link:hover {
+  color: var(--status-denied);
+}
+
+/* BU filter tabs — refined */
+.reviewer-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 20px 14px;
+}
+
+.reviewer-tab {
+  padding: 4px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-full);
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--color-slate-500);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.reviewer-tab:hover {
+  background: var(--color-slate-100);
+  color: var(--color-slate-700);
+}
+
+.reviewer-tab--active {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.reviewer-tab--active:hover {
+  background: var(--color-primary-dark);
+}
+
+.reviewer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: var(--border-radius-full);
+  font-size: 0.62rem;
+  font-weight: 600;
+}
+
+.reviewer-status--active {
+  background: var(--status-approved-bg);
+  color: var(--status-approved);
+}
+
+.reviewer-status--inactive {
+  background: var(--color-slate-100);
+  color: var(--color-slate-400);
+}
+
+/* Admin table modernized */
+.admin-users-card .admin-table td {
+  padding: 10px var(--space-2);
+}
+
+/* Typeahead loading indicator — works on input elements */
+input.typeahead-loading {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' stroke='%23e2e8f0' stroke-width='2' fill='none'/%3E%3Cpath d='M8 2a6 6 0 0 1 6 6' stroke='%23004f87' stroke-width='2' fill='none' stroke-linecap='round'%3E%3CanimateTransform attributeName='transform' type='rotate' from='0 8 8' to='360 8 8' dur='0.7s' repeatCount='indefinite'/%3E%3C/path%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+  padding-right: 32px;
+  color: var(--color-slate-400);
+}
+
+/* Skeleton for inline fields */
+.field-skeleton {
+  display: inline-block;
+  width: 70%;
+  height: 12px;
+  background: linear-gradient(90deg, var(--color-slate-100) 25%, var(--color-slate-50) 50%, var(--color-slate-100) 75%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+/* Empty state refined */
+.reviewer-empty {
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.reviewer-empty i {
+  font-size: 1.5rem;
+  color: var(--color-slate-300);
+  margin-bottom: 8px;
+}
+
+.reviewer-empty p {
+  font-size: 0.78rem;
+  color: var(--color-slate-500);
+  margin: 0 0 12px;
+}
+
+.reviewer-empty .btn {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--color-primary);
+  color: white;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all var(--transition-fast);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+
+.reviewer-empty .btn:hover {
+  background: var(--color-primary-dark, #003d6b);
+  box-shadow: 0 2px 6px rgba(0,79,135,0.2);
+}
+
+/* ============================================
+   MODALS (admin-specific overrides)
+   ============================================ */
+.admin-modal {
+  border: none;
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-xl);
+}
+
+.admin-modal__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-slate-50);
+  border-bottom: 1px solid var(--color-slate-200);
+}
+
+.admin-modal__header--danger {
+  background: var(--status-denied-bg);
+  border-bottom-color: rgba(153,27,27,0.2);
+}
+
+.admin-modal__header--danger .admin-modal__icon {
+  color: var(--status-denied);
+}
+
+.admin-modal__icon {
+  color: var(--color-primary);
+  font-size: 0.78rem;
+}
+
+.admin-modal__title {
+  flex: 1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-slate-800);
+}
+
+.admin-modal__close {
+  background: none;
+  border: none;
+  color: var(--color-slate-400);
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  transition: color var(--transition-fast);
+}
+
+.admin-modal__close:hover {
+  color: var(--color-slate-600);
+}
+
+.admin-modal__body {
+  padding: var(--space-3);
+}
+
+.admin-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-slate-50);
+  border-top: 1px solid var(--color-slate-200);
+}
+
+/* Typeahead */
+.typeahead-wrap {
+  position: relative;
+}
+
+.typeahead-results {
+  position: absolute;
+  top: 100%;
+  left: 0; right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid var(--color-slate-200);
+  border-top: none;
+  border-radius: 0 0 var(--border-radius-base) var(--border-radius-base);
+  box-shadow: var(--shadow-md);
+  z-index: 10;
+}
+
+.typeahead-item {
+  padding: 4px var(--space-2);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.typeahead-item:hover {
+  background: var(--color-slate-50);
+}
+
+.typeahead-item__name {
+  font-weight: 500;
+  color: var(--color-slate-800);
+}
+
+.typeahead-item__email {
+  font-size: 0.62rem;
+  color: var(--color-slate-500);
+}
+
+/* ============================================
+   LOADING & EMPTY STATES
+   ============================================ */
+.admin-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5) var(--space-3);
+  gap: var(--space-2);
+  color: var(--color-slate-500);
+  font-size: 0.72rem;
+}
+
+.admin-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4) var(--space-3);
+  gap: var(--space-2);
+  color: var(--color-slate-400);
+  text-align: center;
+}
+
+.admin-empty i {
+  font-size: 1.3rem;
+  opacity: 0.5;
+}
+
+.admin-empty p {
+  margin: 0;
+  font-weight: 500;
+  color: var(--color-slate-500);
+}
+
+/* Skeleton shimmer base */
+.skeleton {
+  background: linear-gradient(90deg, var(--color-slate-100) 25%, var(--color-slate-50) 50%, var(--color-slate-100) 75%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Skeleton rows (action list items) */
+.skeleton-action-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px var(--space-3);
+  border-bottom: 1px solid var(--color-slate-50);
+}
+
+.skeleton-action-item .skeleton-name { width: 45%; height: 11px; }
+.skeleton-action-item .skeleton-badge { width: 60px; height: 16px; border-radius: 8px; }
+.skeleton-action-item .skeleton-amount { width: 50px; height: 11px; margin-left: auto; }
+
+/* Skeleton pipeline cards */
+.skeleton-pipeline {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.skeleton-pipeline-card {
+  flex: 1;
+  min-width: 70px;
+  padding: var(--space-2) var(--space-3);
+  background: white;
+  border: 1px solid var(--color-slate-100);
+  border-radius: var(--border-radius-sm);
+  text-align: center;
+}
+
+.skeleton-pipeline-card .skeleton-count { width: 28px; height: 18px; margin: 0 auto 4px; }
+.skeleton-pipeline-card .skeleton-label { width: 48px; height: 8px; margin: 0 auto; }
+
+/* Skeleton stat cards */
+.skeleton-stat-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.skeleton-stat-card {
+  background: white;
+  border: 1px solid var(--color-slate-100);
+  border-radius: var(--border-radius-base);
+  padding: var(--space-3);
+}
+
+.skeleton-stat-card .skeleton-label { width: 60%; height: 8px; margin-bottom: 6px; }
+.skeleton-stat-card .skeleton-value { width: 40%; height: 20px; }
+
+@media (max-width: 1200px) { .skeleton-stat-cards { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .skeleton-stat-cards { grid-template-columns: 1fr; } }
+
+/* ============================================
+   TOAST (reuse travel-toast from base)
+   ============================================ */
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+@media (max-width: 1200px) {
+  .stat-cards { grid-template-columns: repeat(2, 1fr); }
+  .chart-grid { grid-template-columns: 1fr; }
+  .fo-cards { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+  .admin-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--admin-sidebar-collapsed);
+    z-index: 1050;
+  }
+
+  .admin-sidebar:hover {
+    width: var(--admin-sidebar-width);
+  }
+
+  .admin-main {
+    padding: var(--space-2);
+    margin-left: var(--admin-sidebar-collapsed);
+  }
+
+  .stat-cards { grid-template-columns: 1fr 1fr; }
+  .pipeline-row { flex-wrap: wrap; }
+
+  .slidein-panel {
+    width: 100%;
+  }
+
+  .slidein__details {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-table-filters {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .stat-cards { grid-template-columns: 1fr; }
+  .fo-cards { grid-template-columns: 1fr; }
+}
+
+/* ============================================
+   REPORTS — Sub-tab bar
+   ============================================ */
+.report-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.report-tab {
+  padding: 5px 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-full);
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--color-slate-500);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.report-tab:hover {
+  background: var(--color-slate-100);
+  color: var(--color-slate-700);
+}
+
+.report-tab--active {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.report-tab--active:hover {
+  background: var(--color-primary-dark);
+}
+
+/* ============================================
+   REPORTS — Sub-view containers
+   ============================================ */
+.report-subview {
+  position: relative;
+}
+
+/* ============================================
+   REPORTS — Preset report cards
+   ============================================ */
+.report-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.report-card {
+  background: white;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-base);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  transition: all var(--transition-fast);
+}
+
+.report-card:hover {
+  box-shadow: var(--shadow-base);
+  border-color: var(--color-slate-300);
+}
+
+.report-card__icon {
+  flex-shrink: 0;
+  width: 36px; height: 36px;
+  border-radius: var(--border-radius-sm);
+  background: #dbeafe;
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.88rem;
+}
+
+.report-card__icon--warn {
+  background: var(--status-needs-info-bg);
+  color: var(--status-needs-info);
+}
+
+.report-card__icon--accent {
+  background: #e0f2fe;
+  color: var(--color-accent);
+}
+
+.report-card__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.report-card__title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-slate-800);
+  margin-bottom: 2px;
+}
+
+.report-card__desc {
+  font-size: 0.65rem;
+  color: var(--color-slate-500);
+  line-height: 1.4;
+  margin-bottom: var(--space-2);
+}
+
+.report-card__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.report-card__period {
+  width: 130px;
+  font-size: 0.68rem;
+}
+
+.report-card__actions {
+  display: flex;
+  gap: 4px;
+}
+
+.report-card__actions .btn {
+  font-size: 0.65rem;
+  padding: 3px 10px;
+}
+
+/* ============================================
+   REPORTS — Data Export form
+   ============================================ */
+.report-export-card {
+  background: white;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-base);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.report-export__header {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-slate-100);
+}
+
+.report-export__title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-slate-800);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: 4px;
+}
+
+.report-export__title i {
+  color: var(--color-primary);
+}
+
+.report-export__desc {
+  font-size: 0.68rem;
+  color: var(--color-slate-500);
+}
+
+.report-export__filters {
+  padding: var(--space-3);
+  background: var(--color-slate-50);
+  border-bottom: 1px solid var(--color-slate-100);
+}
+
+.report-filter-row {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.report-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 140px;
+  flex: 1;
+}
+
+.report-filter-group label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--color-slate-500);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.report-export__actions {
+  padding: var(--space-3);
+  display: flex;
+  gap: var(--space-2);
+}
+
+.report-export__actions .btn {
+  font-size: 0.72rem;
+}
+
+/* ============================================
+   REPORTS — Loading overlay
+   ============================================ */
+.report-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.report-loading__backdrop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  background: white;
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-xl);
+  color: var(--color-slate-600);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+/* ============================================
+   REPORTS — Responsive
+   ============================================ */
+@media (max-width: 1200px) {
+  .report-cards { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+  .report-filter-row { flex-direction: column; }
+  .report-card { flex-direction: column; }
+}
+
+/* ============================================
+   REPORT BUILDER
+   ============================================ */
+
+/* Toolbar */
+.rb-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  background: white;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-base) var(--border-radius-base) 0 0;
+  flex-wrap: wrap;
+}
+
+.rb-toolbar__filters {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.rb-toolbar__input {
+  font-size: 0.68rem !important;
+  padding: 3px 8px !important;
+  height: auto !important;
+  min-width: 120px;
+  max-width: 170px;
+}
+
+.rb-toolbar__actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.rb-toolbar__actions .btn {
+  font-size: 0.66rem;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+/* Two-panel container */
+.rb-panels {
+  display: flex;
+  min-height: 400px;
+  border-left: 1px solid var(--color-slate-200);
+  border-right: 1px solid var(--color-slate-200);
+  background: white;
+}
+
+/* Column picker (left) */
+.rb-picker {
+  width: 280px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-slate-200);
+  overflow-y: auto;
+  max-height: 500px;
+}
+
+.rb-picker__search-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: var(--space-2);
+  background: white;
+  border-bottom: 1px solid var(--color-slate-100);
+  position: relative;
+}
+
+.rb-picker__search-wrap i {
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-slate-400);
+  font-size: 0.68rem;
+}
+
+.rb-picker__search-wrap input {
+  padding-left: 28px;
+  font-size: 0.68rem;
+}
+
+/* Category accordion */
+.rb-category {
+  border-bottom: 1px solid var(--color-slate-100);
+}
+
+.rb-category__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 7px var(--space-2);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition-fast);
+}
+
+.rb-category__header:hover {
+  background: var(--color-slate-50);
+}
+
+.rb-category__chevron {
+  font-size: 0.55rem;
+  color: var(--color-slate-400);
+  width: 12px;
+  text-align: center;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.rb-category--expanded .rb-category__chevron {
+  transform: rotate(90deg);
+}
+
+.rb-category__name {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-slate-700);
+  flex: 1;
+}
+
+.rb-category__count {
+  font-size: 0.58rem;
+  font-weight: 500;
+  color: var(--color-slate-400);
+  margin-right: 4px;
+}
+
+.rb-category__select-all {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+.rb-category__body {
+  display: none;
+  padding: 0 var(--space-2) 6px;
+}
+
+.rb-category--expanded .rb-category__body {
+  display: block;
+}
+
+/* Field rows inside categories */
+.rb-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.rb-field:hover {
+  background: var(--color-slate-50);
+}
+
+.rb-field--checked {
+  background: #eff6ff;
+}
+
+.rb-field--checked:hover {
+  background: #dbeafe;
+}
+
+.rb-field--advanced {
+  display: none;
+}
+
+.rb-category--show-more .rb-field--advanced {
+  display: flex;
+}
+
+.rb-field--hidden {
+  display: none !important;
+}
+
+.rb-field input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.rb-field__label {
+  font-size: 0.68rem;
+  color: var(--color-slate-600);
+  flex: 1;
+}
+
+.rb-field--checked .rb-field__label {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.rb-category__show-more {
+  padding: 2px 4px 2px 20px;
+  font-size: 0.62rem;
+  font-weight: 500;
+  color: var(--color-primary);
+  cursor: pointer;
+  display: inline-block;
+}
+
+.rb-category__show-more:hover {
+  text-decoration: underline;
+}
+
+/* Selected columns (right) */
+.rb-selected {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rb-selected__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px var(--space-3);
+  border-bottom: 1px solid var(--color-slate-100);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-slate-600);
+}
+
+.rb-selected__clear {
+  font-size: 0.62rem;
+  font-weight: 500;
+  color: var(--color-slate-400);
+  text-decoration: none;
+}
+
+.rb-selected__clear:hover {
+  color: var(--status-denied);
+  text-decoration: underline;
+}
+
+.rb-selected__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.rb-selected__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  color: var(--color-slate-400);
+  text-align: center;
+}
+
+.rb-selected__empty i {
+  font-size: 1.3rem;
+  opacity: 0.5;
+}
+
+.rb-selected__empty p {
+  font-size: 0.72rem;
+  margin: 0;
+}
+
+/* Draggable selected items */
+.rb-selected__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--color-slate-200);
+  border-radius: 6px;
+  background: white;
+  margin-bottom: 4px;
+  cursor: grab;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+.rb-selected__item:hover {
+  border-color: var(--color-slate-300);
+  box-shadow: var(--shadow-sm);
+}
+
+.rb-selected__item.rb-drag-over {
+  border-color: var(--color-primary);
+  border-style: dashed;
+  background: #eff6ff;
+}
+
+.rb-selected__item.rb-dragging {
+  opacity: 0.4;
+}
+
+.rb-selected__handle {
+  color: var(--color-slate-300);
+  font-size: 0.72rem;
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.rb-selected__name {
+  flex: 1;
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--color-slate-700);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rb-selected__remove {
+  background: none;
+  border: none;
+  color: var(--color-slate-300);
+  cursor: pointer;
+  padding: 2px;
+  font-size: 0.62rem;
+  line-height: 1;
+  border-radius: 3px;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.rb-selected__remove:hover {
+  color: var(--status-denied);
+  background: var(--status-denied-bg);
+}
+
+/* Live Preview */
+.rb-preview {
+  border: 1px solid var(--color-slate-200);
+  border-top: none;
+  border-left: 3px solid var(--color-primary);
+  border-radius: 0 0 var(--border-radius-base) var(--border-radius-base);
+  background: #f0f5ff;
+  overflow: hidden;
+}
+
+.rb-preview__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px var(--space-3);
+  border-bottom: 1px solid #dde5f4;
+  background: #e8eefb;
+}
+
+.rb-preview__title {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rb-preview__count {
+  font-size: 0.62rem;
+  font-weight: 500;
+  color: var(--color-slate-400);
+}
+
+.rb-preview__body {
+  max-height: 200px;
+  overflow: auto;
+}
+
+.rb-preview__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  gap: var(--space-1);
+  color: var(--color-slate-400);
+}
+
+.rb-preview__empty i {
+  font-size: 1rem;
+  opacity: 0.5;
+}
+
+.rb-preview__empty p {
+  font-size: 0.68rem;
+  margin: 0;
+}
+
+.rb-preview__table-wrap {
+  overflow-x: auto;
+}
+
+.rb-preview__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.62rem;
+}
+
+.rb-preview__table th {
+  padding: 4px 8px;
+  text-align: left;
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: var(--color-slate-500);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--color-slate-200);
+  background: white;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.rb-preview__table td {
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--color-slate-100);
+  color: var(--color-slate-600);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rb-preview__table tbody tr:hover {
+  background: white;
+}
+
+.rb-preview--stale .rb-preview__body {
+  opacity: 0.4;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .rb-panels {
+    flex-direction: column;
+    min-height: auto;
+  }
+  .rb-picker {
+    width: 100%;
+    max-height: 250px;
+    border-right: none;
+    border-bottom: 1px solid var(--color-slate-200);
+  }
+  .rb-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .rb-toolbar__actions {
+    justify-content: flex-end;
+  }
+}
+
+/* ====================================================================== */
+/* Sector Directors subtab                                                */
+/* ====================================================================== */
+
+.sector-director-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.sd-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-slate-100);
+}
+.sd-row:last-child { border-bottom: none; }
+
+.sd-row__main { flex: 1; min-width: 0; }
+
+.sd-row__title {
+  font-family: var(--font-mono, 'SF Mono', Consolas, monospace);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-slate-800);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sd-row__sector-name {
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-weight: 500;
+  color: var(--color-slate-600);
+  font-size: 0.82rem;
+}
+.sd-row__bu {
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-weight: 500;
+  color: var(--color-slate-500);
+  font-size: 0.72rem;
+  background: var(--color-slate-100);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.sd-row__effective {
+  font-size: 0.85rem;
+  color: var(--color-slate-700);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sd-row__email {
+  color: var(--color-slate-500);
+  font-size: 0.78rem;
+  font-family: var(--font-mono, monospace);
+}
+.sd-row__source {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.sd-row__source--override { color: #92400e; background: #fef3c7; }
+.sd-row__source--hc       { color: #1e40af; background: #dbeafe; }
+.sd-row__vacant { font-style: italic; color: var(--color-slate-500); }
+
+.sd-row__sub {
+  font-size: 0.72rem;
+  color: var(--color-slate-500);
+  margin-top: 4px;
+}
+.sd-row__sub--warn { color: #b45309; }
+.sd-row__sub em { font-style: normal; font-weight: 600; text-transform: uppercase; }
+
+.sd-row__note {
+  font-size: 0.78rem;
+  color: var(--color-slate-600);
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--color-slate-50);
+  border-left: 3px solid var(--color-slate-300);
+  border-radius: 4px;
+}
+
+.sd-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ============================================
+   REPORTS — Feedback sub-view
+   Card list (not a table) — comments vary in length and read poorly
+   in fixed cells. Stat strip + chip filter + search at the top, then
+   one card per entry. All scoped to #feedbackSubview so the global
+   .admin-table sticky-thead rule never lands on this view.
+   ============================================ */
+
+.feedback-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.feedback-stat {
+  background: white;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-base);
+  padding: 10px var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.feedback-stat__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--border-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.feedback-stat__icon--up    { background: #dcfce7; color: #16a34a; }
+.feedback-stat__icon--down  { background: #fee2e2; color: #dc2626; }
+.feedback-stat__icon--nps   { background: #fef3c7; color: #b45309; }
+.feedback-stat__icon--bug   { background: #fee2e2; color: #b91c1c; }
+.feedback-stat__icon--feat  { background: #dcfce7; color: #15803d; }
+.feedback-stat__icon--total { background: var(--color-slate-100); color: var(--color-slate-600); }
+
+.feedback-stat__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.feedback-stat__value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-slate-800);
+  line-height: 1.1;
+}
+
+.feedback-stat__label {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--color-slate-500);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+.feedback-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.feedback-chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.feedback-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: white;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-full);
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--color-slate-600);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.feedback-chip:hover {
+  background: var(--color-slate-50);
+  color: var(--color-slate-800);
+  border-color: var(--color-slate-300);
+}
+
+.feedback-chip--active {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.feedback-chip--active:hover {
+  background: var(--color-primary-dark);
+  color: white;
+}
+
+.feedback-chip__count {
+  background: rgba(15, 23, 42, 0.08);
+  border-radius: var(--border-radius-full);
+  padding: 0 6px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  min-width: 18px;
+  text-align: center;
+}
+
+.feedback-chip--active .feedback-chip__count {
+  background: rgba(255, 255, 255, 0.25);
+  color: white;
+}
+
+.feedback-search {
+  position: relative;
+  flex: 1;
+  min-width: 180px;
+  max-width: 320px;
+}
+
+.feedback-search i {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-slate-400);
+  font-size: 0.7rem;
+  pointer-events: none;
+}
+
+.feedback-search input {
+  width: 100%;
+  padding: 5px 10px 5px 28px;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-base);
+  font-size: 0.75rem;
+  background: white;
+  color: var(--color-slate-800);
+}
+
+.feedback-search input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb, 14, 116, 144), 0.12);
+}
+
+.feedback-toolbar__spacer {
+  flex: 1;
+}
+
+.feedback-meta {
+  font-size: 0.7rem;
+  color: var(--color-slate-500);
+  margin-bottom: var(--space-2);
+  min-height: 1.1em;
+}
+
+.feedback-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.feedback-card {
+  background: white;
+  border: 1px solid var(--color-slate-200);
+  border-radius: var(--border-radius-base);
+  padding: 12px var(--space-3);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  cursor: pointer;
+}
+
+.feedback-card:hover {
+  border-color: var(--color-slate-300);
+  box-shadow: var(--shadow-sm);
+}
+
+.feedback-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.feedback-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--border-radius-full);
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+}
+
+.feedback-card__badge i {
+  font-size: 0.7rem;
+}
+
+.feedback-card__badge--thumbs_up      { background: #dcfce7; color: #15803d; }
+.feedback-card__badge--thumbs_down    { background: #fee2e2; color: #b91c1c; }
+.feedback-card__badge--nps            { background: #fef3c7; color: #b45309; }
+.feedback-card__badge--bug_report     { background: #fee2e2; color: #b91c1c; }
+.feedback-card__badge--feature_request{ background: #dcfce7; color: #15803d; }
+
+.feedback-card__user {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-slate-800);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+
+.feedback-card__user-email {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--color-slate-500);
+}
+
+.feedback-card__when {
+  font-size: 0.7rem;
+  color: var(--color-slate-500);
+  white-space: nowrap;
+}
+
+.feedback-card__nps {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--border-radius-sm);
+  font-size: 0.85rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.feedback-card__nps--promoter  { background: #dcfce7; color: #15803d; }
+.feedback-card__nps--passive   { background: #fef3c7; color: #b45309; }
+.feedback-card__nps--detractor { background: #fee2e2; color: #b91c1c; }
+
+.feedback-card__head-spacer {
+  flex: 1;
+}
+
+.feedback-card__comment {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--color-slate-700);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.feedback-card__comment--clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.feedback-card__comment-empty {
+  margin-top: 6px;
+  font-size: 0.72rem;
+  color: var(--color-slate-400);
+  font-style: italic;
+}
+
+.feedback-card__expand {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.7rem;
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.feedback-card__meta {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--color-slate-200);
+  font-size: 0.68rem;
+  color: var(--color-slate-500);
+}
+
+.feedback-card__meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.feedback-card__meta-item i {
+  color: var(--color-slate-400);
+  font-size: 0.65rem;
+}
+
+.feedback-card__meta-value {
+  color: var(--color-slate-700);
+  font-weight: 500;
+}
+
+.feedback-card__meta-value code {
+  font-size: 0.65rem;
+  background: var(--color-slate-100);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--color-slate-700);
+}
+
+/* Detail-only meta rows shown when the card is expanded — URL, browser */
+.feedback-card__detail {
+  display: none;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--color-slate-50);
+  border-radius: var(--border-radius-sm);
+  font-size: 0.68rem;
+  color: var(--color-slate-600);
+  word-break: break-all;
+}
+
+.feedback-card--expanded .feedback-card__detail {
+  display: block;
+}
+
+.feedback-card__detail-row {
+  display: flex;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.feedback-card__detail-label {
+  color: var(--color-slate-500);
+  font-weight: 500;
+  min-width: 60px;
+}
+
+.feedback-card__detail-value {
+  color: var(--color-slate-700);
+  flex: 1;
+}
+
+.feedback-empty,
+.feedback-loading {
+  background: white;
+  border: 1px dashed var(--color-slate-200);
+  border-radius: var(--border-radius-base);
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--color-slate-500);
+  font-size: 0.8rem;
+}
+
+.feedback-empty i,
+.feedback-loading i {
+  font-size: 1.6rem;
+  display: block;
+  margin-bottom: 8px;
+  opacity: 0.45;
+}
+
+.feedback-loading .spinner {
+  margin: 0 auto 8px;
+}
+</style>

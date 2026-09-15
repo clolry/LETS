@@ -1,0 +1,323 @@
+<!--
+  ================================================================
+  Travel Utilities - Shared Constants and Helpers
+  ================================================================
+
+  Provides shared data and utilities for travel request forms:
+  - US States list (including territories)
+  - OCONUS detection
+  - Date/currency formatters
+  - Common validation helpers
+-->
+
+<script>
+window.TravelUtils = (function() {
+  'use strict';
+
+  // ==========================================================================
+  // US STATES & TERRITORIES
+  // ==========================================================================
+
+  const US_STATES = [
+    { abbr: 'AL', name: 'Alabama' },
+    { abbr: 'AK', name: 'Alaska' },
+    { abbr: 'AZ', name: 'Arizona' },
+    { abbr: 'AR', name: 'Arkansas' },
+    { abbr: 'CA', name: 'California' },
+    { abbr: 'CO', name: 'Colorado' },
+    { abbr: 'CT', name: 'Connecticut' },
+    { abbr: 'DE', name: 'Delaware' },
+    { abbr: 'DC', name: 'District of Columbia' },
+    { abbr: 'FL', name: 'Florida' },
+    { abbr: 'GA', name: 'Georgia' },
+    { abbr: 'HI', name: 'Hawaii' },
+    { abbr: 'ID', name: 'Idaho' },
+    { abbr: 'IL', name: 'Illinois' },
+    { abbr: 'IN', name: 'Indiana' },
+    { abbr: 'IA', name: 'Iowa' },
+    { abbr: 'KS', name: 'Kansas' },
+    { abbr: 'KY', name: 'Kentucky' },
+    { abbr: 'LA', name: 'Louisiana' },
+    { abbr: 'ME', name: 'Maine' },
+    { abbr: 'MD', name: 'Maryland' },
+    { abbr: 'MA', name: 'Massachusetts' },
+    { abbr: 'MI', name: 'Michigan' },
+    { abbr: 'MN', name: 'Minnesota' },
+    { abbr: 'MS', name: 'Mississippi' },
+    { abbr: 'MO', name: 'Missouri' },
+    { abbr: 'MT', name: 'Montana' },
+    { abbr: 'NE', name: 'Nebraska' },
+    { abbr: 'NV', name: 'Nevada' },
+    { abbr: 'NH', name: 'New Hampshire' },
+    { abbr: 'NJ', name: 'New Jersey' },
+    { abbr: 'NM', name: 'New Mexico' },
+    { abbr: 'NY', name: 'New York' },
+    { abbr: 'NC', name: 'North Carolina' },
+    { abbr: 'ND', name: 'North Dakota' },
+    { abbr: 'OH', name: 'Ohio' },
+    { abbr: 'OK', name: 'Oklahoma' },
+    { abbr: 'OR', name: 'Oregon' },
+    { abbr: 'PA', name: 'Pennsylvania' },
+    { abbr: 'PR', name: 'Puerto Rico' },
+    { abbr: 'RI', name: 'Rhode Island' },
+    { abbr: 'SC', name: 'South Carolina' },
+    { abbr: 'SD', name: 'South Dakota' },
+    { abbr: 'TN', name: 'Tennessee' },
+    { abbr: 'TX', name: 'Texas' },
+    { abbr: 'UT', name: 'Utah' },
+    { abbr: 'VT', name: 'Vermont' },
+    { abbr: 'VA', name: 'Virginia' },
+    { abbr: 'VI', name: 'Virgin Islands' },
+    { abbr: 'WA', name: 'Washington' },
+    { abbr: 'WV', name: 'West Virginia' },
+    { abbr: 'WI', name: 'Wisconsin' },
+    { abbr: 'WY', name: 'Wyoming' },
+    { abbr: 'GU', name: 'Guam' },
+    { abbr: 'AS', name: 'American Samoa' },
+    { abbr: 'MP', name: 'Northern Mariana Islands' }
+  ];
+
+  // OCONUS territories use DoD per diem rates
+  const OCONUS_STATES = ['AK', 'HI', 'PR', 'VI', 'GU', 'AS', 'MP'];
+
+  // ==========================================================================
+  // CONFIGURATION CONSTANTS
+  // Mirrors server-side TravelConstants.js - keep in sync!
+  // ==========================================================================
+
+  const TRAVEL_CONFIG = {
+    // Time constants
+    MS_PER_DAY: 1000 * 60 * 60 * 24,
+    MS_PER_HOUR: 1000 * 60 * 60,
+
+    // Mileage rates (updated annually)
+    MILEAGE_RATES: {
+      PRIVATE: 0.70,
+      GOVERNMENT: 0.22
+    },
+
+    // Form configuration
+    FORM_STEPS: {
+      TOTAL: 6,
+      FIRST: 1
+    },
+
+    // Status groupings
+    STATUS: {
+      NEEDS_INFO: ['NEEDS_INFO_SECTOR', 'NEEDS_INFO_BU', 'NEEDS_INFO_OSO'],
+      TERMINAL: ['APPROVED', 'APPROVED_GOGOV', 'COMPLETED', 'DENIED', 'CANCELLED', 'SUBMITTER_CANCELLED'],
+      PENDING: ['PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS']
+    },
+
+    // Location types that require site name
+    LOCATION_TYPES_WITH_SITE: ['client-site', 'contractor-site'],
+
+    // Character limits
+    CHAR_LIMITS: {
+      BLUF: 500,
+      DETAILED_PURPOSE: 2000,
+      COMMENTS: 1000
+    },
+
+    // UI dimensions
+    UI: {
+      FLATPICKR_CALENDAR_HEIGHT: 305,
+      AWESOMPLETE_DROPDOWN_HEIGHT: 250
+    }
+  };
+
+  // ==========================================================================
+  // OCONUS DETECTION
+  // ==========================================================================
+
+  /**
+   * Check if a state abbreviation is OCONUS (uses DoD rates)
+   */
+  function isOCONUS(stateAbbr) {
+    return OCONUS_STATES.includes(stateAbbr?.toUpperCase());
+  }
+
+  /**
+   * Get the full state name from abbreviation
+   */
+  function getStateName(abbr) {
+    const state = US_STATES.find(s => s.abbr === abbr?.toUpperCase());
+    return state ? state.name : abbr;
+  }
+
+  /**
+   * Validate state abbreviation
+   */
+  function isValidState(abbr) {
+    return US_STATES.some(s => s.abbr === abbr?.toUpperCase());
+  }
+
+  // ==========================================================================
+  // DATE FORMATTERS
+  // ==========================================================================
+
+  /**
+   * Format date for display (e.g., "Jan 15, 2025")
+   */
+  function formatDateDisplay(dateStr) {
+    if (!dateStr) return '';
+    const date = new Date(dateStr + 'T00:00:00');
+    const options = { month: 'short', day: 'numeric', year: 'numeric' };
+    return date.toLocaleDateString('en-US', options);
+  }
+
+  /**
+   * Calculate number of nights between two dates
+   * DELEGATES to TravelDateService.calculateNights() when available
+   * Kept for backward compatibility - prefer TravelDateService directly
+   */
+  function calculateNights(startDate, endDate) {
+    // Delegate to canonical implementation if available
+    if (window.TravelDateService?.calculateNights) {
+      return window.TravelDateService.calculateNights(startDate, endDate);
+    }
+    // Fallback implementation
+    if (!startDate || !endDate) return 0;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    const diffTime = end - start;
+    const diffDays = Math.round(diffTime / TRAVEL_CONFIG.MS_PER_DAY);
+    return Math.max(0, diffDays);
+  }
+
+  // ==========================================================================
+  // CURRENCY FORMATTERS
+  // ==========================================================================
+
+  /**
+   * Format number as currency
+   */
+  function formatCurrency(amount, decimals = 2) {
+    const num = parseFloat(amount) || 0;
+    return '$' + num.toLocaleString('en-US', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    });
+  }
+
+  /**
+   * Parse currency string to number
+   */
+  function parseCurrency(str) {
+    if (typeof str === 'number') return str;
+    if (!str) return 0;
+    return parseFloat(str.replace(/[$,]/g, '')) || 0;
+  }
+
+  // ==========================================================================
+  // HTML SECURITY
+  // ==========================================================================
+
+  /**
+   * Escape HTML special characters to prevent XSS
+   * Use this when inserting user-provided content into HTML
+   * @param {string} str - String to escape
+   * @returns {string} Escaped string safe for HTML insertion
+   */
+  function escapeHtml(str) {
+    if (!str) return '';
+    if (typeof str !== 'string') str = String(str);
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ==========================================================================
+  // TOAST NOTIFICATIONS
+  // ==========================================================================
+
+  /**
+   * Show a toast notification
+   * @param {string} message - The message to display
+   * @param {string} type - 'success', 'error', 'warning', 'info' (default: 'info')
+   */
+  function showToast(message, type = 'info') {
+    // Remove any existing toasts
+    document.querySelectorAll('.travel-toast').forEach(t => t.remove());
+
+    const iconMap = {
+      success: 'fa-check-circle',
+      error: 'fa-exclamation-circle',
+      warning: 'fa-exclamation-triangle',
+      info: 'fa-info-circle'
+    };
+
+    const toast = document.createElement('div');
+    toast.className = `travel-toast travel-toast--${type}`;
+    toast.innerHTML = `<i aria-hidden="true" class="fas ${iconMap[type] || iconMap.info}"></i><span>${escapeHtml(message)}</span>`;
+
+    document.body.appendChild(toast);
+
+    // Trigger animation (uses .show class per existing CSS)
+    requestAnimationFrame(() => {
+      toast.classList.add('show');
+    });
+
+    // Remove after delay
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 300);
+    }, 3000);
+  }
+
+  // ==========================================================================
+  // STATUS CODES & LABELS
+  // ==========================================================================
+
+  const STATUS_MAP = {
+    'pending-approval': { label: 'Pending Approval', color: 'warning', icon: 'clock' },
+    'approved': { label: 'Approved', color: 'success', icon: 'check-circle' },
+    'needs-info': { label: 'Needs Info', color: 'info', icon: 'info-circle' },
+    'denied': { label: 'Denied', color: 'danger', icon: 'times-circle' },
+    'cancelled': { label: 'Cancelled', color: 'secondary', icon: 'ban' },
+    'draft': { label: 'Draft', color: 'secondary', icon: 'edit' }
+  };
+
+  function getStatusInfo(status) {
+    return STATUS_MAP[status] || { label: status, color: 'secondary', icon: 'question-circle' };
+  }
+
+  // ==========================================================================
+  // EXPORTS
+  // ==========================================================================
+
+  return {
+    // Configuration
+    TRAVEL_CONFIG,
+
+    // Data
+    US_STATES,
+    OCONUS_STATES,
+    STATUS_MAP,
+
+    // State helpers
+    isOCONUS,
+    getStateName,
+    isValidState,
+
+    // Date formatters
+    formatDateDisplay,
+    calculateNights,
+
+    // Currency formatters
+    formatCurrency,
+    parseCurrency,
+
+    // HTML security
+    escapeHtml,
+
+    // Toast notifications
+    showToast,
+
+    // Status helpers
+    getStatusInfo
+  };
+})();
+</script>

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><?= pageTitle ?></title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+  <?!= include('client/styles/tokens'); ?>
+  <?!= include('client/styles/travelBaseStyles'); ?>
+
+  <!-- Shared client helpers: escapeHtml/escapeAttr + serverCall Promise wrapper -->
+  <?!= include('client/shared/escapeHtml'); ?>
+  <?!= include('client/shared/serverCall'); ?>
+
+  <style>
+    body.trip-blocked-body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      font-family: var(--font-sans);
+      background: #f6f7f9;
+      color: var(--brand-darkGrey);
+    }
+
+    .trip-blocked-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1rem 1.5rem;
+      background: var(--brand-blue);
+      color: white;
+    }
+
+    .trip-blocked-main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+
+    .trip-blocked-card {
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.04);
+      padding: 3rem 3.25rem;
+      max-width: 560px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .trip-blocked-icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #e8eef5 0%, #f6f7f9 100%);
+      color: var(--brand-blue);
+      font-size: 2.25rem;
+    }
+
+    .trip-blocked-title {
+      font-family: 'Bebas Neue', sans-serif;
+      letter-spacing: 0.06em;
+      font-size: 2rem;
+      color: var(--brand-darkGrey);
+      margin: 0 0 0.75rem;
+    }
+
+    .trip-blocked-subtitle {
+      font-size: 1rem;
+      line-height: 1.55;
+      color: #5f6166;
+      margin: 0 0 1.75rem;
+    }
+
+    .trip-blocked-account {
+      background: #f6f7f9;
+      border: 1px solid #e6e8ec;
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      font-size: 0.875rem;
+      color: #5f6166;
+      margin-bottom: 1.75rem;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    .trip-blocked-account__label {
+      color: #8a8d93;
+      font-weight: 500;
+    }
+
+    .trip-blocked-account__email {
+      color: var(--brand-darkGrey);
+      font-weight: 500;
+      word-break: break-all;
+    }
+
+    .trip-blocked-return {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.7rem 1.4rem;
+      background: var(--brand-blue);
+      color: white;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      text-decoration: none;
+      margin-bottom: 1.5rem;
+      transition: background 0.15s;
+    }
+
+    .trip-blocked-return:hover {
+      background: var(--brand-blue-dark);
+      color: white;
+    }
+
+    .trip-blocked-contact {
+      font-size: 0.95rem;
+      color: #5f6166;
+      margin: 0;
+    }
+
+    .trip-blocked-contact a {
+      color: var(--brand-blue);
+      font-weight: 500;
+      text-decoration: none;
+    }
+
+    .trip-blocked-contact a:hover {
+      text-decoration: underline;
+    }
+
+    @media (max-height: 700px) {
+      .trip-blocked-card { padding: 2rem 2.25rem; }
+      .trip-blocked-icon { width: 64px; height: 64px; font-size: 1.75rem; margin-bottom: 1rem; }
+      .trip-blocked-title { font-size: 1.6rem; }
+    }
+  </style>
+</head>
+<body class="trip-blocked-body">
+  <!-- Skip Link for Accessibility -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <header class="trip-blocked-header">
+    <h1 class="aas-brand-header">
+      <span class="aas-brand-header__logo">TRIP</span>
+    </h1>
+  </header>
+
+  <main class="trip-blocked-main" id="main-content">
+    <div class="trip-blocked-card">
+      <div class="trip-blocked-icon">
+        <i aria-hidden="true" class="fa-solid <?= iconClass ?>"></i>
+      </div>
+
+      <h2 class="trip-blocked-title"><?= title ?></h2>
+
+      <p class="trip-blocked-subtitle"><?= subtitle ?></p>
+
+      <div class="trip-blocked-account">
+        <span class="trip-blocked-account__label">Signed in as</span>
+        <span class="trip-blocked-account__email"><?= userEmail ?></span>
+      </div>
+
+      <? if (showReturnToPortal) { ?>
+        <a href="<?= scriptUrl ?>?mode=travel" class="trip-blocked-return">
+          <i aria-hidden="true" class="fa-solid fa-arrow-left"></i>
+          Return to Portal
+        </a>
+      <? } ?>
+
+      <p class="trip-blocked-contact">
+        Questions? Reach out to
+        <a href="mailto:aastravel@gsa.gov" target="_blank" rel="noopener">aastravel@gsa.gov</a>
+      </p>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,202 @@
+<!-- client/components/planeLoader.html -->
+<!-- Reusable plane loader component for inline loading states -->
+
+<style>
+/* Plane Loader - Reusable inline loading animation */
+.plane-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.plane-loader__plane {
+  width: 56px;
+  height: 56px;
+}
+
+.plane-loader--sm .plane-loader__plane {
+  width: 40px;
+  height: 40px;
+}
+
+.plane-loader--lg .plane-loader__plane {
+  width: 72px;
+  height: 72px;
+}
+
+.plane-loader__plane svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.plane-loader__rig {
+  transform-origin: 50% 50%;
+  transform-box: fill-box;
+  animation: planeLoaderBob 900ms ease-in-out infinite;
+}
+
+@keyframes planeLoaderBob {
+  0%, 100% { transform: rotate(45deg) translateY(0); }
+  50% { transform: rotate(45deg) translateY(-1.5px); }
+}
+
+.plane-loader__body {
+  fill: var(--plane-loader-color, #004f87);
+}
+
+.plane-loader__trail {
+  fill: none;
+  stroke: var(--plane-loader-color, #004f87);
+  stroke-linecap: round;
+  stroke-width: 26;
+  opacity: 0.30;
+  stroke-dasharray: 110 520;
+  animation: planeLoaderDash 950ms linear infinite, planeLoaderBreathe 950ms ease-in-out infinite;
+}
+
+.plane-loader__trail--2,
+.plane-loader__trail--3 {
+  stroke-width: 20;
+  opacity: 0.20;
+  animation-duration: 1150ms;
+}
+
+@keyframes planeLoaderDash {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -630; }
+}
+
+@keyframes planeLoaderBreathe {
+  0%, 100% { opacity: 0.16; }
+  50% { opacity: 0.36; }
+}
+
+/* Text with bouncing dots */
+.plane-loader__text {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--plane-loader-color, #004f87);
+  margin: 0;
+}
+
+.plane-loader__dots span {
+  display: inline-block;
+  animation: planeLoaderDotBounce 1.2s ease-in-out infinite;
+}
+
+.plane-loader__dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.plane-loader__dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes planeLoaderDotBounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-3px); }
+}
+</style>
+
+<script>
+/**
+ * PlaneLoader - Creates animated plane loader HTML
+ *
+ * Usage:
+ *   // Get HTML string to insert
+ *   const html = PlaneLoader.html('Loading data');
+ *   container.innerHTML = html;
+ *
+ *   // Or create and append element
+ *   const loader = PlaneLoader.create('Loading data', { size: 'lg' });
+ *   container.appendChild(loader);
+ *
+ * Options:
+ *   - size: 'sm' | 'md' | 'lg' (default: 'md')
+ *   - id: string - optional ID for the loader element
+ */
+window.PlaneLoader = (function() {
+
+  const planeSvg = `
+    <svg viewBox="0 -960 960 960" role="img" aria-label="Loading">
+      <g class="plane-loader__rig">
+        <path class="plane-loader__trail plane-loader__trail--1" d="M 480 -480 L 80 -80" />
+        <path class="plane-loader__trail plane-loader__trail--2" d="M 420 -560 L 140 -280" />
+        <path class="plane-loader__trail plane-loader__trail--3" d="M 560 -420 L 280 -140" />
+        <path class="plane-loader__body"
+          d="M771-354l-99-247-97 98 20 97-34 34-68-121-121-68 34-34 98 20 97-97-247-99 45-42 297 47 98-99q7-7 16-10.5t19-3.5q10 0 19 3.5t17 11.5q8 7 11.5 16t3.5 18q0 10-4 19t-12 17l-98 98 47 297-42 45Z"/>
+      </g>
+    </svg>`;
+
+  /**
+   * Generate HTML string for plane loader
+   * @param {string} text - Loading text (dots added automatically)
+   * @param {Object} options - { size: 'sm'|'md'|'lg', id: string }
+   * @returns {string} HTML string
+   */
+  function html(text, options = {}) {
+    const size = options.size || 'md';
+    const id = options.id ? ` id="${options.id}"` : '';
+    const sizeClass = size !== 'md' ? ` plane-loader--${size}` : '';
+
+    const textHtml = text
+      ? `<p class="plane-loader__text">${text}<span class="plane-loader__dots"><span>.</span><span>.</span><span>.</span></span></p>`
+      : '';
+
+    return `
+      <div class="plane-loader${sizeClass}"${id}>
+        <div class="plane-loader__plane">${planeSvg}</div>
+        ${textHtml}
+      </div>
+    `;
+  }
+
+  /**
+   * Create DOM element for plane loader
+   * @param {string} text - Loading text (dots added automatically)
+   * @param {Object} options - { size: 'sm'|'md'|'lg', id: string }
+   * @returns {HTMLElement} Loader element
+   */
+  function create(text, options = {}) {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = html(text, options);
+    return wrapper.firstElementChild;
+  }
+
+  /**
+   * Update text of an existing loader
+   * @param {string|HTMLElement} loaderOrId - Loader element or ID
+   * @param {string} text - New text
+   */
+  function setText(loaderOrId, text) {
+    const loader = typeof loaderOrId === 'string'
+      ? document.getElementById(loaderOrId)
+      : loaderOrId;
+
+    if (!loader) return;
+
+    let textEl = loader.querySelector('.plane-loader__text');
+
+    if (text) {
+      if (!textEl) {
+        textEl = document.createElement('p');
+        textEl.className = 'plane-loader__text';
+        loader.appendChild(textEl);
+      }
+      textEl.innerHTML = `${text}<span class="plane-loader__dots"><span>.</span><span>.</span><span>.</span></span>`;
+    } else if (textEl) {
+      textEl.remove();
+    }
+  }
+
+  return {
+    html,
+    create,
+    setText
+  };
+})();
+</script>

@@ -1,0 +1,661 @@
+<!--
+  ================================================================
+  Travel Location Service - Unified City/Location Loading
+  ================================================================
+
+  Provides unified location loading for travel requests:
+  - City loading with multi-level caching (memory → IndexedDB → server)
+  - Country list management (DOS foreign countries)
+  - City list processing (split compound names, filter, sort)
+  - Awesomplete autocomplete setup
+
+  Used by both the form and review pages.
+-->
+
+<script>
+window.TravelLocationService = (function() {
+  'use strict';
+
+  // ==========================================================================
+  // CITY CACHE - In-memory cache for fast lookups
+  // ==========================================================================
+
+  const _cityCache = {
+    gsa: {},   // GSA cities by state (CONUS)
+    dod: {},   // DoD localities by state (OCONUS)
+    dos: {}    // DOS locations by country (International)
+  };
+
+  // Track pending requests to prevent duplicate fetches
+  const _pendingRequests = {};
+
+  // ==========================================================================
+  // COUNTRY LIST
+  // ==========================================================================
+
+  let _foreignCountries = null;
+  let _countriesLoadPromise = null;
+
+  /**
+   * Get list of foreign countries (DOS)
+   * @returns {Promise<string[]>} Array of country names
+   */
+  async function getCountries() {
+    if (_foreignCountries) {
+      return _foreignCountries;
+    }
+
+    if (_countriesLoadPromise) {
+      return _countriesLoadPromise;
+    }
+
+    _countriesLoadPromise = (async () => {
+      try {
+        // Try TravelPerDiem IndexedDB first
+        if (window.TravelPerDiem) {
+          const countries = await window.TravelPerDiem.getDOSCountries();
+          if (countries && countries.length > 0) {
+            _foreignCountries = countries;
+            _countriesLoadPromise = null;
+            return countries;
+          }
+        }
+
+        // Fallback to server call
+        return new Promise((resolve, reject) => {
+          google.script.run
+            .withSuccessHandler(function(result) {
+              if (result && result.length) {
+                _foreignCountries = result;
+              } else {
+                _foreignCountries = [];
+              }
+              _countriesLoadPromise = null;
+              resolve(_foreignCountries);
+            })
+            .withFailureHandler(function(error) {
+              console.error('Failed to load countries:', error);
+              _foreignCountries = [];
+              _countriesLoadPromise = null;
+              resolve([]);
+            })
+            .getAllForeignCountries();
+        });
+      } catch (error) {
+        console.error('Error loading countries:', error);
+        _countriesLoadPromise = null;
+        return [];
+      }
+    })();
+
+    return _countriesLoadPromise;
+  }
+
+  // ==========================================================================
+  // CITY LOADING - Unified interface for all sources
+  // ==========================================================================
+
+  /**
+   * Load cities for a location
+   * Handles GSA (CONUS), DoD (OCONUS), and DOS (International)
+   *
+   * @param {Object} options
+   * @param {string} options.country - Country name (default: 'United States')
+   * @param {string} options.state - State abbreviation (for US locations)
+   * @returns {Promise<Object>} { success, cities, source }
+   */
+  async function loadCities(options) {
+    const { country, state } = options;
+    const isUS = !country || country === 'United States' || country === 'USA';
+    const isOCONUS = isUS && TravelUtils?.isOCONUS?.(state);
+
+    try {
+      if (!isUS) {
+        // International - DOS
+        return await loadDOSCities(country);
+      } else if (isOCONUS) {
+        // OCONUS (AK, HI, territories) - DoD
+        return await loadDoDCities(state);
+      } else {
+        // CONUS - GSA
+        return await loadGSACities(state);
+      }
+    } catch (error) {
+      console.error('Error loading cities:', error);
+      return { success: false, cities: [], source: null, error: error.message };
+    }
+  }
+
+  /**
+   * Load GSA cities for a US state (CONUS)
+   */
+  async function loadGSACities(stateAbbr) {
+    const cacheKey = stateAbbr?.toUpperCase();
+    if (!cacheKey) {
+      return { success: false, cities: [], source: 'GSA', error: 'State required' };
+    }
+
+    // Inline bundle from doGet (populated by warmGSACitiesCache).
+    // Lets us skip the google.script.run roundtrip on the first state pick
+    // of a session. Missing states fall through to the on-demand path.
+    if (window.__GSA_CITIES_BUNDLE__ && Array.isArray(window.__GSA_CITIES_BUNDLE__[cacheKey])) {
+      const processed = processCityList(window.__GSA_CITIES_BUNDLE__[cacheKey]);
+      _cityCache.gsa[cacheKey] = processed;
+      return { success: true, cities: processed, source: 'GSA', inline: true };
+    }
+
+    // Check memory cache
+    if (_cityCache.gsa[cacheKey]) {
+      return { success: true, cities: _cityCache.gsa[cacheKey], source: 'GSA', cached: true };
+    }
+
+    // Check for pending request
+    const pendingKey = `gsa_${cacheKey}`;
+    if (_pendingRequests[pendingKey]) {
+      return _pendingRequests[pendingKey];
+    }
+
+    // Make server request
+    _pendingRequests[pendingKey] = new Promise((resolve) => {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          delete _pendingRequests[pendingKey];
+          if (result.success && result.cities) {
+            const processed = processCityList(result.cities);
+            _cityCache.gsa[cacheKey] = processed;
+            resolve({ success: true, cities: processed, source: 'GSA' });
+          } else {
+            resolve({ success: false, cities: [], source: 'GSA', error: result.error });
+          }
+        })
+        .withFailureHandler(function(error) {
+          delete _pendingRequests[pendingKey];
+          console.error('Failed to load GSA cities:', error);
+          resolve({ success: false, cities: [], source: 'GSA', error: error.message });
+        })
+        .getGSACitiesForState(stateAbbr);
+    });
+
+    return _pendingRequests[pendingKey];
+  }
+
+  /**
+   * Load DoD cities for an OCONUS state/territory
+   */
+  async function loadDoDCities(stateAbbr) {
+    const cacheKey = stateAbbr?.toUpperCase();
+    if (!cacheKey) {
+      return { success: false, cities: [], source: 'DoD', error: 'State required' };
+    }
+
+    // Check memory cache
+    if (_cityCache.dod[cacheKey]) {
+      return { success: true, cities: _cityCache.dod[cacheKey], source: 'DoD', cached: true };
+    }
+
+    // Check for pending request
+    const pendingKey = `dod_${cacheKey}`;
+    if (_pendingRequests[pendingKey]) {
+      return _pendingRequests[pendingKey];
+    }
+
+    _pendingRequests[pendingKey] = (async () => {
+      // Try TravelPerDiem IndexedDB first
+      if (window.TravelPerDiem) {
+        try {
+          const cities = await window.TravelPerDiem.getDoDLocalities(stateAbbr);
+          if (cities && cities.length > 0) {
+            const processed = processCityList(cities);
+            _cityCache.dod[cacheKey] = processed;
+            delete _pendingRequests[pendingKey];
+            return { success: true, cities: processed, source: 'DoD', cached: true };
+          }
+        } catch (error) {
+          // IndexedDB miss - fall through to server
+        }
+      }
+
+      // Fallback to server
+      return new Promise((resolve) => {
+        google.script.run
+          .withSuccessHandler(function(result) {
+            delete _pendingRequests[pendingKey];
+            if (result.success && result.localities) {
+              const processed = processCityList(result.localities);
+              _cityCache.dod[cacheKey] = processed;
+              resolve({ success: true, cities: processed, source: 'DoD' });
+            } else {
+              resolve({ success: false, cities: [], source: 'DoD', error: result.error });
+            }
+          })
+          .withFailureHandler(function(error) {
+            delete _pendingRequests[pendingKey];
+            console.error('Failed to load DoD cities:', error);
+            resolve({ success: false, cities: [], source: 'DoD', error: error.message });
+          })
+          .getDoDLocalities(stateAbbr);
+      });
+    })();
+
+    return _pendingRequests[pendingKey];
+  }
+
+  /**
+   * Load DOS locations for an international country
+   */
+  async function loadDOSCities(country) {
+    if (!country || country === 'United States' || country === 'USA') {
+      return { success: false, cities: [], source: 'DOS', error: 'Country required' };
+    }
+
+    // Check memory cache
+    if (_cityCache.dos[country]) {
+      return { success: true, cities: _cityCache.dos[country], source: 'DOS', cached: true };
+    }
+
+    // Check for pending request
+    const pendingKey = `dos_${country}`;
+    if (_pendingRequests[pendingKey]) {
+      return _pendingRequests[pendingKey];
+    }
+
+    _pendingRequests[pendingKey] = (async () => {
+      // Try TravelPerDiem IndexedDB first
+      if (window.TravelPerDiem) {
+        try {
+          const localities = await window.TravelPerDiem.getDOSLocalities(country);
+          if (localities && localities.length > 0) {
+            const processed = processCityList(localities);
+            _cityCache.dos[country] = processed;
+            delete _pendingRequests[pendingKey];
+            return { success: true, cities: processed, source: 'DOS', cached: true };
+          }
+        } catch (error) {
+          // IndexedDB miss - fall through to server
+        }
+      }
+
+      // Fallback to server
+      return new Promise((resolve) => {
+        google.script.run
+          .withSuccessHandler(function(result) {
+            delete _pendingRequests[pendingKey];
+            if (result.success && result.locations) {
+              const processed = processCityList(result.locations);
+              _cityCache.dos[country] = processed;
+              resolve({ success: true, cities: processed, source: 'DOS' });
+            } else {
+              resolve({ success: false, cities: [], source: 'DOS', error: result.error });
+            }
+          })
+          .withFailureHandler(function(error) {
+            delete _pendingRequests[pendingKey];
+            console.error('Failed to load DOS locations:', error);
+            resolve({ success: false, cities: [], source: 'DOS', error: error.message });
+          })
+          .getForeignLocations(country);
+      });
+    })();
+
+    return _pendingRequests[pendingKey];
+  }
+
+  // ==========================================================================
+  // CITY LIST PROCESSING
+  // ==========================================================================
+
+  /**
+   * Process a city list:
+   * - Split compound names (e.g., "Tampa / St. Petersburg" → ["Tampa", "St. Petersburg"])
+   * - Filter out "Other" options
+   * - Remove duplicates
+   * - Sort alphabetically
+   *
+   * @param {string[]} cities - Raw city list
+   * @returns {string[]} Processed city list
+   */
+  function processCityList(cities) {
+    if (!cities || !Array.isArray(cities)) return [];
+
+    const excludePatterns = ['other locations', '[other]', 'other'];
+    const expanded = new Set();
+
+    cities.forEach(city => {
+      if (!city) return;
+
+      const cityStr = String(city).trim();
+      const lowerCity = cityStr.toLowerCase();
+
+      // Skip "Other" options
+      if (excludePatterns.some(p => lowerCity.includes(p))) return;
+
+      // Split compound names
+      if (cityStr.includes('/')) {
+        cityStr.split('/').forEach(part => {
+          const cleaned = part.trim();
+          if (cleaned) expanded.add(cleaned);
+        });
+      } else {
+        expanded.add(cityStr);
+      }
+    });
+
+    return Array.from(expanded).sort((a, b) => a.localeCompare(b));
+  }
+
+  // ==========================================================================
+  // AUTOCOMPLETE HELPERS
+  // ==========================================================================
+
+  /**
+   * Setup Awesomplete autocomplete for a city input
+   *
+   * @param {HTMLInputElement} input - The input element
+   * @param {string[]} cities - List of cities
+   * @param {Object} options - Additional options
+   * @param {Function} options.onSelect - Callback when city is selected
+   * @param {number} options.minChars - Minimum characters before showing (default: 0)
+   * @param {number} options.maxItems - Maximum items to show (default: 20)
+   * @returns {Awesomplete|null} The Awesomplete instance
+   */
+  function setupCityAutocomplete(input, cities, options = {}) {
+    if (!input || !window.Awesomplete) return null;
+
+    const {
+      onSelect = null,
+      minChars = 0,
+      maxItems = 20
+    } = options;
+
+    // Sort cities alphabetically
+    const sortedCities = [...cities].sort((a, b) => a.localeCompare(b));
+
+    const instance = new Awesomplete(input, {
+      list: sortedCities,
+      minChars: minChars,
+      maxItems: maxItems,
+      autoFirst: true,
+      sort: false // Preserve our alphabetical order
+    });
+
+    // Show dropdown on focus
+    input.addEventListener('focus', function() {
+      if (instance.ul.childNodes.length === 0) {
+        instance.evaluate();
+      } else if (instance.ul.hasAttribute('hidden')) {
+        instance.open();
+      }
+    });
+
+    // Handle selection
+    if (onSelect) {
+      input.addEventListener('awesomplete-selectcomplete', function(e) {
+        onSelect(e.text.value || e.text);
+      });
+    }
+
+    return instance;
+  }
+
+  /**
+   * Setup Awesomplete for country selection
+   *
+   * @param {HTMLInputElement} input - The input element
+   * @param {Object} options - Additional options
+   * @param {Function} options.onSelect - Callback when country is selected
+   * @returns {Promise<Awesomplete|null>} The Awesomplete instance
+   */
+  async function setupCountryAutocomplete(input, options = {}) {
+    if (!input || !window.Awesomplete) return null;
+
+    const countries = await getCountries();
+    const { onSelect = null } = options;
+
+    // Sort countries alphabetically (United States should stay at top if present)
+    const sortedCountries = [...countries].sort((a, b) => {
+      if (a === 'United States') return -1;
+      if (b === 'United States') return 1;
+      return a.localeCompare(b);
+    });
+
+    const instance = new Awesomplete(input, {
+      list: sortedCountries,
+      minChars: 0,
+      maxItems: 20,
+      autoFirst: true,
+      sort: false // Preserve our sorted order
+    });
+
+    // Show dropdown on focus
+    input.addEventListener('focus', function() {
+      if (instance.ul.childNodes.length === 0) {
+        instance.evaluate();
+      } else if (instance.ul.hasAttribute('hidden')) {
+        instance.open();
+      }
+    });
+
+    // Handle selection
+    if (onSelect) {
+      input.addEventListener('awesomplete-selectcomplete', function(e) {
+        onSelect(e.text.value || e.text);
+      });
+    }
+
+    return instance;
+  }
+
+  /**
+   * Setup Awesomplete for state selection
+   *
+   * @param {HTMLInputElement} input - The input element
+   * @param {Object} options - Additional options
+   * @param {Function} options.onSelect - Callback when state is selected
+   * @param {boolean} options.showFullName - Show "CA - California" format (default: true)
+   * @returns {Awesomplete|null} The Awesomplete instance
+   */
+  function setupStateAutocomplete(input, options = {}) {
+    if (!input || !window.Awesomplete || !window.TravelUtils) return null;
+
+    const {
+      onSelect = null,
+      showFullName = true
+    } = options;
+
+    const states = TravelUtils.US_STATES
+      .slice() // Don't mutate original
+      .sort((a, b) => a.abbr.localeCompare(b.abbr))
+      .map(s => showFullName ? { label: `${s.abbr} - ${s.name}`, value: s.abbr } : s.abbr);
+
+    const instance = new Awesomplete(input, {
+      list: states,
+      minChars: 0,
+      maxItems: 15,
+      autoFirst: true,
+      sort: false, // Preserve our alphabetical order
+      data: showFullName ? function(item) {
+        return { label: item.label, value: item.value };
+      } : undefined,
+      filter: showFullName ? function(text, input) {
+        // Only match on abbreviation, not full name
+        const inputUpper = input.toUpperCase();
+        return text.value.startsWith(inputUpper);
+      } : undefined,
+      item: showFullName ? function(text, input) {
+        const li = document.createElement('li');
+        li.setAttribute('role', 'option');
+        const trimmed = input.trim();
+        if (trimmed) {
+          // Escape regex special chars and highlight matches
+          const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          li.innerHTML = text.label.replace(
+            new RegExp(`(${escaped})`, 'gi'),
+            '<mark>$1</mark>'
+          );
+        } else {
+          li.textContent = text.label;
+        }
+        return li;
+      } : undefined,
+      replace: showFullName ? function(text) {
+        this.input.value = text.value;
+      } : undefined
+    });
+
+    // Show dropdown on focus
+    input.addEventListener('focus', function() {
+      if (instance.ul.childNodes.length === 0) {
+        instance.evaluate();
+      } else if (instance.ul.hasAttribute('hidden')) {
+        instance.open();
+      }
+    });
+
+    // Handle selection
+    if (onSelect) {
+      input.addEventListener('awesomplete-selectcomplete', function(e) {
+        const value = showFullName ? (e.text.value || e.text) : e.text;
+        onSelect(value);
+      });
+    }
+
+    // Validate on blur
+    input.addEventListener('blur', function() {
+      const val = input.value.trim().toUpperCase();
+      if (val && !TravelUtils.isValidState(val)) {
+        // Try to find matching state
+        const match = TravelUtils.US_STATES.find(s =>
+          s.abbr === val || s.name.toLowerCase() === val.toLowerCase()
+        );
+        if (match) {
+          input.value = match.abbr;
+        }
+      } else if (val) {
+        input.value = val; // Normalize to uppercase
+      }
+    });
+
+    return instance;
+  }
+
+  // ==========================================================================
+  // AWESOMPLETE UTILITIES
+  // ==========================================================================
+
+  /**
+   * Float Awesomplete dropdown to prevent clipping in containers
+   * Also handles auto-scroll to ensure dropdown is visible
+   *
+   * @param {Awesomplete} awInstance - The Awesomplete instance
+   * @param {Object} options - Configuration options
+   * @param {number} options.minWidth - Minimum width for the dropdown (default: input width)
+   */
+  function floatAwesomplete(awInstance, options = {}) {
+    if (!awInstance || !awInstance.ul) return;
+
+    const ul = awInstance.ul;
+    const minWidth = options.minWidth || 0;
+
+    ul.style.position = 'fixed';
+    ul.style.zIndex = '9999';
+
+    const updatePosition = () => {
+      const rect = awInstance.input.getBoundingClientRect();
+      ul.style.left = rect.left + 'px';
+      ul.style.top = (rect.bottom + 2) + 'px';
+      ul.style.minWidth = Math.max(rect.width, minWidth) + 'px';
+    };
+
+    const ensureDropdownVisible = () => {
+      const dropdownMaxHeight = TravelUtils?.TRAVEL_CONFIG?.UI?.AWESOMPLETE_DROPDOWN_HEIGHT || 250;
+      const padding = 20; // extra breathing room
+      const rect = awInstance.input.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+
+      // Calculate space needed: input bottom + dropdown height + padding
+      const spaceNeeded = rect.bottom + dropdownMaxHeight + padding;
+
+      // If dropdown would be clipped, scroll to make room
+      if (spaceNeeded > viewportHeight) {
+        const scrollAmount = spaceNeeded - viewportHeight;
+        const currentScroll = window.pageYOffset;
+
+        window.scrollTo({
+          top: currentScroll + scrollAmount,
+          behavior: 'smooth'
+        });
+
+        // Update position after scroll completes
+        setTimeout(updatePosition, 300);
+      }
+    };
+
+    awInstance.input.addEventListener('focus', () => {
+      updatePosition();
+      ensureDropdownVisible();
+    });
+    awInstance.input.addEventListener('input', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+  }
+
+  // ==========================================================================
+  // CACHE MANAGEMENT
+  // ==========================================================================
+
+  /**
+   * Clear city cache
+   * @param {string} type - 'gsa', 'dod', 'dos', or 'all'
+   */
+  function clearCache(type = 'all') {
+    if (type === 'all') {
+      _cityCache.gsa = {};
+      _cityCache.dod = {};
+      _cityCache.dos = {};
+    } else if (_cityCache[type]) {
+      _cityCache[type] = {};
+    }
+  }
+
+  /**
+   * Get cache status (for debugging)
+   */
+  function getCacheStatus() {
+    return {
+      gsa: Object.keys(_cityCache.gsa).length,
+      dod: Object.keys(_cityCache.dod).length,
+      dos: Object.keys(_cityCache.dos).length,
+      countries: _foreignCountries ? _foreignCountries.length : 0
+    };
+  }
+
+  // ==========================================================================
+  // EXPORTS
+  // ==========================================================================
+
+  return {
+    // Country list
+    getCountries,
+
+    // City loading
+    loadCities,
+    loadGSACities,
+    loadDoDCities,
+    loadDOSCities,
+
+    // Processing
+    processCityList,
+
+    // Autocomplete setup
+    setupCityAutocomplete,
+    setupCountryAutocomplete,
+    setupStateAutocomplete,
+
+    // Autocomplete utilities
+    floatAwesomplete,
+
+    // Cache management
+    clearCache,
+    getCacheStatus
+  };
+})();
+</script>

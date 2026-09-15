@@ -1,0 +1,3960 @@
+<!-- client/controllers/admin/travelAdminController.html -->
+<!-- Controller for the Travel Admin Console -->
+<script>
+(function() {
+  'use strict';
+
+  window.TravelAdmin = window.TravelAdmin || {};
+
+  // Store the script URL (set during init)
+  window.TravelAdmin._scriptUrl = '';
+
+  /**
+   * Navigate to a different mode in the travel app
+   * @param {string} mode - The mode to navigate to ('travel', 'form', 'review', 'admin')
+   * @param {Object} params - Additional URL parameters
+   */
+  window.TravelAdmin.navigateTo = function(mode, params = {}) {
+    const queryParams = new URLSearchParams();
+    queryParams.set('mode', mode);
+
+    Object.keys(params).forEach(key => {
+      if (params[key]) {
+        queryParams.set(key, params[key]);
+      }
+    });
+
+    let baseUrl = window.TravelAdmin._scriptUrl;
+    if (!baseUrl) {
+      try {
+        const topUrl = window.top.location.href;
+        baseUrl = topUrl.split('?')[0];
+      } catch (e) {
+        console.error('Cannot determine script URL');
+        return;
+      }
+    }
+
+    safeTopNavigate(baseUrl + '?' + queryParams.toString());
+  };
+
+  /**
+   * Admin Dashboard Controller
+   */
+  window.TravelAdmin.Controller = {
+
+    // =========================================================================
+    // STATE
+    // =========================================================================
+
+    _userEmail: '',
+    _userName: '',
+    _scriptUrl: '',
+
+    _currentView: 'dashboard',
+
+    // Data caches
+    _dashboardStats: null,
+    _actionCenterData: null,
+    _metricsData: null,
+    _requests: [],
+    _buCodes: [],
+
+    // Flags for lazy loading
+    _dashboardLoaded: false,
+    _requestsLoaded: false,
+    _reportsLoaded: false,
+    _feedbackLoaded: false,
+    _feedbackEntries: [],
+    _feedbackTypeFilter: '',
+    _feedbackSearch: '',
+    _feedbackToolbarWired: false,
+    _reportSubview: 'quickReports',
+
+    // Report builder state
+    // Field catalog — single source of truth is the SERVER-side _RB_FIELD_CATALOG
+    // (Reporting.js). It's delivered via reportGetFilterOptions when the Data
+    // Export view opens (no extra round-trip) and adopted before the picker
+    // builds. Starts empty so there's no second copy to keep in sync.
+    _RB_FIELD_CATALOG: [],
+    _RB_DEFAULT_COLUMNS: [
+      'Request_ID', 'Trip_Name', 'Status', 'Submitter_Name',
+      'Submitter_BU', 'Grand_Total', 'Submitted_At', 'Event_Start_Date'
+    ],
+    _rbColumns: [],
+    _rbFilters: {},
+    _rbPreviewCache: null,
+    _rbPreviewTimer: null,
+    _rbPresets: [],
+    _rbDragIdx: null,
+
+    // Sort state (table rendering is client-side; everything front-loaded)
+    _sort: {
+      sortBy: 'submittedAt',
+      sortDir: 'desc'
+    },
+
+    // Filters
+    _filters: {
+      status: 'all',
+      international: false,
+      buCode: '',
+      startDate: '',
+      endDate: '',
+      searchTerm: ''
+    },
+
+    // Reviewer filter
+    _buReviewerFilter: 'all',
+
+    // Current period
+    _metricsPeriod: '30d',
+    _customStart: null,
+    _customEnd: null,
+    _customPicker: null,
+
+    // Slide-in state
+    _slideinRequestId: null,
+
+    // Bulk selection state
+    _bulkSelectedIds: null, // initialized as Set in init()
+
+    // =========================================================================
+    // INITIALIZATION
+    // =========================================================================
+
+    async init(options = {}) {
+      this._userEmail = options.userEmail || '';
+      this._userName = options.userName || '';
+      this._scriptUrl = options.scriptUrl || '';
+
+      window.TravelAdmin._scriptUrl = this._scriptUrl;
+
+      // Verify admin access
+      const accessResult = await this._checkAccess();
+      if (!accessResult) {
+        return;
+      }
+
+      // Initialize bulk selection set
+      this._bulkSelectedIds = new Set();
+
+      // Setup all event listeners
+      this._setupSidebarNav();
+      this._setupPeriodToggle();
+      this._setupActionRibbon();
+      this._setupFilters();
+      this._setupSorting();
+      this._setupSlideInPanel();
+      this._setupBulkActions();
+
+      // Load initial view
+      await this._loadDashboard();
+
+      // Warm the Users-page cache in the background so the first click on
+      // the Users sidebar item feels instant. Fires after the dashboard
+      // settles so we don't compete for the same RPC slot during initial
+      // render. No-op if controller isn't loaded yet (defensive).
+      setTimeout(function() {
+        try {
+          if (window.TravelUsers && window.TravelUsers.Controller && window.TravelUsers.Controller.warmCache) {
+            window.TravelUsers.Controller.warmCache();
+          }
+        } catch (e) { /* warm-cache is best-effort */ }
+      }, 1500);
+    },
+
+    async _checkAccess() {
+      try {
+        const result = await this._serverCall('checkTravelAdminAccess');
+        if (!result || !result.isAdmin) {
+          document.body.innerHTML = '<div style="padding: 2rem; text-align: center;">' +
+            '<h2 style="color: var(--color-slate-800);">Access Denied</h2>' +
+            '<p style="color: var(--color-slate-500);">You do not have admin access to this page.</p>' +
+            '<a href="#" onclick="window.TravelAdmin.navigateTo(\'travel\'); return false;" ' +
+            'style="color: var(--color-primary);">Return to Portal</a></div>';
+          return false;
+        }
+        return true;
+      } catch (error) {
+        console.error('Error checking access:', error);
+        document.body.innerHTML = '<div style="padding: 2rem; text-align: center;">' +
+          '<h2 style="color: var(--color-slate-800);">Error</h2>' +
+          '<p style="color: var(--color-slate-500);">Unable to verify admin access. Please try again.</p>' +
+          '<a href="#" onclick="window.TravelAdmin.navigateTo(\'travel\'); return false;" ' +
+          'style="color: var(--color-primary);">Return to Portal</a></div>';
+        return false;
+      }
+    },
+
+    // =========================================================================
+    // NAVIGATION
+    // =========================================================================
+
+    _setupSidebarNav() {
+      var self = this;
+      var navItems = document.querySelectorAll('.admin-nav__item');
+
+      navItems.forEach(function(item) {
+        item.addEventListener('click', function() {
+          var view = item.dataset.view;
+          if (!view || item.classList.contains('admin-nav__item--disabled')) return;
+
+          self._switchView(view);
+
+          navItems.forEach(function(i) { i.classList.remove('admin-nav__item--active'); });
+          item.classList.add('admin-nav__item--active');
+        });
+      });
+    },
+
+    async _switchView(view) {
+      // Tell the Users module to stop polling when leaving the Users tab.
+      // The module hooks back up when activate() runs again on re-entry.
+      if (this._currentView === 'users' && view !== 'users'
+          && window.TravelUsers && window.TravelUsers.Controller
+          && window.TravelUsers.Controller.deactivate) {
+        try { window.TravelUsers.Controller.deactivate(); } catch (e) {}
+      }
+
+      // Hide all views
+      document.querySelectorAll('.admin-view').forEach(function(v) { v.classList.add('hidden'); });
+
+      var viewMap = {
+        'dashboard': 'dashboardView',
+        'requests': 'requestsView',
+        'reports': 'reportsView',
+        'users': 'usersView'
+      };
+
+      var viewEl = document.getElementById(viewMap[view]);
+      if (viewEl) {
+        viewEl.classList.remove('hidden');
+      }
+
+      this._currentView = view;
+
+      // Load data lazily
+      switch (view) {
+        case 'dashboard':
+          if (!this._dashboardLoaded) await this._loadDashboard();
+          break;
+        case 'requests':
+          if (!this._requestsLoaded) await this._loadRequests();
+          else {
+            if (this._buCodes.length > 0) this._populateBUFilter();
+            this._renderFilterPills();
+            this._applyFiltersAndRender();
+          }
+          break;
+        case 'reports':
+          if (!this._reportsLoaded) await this._loadReports();
+          break;
+        case 'users':
+          if (window.TravelUsers && window.TravelUsers.Controller) {
+            window.TravelUsers.Controller.activate();
+          }
+          break;
+      }
+    },
+
+    // =========================================================================
+    // DASHBOARD - ACTION CENTER (Phase 2)
+    // =========================================================================
+
+    async _loadDashboard() {
+      try {
+        // Single consolidated call — reads Requests once, returns both payloads
+        var result = await this._serverCall('getAdminDashboard', this._userEmail, '30d');
+
+        if (result && result.success) {
+          var rdata = result.data || {};
+          // Action center
+          if (rdata.actionCenter) {
+            this._actionCenterData = rdata.actionCenter;
+            this._actionCenterData.success = true;
+            this._renderActionCenter(this._actionCenterData);
+          } else {
+            this._renderActionCenterEmpty();
+          }
+
+          // Metrics
+          if (rdata.stats) {
+            this._dashboardStats = rdata.stats;
+            this._metricsData = rdata.stats;
+            this._renderMetrics(this._metricsData);
+            this._updateNavPendingCount(this._metricsData);
+          }
+
+          // Pre-load requests data (instant tab switch)
+          if (rdata.requests) {
+            this._allRequests = rdata.requests;
+            this._requestsLoaded = true;
+            if (rdata.distinctBUCodes) {
+              this._buCodes = rdata.distinctBUCodes;
+            }
+          }
+
+        } else {
+          this._showToast('Error', (result && result.error) || 'Failed to load dashboard', 'error');
+          this._renderActionCenterEmpty();
+        }
+
+        // Remove skeleton loaders
+        this._removeDashboardSkeletons();
+
+        this._dashboardLoaded = true;
+
+      } catch (error) {
+        console.error('Error loading dashboard:', error);
+        this._showToast('Error', error.message || 'Failed to load dashboard', 'error');
+        this._removeDashboardSkeletons();
+        this._renderActionCenterEmpty();
+      }
+    },
+
+    _removeDashboardSkeletons() {
+      var pipelineSkeleton = document.getElementById('pipelineSkeleton');
+      if (pipelineSkeleton) pipelineSkeleton.remove();
+      var statCardsSkeleton = document.getElementById('statCardsSkeleton');
+      if (statCardsSkeleton) statCardsSkeleton.remove();
+    },
+
+    _renderActionCenter(data) {
+      var reviews = data.yourReviews || [];
+      var stalled = data.stalledRequests || [];
+      var dc = data.deniedCancelledCounts || {};
+      this._renderYourReviews(reviews);
+      this._renderStalledRequests(stalled);
+      this._renderDeniedCancelledAlert(dc.denied || 0, dc.cancelled || 0);
+      this._renderPipeline(data.pipelineCounts || {});
+      this._updateActionRibbon(reviews, stalled, dc.denied || 0, dc.cancelled || 0);
+      this._setupViewAllReviewsLink();
+    },
+
+    _renderActionCenterEmpty() {
+      var reviewsList = document.getElementById('yourReviewsList');
+      if (reviewsList) {
+        reviewsList.innerHTML = '<div class="admin-empty" style="padding: var(--space-5);">' +
+          '<i aria-hidden="true" class="fas fa-check-circle"></i><p>No reviews waiting for you</p></div>';
+      }
+      var stalledList = document.getElementById('stalledRequestsList');
+      if (stalledList) {
+        stalledList.innerHTML = '<div class="admin-empty" style="padding: var(--space-5);">' +
+          '<i aria-hidden="true" class="fas fa-check-circle"></i><p>No stalled requests</p></div>';
+      }
+      this._updateActionRibbon([], [], 0, 0);
+    },
+
+    /**
+     * Action ribbon — compact summary chips (Reviews / Stalled / Denied) that
+     * sit above the collapsible detail panel. Counts are updated whenever the
+     * action center re-renders. Clicking a chip toggles the detail panel and
+     * scrolls the relevant card into view; the trailing chevron toggles all.
+     * Expanded state persists in localStorage (per-user-machine, not server).
+     */
+    /**
+     * Action ribbon setup.
+     *
+     * Chips are the only control: each one toggles its own section.
+     *   • Click an inactive/none-focused chip → expand panel to that section
+     *   • Click the active chip → collapse the panel
+     *   • Click a different chip while focused → switch focus
+     * No separate Show/Hide button — chips do double duty.
+     *
+     * State persists in localStorage so re-opening lands on the same
+     * focused section (or collapsed state) the user last left.
+     */
+    _setupActionRibbon() {
+      var self = this;
+      var ribbon = document.getElementById('actionRibbon');
+      var detail = document.getElementById('actionDetail');
+      if (!ribbon || !detail) return;
+
+      var storedExpanded = null;
+      var storedFocus = null;
+      try {
+        storedExpanded = localStorage.getItem('admin_actionDetailExpanded');
+        storedFocus = localStorage.getItem('admin_actionDetailFocus');
+      } catch (e) {}
+      var initialFocus = (storedFocus === 'reviews' || storedFocus === 'stalled') ? storedFocus : 'reviews';
+      self._setActionDetailExpanded(storedExpanded === '1', initialFocus);
+
+      ribbon.querySelectorAll('.action-ribbon__chip').forEach(function(chip) {
+        chip.addEventListener('click', function() {
+          var section = chip.dataset.section;
+          // Denied chip: jump straight to filtered Requests view, no
+          // detail-panel expand path — there's no "denied list" panel.
+          if (section === 'denied') {
+            self._filters.status = 'DENIED';
+            self._switchView('requests');
+            document.querySelectorAll('.admin-nav__item').forEach(function(item) {
+              item.classList.remove('admin-nav__item--active');
+              if (item.dataset.view === 'requests') item.classList.add('admin-nav__item--active');
+            });
+            return;
+          }
+          // Toggle behavior: clicking the active chip collapses the panel,
+          // clicking any other chip expands and focuses on that section.
+          var alreadyFocused = chip.classList.contains('action-ribbon__chip--active');
+          var isExpanded = !detail.classList.contains('is-collapsed');
+          if (alreadyFocused && isExpanded) {
+            self._setActionDetailExpanded(false, section);
+          } else {
+            self._setActionDetailExpanded(true, section);
+          }
+        });
+      });
+    },
+
+    _setActionDetailExpanded(expanded, focus) {
+      var detail = document.getElementById('actionDetail');
+      var ribbon = document.getElementById('actionRibbon');
+      if (!detail) return;
+
+      if (expanded) {
+        detail.classList.remove('is-collapsed');
+      } else {
+        detail.classList.add('is-collapsed');
+      }
+
+      // Apply focus class — drives which column shows in the panel.
+      detail.classList.remove('action-detail--focus-reviews', 'action-detail--focus-stalled');
+      if (expanded && focus === 'reviews') detail.classList.add('action-detail--focus-reviews');
+      else if (expanded && focus === 'stalled') detail.classList.add('action-detail--focus-stalled');
+
+      // Sync the chip active states (only the focused chip stays lit
+      // while the panel is open; collapsed = no chip lit).
+      if (ribbon) {
+        ribbon.querySelectorAll('.action-ribbon__chip').forEach(function(c) {
+          c.classList.remove('action-ribbon__chip--active');
+        });
+        if (expanded && (focus === 'reviews' || focus === 'stalled')) {
+          var activeChipId = focus === 'reviews' ? 'ribbonChipReviews' : 'ribbonChipStalled';
+          var active = document.getElementById(activeChipId);
+          if (active) active.classList.add('action-ribbon__chip--active');
+        }
+      }
+
+      try {
+        localStorage.setItem('admin_actionDetailExpanded', expanded ? '1' : '0');
+        localStorage.setItem('admin_actionDetailFocus', focus || 'all');
+      } catch (e) {}
+    },
+
+    _updateActionRibbon(reviews, stalled, deniedCount, cancelledCount) {
+      var self = this;
+      var reviewsCount = (reviews && reviews.length) || 0;
+      var stalledCount = (stalled && stalled.length) || 0;
+      var deniedTotal = (deniedCount || 0) + (cancelledCount || 0);
+
+      // Urgent reviews — travel within 10 days.
+      var urgent = 0;
+      if (reviews && reviews.length) {
+        reviews.forEach(function(r) {
+          var d = self._calcDaysUntilTravel(r.eventStartDate);
+          if (d !== null && d <= 10) urgent++;
+        });
+      }
+
+      var rc = document.getElementById('ribbonReviewsCount');
+      if (rc) rc.textContent = reviewsCount;
+      var rChip = document.getElementById('ribbonChipReviews');
+      if (rChip) rChip.classList.toggle('action-ribbon__chip--zero', reviewsCount === 0);
+
+      var ru = document.getElementById('ribbonReviewsUrgent');
+      var ruc = document.getElementById('ribbonReviewsUrgentCount');
+      if (ru && ruc) {
+        if (urgent > 0) {
+          ruc.textContent = urgent;
+          ru.classList.remove('hidden');
+        } else {
+          ru.classList.add('hidden');
+        }
+      }
+
+      var sc = document.getElementById('ribbonStalledCount');
+      if (sc) sc.textContent = stalledCount;
+      var sChip = document.getElementById('ribbonChipStalled');
+      if (sChip) sChip.classList.toggle('action-ribbon__chip--zero', stalledCount === 0);
+
+      var dChip = document.getElementById('ribbonChipDenied');
+      var dCount = document.getElementById('ribbonDeniedCount');
+      var dLabel = document.getElementById('ribbonDeniedLabel');
+      if (dChip && dCount && dLabel) {
+        if (deniedTotal === 0) {
+          dChip.classList.add('hidden');
+        } else {
+          dChip.classList.remove('hidden');
+          dCount.textContent = deniedTotal;
+          var parts = [];
+          if (deniedCount > 0) parts.push('Denied');
+          if (cancelledCount > 0) parts.push('Cancelled');
+          dLabel.textContent = parts.join(' / ');
+        }
+      }
+    },
+
+    _renderYourReviews(reviews) {
+      var self = this;
+      var container = document.getElementById('yourReviewsList');
+      if (!container) return;
+
+      if (!reviews || reviews.length === 0) {
+        container.innerHTML = '<div class="admin-empty" style="padding: var(--space-5);">' +
+          '<i aria-hidden="true" class="fas fa-check-circle"></i><p>No reviews waiting for you</p></div>';
+        return;
+      }
+
+      // Sort urgent-first (travel date <= 10 days), then by daysAtStage desc
+      var sorted = reviews.slice().sort(function(a, b) {
+        var aDaysUntil = self._calcDaysUntilTravel(a.eventStartDate);
+        var bDaysUntil = self._calcDaysUntilTravel(b.eventStartDate);
+        var aUrgent = aDaysUntil !== null && aDaysUntil <= 10;
+        var bUrgent = bDaysUntil !== null && bDaysUntil <= 10;
+
+        if (aUrgent && !bUrgent) return -1;
+        if (!aUrgent && bUrgent) return 1;
+
+        var aDays = self._getDaysAtStage(a.updatedAt);
+        var bDays = self._getDaysAtStage(b.updatedAt);
+        return bDays - aDays;
+      });
+
+      var html = '<div class="action-list">';
+      sorted.forEach(function(item) {
+        var statusDisplay = self._getStatusDisplay(item.status);
+        var days = self._getDaysAtStage(item.updatedAt);
+        var daysClass = self._getDaysClass(days);
+        var daysUntil = self._calcDaysUntilTravel(item.eventStartDate);
+        var urgentTag = (daysUntil !== null && daysUntil <= 10)
+          ? '<span class="action-item__urgent"><i aria-hidden="true" class="fas fa-bolt"></i>Urgent</span>'
+          : '';
+
+        html += '<div class="action-item" data-request-id="' + self._escapeHtml(item.requestId) + '">' +
+          '<div class="action-item__info">' +
+            '<div class="action-item__name">' + self._escapeHtml(item.submitterName || 'Unknown') + '</div>' +
+            '<div class="action-item__sub">' +
+              self._escapeHtml(item.tripName || 'Untitled') +
+              ' <span class="status-badge status-badge--' + statusDisplay.class + '">' + statusDisplay.label + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="action-item__meta">' +
+            urgentTag +
+            '<span class="action-item__days action-item__days--' + daysClass + '">' +
+              '<i aria-hidden="true" class="fas fa-clock"></i>' + days + 'd' +
+            '</span>' +
+          '</div>' +
+          '<div class="action-item__amount">' + self._formatCurrency(item.grandTotal) + '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+
+      container.innerHTML = html;
+
+      // Attach click handlers
+      container.querySelectorAll('.action-item').forEach(function(el) {
+        el.addEventListener('click', function() {
+          var reqId = el.dataset.requestId;
+          if (reqId) self._openSlideIn(reqId);
+        });
+      });
+    },
+
+    _renderStalledRequests(stalled) {
+      var self = this;
+      var container = document.getElementById('stalledRequestsList');
+      if (!container) return;
+
+      if (!stalled || stalled.length === 0) {
+        container.innerHTML = '<div class="admin-empty" style="padding: var(--space-5);">' +
+          '<i aria-hidden="true" class="fas fa-check-circle"></i><p>No stalled requests</p></div>';
+        return;
+      }
+
+      var html = '<div class="action-list">';
+      stalled.forEach(function(item) {
+        var statusDisplay = self._getStatusDisplay(item.status);
+        var days = self._getDaysAtStage(item.updatedAt);
+        var daysClass = self._getDaysClass(days);
+
+        html += '<div class="action-item" data-request-id="' + self._escapeHtml(item.requestId) + '">' +
+          '<div class="action-item__info">' +
+            '<div class="action-item__name">' +
+              self._escapeHtml(item.tripName || 'Untitled') +
+              ' <span class="status-badge status-badge--' + statusDisplay.class + '">' + statusDisplay.label + '</span>' +
+            '</div>' +
+            '<div class="action-item__sub">' +
+              '<i aria-hidden="true" class="fas fa-user" style="font-size:0.6rem; margin-right:3px;"></i>' +
+              self._escapeHtml(item.currentReviewerName || 'Unassigned') +
+            '</div>' +
+          '</div>' +
+          '<div class="action-item__meta">' +
+            '<span class="action-item__days action-item__days--' + daysClass + '">' +
+              '<i aria-hidden="true" class="fas fa-clock"></i>' + days + 'd' +
+            '</span>' +
+          '</div>' +
+          '<div class="action-item__amount">' + self._formatCurrency(item.grandTotal) + '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+
+      container.innerHTML = html;
+
+      container.querySelectorAll('.action-item').forEach(function(el) {
+        el.addEventListener('click', function() {
+          var reqId = el.dataset.requestId;
+          if (reqId) self._openSlideIn(reqId);
+        });
+      });
+    },
+
+    _renderDeniedCancelledAlert(deniedCount, cancelledCount) {
+      // Legacy alert stays hidden \u2014 the ribbon chip is the visible
+      // surface now. We still update its text + click handler so any
+      // external consumer that targets the same IDs keeps working.
+      var alertEl = document.getElementById('deniedCancelledAlert');
+      var textEl = document.getElementById('deniedCancelledText');
+      var linkEl = document.getElementById('viewDeniedLink');
+      if (!alertEl || !textEl) return;
+
+      if (deniedCount === 0 && cancelledCount === 0) return;
+
+      var parts = [];
+      if (deniedCount > 0) parts.push(deniedCount + ' Denied');
+      if (cancelledCount > 0) parts.push(cancelledCount + ' Cancelled');
+
+      textEl.textContent = parts.join(' \u00B7 ') + ' this month';
+
+      var self = this;
+      if (linkEl) {
+        linkEl.onclick = function(e) {
+          e.preventDefault();
+          self._filters.status = 'DENIED';
+          self._switchView('requests');
+          // Update active nav
+          document.querySelectorAll('.admin-nav__item').forEach(function(item) {
+            item.classList.remove('admin-nav__item--active');
+            if (item.dataset.view === 'requests') item.classList.add('admin-nav__item--active');
+          });
+        };
+      }
+    },
+
+    _renderPipeline(pipeline) {
+      var self = this;
+      var container = document.getElementById('pipelineRow');
+      if (!container) return;
+
+      var stages = [
+        { key: 'sector', label: 'Sector', cssClass: 'pending', status: 'PENDING_SECTOR' },
+        { key: 'bu', label: 'BU', cssClass: 'pending', status: 'PENDING_BU' },
+        { key: 'oso', label: 'AAS FO', cssClass: 'oso', status: 'PENDING_OSO' },
+        { key: 'fas', label: 'FAS', cssClass: 'oso', status: 'PENDING_FAS' },
+        { key: 'ddConfirm', label: 'DD Confirm', cssClass: 'pending', status: 'Pending_DD_Confirmation' },
+        { key: 'approved', label: 'Approved', cssClass: 'approved', status: 'APPROVED_GOGOV' }
+      ];
+
+      var html = '';
+      stages.forEach(function(stage) {
+        var count = (pipeline && pipeline[stage.key] !== undefined) ? pipeline[stage.key] : 0;
+
+        html += '<div class="pipeline-card pipeline-card--' + stage.cssClass + '" data-status="' + stage.status + '">' +
+          '<div class="pipeline-card__count">' + count + '</div>' +
+          '<div class="pipeline-card__label">' + stage.label + '</div>' +
+        '</div>';
+      });
+
+      container.innerHTML = html;
+
+      // Click handler: navigate to requests filtered by status
+      container.querySelectorAll('.pipeline-card').forEach(function(card) {
+        card.addEventListener('click', function() {
+          var status = card.dataset.status;
+          self._filters.status = status;
+          self._switchView('requests');
+          document.querySelectorAll('.admin-nav__item').forEach(function(item) {
+            item.classList.remove('admin-nav__item--active');
+            if (item.dataset.view === 'requests') item.classList.add('admin-nav__item--active');
+          });
+        });
+      });
+    },
+
+    _setupViewAllReviewsLink() {
+      var self = this;
+      var link = document.getElementById('viewAllReviews');
+      if (!link) return;
+
+      link.onclick = function(e) {
+        e.preventDefault();
+        // Navigate to requests view filtered by current user as reviewer
+        self._filters.searchTerm = self._userEmail;
+        self._filters.status = 'all';
+        self._switchView('requests');
+        document.querySelectorAll('.admin-nav__item').forEach(function(item) {
+          item.classList.remove('admin-nav__item--active');
+          if (item.dataset.view === 'requests') item.classList.add('admin-nav__item--active');
+        });
+        var searchEl = document.getElementById('filterSearch');
+        if (searchEl) searchEl.value = self._userEmail;
+      };
+    },
+
+    _updateNavPendingCount(stats) {
+      var badge = document.getElementById('navPendingCount');
+      if (!badge) return;
+
+      var pending = stats.pending || {};
+      var total = (pending.sector || 0) + (pending.bu || 0) + (pending.oso || 0) + (pending.fas || 0);
+      if (total > 0) {
+        badge.textContent = total;
+        badge.style.display = '';
+      } else {
+        badge.textContent = '';
+        badge.style.display = 'none';
+      }
+    },
+
+    // =========================================================================
+    // DASHBOARD - METRICS (Phase 3)
+    // =========================================================================
+
+    _setupPeriodToggle() {
+      var self = this;
+      var toggleContainer = document.getElementById('periodToggle');
+      if (!toggleContainer) return;
+
+      toggleContainer.querySelectorAll('.period-toggle__btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var period = btn.dataset.period;
+          if (!period) return;
+
+          toggleContainer.querySelectorAll('.period-toggle__btn').forEach(function(b) {
+            b.classList.remove('period-toggle__btn--active');
+          });
+          btn.classList.add('period-toggle__btn--active');
+
+          if (period === 'custom') {
+            // Open the anchored picker; defer the reload until both
+            // dates are picked. Picker is positioned beneath the
+            // Custom button itself, no separate visible input needed.
+            if (self._customPicker) self._customPicker.open();
+            return;
+          }
+
+          // Switching off custom — reset the chosen range and the
+          // Custom button's label so it reads "Custom" again.
+          self._metricsPeriod = period;
+          self._customStart = null;
+          self._customEnd = null;
+          var customBtn = document.getElementById('customPeriodBtn');
+          if (customBtn) customBtn.textContent = 'Custom';
+          self._loadMetrics(period);
+        });
+      });
+
+      this._setupCustomDatePicker();
+    },
+
+    /**
+     * Custom date range picker.
+     *
+     * The hidden source input (#customDateRange) is just a flatpickr handle;
+     * the picker positions itself relative to the Custom button via
+     * `positionElement` so it drops down from the button instead of the
+     * top-left of the screen (which is where it landed when the source
+     * input was display:none and had no layout box). After both dates are
+     * picked, the Custom button label reflects the selected range so the
+     * user has a visible record of what's applied.
+     */
+    _setupCustomDatePicker() {
+      var self = this;
+      var input = document.getElementById('customDateRange');
+      var customBtn = document.getElementById('customPeriodBtn');
+      if (!input || !customBtn || typeof flatpickr === 'undefined') return;
+
+      this._customPicker = flatpickr(input, {
+        mode: 'range',
+        dateFormat: 'Y-m-d',
+        positionElement: customBtn,
+        clickOpens: false,
+        onClose: function(selectedDates) {
+          if (selectedDates.length !== 2) return;
+          self._metricsPeriod = 'custom';
+          self._customStart = selectedDates[0].toISOString();
+          self._customEnd = selectedDates[1].toISOString();
+          customBtn.textContent = self._formatRangeLabel(selectedDates[0], selectedDates[1]);
+          self._loadMetrics('custom');
+        }
+      });
+    },
+
+    /**
+     * Compact date range label for the Custom pill.
+     * Drops the year when both dates are in the current calendar year so
+     * "May 1 – May 14" doesn't blow out the toggle width on a busy header.
+     */
+    _formatRangeLabel(start, end) {
+      var fmt = function(d, withYear) {
+        var opts = { month: 'short', day: 'numeric' };
+        if (withYear) opts.year = 'numeric';
+        return d.toLocaleDateString('en-US', opts);
+      };
+      var thisYear = new Date().getFullYear();
+      var sameYearAsNow = start.getFullYear() === thisYear && end.getFullYear() === thisYear;
+      return fmt(start, !sameYearAsNow) + ' – ' + fmt(end, !sameYearAsNow);
+    },
+
+    async _loadMetrics(period) {
+      var metricsLoading = document.getElementById('metricsLoading');
+      var statCards = document.getElementById('statCards');
+      var chartsRow = document.getElementById('chartsRow');
+      // Note: perfTableCard intentionally not dimmed — reviewer perf is
+      // all-time and unaffected by the period toggle, so the existing
+      // perf rows remain valid while metrics reload.
+
+      if (metricsLoading) metricsLoading.classList.remove('hidden');
+      if (statCards) statCards.style.opacity = '0.4';
+      if (chartsRow) chartsRow.style.opacity = '0.4';
+
+      try {
+        var result = await this._serverCall(
+          'getAdminDashboard',
+          this._userEmail,
+          period,
+          this._customStart || null,
+          this._customEnd || null
+        );
+
+        var rdata = (result && result.data) || {};
+        if (result && result.success && rdata.stats) {
+          this._metricsData = rdata.stats;
+          this._renderMetrics(rdata.stats);
+          this._updateNavPendingCount(rdata.stats);
+
+          // Also refresh action center since we got it for free
+          if (rdata.actionCenter) {
+            this._actionCenterData = rdata.actionCenter;
+            this._actionCenterData.success = true;
+            this._renderActionCenter(this._actionCenterData);
+          }
+        } else {
+          this._showToast('Error', (result && result.error) || 'Failed to load metrics', 'error');
+        }
+      } catch (error) {
+        console.error('Error loading metrics:', error);
+        this._showToast('Error', error.message || 'Failed to load metrics', 'error');
+      } finally {
+        if (metricsLoading) metricsLoading.classList.add('hidden');
+        if (statCards) statCards.style.opacity = '1';
+        if (chartsRow) chartsRow.style.opacity = '1';
+      }
+    },
+
+    _renderMetrics(stats) {
+      this._renderStatCards(stats);
+      this._renderCharts(stats);
+      this._renderPerfTable(stats);
+    },
+
+    _renderStatCards(stats) {
+      var container = document.getElementById('statCards');
+      if (!container) return;
+
+      var avgApproval = stats.avgApprovalTime || (stats.avgReviewTime && stats.avgReviewTime.overall) || 0;
+      var totalApprovedAmount = 0;
+      var totalApprovedCount = (stats.totals && stats.totals.approved) || 0;
+
+      // Sum approved spend across BUs for total amount
+      if (stats.spendByBU) {
+        Object.values(stats.spendByBU).forEach(function(v) { totalApprovedAmount += v.total || 0; });
+      }
+
+      var approvalRate = stats.approvalRate || 0;
+
+      // Avg advance notice (days between submission and event start)
+      var avgLeadTime = stats.avgLeadTime || 0;
+
+      var avgApprovalFmt = this._formatReviewDuration(avgApproval);
+      var avgLeadTimeFmt = this._formatReviewDuration(avgLeadTime);
+      var html =
+        '<div class="stat-card">' +
+          '<div class="stat-card__icon stat-card__icon--primary"><i aria-hidden="true" class="fas fa-stopwatch"></i></div>' +
+          '<div class="stat-card__label">Submit → Approval</div>' +
+          '<div class="stat-card__value">' + avgApprovalFmt.value + '</div>' +
+          '<div class="stat-card__sub">' + avgApprovalFmt.unit + ' end-to-end</div>' +
+        '</div>' +
+        '<div class="stat-card">' +
+          '<div class="stat-card__icon stat-card__icon--success"><i aria-hidden="true" class="fas fa-circle-check"></i></div>' +
+          '<div class="stat-card__label">Total Approved</div>' +
+          '<div class="stat-card__value">' + this._formatCurrency(totalApprovedAmount) + '</div>' +
+          '<div class="stat-card__sub">' + totalApprovedCount + ' requests</div>' +
+        '</div>' +
+        '<div class="stat-card">' +
+          '<div class="stat-card__icon stat-card__icon--warning"><i aria-hidden="true" class="fas fa-chart-pie"></i></div>' +
+          '<div class="stat-card__label">Approval Rate</div>' +
+          '<div class="stat-card__value">' + approvalRate + '%</div>' +
+          '<div class="stat-card__sub">of decided requests</div>' +
+        '</div>' +
+        '<div class="stat-card">' +
+          '<div class="stat-card__icon stat-card__icon--info"><i aria-hidden="true" class="fas fa-route"></i></div>' +
+          '<div class="stat-card__label">Avg Advance Notice</div>' +
+          '<div class="stat-card__value">' + avgLeadTimeFmt.value + '</div>' +
+          '<div class="stat-card__sub">' + avgLeadTimeFmt.unit + ' before event</div>' +
+        '</div>';
+
+      container.innerHTML = html;
+    },
+
+    _renderCharts(stats) {
+      var container = document.getElementById('chartsRow');
+      if (!container) return;
+
+      // "Time per Stage" measures only how long each reviewer actively held
+      // the request (sum of consecutive Approval_Log gaps within the stage).
+      // The "Avg Approval Time" KPI in the strip above is end-to-end —
+      // submission to final approval, including needs-info pauses — so the
+      // two numbers are intentionally different. Captions here make that
+      // explicit instead of leaving admins to guess.
+      // Funding-source split moved into the pulse strip above (it's a
+      // glance metric, not an analytical chart) — chart row is now 2-up
+      // with Time per Stage left and Spend by BU right; BU still gets
+      // full width on a separate row for its many bars.
+      // Two charts side-by-side, one per column. Matches the reviewer
+      // dashboard's chart row.
+      // Pre-compute the header totals so they sit next to the chart titles
+      // instead of inside the body. Empty totals render as nothing (the
+      // builders handle their own empty states for the body).
+      var avgStage = stats.approvalTimeByStage || stats.avgReviewTime || {};
+      var stageTotal = (avgStage.sector || 0) + (avgStage.bu || 0) + (avgStage.oso || 0) + (avgStage.fas || 0);
+      var stageTotalLabel = stageTotal > 0
+        ? '<span class="admin-card__header-total">' + this._formatReviewDuration(stageTotal).full + ' <span class="admin-card__header-total-label">avg</span></span>'
+        : '';
+
+      var spendBUData = this._getSpendByBUData(stats);
+      var spendGrandTotal = 0;
+      if (spendBUData && spendBUData.length && !(spendBUData.length === 1 && spendBUData[0].label === 'No data')) {
+        spendBUData.forEach(function(d) { spendGrandTotal += d.value; });
+      }
+      var spendTotalLabel = spendGrandTotal > 0
+        ? '<span class="admin-card__header-total">' + this._formatCurrency(spendGrandTotal) + ' <span class="admin-card__header-total-label">total approved</span></span>'
+        : '';
+
+      var html =
+        '<div class="admin-card admin-card--chart">' +
+          '<div class="admin-card__header">' +
+            '<div>' +
+              '<h3 class="admin-card__title"><i aria-hidden="true" class="fas fa-clock"></i> Time per Stage</h3>' +
+              '<div class="admin-card__caption">Avg time each reviewer actively held the request</div>' +
+            '</div>' +
+            stageTotalLabel +
+          '</div>' +
+          '<div class="admin-card__body">' +
+            this._buildApprovalTimePipeline(stats) +
+          '</div>' +
+        '</div>' +
+        '<div class="admin-card admin-card--chart">' +
+          '<div class="admin-card__header">' +
+            '<div>' +
+              '<h3 class="admin-card__title"><i aria-hidden="true" class="fas fa-dollar-sign"></i> Spend by BU</h3>' +
+              '<div class="admin-card__caption">Approved obligations in selected period</div>' +
+            '</div>' +
+            spendTotalLabel +
+          '</div>' +
+          '<div class="admin-card__body">' +
+            this._buildSpendByBUChart(stats) +
+          '</div>' +
+        '</div>';
+
+      container.innerHTML = html;
+
+      // Render the funding split into the pulse strip's funding row so
+      // the period-filtered glance metrics live together.
+      this._renderFundingSplitInPulse(stats);
+    },
+
+    /**
+     * Render the funding-source split into the pulse strip (above the
+     * Live divider). Compact two-line layout: a slim stacked bar +
+     * inline legend with values, designed to add ~50px of fold not
+     * the ~180px the chart card was eating in the chart row.
+     */
+    _renderFundingSplitInPulse(stats) {
+      var container = document.getElementById('pulseFundingRow');
+      if (!container) return;
+
+      var fts = stats.fundingTypeSpend || {};
+      var clientPaid = fts.clientPaid || { total: 0, count: 0 };
+      var overhead = fts.overhead || { total: 0, count: 0 };
+      var total = (clientPaid.total || 0) + (overhead.total || 0);
+
+      if (total === 0) {
+        container.innerHTML = '<div class="funding-strip funding-strip--empty">No approved spend yet</div>';
+        return;
+      }
+
+      var clientPct = (clientPaid.total / total) * 100;
+      var overheadPct = 100 - clientPct;
+      var clientColor = '#286D3B';
+      var overheadColor = '#004f87';
+      var self = this;
+
+      var html = '<div class="funding-strip">';
+      // Top line: small label + formatted total
+      html += '<div class="funding-strip__head">' +
+        '<span class="funding-strip__label">Funding Source</span>' +
+        '<span class="funding-strip__total">' + self._formatCurrency(total) + ' approved</span>' +
+        '</div>';
+      // Compact stacked bar
+      html += '<div class="funding-strip__bar">';
+      if (clientPaid.total > 0) {
+        html += '<div class="funding-strip__seg" style="width:' + clientPct.toFixed(2) + '%; background:' + clientColor + ';" title="Client-Paid: ' + self._formatCurrency(clientPaid.total) + '"></div>';
+      }
+      if (overhead.total > 0) {
+        html += '<div class="funding-strip__seg" style="width:' + overheadPct.toFixed(2) + '%; background:' + overheadColor + ';" title="Overhead: ' + self._formatCurrency(overhead.total) + '"></div>';
+      }
+      html += '</div>';
+      // Inline legend with pct + dollars on each side
+      html += '<div class="funding-strip__legend">';
+      html += '<span class="funding-strip__legend-item">' +
+        '<span class="funding-strip__dot" style="background:' + clientColor + ';"></span>' +
+        '<span class="funding-strip__legend-name">Client-Paid</span>' +
+        '<span class="funding-strip__legend-pct">' + Math.round(clientPct) + '%</span>' +
+        '<span class="funding-strip__legend-value">' + self._formatCurrency(clientPaid.total) + '</span>' +
+        '</span>';
+      html += '<span class="funding-strip__legend-item">' +
+        '<span class="funding-strip__dot" style="background:' + overheadColor + ';"></span>' +
+        '<span class="funding-strip__legend-name">Overhead</span>' +
+        '<span class="funding-strip__legend-pct">' + Math.round(overheadPct) + '%</span>' +
+        '<span class="funding-strip__legend-value">' + self._formatCurrency(overhead.total) + '</span>' +
+        '</span>';
+      html += '</div>';
+      html += '</div>';
+
+      container.innerHTML = html;
+    },
+
+    _buildApprovalTimePipeline(stats) {
+      var self = this;
+      var byStage = stats.approvalTimeByStage || stats.avgReviewTime || {};
+      var stages = [
+        { key: 'sector', label: 'Sector', color: '#004f87' },
+        { key: 'bu', label: 'BU', color: '#1B7CAC' },
+        { key: 'oso', label: 'AAS FO', color: '#CF4817' },
+        { key: 'fas', label: 'FAS', color: '#286D3B' }
+      ];
+
+      var total = 0;
+      var stageData = [];
+      stages.forEach(function(s) {
+        var val = byStage[s.key] || 0;
+        total += val;
+        stageData.push({ label: s.label, value: val, color: s.color });
+      });
+
+      if (total === 0) {
+        return '<p style="font-size:0.8rem; color:var(--color-slate-400); text-align:center;">No approval data yet</p>';
+      }
+
+      // Total label is now rendered in the card header (see _renderCharts);
+      // this builder returns just the chart body.
+      var html = '<div class="pipeline">';
+      html += '<div class="pipeline__bar">';
+      stageData.forEach(function(s) {
+        var pct = (s.value / total) * 100;
+        if (pct < 1 && s.value > 0) pct = 1; // minimum visible width
+        html += '<div class="pipeline__segment" style="width:' + pct + '%; background:' + s.color + ';" title="' + s.label + ': ' + self._formatReviewDuration(s.value).full + '"></div>';
+      });
+      html += '</div>';
+
+      // Legend row below
+      html += '<div class="pipeline__legend">';
+      stageData.forEach(function(s) {
+        var pct = total > 0 ? ((s.value / total) * 100).toFixed(0) : 0;
+        html += '<div class="pipeline__legend-item">' +
+          '<span class="pipeline__dot" style="background:' + s.color + ';"></span>' +
+          '<span class="pipeline__legend-label">' + s.label + '</span>' +
+          '<span class="pipeline__legend-value">' + self._formatReviewDuration(s.value).short + '</span>' +
+          '<span class="pipeline__legend-pct">' + (s.value > 0 ? pct + '%' : '') + '</span>' +
+        '</div>';
+      });
+      html += '</div>';
+      html += '</div>';
+
+      return html;
+    },
+
+    _getSpendByBUData(stats) {
+      var self = this;
+      var spendByBU = stats.spendByBU || {};
+      var entries = Object.entries(spendByBU).filter(function(e) { return e[1].total > 0; });
+
+      if (entries.length === 0) {
+        return [{ label: 'No data', value: 0, display: '$0' }];
+      }
+
+      // Fixed display order: OSO, Army, AF/Navy/SF, Civilian, Defense
+      var buOrder = ['OSO', 'Army', 'Air Force', 'Navy', 'Space Force', 'Civilian', 'Defense'];
+      entries.sort(function(a, b) {
+        var aName = a[0].toLowerCase();
+        var bName = b[0].toLowerCase();
+        var aIdx = buOrder.length;
+        var bIdx = buOrder.length;
+        for (var i = 0; i < buOrder.length; i++) {
+          if (aName.indexOf(buOrder[i].toLowerCase()) >= 0 && aIdx === buOrder.length) aIdx = i;
+          if (bName.indexOf(buOrder[i].toLowerCase()) >= 0 && bIdx === buOrder.length) bIdx = i;
+        }
+        return aIdx - bIdx;
+      });
+
+      return entries.map(function(entry) {
+        return {
+          label: entry[0],
+          value: entry[1].total,
+          count: entry[1].count,
+          display: entry[1].total > 0 ? self._formatCurrency(entry[1].total) : '$0'
+        };
+      });
+    },
+
+    _buildBarChart(data) {
+      if (!data || data.length === 0) {
+        return '<p style="font-size:0.8rem; color:var(--color-slate-400); text-align:center;">No data available</p>';
+      }
+
+      var maxValue = Math.max.apply(null, data.map(function(d) { return d.value; }));
+      if (maxValue === 0) maxValue = 1;
+
+      var html = '<div class="bar-chart">';
+      data.forEach(function(item) {
+        var pct = (item.value / maxValue) * 100;
+        html += '<div class="bar-chart__row">' +
+          '<div class="bar-chart__label">' + item.label + '</div>' +
+          '<div class="bar-chart__track">' +
+            '<div class="bar-chart__fill" style="width:' + pct + '%"></div>' +
+          '</div>' +
+          '<div class="bar-chart__value">' + item.display + '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+      return html;
+    },
+
+    _buildSpendByBUChart(stats) {
+      var self = this;
+      var buData = this._getSpendByBUData(stats);
+      var sectorData = stats.spendBySector || {};
+
+      if (!buData || buData.length === 0 || (buData.length === 1 && buData[0].label === 'No data')) {
+        return '<p style="font-size:0.8rem; color:var(--color-slate-400); text-align:center;">No approved spend yet</p>';
+      }
+
+      // Grand total
+      var grandTotal = 0;
+      buData.forEach(function(d) { grandTotal += d.value; });
+
+      var maxValue = Math.max.apply(null, buData.map(function(d) { return d.value; }));
+      if (maxValue === 0) maxValue = 1;
+
+      // Total label is now rendered in the card header (see _renderCharts);
+      // this builder returns just the chart body.
+      var html = '<div class="bar-chart">';
+
+      buData.forEach(function(item) {
+        var pct = (item.value / maxValue) * 100;
+        var buSectors = sectorData[item.label];
+        var hasSectors = buSectors && Object.keys(buSectors).some(function(s) { return buSectors[s].total > 0; });
+
+        // BU row — clickable if it has sector data
+        if (hasSectors) {
+          html += '<div class="bar-chart__row bar-chart__row--clickable" role="button" tabindex="0" aria-label="Toggle ' + item.label + ' drilldown" onclick="TravelAdmin.Controller.toggleBUDrilldown(\'' + item.label.replace(/'/g, "\\'") + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click();}">';
+          html += '<div class="bar-chart__label"><i aria-hidden="true" class="fas fa-chevron-right bar-chart__chevron" data-bu-chevron="' + item.label + '"></i>' + item.label + '</div>';
+        } else {
+          html += '<div class="bar-chart__row">';
+          html += '<div class="bar-chart__label">' + item.label + '</div>';
+        }
+        html += '<div class="bar-chart__track">' +
+            '<div class="bar-chart__fill" style="width:' + pct + '%"></div>' +
+          '</div>' +
+          '<div class="bar-chart__value">' + item.display + ' <span class="bar-chart__count">(' + (item.count || 0) + ')</span></div>' +
+        '</div>';
+
+        // Sector drilldown rows (hidden by default)
+        if (hasSectors) {
+          var sectorEntries = Object.entries(buSectors).filter(function(e) { return e[1].total > 0; });
+          sectorEntries.sort(function(a, b) {
+            if (a[0] === 'FO') return -1;
+            if (b[0] === 'FO') return 1;
+            var aMatch = a[0].match(/(\D*)(\d+)$/);
+            var bMatch = b[0].match(/(\D*)(\d+)$/);
+            if (aMatch && bMatch && aMatch[1] === bMatch[1]) return parseInt(aMatch[2]) - parseInt(bMatch[2]);
+            return a[0].localeCompare(b[0]);
+          });
+
+          // Also show shared costs if any
+          var sectorSum = 0;
+          sectorEntries.forEach(function(e) { sectorSum += e[1].total; });
+          var sharedAmount = item.value - sectorSum;
+
+          var maxSectorVal = Math.max.apply(null, sectorEntries.map(function(e) { return e[1].total; }));
+          if (sharedAmount > maxSectorVal) maxSectorVal = sharedAmount;
+          if (maxSectorVal === 0) maxSectorVal = 1;
+
+          html += '<div class="bar-chart__sector-group hidden" data-bu-sectors="' + item.label + '">';
+          sectorEntries.forEach(function(se) {
+            var sPct = (se[1].total / maxSectorVal) * 100;
+            var sDisplay = self._formatCurrency(se[1].total);
+            html += '<div class="bar-chart__row bar-chart__row--sector">' +
+              '<div class="bar-chart__label">' + se[0] + '</div>' +
+              '<div class="bar-chart__track">' +
+                '<div class="bar-chart__fill bar-chart__fill--sector" style="width:' + sPct + '%"></div>' +
+              '</div>' +
+              '<div class="bar-chart__value">' + sDisplay + ' <span class="bar-chart__count">(' + se[1].count + ')</span></div>' +
+            '</div>';
+          });
+
+          if (sharedAmount > 0) {
+            var sharedPct = (sharedAmount / maxSectorVal) * 100;
+            html += '<div class="bar-chart__row bar-chart__row--sector">' +
+              '<div class="bar-chart__label">Shared</div>' +
+              '<div class="bar-chart__track">' +
+                '<div class="bar-chart__fill bar-chart__fill--shared" style="width:' + sharedPct + '%"></div>' +
+              '</div>' +
+              '<div class="bar-chart__value">' + self._formatCurrency(sharedAmount) + '</div>' +
+            '</div>';
+          }
+          html += '</div>';
+        }
+      });
+      html += '</div>';
+      return html;
+    },
+
+    toggleBUDrilldown(buName) {
+      var group = document.querySelector('[data-bu-sectors="' + buName + '"]');
+      var chevron = document.querySelector('[data-bu-chevron="' + buName + '"]');
+      if (!group) return;
+
+      var isHidden = group.classList.contains('hidden');
+      group.classList.toggle('hidden');
+
+      if (chevron) {
+        if (isHidden) {
+          chevron.classList.remove('fa-chevron-right');
+          chevron.classList.add('fa-chevron-down');
+        } else {
+          chevron.classList.remove('fa-chevron-down');
+          chevron.classList.add('fa-chevron-right');
+        }
+      }
+    },
+
+    _renderPerfTable(stats) {
+      var self = this;
+      var container = document.getElementById('perfTableContainer');
+      if (!container) return;
+
+      var reviewerPerf = stats.reviewerPerformance || [];
+
+      if (reviewerPerf.length === 0) {
+        container.innerHTML = '<div class="admin-empty" style="padding: var(--space-5);">' +
+          '<i aria-hidden="true" class="fas fa-chart-bar"></i><p>No reviewer performance data yet</p></div>';
+        return;
+      }
+
+      // Split into primary (BU/FO/OSO) and sector reviewers; sector goes
+      // in its own column to the right so it doesn't dominate the vertical
+      // space when there are many sector directors.
+      var mainReviewers = [];
+      var sectorReviewers = [];
+      reviewerPerf.forEach(function(r) {
+        if (r.role === 'Sector') sectorReviewers.push(r);
+        else mainReviewers.push(r);
+      });
+
+      function renderRow(r, compact) {
+        var avgDays = r.avgDays || r.avgReviewTime || 0;
+        var warnClass = avgDays >= 2 ? ' perf-row__metric--warn' : '';
+        var fmt = self._formatReviewDuration(avgDays);
+        var name = self._escapeHtml(r.name || r.reviewerName || 'Unknown');
+        // Prefer the actual scope (BU name, sector code, "Front Office")
+        // over the generic role bucket; fall back to role if scope absent.
+        var scope = self._escapeHtml(r.scope || r.role || 'Reviewer');
+        var pending = r.pendingCount || r.pending || 0;
+        var reviewed = r.reviewedCount || r.reviewed || 0;
+        var rowClass = compact ? 'perf-row perf-row--compact' : 'perf-row';
+        var fmtValue = self._escapeHtml(fmt.short || '—');
+        var nameAttr = self._escapeHtml(r.name || r.reviewerName || '');
+
+        // Pending metric is clickable when > 0 — navigates to the Requests
+        // table filtered by this reviewer's name. The Requests search
+        // matches Current_Reviewer_Name (among other fields), so name is
+        // the right key — emails aren't shown in the table and don't
+        // match the stored Current_Reviewer_Name strings.
+        var pendingClasses = 'perf-row__metric perf-row__metric--pending' +
+          (pending > 0 ? ' perf-row__metric--clickable' : ' perf-row__metric--zero');
+        var pendingAttrs = pending > 0
+          ? ' data-reviewer-name="' + nameAttr + '" title="Click to view this reviewer\'s pending requests"'
+          : '';
+
+        return '<div class="' + rowClass + '">' +
+          '<div class="perf-row__main">' +
+            '<div class="perf-row__name">' + name + '</div>' +
+            '<div class="perf-row__scope">' + scope + '</div>' +
+          '</div>' +
+          '<div class="perf-row__metrics">' +
+            '<div class="' + pendingClasses + '"' + pendingAttrs + '>' +
+              '<div class="perf-row__metric-value">' + pending + '</div>' +
+              '<div class="perf-row__metric-label">Pending</div>' +
+            '</div>' +
+            '<div class="perf-row__metric perf-row__metric--reviewed' + (reviewed > 0 ? '' : ' perf-row__metric--zero') + '">' +
+              '<div class="perf-row__metric-value">' + reviewed + '</div>' +
+              '<div class="perf-row__metric-label">Reviewed</div>' +
+            '</div>' +
+            '<div class="perf-row__metric perf-row__metric--time' + warnClass + (reviewed > 0 ? '' : ' perf-row__metric--zero') + '" title="Avg time this reviewer actively held requests in the selected period — a subset of the Submit→Approval KPI above (which includes pauses, weekends, needs-info bounces).">' +
+              '<div class="perf-row__metric-value">' + fmtValue + '</div>' +
+              '<div class="perf-row__metric-label">Avg time</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }
+
+      var html = '<div class="perf-list">';
+
+      // Primary column — always visible
+      html += '<div class="perf-list__col perf-list__col--primary">' +
+        '<div class="perf-list__heading">Primary Reviewers' +
+          '<span class="perf-list__count">(' + mainReviewers.length + ')</span>' +
+        '</div>' +
+        '<div class="perf-list__rows">';
+      if (mainReviewers.length === 0) {
+        html += '<div class="perf-list__empty">No primary reviewer activity yet</div>';
+      } else {
+        mainReviewers.forEach(function(r) { html += renderRow(r, false); });
+      }
+      html += '</div></div>';
+
+      // Sector column — sits to the right; only renders if there's data
+      if (sectorReviewers.length > 0) {
+        html += '<div class="perf-list__col perf-list__col--sector">' +
+          '<div class="perf-list__heading">Sector Directors' +
+            '<span class="perf-list__count">(' + sectorReviewers.length + ')</span>' +
+          '</div>' +
+          '<div class="perf-list__rows">';
+        sectorReviewers.forEach(function(r) { html += renderRow(r, true); });
+        html += '</div></div>';
+      }
+
+      html += '</div>';
+      container.innerHTML = html;
+
+      // Wire up "click pending → filter Requests by this reviewer".
+      // Reuses the existing searchTerm filter, which matches against
+      // Current_Reviewer_Name (among other fields) — emails aren't
+      // searched, so name is the right key.
+      container.querySelectorAll('.perf-row__metric--clickable').forEach(function(el) {
+        el.addEventListener('click', function() {
+          var name = el.dataset.reviewerName;
+          if (!name) return;
+          self._filters.searchTerm = name;
+          self._filters.status = 'pending';
+          self._switchView('requests');
+          document.querySelectorAll('.admin-nav__item').forEach(function(item) {
+            item.classList.remove('admin-nav__item--active');
+            if (item.dataset.view === 'requests') item.classList.add('admin-nav__item--active');
+          });
+          var searchEl = document.getElementById('filterSearch');
+          if (searchEl) searchEl.value = name;
+        });
+      });
+    },
+
+    refreshDashboard() {
+      this._dashboardLoaded = false;
+      this._dashboardStats = null;
+      this._actionCenterData = null;
+      this._metricsData = null;
+      this._loadDashboard();
+    },
+
+    // =========================================================================
+    // REQUESTS TABLE (Phase 4)
+    // =========================================================================
+
+    _renderFilterPills() {
+      var self = this;
+      var container = document.getElementById('statusFilterPills');
+      if (!container) return;
+
+      // Pills grouped: quick filters → in-flight stages → decided
+      // outcomes. A subtle divider between groups makes "what's still
+      // moving" vs "what's settled" easier to parse at a glance.
+      var pillGroups = [
+        { items: [
+          { key: 'all', label: 'All' },
+          { key: 'pending', label: 'Pending' }
+        ]},
+        { items: [
+          { key: 'PENDING_SECTOR', label: 'Sector' },
+          { key: 'PENDING_BU', label: 'BU' },
+          { key: 'PENDING_OSO', label: 'AAS FO' },
+          { key: 'PENDING_FAS', label: 'FAS' }
+        ]},
+        { items: [
+          { key: 'APPROVED_GOGOV', label: 'Approved' },
+          { key: 'DENIED', label: 'Denied' },
+          { key: 'CANCELLED', label: 'Cancelled' }
+        ]}
+      ];
+
+      var html = '';
+      pillGroups.forEach(function(group, gi) {
+        if (gi > 0) html += '<span class="filter-pills__divider" aria-hidden="true"></span>';
+        group.items.forEach(function(pill) {
+          var isActive = self._filters.status === pill.key;
+          html += '<button class="filter-pill' + (isActive ? ' filter-pill--active' : '') + '" data-status="' + pill.key + '">' +
+            pill.label +
+          '</button>';
+        });
+      });
+
+      // International toggle (independent of status filters; separate
+      // divider so it reads as a different control type).
+      html += '<span class="filter-pills__divider" aria-hidden="true"></span>';
+      html += '<button class="filter-pill filter-pill--toggle' + (self._filters.international ? ' filter-pill--active' : '') + '" data-filter="international">' +
+        '<i aria-hidden="true" class="fas fa-globe" style="margin-right:3px"></i>International' +
+      '</button>';
+
+      container.innerHTML = html;
+
+      // Status pill click handlers
+      container.querySelectorAll('.filter-pill[data-status]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          container.querySelectorAll('.filter-pill[data-status]').forEach(function(b) { b.classList.remove('filter-pill--active'); });
+          btn.classList.add('filter-pill--active');
+          self._filters.status = btn.dataset.status;
+          self._applyFiltersAndRender();
+        });
+      });
+
+      // International toggle click handler (independent)
+      var intlBtn = container.querySelector('.filter-pill[data-filter="international"]');
+      if (intlBtn) {
+        intlBtn.addEventListener('click', function() {
+          self._filters.international = !self._filters.international;
+          intlBtn.classList.toggle('filter-pill--active', self._filters.international);
+          self._applyFiltersAndRender();
+        });
+      }
+    },
+
+    _setupFilters() {
+      var self = this;
+
+      // BU filter — wraps in .filter-input-wrap so the clear-X reveals
+      // when a BU is selected. has-value class drives the X visibility.
+      var buEl = document.getElementById('filterBU');
+      var buWrap = document.getElementById('filterBUWrap');
+      var buClear = document.getElementById('filterBUClear');
+      var setBUHasValue = function() {
+        if (!buWrap) return;
+        if (buEl && buEl.value) buWrap.classList.add('has-value');
+        else buWrap.classList.remove('has-value');
+      };
+      if (buEl) {
+        buEl.addEventListener('change', function() {
+          self._filters.buCode = buEl.value;
+          setBUHasValue();
+          self._applyFiltersAndRender();
+        });
+      }
+      if (buClear && buEl) {
+        buClear.addEventListener('click', function() {
+          buEl.value = '';
+          self._filters.buCode = '';
+          setBUHasValue();
+          self._applyFiltersAndRender();
+        });
+      }
+
+      // Date range (Flatpickr) — same wrap pattern with a clear-X.
+      var dateRangeEl = document.getElementById('filterDateRange');
+      var dateWrap = document.getElementById('filterDateRangeWrap');
+      var dateClear = document.getElementById('filterDateRangeClear');
+      var setDateHasValue = function() {
+        if (!dateWrap) return;
+        if (dateRangeEl && dateRangeEl.value) dateWrap.classList.add('has-value');
+        else dateWrap.classList.remove('has-value');
+      };
+      if (dateRangeEl && typeof flatpickr !== 'undefined') {
+        var datePicker = flatpickr(dateRangeEl, {
+          mode: 'range',
+          dateFormat: 'Y-m-d',
+          onChange: function(selectedDates) {
+            if (selectedDates.length === 2) {
+              self._filters.startDate = selectedDates[0].toISOString().split('T')[0];
+              self._filters.endDate = selectedDates[1].toISOString().split('T')[0];
+            } else {
+              self._filters.startDate = '';
+              self._filters.endDate = '';
+            }
+            setDateHasValue();
+            self._applyFiltersAndRender();
+          }
+        });
+        self._dateRangePicker = datePicker;
+      }
+      if (dateClear && dateRangeEl) {
+        dateClear.addEventListener('click', function() {
+          if (self._dateRangePicker) self._dateRangePicker.clear();
+          dateRangeEl.value = '';
+          self._filters.startDate = '';
+          self._filters.endDate = '';
+          setDateHasValue();
+          self._applyFiltersAndRender();
+        });
+      }
+
+      // Search
+      var searchEl = document.getElementById('filterSearch');
+      if (searchEl) {
+        var searchTimeout;
+        searchEl.addEventListener('input', function() {
+          clearTimeout(searchTimeout);
+          searchTimeout = setTimeout(function() {
+            self._filters.searchTerm = searchEl.value;
+            self._applyFiltersAndRender();
+          }, 300);
+        });
+      }
+    },
+
+    _setupSorting() {
+      var self = this;
+      var headers = document.querySelectorAll('.admin-table th.sortable');
+
+      headers.forEach(function(th) {
+        th.addEventListener('click', function() {
+          var sortBy = th.dataset.sort;
+          if (!sortBy) return;
+
+          if (self._sort.sortBy === sortBy) {
+            self._sort.sortDir = self._sort.sortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            self._sort.sortBy = sortBy;
+            self._sort.sortDir = 'desc';
+          }
+          self._applyFiltersAndRender();
+        });
+      });
+    },
+
+    _populateBUFilter() {
+      var buEl = document.getElementById('filterBU');
+      if (!buEl) return;
+
+      // Custom display order admins expect — Commissioners office first,
+      // then OSO/AAS FO, then military and civilian groupings. Anything
+      // not in this list falls to the bottom alphabetically.
+      var preferredOrder = [
+        'Commissioners office',
+        'OSO',
+        'Army',
+        'Air Force',
+        'Navy',
+        'Space Force',
+        'Civilian',
+        'Defense'
+      ];
+      var orderIndex = function(name) {
+        var lower = String(name || '').toLowerCase();
+        for (var i = 0; i < preferredOrder.length; i++) {
+          if (lower.indexOf(preferredOrder[i].toLowerCase()) === 0) return i;
+        }
+        return preferredOrder.length;
+      };
+      var sorted = (this._buCodes || []).slice().sort(function(a, b) {
+        var ai = orderIndex(a);
+        var bi = orderIndex(b);
+        if (ai !== bi) return ai - bi;
+        return String(a).localeCompare(String(b));
+      });
+
+      var html = '<option value="">All BUs</option>';
+      sorted.forEach(function(bu) {
+        html += '<option value="' + bu + '">' + bu + '</option>';
+      });
+      buEl.innerHTML = html;
+    },
+
+    /**
+     * Load full request dataset from server (once).
+     * Subsequent filter/sort/paginate operations are client-side via _applyFiltersAndRender().
+     * Pass forceRefresh=true to re-fetch from server.
+     */
+    async _loadRequests(forceRefresh) {
+      var loadingEl = document.getElementById('requestsLoading');
+      var tableContainerEl = document.getElementById('requestsTableContainer');
+
+      // If data already loaded and not forcing refresh, just re-filter
+      if (this._allRequests && !forceRefresh) {
+        this._applyFiltersAndRender();
+        return;
+      }
+
+      if (loadingEl) loadingEl.classList.remove('hidden');
+      if (tableContainerEl) tableContainerEl.classList.add('hidden');
+
+      // Clear bulk selection on fresh load
+      if (this._bulkSelectedIds) this._bulkSelectedIds.clear();
+      this._updateBulkActionBar();
+
+      // Render filter pills (in case status was changed externally)
+      this._renderFilterPills();
+
+      try {
+        var result = await this._serverCall('getAllTravelRequests');
+
+        if (!result || !result.success) {
+          this._showToast('Error', (result && result.error) || 'Failed to load requests', 'error');
+          if (loadingEl) loadingEl.classList.add('hidden');
+          return;
+        }
+
+        var rdata = result.data || {};
+        // Store full dataset
+        this._allRequests = rdata.requests || [];
+
+        if (rdata.distinctBUCodes && rdata.distinctBUCodes.length > 0) {
+          this._buCodes = rdata.distinctBUCodes;
+          this._populateBUFilter();
+        }
+
+        this._requestsLoaded = true;
+        this._applyFiltersAndRender();
+
+      } catch (error) {
+        console.error('Error loading requests:', error);
+        this._showToast('Error', error.message || 'Failed to load requests', 'error');
+        if (loadingEl) loadingEl.classList.add('hidden');
+      }
+    },
+
+    /**
+     * Client-side filter + sort from _allRequests. Instant — no server call, no pagination.
+     */
+    _applyFiltersAndRender() {
+      var self = this;
+      var filtered = (this._allRequests || []).filter(function(r) {
+        // Status filter
+        if (self._filters.status && self._filters.status !== 'all') {
+          if (self._filters.status === 'pending') {
+            if (r.status.indexOf('PENDING_') !== 0 && r.status.indexOf('NEEDS_INFO_') !== 0) return false;
+          } else if (r.status !== self._filters.status) {
+            return false;
+          }
+        }
+
+        // International toggle
+        if (self._filters.international && !r.isInternational) return false;
+
+        // BU filter
+        if (self._filters.buCode && r.buCode !== self._filters.buCode) return false;
+
+        // Date range
+        if (self._filters.startDate) {
+          var startDate = new Date(self._filters.startDate);
+          if (new Date(r.submittedAt) < startDate) return false;
+        }
+        if (self._filters.endDate) {
+          var endDate = new Date(self._filters.endDate);
+          endDate.setHours(23, 59, 59, 999);
+          if (new Date(r.submittedAt) > endDate) return false;
+        }
+
+        // Search
+        if (self._filters.searchTerm) {
+          var q = self._filters.searchTerm.toLowerCase();
+          // Search across the fields users actually type into the box —
+          // ID, trip name, submitter (name + email), reviewer name.
+          var fields = [r.requestId, r.tripName, r.submitterName, r.submitterEmail, r.currentReviewerName].join(' ').toLowerCase();
+          if (fields.indexOf(q) === -1) return false;
+        }
+
+        return true;
+      });
+
+      // Sort
+      var sortBy = this._sort.sortBy || 'submittedAt';
+      var sortDir = this._sort.sortDir || 'desc';
+      var dateFields = { submittedAt: 1, updatedAt: 1, eventStartDate: 1 };
+      var numFields = { grandTotal: 1, travelerCount: 1 };
+
+      filtered.sort(function(a, b) {
+        var aVal = a[sortBy], bVal = b[sortBy];
+        if (dateFields[sortBy]) {
+          aVal = aVal ? new Date(aVal).getTime() : 0;
+          bVal = bVal ? new Date(bVal).getTime() : 0;
+        } else if (numFields[sortBy]) {
+          aVal = parseFloat(aVal) || 0;
+          bVal = parseFloat(bVal) || 0;
+        }
+        if (sortDir === 'desc') return bVal > aVal ? 1 : bVal < aVal ? -1 : 0;
+        return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+      });
+
+      this._requests = filtered;
+      this._renderRequestsTable(filtered);
+      this._updateRequestsCount(filtered.length, (this._allRequests || []).length);
+
+      var loadingEl = document.getElementById('requestsLoading');
+      var tableContainerEl = document.getElementById('requestsTableContainer');
+      if (loadingEl) loadingEl.classList.add('hidden');
+      if (tableContainerEl) tableContainerEl.classList.remove('hidden');
+    },
+
+    /**
+     * Show "Showing X of Y" near the filters. When the filter set is
+     * the default (no narrowing), shows just "Y requests" since the
+     * "X of Y" feels noisy when X === Y.
+     */
+    _updateRequestsCount(shown, total) {
+      var el = document.getElementById('requestsRowCount');
+      if (!el) return;
+      if (!total) {
+        el.textContent = '';
+        return;
+      }
+      var fmt = function(n) { return Number(n).toLocaleString('en-US'); };
+      el.textContent = (shown === total)
+        ? fmt(total) + (total === 1 ? ' request' : ' requests')
+        : 'Showing ' + fmt(shown) + ' of ' + fmt(total);
+    },
+
+    /**
+     * Patch a single request in the local dataset after a server action (override, reassign).
+     * Avoids full server reload.
+     */
+    _patchLocalRequest(requestId, updates) {
+      if (!this._allRequests) return;
+      for (var i = 0; i < this._allRequests.length; i++) {
+        if (this._allRequests[i].requestId === requestId) {
+          for (var key in updates) {
+            if (updates.hasOwnProperty(key)) {
+              this._allRequests[i][key] = updates[key];
+            }
+          }
+          break;
+        }
+      }
+      this._applyFiltersAndRender();
+    },
+
+    /**
+     * Remove request(s) from the local dataset after deletion.
+     */
+    _removeLocalRequests(requestIds) {
+      if (!this._allRequests) return;
+      var idSet = {};
+      for (var i = 0; i < requestIds.length; i++) idSet[requestIds[i]] = true;
+      this._allRequests = this._allRequests.filter(function(r) { return !idSet[r.requestId]; });
+      this._applyFiltersAndRender();
+    },
+
+    _renderRequestsTable(requests) {
+      var self = this;
+      var tbody = document.getElementById('requestsTableBody');
+      if (!tbody) return;
+
+      // Update sort indicators
+      document.querySelectorAll('.admin-table th.sortable').forEach(function(th) {
+        th.classList.remove('sorted-asc', 'sorted-desc');
+        if (th.dataset.sort === self._sort.sortBy) {
+          th.classList.add('sorted-' + self._sort.sortDir);
+        }
+      });
+
+      if (requests.length === 0) {
+        // Fuller empty state — icon + title + helper instead of bare text.
+        tbody.innerHTML = '<tr class="admin-table__empty-row"><td colspan="11" class="admin-table__empty">' +
+          '<i aria-hidden="true" class="fas fa-filter-circle-xmark"></i>' +
+          '<div class="admin-table__empty-title">No requests match your filters</div>' +
+          '<div class="admin-table__empty-help">Try clearing the date range or selecting a different status</div>' +
+        '</td></tr>';
+        this._updateRequestsCount(0, (this._allRequests || []).length);
+        return;
+      }
+
+      var rows = requests.map(function(req) {
+        var statusDisplay = self._getStatusDisplay(req.status);
+        var submittedDate = self._formatDate(req.submittedAt);
+        var days = self._getDaysAtStage(req.updatedAt);
+        var daysClass = self._getDaysClass(days);
+        var isChecked = self._bulkSelectedIds && self._bulkSelectedIds.has(req.requestId);
+        var isTerminal = self._isTerminalStatus(req.status);
+
+        // Terminal rows (Approved / Completed / Denied / Cancelled) suppress
+        // the active-stage fields — Days at Stage and Reviewer don't apply
+        // once the request has been finalized. Em-dash placeholders keep
+        // column alignment without showing stale data.
+        var daysCellHtml = isTerminal
+          ? '<td class="days-cell days-cell--terminal" aria-label="Not applicable for finalized requests">—</td>'
+          : '<td class="days-cell days-cell--' + daysClass + '">' + days + 'd</td>';
+        var reviewerCellHtml = isTerminal
+          ? '<td class="reviewer-cell reviewer-cell--terminal">—</td>'
+          : '<td class="reviewer-cell">' + self._escapeHtml(req.currentReviewerName || '') + '</td>';
+
+        return '<tr data-request-id="' + self._escapeHtml(req.requestId) + '"' + (isTerminal ? ' class="is-terminal"' : '') + '>' +
+          '<td class="td-checkbox"><input type="checkbox" class="row-checkbox" data-rid="' + self._escapeHtml(req.requestId) + '"' + (isChecked ? ' checked' : '') + '></td>' +
+          '<td><code style="font-size:0.7rem;">' + self._escapeHtml(req.requestId) + '</code></td>' +
+          '<td title="' + self._escapeHtml(req.tripName || 'Untitled') + '"><div class="trip-name-clamp">' + self._escapeHtml(req.tripName || 'Untitled') + '</div></td>' +
+          '<td class="submitter-cell">' +
+            '<div class="submitter-cell__name">' + self._escapeHtml(req.submitterName || 'Unknown') + '</div>' +
+            '<div class="submitter-cell__email">' + self._escapeHtml(req.submitterEmail || '') + '</div>' +
+          '</td>' +
+          '<td><span class="status-badge status-badge--' + statusDisplay.class + '">' + statusDisplay.label + '</span></td>' +
+          '<td>' + self._escapeHtml(req.buCode || '') + '</td>' +
+          '<td class="amount-cell">' + self._formatCurrency(req.grandTotal) + '</td>' +
+          '<td>' + submittedDate + '</td>' +
+          daysCellHtml +
+          reviewerCellHtml +
+          '<td class="actions-cell">' +
+            '<button type="button" class="action-kebab" title="Actions" aria-haspopup="true" aria-expanded="false" ' +
+              'data-rid="' + self._escapeHtml(req.requestId) + '" ' +
+              'data-status="' + self._escapeHtml(req.status) + '" ' +
+              'data-reviewer="' + self._escapeHtml(req.currentReviewerEmail || '') + '" ' +
+              'data-terminal="' + (isTerminal ? '1' : '0') + '">' +
+              '<i aria-hidden="true" class="fas fa-ellipsis-vertical"></i>' +
+            '</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('');
+
+      tbody.innerHTML = rows;
+
+      // Attach row click (open slide-in) and action button handlers
+      tbody.querySelectorAll('tr[data-request-id]').forEach(function(row) {
+        row.addEventListener('click', function(e) {
+          // Don't open slide-in if clicking action buttons
+          // Don't open slide-in if user clicked the kebab or its menu
+          if (e.target.closest('.action-kebab') || e.target.closest('.action-menu')) return;
+          var reqId = row.dataset.requestId;
+          if (reqId) self._openSlideIn(reqId);
+        });
+      });
+
+      // Kebab → action menu popover. One handler per row trigger;
+      // menu DOM is created on demand and torn down on close.
+      tbody.querySelectorAll('.action-kebab').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          self._openActionMenu(btn);
+        });
+      });
+
+      // Row checkbox handlers — also toggle the row's .is-selected class
+      // so the row gets visual feedback (brand-tinted bg + left border)
+      // not just the checkbox tick.
+      tbody.querySelectorAll('.row-checkbox').forEach(function(cb) {
+        // Apply initial state to the parent row
+        var initialRow = cb.closest('tr');
+        if (initialRow && cb.checked) initialRow.classList.add('is-selected');
+
+        cb.addEventListener('click', function(e) {
+          e.stopPropagation();
+        });
+        cb.addEventListener('change', function() {
+          var rid = cb.dataset.rid;
+          var row = cb.closest('tr');
+          if (cb.checked) {
+            self._bulkSelectedIds.add(rid);
+            if (row) row.classList.add('is-selected');
+          } else {
+            self._bulkSelectedIds.delete(rid);
+            if (row) row.classList.remove('is-selected');
+          }
+          self._updateBulkActionBar();
+        });
+      });
+    },
+
+    // =========================================================================
+    // SLIDE-IN PANEL (Phase 4)
+    // =========================================================================
+
+    _setupSlideInPanel() {
+      var self = this;
+
+      var backdrop = document.getElementById('slideinBackdrop');
+      var closeBtn = document.getElementById('slideinClose');
+      var openReviewBtn = document.getElementById('slideinOpenReview');
+      var overrideBtn = document.getElementById('slideinOverride');
+      var reassignBtn = document.getElementById('slideinReassign');
+
+      if (backdrop) {
+        backdrop.addEventListener('click', function() { self._closeSlideIn(); });
+      }
+      if (closeBtn) {
+        closeBtn.addEventListener('click', function() { self._closeSlideIn(); });
+      }
+      if (openReviewBtn) {
+        openReviewBtn.addEventListener('click', function() {
+          if (self._slideinRequestId) {
+            window.TravelAdmin.navigateTo('review', { requestId: self._slideinRequestId });
+          }
+        });
+      }
+      if (overrideBtn) {
+        overrideBtn.addEventListener('click', function() {
+          var rid = self._slideinRequestId;
+          if (!rid) return;
+          var status = (self._slideinData && self._slideinData.status) || '';
+          self._closeSlideIn();
+          self.showOverrideModal(rid, status);
+        });
+      }
+      if (reassignBtn) {
+        reassignBtn.addEventListener('click', function() {
+          var rid = self._slideinRequestId;
+          if (!rid) return;
+          var current = (self._slideinData && self._slideinData.currentReviewerEmail) || '';
+          self._closeSlideIn();
+          self.showReassignModal(rid, current);
+        });
+      }
+
+      var deleteBtn = document.getElementById('slideinDelete');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', function() {
+          if (self._slideinRequestId) {
+            var rid = self._slideinRequestId;
+            self._closeSlideIn();
+            self.promptDeleteRequests([rid]);
+          }
+        });
+      }
+    },
+
+    async _openSlideIn(requestId) {
+      this._slideinRequestId = requestId;
+      this._slideinData = null;
+
+      var backdrop = document.getElementById('slideinBackdrop');
+      var panel = document.getElementById('slideinPanel');
+      var loadingEl = document.getElementById('slideinLoading');
+      var contentEl = document.getElementById('slideinContent');
+
+      if (backdrop) backdrop.classList.add('open');
+      if (panel) panel.classList.add('open');
+      if (loadingEl) loadingEl.classList.remove('hidden');
+      if (contentEl) contentEl.classList.add('hidden');
+
+      // Clear header
+      var ridEl = document.getElementById('slideinRequestId');
+      var tripEl = document.getElementById('slideinTripName');
+      var subEl = document.getElementById('slideinSubmitter');
+      if (ridEl) ridEl.textContent = requestId;
+      if (tripEl) tripEl.textContent = 'Loading...';
+      if (subEl) subEl.textContent = '';
+
+      try {
+        var result = await this._serverCall('getRequestSummary', requestId);
+
+        if (!result || !result.success) {
+          if (loadingEl) loadingEl.classList.add('hidden');
+          if (contentEl) {
+            contentEl.classList.remove('hidden');
+            contentEl.innerHTML = '<div class="admin-empty" style="padding:var(--space-5);">' +
+              '<i aria-hidden="true" class="fas fa-exclamation-triangle"></i>' +
+              '<p>' + this._escapeHtml((result && result.error) || 'Failed to load request details') + '</p></div>';
+          }
+          return;
+        }
+
+        var rdata = result.data || {};
+        var data = rdata.request || rdata;
+        data.approvalLog = rdata.approvalLog || data.approvalLog || [];
+        data.allClientPaid = rdata.allClientPaid === true;
+        this._slideinData = data;
+        this._renderSlideIn(data);
+
+        if (loadingEl) loadingEl.classList.add('hidden');
+        if (contentEl) contentEl.classList.remove('hidden');
+
+      } catch (error) {
+        console.error('Error loading request summary:', error);
+        if (loadingEl) loadingEl.classList.add('hidden');
+        if (contentEl) {
+          contentEl.classList.remove('hidden');
+          contentEl.innerHTML = '<div class="admin-empty" style="padding:var(--space-5);">' +
+            '<i aria-hidden="true" class="fas fa-exclamation-triangle"></i>' +
+            '<p>' + this._escapeHtml(error.message || 'Failed to load request') + '</p></div>';
+        }
+      }
+    },
+
+    _closeSlideIn() {
+      var backdrop = document.getElementById('slideinBackdrop');
+      var panel = document.getElementById('slideinPanel');
+      if (backdrop) backdrop.classList.remove('open');
+      if (panel) panel.classList.remove('open');
+      this._slideinRequestId = null;
+      this._slideinData = null;
+    },
+
+    _renderSlideIn(data) {
+      var self = this;
+
+      // Header
+      var ridEl = document.getElementById('slideinRequestId');
+      var tripEl = document.getElementById('slideinTripName');
+      var subEl = document.getElementById('slideinSubmitter');
+
+      if (ridEl) ridEl.textContent = data.requestId || '';
+      if (tripEl) tripEl.textContent = data.tripName || 'Untitled';
+      if (subEl) subEl.textContent = data.submitterName || '';
+
+      var contentEl = document.getElementById('slideinContent');
+      if (!contentEl) return;
+
+      var statusDisplay = this._getStatusDisplay(data.status);
+      var isTerminal = this._isTerminalStatus(data.status);
+      var days = this._getDaysAtStage(data.updatedAt);
+      var daysClass = this._getDaysClass(days);
+      var travelChip = this._buildTravelChip(data.eventStartDate, data.eventEndDate);
+
+      var html = '';
+
+      // Status row
+      html += '<div class="slidein__status-row">' +
+        '<span class="status-badge status-badge--' + statusDisplay.class + '">' + statusDisplay.label + '</span>';
+      // Days-at-stage is meaningless for terminal-state requests.
+      if (!isTerminal) {
+        html += '<span class="slidein__days-indicator days-cell--' + daysClass + '">' +
+          '<i aria-hidden="true" class="fas fa-clock"></i> ' + days + ' days at stage' +
+        '</span>';
+      }
+      if (travelChip) html += travelChip;
+      html += '</div>';
+
+      // Details grid
+      var locationTypeLabels = {
+        'client-site': 'Client Site',
+        'conference': 'Conference',
+        'contractor-site': 'Contractor Site',
+        'teb': 'TEB',
+        'other': 'Other'
+      };
+      var locationDisplay = locationTypeLabels[data.locationType] || data.locationType || data.locationDisplay || '';
+      var travelDates = '';
+      if (data.eventStartDate) {
+        travelDates = this._formatDate(data.eventStartDate);
+        if (data.eventEndDate) {
+          travelDates += ' - ' + this._formatDate(data.eventEndDate);
+        }
+      }
+
+      html += '<div class="slidein__details">' +
+        '<div class="slidein__detail">' +
+          '<div class="slidein__detail-label">Destination</div>' +
+          '<div class="slidein__detail-value">' + this._escapeHtml(locationDisplay) + '</div>' +
+        '</div>' +
+        '<div class="slidein__detail">' +
+          '<div class="slidein__detail-label">Travel Dates</div>' +
+          '<div class="slidein__detail-value">' + (travelDates || 'Not set') + '</div>' +
+        '</div>' +
+        '<div class="slidein__detail">' +
+          '<div class="slidein__detail-label">Amount</div>' +
+          '<div class="slidein__detail-value">' + this._formatCurrency(data.grandTotal) + '</div>' +
+        '</div>' +
+        '<div class="slidein__detail">' +
+          '<div class="slidein__detail-label">BU</div>' +
+          '<div class="slidein__detail-value">' + this._escapeHtml(data.buCode || data.submitterBU || '') + '</div>' +
+        '</div>' +
+        '<div class="slidein__detail">' +
+          '<div class="slidein__detail-label">Funding Source</div>' +
+          '<div class="slidein__detail-value">' + this._escapeHtml(data.fundingSource || 'Overhead') + '</div>' +
+        '</div>' +
+        '<div class="slidein__detail">' +
+          '<div class="slidein__detail-label">Travelers</div>' +
+          '<div class="slidein__detail-value">' + (data.travelerCount || 1) + '</div>' +
+        '</div>' +
+      '</div>';
+
+      // Denied/Cancelled callout — derive from approval log
+      if (data.status === 'DENIED' || data.status === 'CANCELLED' || data.status === 'SUBMITTER_CANCELLED') {
+        var log = data.approvalLog || [];
+        var lastEntry = log.length > 0 ? log[log.length - 1] : null;
+        var actionBy = lastEntry ? (lastEntry.actorName || lastEntry.actorEmail || 'Unknown') : 'Unknown';
+        var actionAt = lastEntry ? lastEntry.timestamp : '';
+        var actionReason = lastEntry ? (lastEntry.notes || lastEntry.comments || '') : '';
+
+        if (data.status === 'DENIED') {
+          html += '<div class="slidein__callout slidein__callout--denied">' +
+            '<div class="slidein__callout-title"><i aria-hidden="true" class="fas fa-ban"></i> Denied</div>' +
+            '<div class="slidein__callout-text">' +
+              'By: ' + this._escapeHtml(actionBy) +
+              (actionAt ? ' on ' + this._formatDate(actionAt) : '') +
+            '</div>' +
+            (actionReason ?
+              '<div class="slidein__callout-text" style="margin-top:4px;">' +
+                this._escapeHtml(actionReason) +
+              '</div>' : '') +
+          '</div>';
+        } else {
+          html += '<div class="slidein__callout slidein__callout--cancelled">' +
+            '<div class="slidein__callout-title"><i aria-hidden="true" class="fas fa-times-circle"></i> Cancelled</div>' +
+            '<div class="slidein__callout-text">' +
+              'By: ' + this._escapeHtml(actionBy) +
+              (actionAt ? ' on ' + this._formatDate(actionAt) : '') +
+            '</div>' +
+            (actionReason ?
+              '<div class="slidein__callout-text" style="margin-top:4px;">' +
+                this._escapeHtml(actionReason) +
+              '</div>' : '') +
+          '</div>';
+        }
+      }
+
+      // Approval Timeline
+      html += this._renderApprovalTimeline(data);
+
+      contentEl.innerHTML = html;
+    },
+
+    _renderApprovalTimeline(data) {
+      var self = this;
+      var approvalLog = data.approvalLog || [];
+      var currentStatus = data.status || '';
+
+      // Define approval stages — hide FAS for client-paid requests
+      var isClientPaid = data.allClientPaid === true;
+      var stages = [
+        { status: 'PENDING_SECTOR', label: 'Sector Review' },
+        { status: 'PENDING_BU', label: 'BU Review' },
+        { status: 'PENDING_OSO', label: 'AAS FO Review' }
+      ];
+      if (!isClientPaid) {
+        stages.push({ status: 'PENDING_FAS', label: 'FAS Review' });
+      }
+
+      // Order of statuses for timeline
+      var statusOrder = isClientPaid
+        ? ['PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'APPROVED_GOGOV', 'COMPLETED']
+        : ['PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS', 'APPROVED_GOGOV', 'COMPLETED'];
+      var currentIdx = statusOrder.indexOf(currentStatus);
+
+      var html = '<div class="slidein__timeline-title">Approval Timeline</div>';
+      html += '<div class="approval-timeline">';
+
+      // Render each stage
+      stages.forEach(function(stage, idx) {
+        var stageIdx = statusOrder.indexOf(stage.status);
+        var stepClass = '';
+        var dotContent = '';
+        var actionText = stage.label;
+        var actorText = '';
+        var dateText = '';
+
+        // Find matching log entry
+        var logEntry = null;
+        for (var i = 0; i < approvalLog.length; i++) {
+          var entry = approvalLog[i];
+          if (entry.previousStatus === stage.status || entry.prevStatus === stage.status) {
+            logEntry = entry;
+            break;
+          }
+        }
+
+        if (currentStatus === 'DENIED' && logEntry && (logEntry.action === 'DENY' || logEntry.newStatus === 'DENIED')) {
+          // Denied at this stage
+          stepClass = 'timeline-step--denied';
+          dotContent = '<i aria-hidden="true" class="fas fa-times"></i>';
+          actionText = 'Denied at ' + stage.label;
+          actorText = logEntry.actorName || logEntry.reviewerName || '';
+          dateText = logEntry.timestamp ? self._formatDate(logEntry.timestamp) : '';
+        } else if (stageIdx < currentIdx || currentStatus === 'APPROVED_GOGOV' || currentStatus === 'COMPLETED') {
+          // Completed stage
+          if (logEntry) {
+            stepClass = 'timeline-step--completed';
+            dotContent = '<i aria-hidden="true" class="fas fa-check"></i>';
+            actionText = stage.label + ' Approved';
+            actorText = logEntry.actorName || logEntry.reviewerName || '';
+            dateText = logEntry.timestamp ? self._formatDate(logEntry.timestamp) : '';
+          } else if (stageIdx < currentIdx) {
+            stepClass = 'timeline-step--completed';
+            dotContent = '<i aria-hidden="true" class="fas fa-check"></i>';
+            actionText = stage.label + ' Approved';
+          }
+        } else if (stageIdx === currentIdx || currentStatus === stage.status) {
+          // Current stage
+          stepClass = 'timeline-step--current';
+          dotContent = '<i aria-hidden="true" class="fas fa-hourglass-half"></i>';
+          actionText = 'Awaiting ' + stage.label;
+          actorText = data.currentReviewerName ? 'Awaiting review by ' + self._escapeHtml(data.currentReviewerName) + '...' : 'Awaiting reviewer assignment...';
+        }
+        // Future stage: default styling (empty dot)
+
+        html += '<div class="timeline-step ' + stepClass + '">' +
+          '<div class="timeline-step__dot">' + dotContent + '</div>' +
+          '<div class="timeline-step__content">' +
+            '<div class="timeline-step__action">' + self._escapeHtml(actionText) + '</div>' +
+            (actorText ? '<div class="timeline-step__actor">' + self._escapeHtml(actorText) + '</div>' : '') +
+            (dateText ? '<div class="timeline-step__date">' + dateText + '</div>' : '');
+
+        // Show note if there's a comment
+        if (logEntry && (logEntry.notes || logEntry.comments)) {
+          html += '<div class="timeline-step__note">' + self._escapeHtml(logEntry.notes || logEntry.comments) + '</div>';
+        }
+
+        html += '</div></div>';
+      });
+
+      // Add final "Approved" step if applicable
+      if (currentStatus === 'APPROVED_GOGOV' || currentStatus === 'COMPLETED') {
+        html += '<div class="timeline-step timeline-step--completed">' +
+          '<div class="timeline-step__dot"><i aria-hidden="true" class="fas fa-check"></i></div>' +
+          '<div class="timeline-step__content">' +
+            '<div class="timeline-step__action">Approved</div>' +
+          '</div>' +
+        '</div>';
+      }
+
+      html += '</div>';
+      return html;
+    },
+
+    // =========================================================================
+    // BULK SELECTION & DELETE
+    // =========================================================================
+
+    _setupBulkActions() {
+      var self = this;
+
+      var selectAllCb = document.getElementById('selectAllCheckbox');
+      if (selectAllCb) {
+        selectAllCb.addEventListener('change', function() {
+          var checkboxes = document.querySelectorAll('#requestsTableBody .row-checkbox');
+          checkboxes.forEach(function(cb) {
+            cb.checked = selectAllCb.checked;
+            var rid = cb.dataset.rid;
+            var row = cb.closest('tr');
+            if (selectAllCb.checked) {
+              self._bulkSelectedIds.add(rid);
+              if (row) row.classList.add('is-selected');
+            } else {
+              self._bulkSelectedIds.delete(rid);
+              if (row) row.classList.remove('is-selected');
+            }
+          });
+          self._updateBulkActionBar();
+        });
+      }
+
+      // Deselect-all is handled by the table header's selectAllCheckbox
+      // (toggling it off clears the selection), so we no longer need a
+      // separate button in the bulk action bar.
+
+      var bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+      if (bulkDeleteBtn) {
+        bulkDeleteBtn.addEventListener('click', function() {
+          if (self._bulkSelectedIds.size > 0) {
+            self.promptDeleteRequests(Array.from(self._bulkSelectedIds));
+          }
+        });
+      }
+    },
+
+    _updateBulkActionBar() {
+      var bar = document.getElementById('bulkActionBar');
+      var countEl = document.getElementById('bulkSelectedCount');
+      var selectAllCb = document.getElementById('selectAllCheckbox');
+
+      var count = this._bulkSelectedIds ? this._bulkSelectedIds.size : 0;
+
+      if (bar) {
+        if (count > 0) {
+          bar.classList.remove('hidden');
+        } else {
+          bar.classList.add('hidden');
+        }
+      }
+
+      if (countEl) {
+        countEl.textContent = count;
+      }
+
+      // Update Select All checkbox state
+      if (selectAllCb) {
+        var totalCheckboxes = document.querySelectorAll('#requestsTableBody .row-checkbox').length;
+        if (totalCheckboxes === 0 || count === 0) {
+          selectAllCb.checked = false;
+          selectAllCb.indeterminate = false;
+        } else if (count === totalCheckboxes) {
+          selectAllCb.checked = true;
+          selectAllCb.indeterminate = false;
+        } else {
+          selectAllCb.checked = false;
+          selectAllCb.indeterminate = true;
+        }
+      }
+    },
+
+    promptDeleteRequests(requestIds) {
+      var self = this;
+
+      var modal = new bootstrap.Modal(document.getElementById('deleteRequestModal'));
+      var loadingEl = document.getElementById('deletePreviewLoading');
+      var contentEl = document.getElementById('deletePreviewContent');
+      var errorEl = document.getElementById('deletePreviewError');
+      var confirmBtn = document.getElementById('deleteConfirmBtn');
+
+      // Store the IDs for confirmation step
+      this._deleteRequestIds = requestIds;
+
+      // Reset modal state
+      if (loadingEl) loadingEl.classList.remove('hidden');
+      if (contentEl) contentEl.classList.add('hidden');
+      if (errorEl) errorEl.classList.add('hidden');
+      if (confirmBtn) confirmBtn.disabled = true;
+
+      modal.show();
+
+      // Fetch preview
+      this._serverCall('getDeletePreview', requestIds)
+        .then(function(result) {
+          if (loadingEl) loadingEl.classList.add('hidden');
+
+          if (!result || !result.success) {
+            if (errorEl) {
+              errorEl.classList.remove('hidden');
+              var errMsg = document.getElementById('deletePreviewErrorMsg');
+              if (errMsg) errMsg.textContent = (result && result.error) || 'Failed to load preview';
+            }
+            return;
+          }
+
+          var p = (result.data && result.data.preview) || {};
+
+          // Populate request summaries
+          var reqList = document.getElementById('deletePreviewRequests');
+          if (reqList) {
+            var html = '';
+            (p.requestSummaries || []).forEach(function(r) {
+              var statusDisplay = self._getStatusDisplay(r.status);
+              html += '<div class="delete-preview__request-item">' +
+                '<code>' + self._escapeHtml(r.requestId) + '</code>' +
+                '<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + self._escapeHtml(r.tripName) + '</span>' +
+                '<span class="status-badge status-badge--' + statusDisplay.class + '">' + statusDisplay.label + '</span>' +
+              '</div>';
+            });
+            reqList.innerHTML = html;
+          }
+
+          // Populate row counts
+          document.getElementById('dpCountRequests').textContent = p.requests;
+          document.getElementById('dpCountLegs').textContent = p.requestLegs;
+          document.getElementById('dpCountTravelers').textContent = p.requestTravelers;
+          document.getElementById('dpCountCosts').textContent = p.travelerLegCosts;
+          document.getElementById('dpCountAttachments').textContent = p.attachments;
+          document.getElementById('dpCountLog').textContent = p.approvalLog;
+          document.getElementById('dpCountTotal').textContent = p.totalRows;
+
+          // Show/hide Drive folder option
+          var driveEl = document.getElementById('deletePreviewDrive');
+          if (driveEl) {
+            if (p.attachmentFolders && p.attachmentFolders.length > 0) {
+              driveEl.classList.remove('hidden');
+            } else {
+              driveEl.classList.add('hidden');
+            }
+          }
+
+          if (contentEl) contentEl.classList.remove('hidden');
+          if (confirmBtn) confirmBtn.disabled = false;
+        })
+        .catch(function(error) {
+          if (loadingEl) loadingEl.classList.add('hidden');
+          if (errorEl) {
+            errorEl.classList.remove('hidden');
+            var errMsg = document.getElementById('deletePreviewErrorMsg');
+            if (errMsg) errMsg.textContent = error.message || 'Failed to load preview';
+          }
+        });
+    },
+
+    async confirmDeleteRequests() {
+      var self = this;
+      var requestIds = this._deleteRequestIds;
+      if (!requestIds || requestIds.length === 0) return;
+
+      var driveCb = document.getElementById('deleteTrashDriveFolder');
+      var trashDrive = driveCb ? driveCb.checked : false;
+
+      var confirmBtn = document.getElementById('deleteConfirmBtn');
+      this._setSaveButtonLoading(confirmBtn, true);
+
+      try {
+        var result = await this._serverCall('deleteTravelRequests', requestIds, trashDrive);
+
+        if (result && result.success) {
+          // Close modal
+          var modalEl = document.getElementById('deleteRequestModal');
+          var modal = bootstrap.Modal.getInstance(modalEl);
+          if (modal) modal.hide();
+
+          this._showToast('Success', (result.data && result.data.message) || 'Requests deleted', 'success');
+
+          // Clear bulk selection
+          this._bulkSelectedIds.clear();
+          this._updateBulkActionBar();
+
+          // Remove from local dataset and re-render
+          this._removeLocalRequests(requestIds);
+
+          // Refresh dashboard if it was loaded (stats are now stale)
+          this._dashboardLoaded = false;
+          if (this._currentView === 'dashboard') {
+            this.refreshDashboard();
+          }
+        } else {
+          this._showToast('Error', (result && result.error) || 'Failed to delete requests', 'error');
+        }
+      } catch (error) {
+        console.error('Error deleting requests:', error);
+        this._showToast('Error', error.message || 'Failed to delete requests', 'error');
+      } finally {
+        this._setSaveButtonLoading(confirmBtn, false);
+      }
+    },
+
+    // =========================================================================
+    // ADMIN ACTIONS (Override / Reassign)
+    // =========================================================================
+
+    /**
+     * Show a small action menu anchored beneath a row's kebab button.
+     * One menu DOM at a time; spawned on demand, torn down on close.
+     */
+    _openActionMenu(triggerBtn) {
+      var self = this;
+      this._closeActionMenu();
+
+      var rid = triggerBtn.dataset.rid;
+      var status = triggerBtn.dataset.status;
+      var reviewer = triggerBtn.dataset.reviewer;
+      var isTerminal = triggerBtn.dataset.terminal === '1';
+      var rect = triggerBtn.getBoundingClientRect();
+
+      var menu = document.createElement('div');
+      menu.className = 'action-menu';
+      menu.setAttribute('role', 'menu');
+      // Terminal requests (Approved/Completed/Denied/Cancelled) collapse
+      // to View only — Override Status and Reassign Reviewer don't apply
+      // once the request is finalized. If admin truly needs to revive a
+      // terminal request, they can do it from the full review page.
+      var menuHtml = '<button type="button" class="action-menu__item" data-act="view">' +
+        '<i aria-hidden="true" class="fas fa-eye"></i><span>View Request</span>' +
+      '</button>';
+      if (!isTerminal) {
+        menuHtml +=
+          '<button type="button" class="action-menu__item" data-act="override">' +
+            '<i aria-hidden="true" class="fas fa-exchange-alt"></i><span>Override Status</span>' +
+          '</button>' +
+          '<button type="button" class="action-menu__item" data-act="reassign">' +
+            '<i aria-hidden="true" class="fas fa-user-edit"></i><span>Reassign Reviewer</span>' +
+          '</button>';
+      }
+      menu.innerHTML = menuHtml;
+
+      // Position fixed beneath the trigger, right-aligned to it.
+      menu.style.position = 'fixed';
+      menu.style.top = (rect.bottom + 4) + 'px';
+      menu.style.right = (window.innerWidth - rect.right) + 'px';
+      menu.style.zIndex = '9999';
+
+      document.body.appendChild(menu);
+      this._activeActionMenu = menu;
+      triggerBtn.setAttribute('aria-expanded', 'true');
+      this._activeActionTrigger = triggerBtn;
+
+      menu.querySelectorAll('.action-menu__item').forEach(function(item) {
+        item.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var act = item.dataset.act;
+          self._closeActionMenu();
+          if (act === 'view') {
+            window.TravelAdmin.navigateTo('review', { requestId: rid });
+          } else if (act === 'override') {
+            self.showOverrideModal(rid, status);
+          } else if (act === 'reassign') {
+            self.showReassignModal(rid, reviewer);
+          }
+        });
+      });
+
+      // Close on outside click / Escape. Defer the click listener to
+      // the next tick so the spawning click doesn't immediately close.
+      setTimeout(function() {
+        self._actionMenuOutsideClick = function(e) {
+          if (!menu.contains(e.target)) self._closeActionMenu();
+        };
+        self._actionMenuKeyHandler = function(e) {
+          if (e.key === 'Escape') self._closeActionMenu();
+        };
+        document.addEventListener('click', self._actionMenuOutsideClick);
+        document.addEventListener('keydown', self._actionMenuKeyHandler);
+      }, 0);
+    },
+
+    _closeActionMenu() {
+      if (this._activeActionMenu) {
+        this._activeActionMenu.remove();
+        this._activeActionMenu = null;
+      }
+      if (this._activeActionTrigger) {
+        this._activeActionTrigger.setAttribute('aria-expanded', 'false');
+        this._activeActionTrigger = null;
+      }
+      if (this._actionMenuOutsideClick) {
+        document.removeEventListener('click', this._actionMenuOutsideClick);
+        this._actionMenuOutsideClick = null;
+      }
+      if (this._actionMenuKeyHandler) {
+        document.removeEventListener('keydown', this._actionMenuKeyHandler);
+        this._actionMenuKeyHandler = null;
+      }
+    },
+
+    showOverrideModal(requestId, currentStatus) {
+      var ridEl = document.getElementById('overrideRequestId');
+      var curEl = document.getElementById('overrideCurrentStatus');
+      var newEl = document.getElementById('overrideNewStatus');
+      var reasonEl = document.getElementById('overrideReason');
+
+      if (ridEl) ridEl.value = requestId || '';
+      if (curEl) curEl.value = currentStatus || '';
+      if (newEl) newEl.value = '';
+      if (reasonEl) reasonEl.value = '';
+
+      // Hide "Pending FAS" option for client-paid requests
+      var fasOption = newEl ? newEl.querySelector('option[value="PENDING_FAS"]') : null;
+      if (fasOption) {
+        var isClientPaid = this._slideinData && this._slideinRequestId === requestId && this._slideinData.allClientPaid === true;
+        fasOption.style.display = isClientPaid ? 'none' : '';
+        fasOption.disabled = isClientPaid;
+      }
+
+      var modal = new bootstrap.Modal(document.getElementById('overrideStatusModal'));
+      modal.show();
+    },
+
+    async submitOverrideStatus() {
+      var requestId = document.getElementById('overrideRequestId').value;
+      var newStatus = document.getElementById('overrideNewStatus').value;
+      var reason = document.getElementById('overrideReason').value.trim();
+
+      if (!newStatus) {
+        this._showToast('Validation', 'Please select a new status', 'error');
+        return;
+      }
+      if (!reason) {
+        this._showToast('Validation', 'Reason is required', 'error');
+        return;
+      }
+
+      var btn = document.querySelector('#overrideStatusModal .btn-primary');
+      this._setSaveButtonLoading(btn, true);
+
+      try {
+        var result = await this._serverCall('adminOverrideStatus', requestId, newStatus, reason);
+
+        if (result && result.success) {
+          bootstrap.Modal.getInstance(document.getElementById('overrideStatusModal')).hide();
+          this._showToast('Success', (result.data && result.data.message) || 'Status overridden', 'success');
+          // Patch local data instead of full reload
+          this._patchLocalRequest(requestId, { status: newStatus });
+          this._dashboardLoaded = false; // Stats are stale
+          if (this._currentView === 'dashboard') this.refreshDashboard();
+        } else {
+          this._showToast('Error', (result && result.error) || 'Failed to override status', 'error');
+        }
+      } catch (error) {
+        console.error('Error overriding status:', error);
+        this._showToast('Error', error.message || 'Failed to override status', 'error');
+      } finally {
+        this._setSaveButtonLoading(btn, false);
+      }
+    },
+
+    showReassignModal(requestId, currentReviewer) {
+      var ridEl = document.getElementById('reassignRequestId');
+      var curEl = document.getElementById('reassignCurrentReviewer');
+      var newEl = document.getElementById('reassignNewEmail');
+      var reasonEl = document.getElementById('reassignReason');
+
+      if (ridEl) ridEl.value = requestId || '';
+      if (curEl) curEl.value = currentReviewer || 'None';
+      if (newEl) newEl.value = '';
+      if (reasonEl) reasonEl.value = '';
+
+      var modal = new bootstrap.Modal(document.getElementById('reassignModal'));
+      modal.show();
+    },
+
+    async submitReassign() {
+      var requestId = document.getElementById('reassignRequestId').value;
+      var newEmail = document.getElementById('reassignNewEmail').value.trim();
+      var reason = document.getElementById('reassignReason').value.trim();
+
+      if (!newEmail) {
+        this._showToast('Validation', 'Please enter a new reviewer email', 'error');
+        return;
+      }
+      if (!reason) {
+        this._showToast('Validation', 'Reason is required', 'error');
+        return;
+      }
+
+      var btn = document.querySelector('#reassignModal .btn-primary');
+      this._setSaveButtonLoading(btn, true);
+
+      try {
+        var result = await this._serverCall('adminReassignReviewer', requestId, newEmail, reason);
+
+        if (result && result.success) {
+          bootstrap.Modal.getInstance(document.getElementById('reassignModal')).hide();
+          this._showToast('Success', (result.data && result.data.message) || 'Reviewer reassigned', 'success');
+          // Patch local data instead of full reload
+          this._patchLocalRequest(requestId, {
+            currentReviewerEmail: newEmail,
+            currentReviewerName: newEmail // Server may return proper name — use email as fallback
+          });
+          this._dashboardLoaded = false;
+          if (this._currentView === 'dashboard') this.refreshDashboard();
+        } else {
+          this._showToast('Error', (result && result.error) || 'Failed to reassign', 'error');
+        }
+      } catch (error) {
+        console.error('Error reassigning:', error);
+        this._showToast('Error', error.message || 'Failed to reassign', 'error');
+      } finally {
+        this._setSaveButtonLoading(btn, false);
+      }
+    },
+
+    // =========================================================================
+    // REVIEWERS MANAGEMENT (Phase 5)
+    // =========================================================================
+
+    // --- Subtab switching (Reviewers | Admin Access) ---
+
+    // --- Save button spinner helpers ---
+
+    _setSaveButtonLoading(btnSelector, loading) {
+      var btn = typeof btnSelector === 'string'
+        ? document.querySelector(btnSelector)
+        : btnSelector;
+      if (!btn) return;
+
+      if (loading) {
+        btn.classList.add('btn--saving');
+        btn.dataset.originalText = btn.innerHTML;
+        var btnText = btn.textContent.trim().toLowerCase();
+        var label = (btnText.indexOf('delete') >= 0) ? 'Deleting...' : 'Saving...';
+        btn.innerHTML = label;
+      } else {
+        btn.classList.remove('btn--saving');
+        if (btn.dataset.originalText) {
+          btn.innerHTML = btn.dataset.originalText;
+          delete btn.dataset.originalText;
+        }
+      }
+    },
+
+    async _loadReports() {
+      var self = this;
+
+      // Wire subview tabs (Quick Reports / Data Export / Feedback).
+      this._setupReportTabs();
+
+      // Populate BU + Status filter dropdowns from server.
+      try {
+        var opts = await this._serverCall('reportGetFilterOptions');
+        if (opts && opts.success) {
+          var optsData = opts.data || {};
+          // Column catalog is owned by the server (Reporting.js _RB_FIELD_CATALOG)
+          // and delivered on this same call — no separate round-trip. Adopt it
+          // before _initReportBuilder() builds the picker below.
+          if (optsData.catalog && optsData.catalog.length) {
+            self._RB_FIELD_CATALOG = optsData.catalog;
+          }
+          var buSelect = document.getElementById('rbFilterBU');
+          if (buSelect) {
+            buSelect.innerHTML = '<option value="">All BUs</option>';
+            (optsData.buList || []).forEach(function(bu) {
+              buSelect.innerHTML += '<option value="' + self._escapeHtml(bu) + '">' + self._escapeHtml(bu) + '</option>';
+            });
+          }
+          var statusSelect = document.getElementById('rbFilterStatus');
+          if (statusSelect) {
+            statusSelect.innerHTML = '<option value="">All Statuses</option>';
+            (optsData.statusList || []).forEach(function(st) {
+              var display = self._getStatusDisplay(st);
+              statusSelect.innerHTML += '<option value="' + self._escapeHtml(st) + '">' + self._escapeHtml(display.label) + '</option>';
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error loading report filter options:', error);
+        this._showToast('Error', 'Failed to load report filters', 'error');
+      }
+
+      // Bring up the Data Export builder UI (picker, columns, flatpickr).
+      this._initReportBuilder();
+
+      // Load user-saved presets — renders the bookmark cards in Quick Reports.
+      await this._rbLoadPresets();
+
+      this._reportsLoaded = true;
+    },
+
+    _setupReportTabs() {
+      var self = this;
+      var tabContainer = document.getElementById('reportTabs');
+      if (!tabContainer) return;
+
+      tabContainer.querySelectorAll('.report-tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+          var viewName = tab.dataset.reportView;
+          if (!viewName) return;
+
+          tabContainer.querySelectorAll('.report-tab').forEach(function(t) {
+            t.classList.remove('report-tab--active');
+          });
+          tab.classList.add('report-tab--active');
+
+          var quickEl = document.getElementById('quickReportsSubview');
+          var exportEl = document.getElementById('dataExportSubview');
+          var feedbackEl = document.getElementById('feedbackSubview');
+
+          if (quickEl) quickEl.classList.toggle('hidden', viewName !== 'quickReports');
+          if (exportEl) exportEl.classList.toggle('hidden', viewName !== 'dataExport');
+          if (feedbackEl) feedbackEl.classList.toggle('hidden', viewName !== 'feedback');
+
+          if (viewName === 'feedback' && !self._feedbackLoaded) {
+            self._loadFeedbackEntries();
+          }
+
+          self._reportSubview = viewName;
+        });
+      });
+    },
+
+    async _loadFeedbackEntries() {
+      var loadingEl = document.getElementById('feedbackLoading');
+      var emptyEl = document.getElementById('feedbackEmpty');
+      var listEl = document.getElementById('feedbackList');
+      var emptyText = document.getElementById('feedbackEmptyText');
+
+      this._wireFeedbackToolbar();
+
+      if (loadingEl) loadingEl.classList.remove('hidden');
+      if (emptyEl) emptyEl.classList.add('hidden');
+      if (listEl) listEl.innerHTML = '';
+
+      try {
+        // Fetch the full set once (no type filter) — type/text filtering is
+        // applied client-side for instant chip + search response.
+        var result = await this._serverCall('getRecentFeedback', { limit: 500, type: '' });
+        if (loadingEl) loadingEl.classList.add('hidden');
+
+        var entries = (result && result.success && result.data && Array.isArray(result.data.feedback))
+          ? result.data.feedback : [];
+
+        this._feedbackEntries = entries;
+        this._feedbackLoaded = true;
+        this._renderFeedbackStats();
+        this._renderFeedbackList();
+
+        if (!entries.length) {
+          if (emptyText) emptyText.textContent = 'No feedback entries yet.';
+          if (emptyEl) emptyEl.classList.remove('hidden');
+        }
+      } catch (error) {
+        if (loadingEl) loadingEl.classList.add('hidden');
+        if (emptyText) emptyText.textContent = 'Error loading feedback.';
+        if (emptyEl) emptyEl.classList.remove('hidden');
+        console.error('Error loading feedback:', error);
+      }
+    },
+
+    _wireFeedbackToolbar() {
+      if (this._feedbackToolbarWired) return;
+      var self = this;
+
+      var chips = document.getElementById('feedbackChips');
+      if (chips) {
+        chips.addEventListener('click', function(e) {
+          var btn = e.target.closest('.feedback-chip');
+          if (!btn) return;
+          self._feedbackTypeFilter = btn.dataset.type || '';
+          chips.querySelectorAll('.feedback-chip').forEach(function(c) {
+            c.classList.toggle('feedback-chip--active', c === btn);
+          });
+          self._renderFeedbackList();
+        });
+      }
+
+      var search = document.getElementById('feedbackSearch');
+      if (search) {
+        var debounce;
+        search.addEventListener('input', function() {
+          clearTimeout(debounce);
+          debounce = setTimeout(function() {
+            self._feedbackSearch = (search.value || '').trim().toLowerCase();
+            self._renderFeedbackList();
+          }, 120);
+        });
+      }
+
+      var refresh = document.getElementById('feedbackRefreshBtn');
+      if (refresh) {
+        refresh.addEventListener('click', function() {
+          self._loadFeedbackEntries();
+        });
+      }
+
+      var list = document.getElementById('feedbackList');
+      if (list) {
+        list.addEventListener('click', function(e) {
+          // Don't collapse the card if the user is selecting text (e.g.
+          // dragging across the request ID code block to copy it).
+          if (window.getSelection && window.getSelection().toString()) return;
+          var card = e.target.closest('.feedback-card');
+          if (!card) return;
+          card.classList.toggle('feedback-card--expanded');
+          var commentEl = card.querySelector('.feedback-card__comment');
+          var expandEl = card.querySelector('.feedback-card__expand');
+          if (commentEl && commentEl.dataset.clampable === '1') {
+            commentEl.classList.toggle('feedback-card__comment--clamped');
+          }
+          if (expandEl) {
+            expandEl.textContent = card.classList.contains('feedback-card--expanded') ? 'Show less' : 'Show more';
+          }
+        });
+      }
+
+      this._feedbackToolbarWired = true;
+    },
+
+    _renderFeedbackStats() {
+      var statsEl = document.getElementById('feedbackStats');
+      if (!statsEl) return;
+
+      var counts = { thumbs_up: 0, thumbs_down: 0, nps: 0, bug_report: 0, feature_request: 0 };
+      var npsSum = 0;
+      var npsCount = 0;
+
+      this._feedbackEntries.forEach(function(fb) {
+        var t = fb.Feedback_Type;
+        if (counts[t] !== undefined) counts[t]++;
+        if (t === 'nps' && fb.NPS_Score !== '' && fb.NPS_Score != null) {
+          var n = Number(fb.NPS_Score);
+          if (!isNaN(n)) { npsSum += n; npsCount++; }
+        }
+      });
+
+      var avgNps = npsCount ? (npsSum / npsCount).toFixed(1) : '—';
+      var total = this._feedbackEntries.length;
+
+      statsEl.innerHTML =
+        this._feedbackStatCard('total', 'fa-comments', total, 'Total') +
+        this._feedbackStatCard('up',    'fa-thumbs-up', counts.thumbs_up, 'Thumbs Up') +
+        this._feedbackStatCard('down',  'fa-thumbs-down', counts.thumbs_down, 'Thumbs Down') +
+        this._feedbackStatCard('bug',   'fa-bug', counts.bug_report, 'Bug Reports') +
+        this._feedbackStatCard('feat',  'fa-lightbulb', counts.feature_request, 'Features') +
+        this._feedbackStatCard('nps',   'fa-chart-line', avgNps, 'Avg NPS (' + npsCount + ')');
+
+      // Update chip counts
+      var chips = document.getElementById('feedbackChips');
+      if (chips) {
+        chips.querySelectorAll('.feedback-chip__count').forEach(function(el) {
+          var key = el.getAttribute('data-count-for') || '';
+          el.textContent = key === '' ? total : (counts[key] || 0);
+        });
+      }
+    },
+
+    _feedbackStatCard(variant, icon, value, label) {
+      return '<div class="feedback-stat">' +
+        '<div class="feedback-stat__icon feedback-stat__icon--' + variant + '"><i aria-hidden="true" class="fas ' + icon + '"></i></div>' +
+        '<div class="feedback-stat__body">' +
+          '<div class="feedback-stat__value">' + this._escapeHtml(value) + '</div>' +
+          '<div class="feedback-stat__label">' + this._escapeHtml(label) + '</div>' +
+        '</div>' +
+      '</div>';
+    },
+
+    _renderFeedbackList() {
+      var listEl = document.getElementById('feedbackList');
+      var emptyEl = document.getElementById('feedbackEmpty');
+      var emptyText = document.getElementById('feedbackEmptyText');
+      var metaEl = document.getElementById('feedbackMeta');
+      if (!listEl) return;
+
+      var self = this;
+      var type = this._feedbackTypeFilter;
+      var q = this._feedbackSearch;
+
+      var filtered = this._feedbackEntries.filter(function(fb) {
+        if (type && fb.Feedback_Type !== type) return false;
+        if (q) {
+          var hay = ((fb.Comment || '') + ' ' + (fb.User_Name || '') + ' ' + (fb.User_Email || '')).toLowerCase();
+          if (hay.indexOf(q) === -1) return false;
+        }
+        return true;
+      });
+
+      if (metaEl) {
+        var total = this._feedbackEntries.length;
+        metaEl.textContent = filtered.length === total
+          ? 'Showing ' + total + ' ' + (total === 1 ? 'entry' : 'entries')
+          : 'Showing ' + filtered.length + ' of ' + total + ' entries';
+      }
+
+      if (!filtered.length) {
+        listEl.innerHTML = '';
+        if (emptyEl) {
+          if (emptyText) {
+            emptyText.textContent = this._feedbackEntries.length
+              ? 'No feedback matches the current filters.'
+              : 'No feedback entries yet.';
+          }
+          emptyEl.classList.remove('hidden');
+        }
+        return;
+      }
+
+      if (emptyEl) emptyEl.classList.add('hidden');
+
+      listEl.innerHTML = filtered.map(function(fb) {
+        return self._feedbackCardHtml(fb);
+      }).join('');
+    },
+
+    _feedbackCardHtml(fb) {
+      var self = this;
+      var type = fb.Feedback_Type || '';
+      var typeLabels = {
+        thumbs_up: { icon: 'fa-thumbs-up', label: 'Thumbs Up' },
+        thumbs_down: { icon: 'fa-thumbs-down', label: 'Thumbs Down' },
+        nps: { icon: 'fa-chart-line', label: 'NPS' },
+        bug_report: { icon: 'fa-bug', label: 'Bug Report' },
+        feature_request: { icon: 'fa-lightbulb', label: 'Feature Request' }
+      };
+      var typeInfo = typeLabels[type] || { icon: 'fa-comment', label: type };
+
+      var name = fb.User_Name || '';
+      var email = fb.User_Email || '';
+      var userBlock = name
+        ? '<div class="feedback-card__user">' + self._escapeHtml(name) +
+            (email ? ' <span class="feedback-card__user-email">&lt;' + self._escapeHtml(email) + '&gt;</span>' : '') +
+          '</div>'
+        : '<div class="feedback-card__user">' + self._escapeHtml(email || 'Anonymous') + '</div>';
+
+      var whenStr = self._formatFeedbackWhen(fb.Timestamp);
+
+      var npsBlock = '';
+      if (type === 'nps' && fb.NPS_Score !== '' && fb.NPS_Score != null) {
+        var n = Number(fb.NPS_Score);
+        if (!isNaN(n)) {
+          var npsClass = n >= 9 ? 'promoter' : (n >= 7 ? 'passive' : 'detractor');
+          npsBlock = '<div class="feedback-card__nps feedback-card__nps--' + npsClass + '" title="NPS score">' + n + '</div>';
+        }
+      }
+
+      var comment = fb.Comment || '';
+      var commentBlock;
+      if (comment) {
+        var clampable = comment.length > 240 || (comment.match(/\n/g) || []).length >= 3;
+        commentBlock = '<div class="feedback-card__comment' + (clampable ? ' feedback-card__comment--clamped' : '') +
+          '" data-clampable="' + (clampable ? '1' : '0') + '">' + self._escapeHtml(comment) + '</div>' +
+          (clampable ? '<span class="feedback-card__expand">Show more</span>' : '');
+      } else {
+        commentBlock = '<div class="feedback-card__comment-empty">(no comment)</div>';
+      }
+
+      var metaItems = [];
+      if (fb.Context_Page) {
+        metaItems.push('<span class="feedback-card__meta-item"><i aria-hidden="true" class="fas fa-file-lines"></i>Page: <span class="feedback-card__meta-value">' + self._escapeHtml(fb.Context_Page) + '</span></span>');
+      }
+      if (fb.Context_Action) {
+        metaItems.push('<span class="feedback-card__meta-item"><i aria-hidden="true" class="fas fa-bolt"></i>Action: <span class="feedback-card__meta-value">' + self._escapeHtml(fb.Context_Action) + '</span></span>');
+      }
+      if (fb.Request_ID) {
+        metaItems.push('<span class="feedback-card__meta-item"><i aria-hidden="true" class="fas fa-hashtag"></i>Request: <span class="feedback-card__meta-value"><code>' + self._escapeHtml(fb.Request_ID) + '</code></span></span>');
+      }
+      if (fb.Category) {
+        metaItems.push('<span class="feedback-card__meta-item"><i aria-hidden="true" class="fas fa-tag"></i>' + self._escapeHtml(fb.Category) + '</span>');
+      }
+      var metaBlock = metaItems.length
+        ? '<div class="feedback-card__meta">' + metaItems.join('') + '</div>'
+        : '';
+
+      var detailRows = [];
+      if (fb.Page_URL) {
+        detailRows.push('<div class="feedback-card__detail-row"><span class="feedback-card__detail-label">URL</span><span class="feedback-card__detail-value">' + self._escapeHtml(fb.Page_URL) + '</span></div>');
+      }
+      if (fb.Browser_Info) {
+        detailRows.push('<div class="feedback-card__detail-row"><span class="feedback-card__detail-label">Browser</span><span class="feedback-card__detail-value">' + self._escapeHtml(fb.Browser_Info) + '</span></div>');
+      }
+      if (fb.Feedback_ID) {
+        detailRows.push('<div class="feedback-card__detail-row"><span class="feedback-card__detail-label">ID</span><span class="feedback-card__detail-value"><code>' + self._escapeHtml(fb.Feedback_ID) + '</code></span></div>');
+      }
+      var detailBlock = detailRows.length
+        ? '<div class="feedback-card__detail">' + detailRows.join('') + '</div>'
+        : '';
+
+      return '<div class="feedback-card">' +
+        '<div class="feedback-card__head">' +
+          '<span class="feedback-card__badge feedback-card__badge--' + self._escapeHtml(type) + '">' +
+            '<i aria-hidden="true" class="fas ' + typeInfo.icon + '"></i>' + self._escapeHtml(typeInfo.label) +
+          '</span>' +
+          userBlock +
+          '<div class="feedback-card__head-spacer"></div>' +
+          npsBlock +
+          '<span class="feedback-card__when" title="' + self._escapeHtml(fb.Timestamp || '') + '">' + self._escapeHtml(whenStr) + '</span>' +
+        '</div>' +
+        commentBlock +
+        metaBlock +
+        detailBlock +
+      '</div>';
+    },
+
+    _formatFeedbackWhen(tsStr) {
+      if (!tsStr) return '';
+      var d = new Date(tsStr);
+      if (isNaN(d.getTime())) return '';
+      var now = Date.now();
+      var diffMs = now - d.getTime();
+      var diffMin = Math.floor(diffMs / 60000);
+      if (diffMin < 1) return 'just now';
+      if (diffMin < 60) return diffMin + ' min ago';
+      var diffHr = Math.floor(diffMin / 60);
+      if (diffHr < 24) return diffHr + (diffHr === 1 ? ' hour ago' : ' hours ago');
+      var diffDay = Math.floor(diffHr / 24);
+      if (diffDay < 7) return diffDay + (diffDay === 1 ? ' day ago' : ' days ago');
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    },
+
+    async runPresetReport(type, btnElement) {
+      var card = btnElement ? btnElement.closest('.report-card') : null;
+      var periodSelect = card ? card.querySelector('.report-card__period') : null;
+      var period = periodSelect ? periodSelect.value : '30d';
+      var config = { type: type, filters: { period: period } };
+
+      var loadingEl = document.getElementById('reportLoading');
+      if (loadingEl) loadingEl.classList.remove('hidden');
+
+      try {
+        var result = await this._serverCall('reportExportToSheets', config);
+        if (!result || !result.success) {
+          this._showToast('Error', (result && result.error) || 'Failed to generate report', 'error');
+          return;
+        }
+        if (result.data && result.data.spreadsheetUrl) window.open(result.data.spreadsheetUrl, '_blank');
+        this._showToast('Success', 'Report exported to Google Sheets', 'success');
+      } catch (error) {
+        console.error('Error exporting to Sheets:', error);
+        this._showToast('Error', error.message || 'Failed to export report', 'error');
+      } finally {
+        if (loadingEl) loadingEl.classList.add('hidden');
+      }
+    },
+
+    // =========================================================================
+    // REPORT BUILDER — Initialization
+    // =========================================================================
+
+    _initReportBuilder() {
+      var self = this;
+
+      // Set default columns
+      this._rbColumns = this._RB_DEFAULT_COLUMNS.slice();
+      this._rbFilters = {};
+
+      // Render picker
+      this._renderPickerCategories();
+
+      // Render selected list
+      this._renderSelectedColumns();
+
+      // Initialize flatpickr on date range
+      var dateEl = document.getElementById('rbFilterDateRange');
+      if (dateEl && typeof flatpickr !== 'undefined') {
+        flatpickr(dateEl, {
+          mode: 'range',
+          dateFormat: 'Y-m-d',
+          onChange: function() { self._onRbFiltersChange(); }
+        });
+      }
+
+      // Bind filter change events
+      var statusEl = document.getElementById('rbFilterStatus');
+      if (statusEl) {
+        statusEl.addEventListener('change', function() { self._onRbFiltersChange(); });
+      }
+
+      var buEl = document.getElementById('rbFilterBU');
+      if (buEl) {
+        buEl.addEventListener('change', function() { self._onRbFiltersChange(); });
+      }
+
+      // Bind search
+      var searchEl = document.getElementById('rbPickerSearch');
+      if (searchEl) {
+        searchEl.addEventListener('input', function() {
+          self._filterPickerSearch(searchEl.value);
+        });
+      }
+
+      // Initial preview fetch
+      this._fetchPreviewData();
+    },
+
+    // =========================================================================
+    // REPORT BUILDER — Column Picker
+    // =========================================================================
+
+    _renderPickerCategories() {
+      var self = this;
+      var container = document.getElementById('rbPickerCategories');
+      if (!container) return;
+
+      var html = '';
+      this._RB_FIELD_CATALOG.forEach(function(cat, catIdx) {
+        var totalFields = cat.fields.length;
+        var commonFields = cat.fields.filter(function(f) { return f.common; });
+        var advancedFields = cat.fields.filter(function(f) { return !f.common; });
+        var selectedInCat = cat.fields.filter(function(f) { return self._rbColumns.indexOf(f.key) >= 0; }).length;
+        var allSelected = selectedInCat === totalFields;
+        var expanded = catIdx === 0;
+
+        html += '<div class="rb-category' + (expanded ? ' rb-category--expanded' : '') + '" data-cat="' + catIdx + '">';
+        html += '<div class="rb-category__header" role="button" tabindex="0" aria-expanded="' + (expanded ? 'true' : 'false') + '" onclick="TravelAdmin.Controller._toggleCategory(' + catIdx + ')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click();}">';
+        html += '<i aria-hidden="true" class="fas fa-chevron-right rb-category__chevron"></i>';
+        html += '<span class="rb-category__name">' + self._escapeHtml(cat.category) + '</span>';
+        html += '<span class="rb-category__count">(' + totalFields + ')</span>';
+        html += '<input type="checkbox" class="rb-category__select-all" ' +
+                (allSelected ? 'checked' : '') +
+                ' onclick="event.stopPropagation(); TravelAdmin.Controller._toggleCategoryAll(' + catIdx + ', this.checked)">';
+        html += '</div>';
+        html += '<div class="rb-category__body">';
+
+        commonFields.forEach(function(field) {
+          var checked = self._rbColumns.indexOf(field.key) >= 0;
+          html += '<div class="rb-field' + (checked ? ' rb-field--checked' : '') + '" data-key="' + field.key + '">';
+          html += '<input type="checkbox" ' + (checked ? 'checked' : '') +
+                  ' onclick="TravelAdmin.Controller._toggleColumn(\'' + field.key + '\')">';
+          html += '<span class="rb-field__label">' + self._escapeHtml(field.label) + '</span>';
+          html += '</div>';
+        });
+
+        advancedFields.forEach(function(field) {
+          var checked = self._rbColumns.indexOf(field.key) >= 0;
+          html += '<div class="rb-field rb-field--advanced' + (checked ? ' rb-field--checked' : '') + '" data-key="' + field.key + '">';
+          html += '<input type="checkbox" ' + (checked ? 'checked' : '') +
+                  ' onclick="TravelAdmin.Controller._toggleColumn(\'' + field.key + '\')">';
+          html += '<span class="rb-field__label">' + self._escapeHtml(field.label) + '</span>';
+          html += '</div>';
+        });
+
+        if (advancedFields.length > 0) {
+          html += '<span class="rb-category__show-more" role="button" tabindex="0" onclick="TravelAdmin.Controller._toggleShowMore(' + catIdx + ', this)" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click();}">Show ' + advancedFields.length + ' more</span>';
+        }
+
+        html += '</div></div>';
+      });
+
+      container.innerHTML = html;
+    },
+
+    _toggleCategory(catIdx) {
+      var catEl = document.querySelector('.rb-category[data-cat="' + catIdx + '"]');
+      if (catEl) catEl.classList.toggle('rb-category--expanded');
+    },
+
+    _toggleCategoryAll(catIdx, checked) {
+      var self = this;
+      var cat = this._RB_FIELD_CATALOG[catIdx];
+      if (!cat) return;
+
+      cat.fields.forEach(function(field) {
+        var idx = self._rbColumns.indexOf(field.key);
+        if (checked && idx < 0) {
+          self._rbColumns.push(field.key);
+        } else if (!checked && idx >= 0) {
+          self._rbColumns.splice(idx, 1);
+        }
+      });
+
+      this._renderPickerCategories();
+      this._renderSelectedColumns();
+      this._onRbColumnsChange();
+    },
+
+    _toggleShowMore(catIdx, linkEl) {
+      var catEl = document.querySelector('.rb-category[data-cat="' + catIdx + '"]');
+      if (!catEl) return;
+
+      var isShowing = catEl.classList.toggle('rb-category--show-more');
+      var advancedCount = this._RB_FIELD_CATALOG[catIdx].fields.filter(function(f) { return !f.common; }).length;
+      if (linkEl) {
+        linkEl.textContent = isShowing ? 'Show fewer' : 'Show ' + advancedCount + ' more';
+      }
+    },
+
+    _toggleColumn(key) {
+      var idx = this._rbColumns.indexOf(key);
+      if (idx >= 0) {
+        this._rbColumns.splice(idx, 1);
+      } else {
+        this._rbColumns.push(key);
+      }
+
+      var fieldEl = document.querySelector('.rb-field[data-key="' + key + '"]');
+      if (fieldEl) {
+        var cb = fieldEl.querySelector('input[type="checkbox"]');
+        if (cb) cb.checked = (idx < 0);
+        fieldEl.classList.toggle('rb-field--checked', idx < 0);
+      }
+
+      this._updateCategorySelectAll(key);
+      this._renderSelectedColumns();
+      this._onRbColumnsChange();
+    },
+
+    _updateCategorySelectAll(key) {
+      var self = this;
+      for (var c = 0; c < this._RB_FIELD_CATALOG.length; c++) {
+        var cat = this._RB_FIELD_CATALOG[c];
+        var hasKey = cat.fields.some(function(f) { return f.key === key; });
+        if (!hasKey) continue;
+
+        var allChecked = cat.fields.every(function(f) { return self._rbColumns.indexOf(f.key) >= 0; });
+        var catEl = document.querySelector('.rb-category[data-cat="' + c + '"]');
+        if (catEl) {
+          var selectAllCb = catEl.querySelector('.rb-category__select-all');
+          if (selectAllCb) selectAllCb.checked = allChecked;
+        }
+        break;
+      }
+    },
+
+    _removeColumn(key) {
+      var idx = this._rbColumns.indexOf(key);
+      if (idx >= 0) this._rbColumns.splice(idx, 1);
+
+      var fieldEl = document.querySelector('.rb-field[data-key="' + key + '"]');
+      if (fieldEl) {
+        var cb = fieldEl.querySelector('input[type="checkbox"]');
+        if (cb) cb.checked = false;
+        fieldEl.classList.remove('rb-field--checked');
+      }
+
+      this._updateCategorySelectAll(key);
+      this._renderSelectedColumns();
+      this._onRbColumnsChange();
+    },
+
+    _rbClearAll() {
+      this._rbColumns = [];
+      this._renderPickerCategories();
+      this._renderSelectedColumns();
+      this._onRbColumnsChange();
+    },
+
+    _filterPickerSearch(query) {
+      query = (query || '').toLowerCase().trim();
+      var allFieldEls = document.querySelectorAll('.rb-field');
+
+      allFieldEls.forEach(function(el) {
+        var key = el.dataset.key;
+        var label = el.querySelector('.rb-field__label');
+        var text = label ? label.textContent.toLowerCase() : '';
+
+        if (!query || text.indexOf(query) >= 0 || key.toLowerCase().indexOf(query) >= 0) {
+          el.classList.remove('rb-field--hidden');
+        } else {
+          el.classList.add('rb-field--hidden');
+        }
+      });
+
+      var categories = document.querySelectorAll('.rb-category');
+      categories.forEach(function(cat) {
+        if (query) {
+          cat.classList.add('rb-category--expanded');
+          cat.classList.add('rb-category--show-more');
+        }
+      });
+    },
+
+    // =========================================================================
+    // REPORT BUILDER — Selected Columns List (with drag & drop)
+    // =========================================================================
+
+    _renderSelectedColumns() {
+      var self = this;
+      var container = document.getElementById('rbSelectedList');
+      var emptyEl = document.getElementById('rbSelectedEmpty');
+      var countEl = document.getElementById('rbSelectedCount');
+
+      if (countEl) {
+        var totalFields = 0;
+        this._RB_FIELD_CATALOG.forEach(function(c) { totalFields += c.fields.length; });
+        countEl.textContent = this._rbColumns.length + ' of ' + totalFields + ' columns selected';
+      }
+
+      if (this._rbColumns.length === 0) {
+        if (container) container.innerHTML = '';
+        if (emptyEl) emptyEl.classList.remove('hidden');
+        return;
+      }
+
+      if (emptyEl) emptyEl.classList.add('hidden');
+
+      var labelMap = {};
+      this._RB_FIELD_CATALOG.forEach(function(cat) {
+        cat.fields.forEach(function(f) { labelMap[f.key] = f.label; });
+      });
+
+      var html = '';
+      this._rbColumns.forEach(function(key, idx) {
+        html += '<div class="rb-selected__item" draggable="true" data-idx="' + idx + '" data-key="' + key + '">' +
+          '<span class="rb-selected__handle"><i aria-hidden="true" class="fas fa-grip-vertical"></i></span>' +
+          '<span class="rb-selected__name">' + self._escapeHtml(labelMap[key] || key) + '</span>' +
+          '<button class="rb-selected__remove" onclick="TravelAdmin.Controller._removeColumn(\'' + key + '\')" title="Remove">' +
+            '<i aria-hidden="true" class="fas fa-times"></i>' +
+          '</button>' +
+        '</div>';
+      });
+
+      if (container) {
+        container.innerHTML = html;
+
+        container.querySelectorAll('.rb-selected__item').forEach(function(item) {
+          item.addEventListener('dragstart', function(e) { self._onDragStart(e); });
+          item.addEventListener('dragover', function(e) { self._onDragOver(e); });
+          item.addEventListener('drop', function(e) { self._onDrop(e); });
+          item.addEventListener('dragend', function(e) { self._onDragEnd(e); });
+        });
+      }
+    },
+
+    _onDragStart(e) {
+      var item = e.target.closest('.rb-selected__item');
+      if (!item) return;
+      this._rbDragIdx = parseInt(item.dataset.idx);
+      item.classList.add('rb-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', item.dataset.idx);
+    },
+
+    _onDragOver(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      var item = e.target.closest('.rb-selected__item');
+      if (!item) return;
+
+      document.querySelectorAll('.rb-drag-over').forEach(function(el) {
+        el.classList.remove('rb-drag-over');
+      });
+      item.classList.add('rb-drag-over');
+    },
+
+    _onDrop(e) {
+      e.preventDefault();
+      var item = e.target.closest('.rb-selected__item');
+      if (!item) return;
+
+      var fromIdx = this._rbDragIdx;
+      var toIdx = parseInt(item.dataset.idx);
+
+      if (fromIdx === null || fromIdx === toIdx) return;
+
+      var moved = this._rbColumns.splice(fromIdx, 1)[0];
+      this._rbColumns.splice(toIdx, 0, moved);
+
+      this._renderSelectedColumns();
+      this._onRbColumnsChange();
+    },
+
+    _onDragEnd(e) {
+      this._rbDragIdx = null;
+      document.querySelectorAll('.rb-dragging, .rb-drag-over').forEach(function(el) {
+        el.classList.remove('rb-dragging', 'rb-drag-over');
+      });
+    },
+
+    // =========================================================================
+    // REPORT BUILDER — Filters + Preview
+    // =========================================================================
+
+    _onRbColumnsChange() {
+      this._renderPreviewFromCache();
+    },
+
+    _onRbFiltersChange() {
+      var self = this;
+
+      var previewEl = document.getElementById('rbPreview');
+      if (previewEl) previewEl.classList.add('rb-preview--stale');
+
+      clearTimeout(this._rbPreviewTimer);
+      this._rbPreviewTimer = setTimeout(function() {
+        self._fetchPreviewData();
+      }, 800);
+    },
+
+    _getRbFilters() {
+      var filters = {};
+
+      var dateEl = document.getElementById('rbFilterDateRange');
+      if (dateEl && dateEl._flatpickr) {
+        var dates = dateEl._flatpickr.selectedDates;
+        if (dates.length >= 1) filters.dateFrom = dates[0].toISOString().split('T')[0];
+        if (dates.length >= 2) filters.dateTo = dates[1].toISOString().split('T')[0];
+      }
+
+      var statusEl = document.getElementById('rbFilterStatus');
+      if (statusEl && statusEl.value) filters.status = statusEl.value;
+
+      var buEl = document.getElementById('rbFilterBU');
+      if (buEl && buEl.value) filters.bu = buEl.value;
+
+      return filters;
+    },
+
+    async _fetchPreviewData() {
+      var self = this;
+      var filters = this._getRbFilters();
+      this._rbFilters = filters;
+
+      try {
+        var result = await this._serverCall('reportBuilderPreview', { filters: filters });
+
+        if (result && result.success) {
+          // Cache stores the unwrapped data, not the envelope — keeps the
+          // _renderPreviewFromCache reads (cache.totalCount / cache.rows / etc)
+          // identical to the pre-envelope shape.
+          this._rbPreviewCache = result.data || {};
+          this._renderPreviewFromCache();
+        } else {
+          console.error('Preview failed:', result && result.error);
+          this._showToast('Error', (result && result.error) || 'Failed to load preview', 'error');
+        }
+      } catch (error) {
+        console.error('Error fetching preview:', error);
+        this._showToast('Error', error.message || 'Failed to load preview', 'error');
+      }
+
+      var previewEl = document.getElementById('rbPreview');
+      if (previewEl) previewEl.classList.remove('rb-preview--stale');
+    },
+
+    _renderPreviewFromCache() {
+      var cache = this._rbPreviewCache;
+      var columns = this._rbColumns;
+
+      var emptyEl = document.getElementById('rbPreviewEmpty');
+      var tableWrap = document.getElementById('rbPreviewTableWrap');
+      var countEl = document.getElementById('rbPreviewCount');
+      var headEl = document.getElementById('rbPreviewHead');
+      var bodyEl = document.getElementById('rbPreviewBody2');
+
+      if (!cache || columns.length === 0) {
+        if (emptyEl) emptyEl.classList.remove('hidden');
+        if (tableWrap) tableWrap.classList.add('hidden');
+        if (countEl) countEl.textContent = '';
+
+        if (columns.length === 0 && emptyEl) {
+          emptyEl.innerHTML = '<i aria-hidden="true" class="fas fa-columns"></i><p>Select columns from the picker to build your export</p>';
+        }
+        return;
+      }
+
+      if (emptyEl) emptyEl.classList.add('hidden');
+      if (tableWrap) tableWrap.classList.remove('hidden');
+
+      if (countEl) {
+        countEl.textContent = cache.totalCount + ' rows match';
+      }
+
+      var allKeys = cache.allColumnKeys || [];
+      var colIndices = [];
+      var labels = {};
+      this._RB_FIELD_CATALOG.forEach(function(cat) {
+        cat.fields.forEach(function(f) { labels[f.key] = f.label; });
+      });
+
+      columns.forEach(function(key) {
+        var idx = allKeys.indexOf(key);
+        if (idx >= 0) colIndices.push({ key: key, idx: idx });
+      });
+
+      var headerHtml = '<tr>';
+      colIndices.forEach(function(ci) {
+        headerHtml += '<th>' + (labels[ci.key] || ci.key) + '</th>';
+      });
+      headerHtml += '</tr>';
+      if (headEl) headEl.innerHTML = headerHtml;
+
+      var bodyHtml = '';
+      if (cache.rows.length === 0) {
+        bodyHtml = '<tr><td colspan="' + colIndices.length + '" style="text-align:center; padding:var(--space-3); color:var(--color-slate-400);">' +
+          'No requests match your current filters</td></tr>';
+      } else {
+        cache.rows.forEach(function(row) {
+          bodyHtml += '<tr>';
+          colIndices.forEach(function(ci) {
+            var val = row[ci.idx];
+            if (val === null || val === undefined) val = '';
+            bodyHtml += '<td>' + String(val) + '</td>';
+          });
+          bodyHtml += '</tr>';
+        });
+      }
+      if (bodyEl) bodyEl.innerHTML = bodyHtml;
+    },
+
+    // =========================================================================
+    // REPORT BUILDER — Export
+    // =========================================================================
+
+    async _rbExportSheets() {
+      if (this._rbColumns.length === 0) {
+        this._showToast('Validation', 'Select at least one column before exporting', 'error');
+        return;
+      }
+
+      var btn = document.getElementById('rbExportBtn');
+      if (btn) this._setSaveButtonLoading(btn, true);
+
+      var loadingEl = document.getElementById('reportLoading');
+      if (loadingEl) loadingEl.classList.remove('hidden');
+
+      try {
+        var config = {
+          columns: this._rbColumns,
+          filters: this._getRbFilters()
+        };
+
+        var result = await this._serverCall('reportBuilderExport', config);
+
+        if (!result || !result.success) {
+          this._showToast('Error', (result && result.error) || 'Failed to export', 'error');
+          return;
+        }
+
+        if (result.data && result.data.spreadsheetUrl) window.open(result.data.spreadsheetUrl, '_blank');
+        this._showToast('Success', 'Report exported to Google Sheets', 'success');
+      } catch (error) {
+        console.error('Error exporting:', error);
+        this._showToast('Error', error.message || 'Failed to export', 'error');
+      } finally {
+        if (btn) this._setSaveButtonLoading(btn, false);
+        if (loadingEl) loadingEl.classList.add('hidden');
+      }
+    },
+
+    // =========================================================================
+    // REPORT BUILDER — Presets
+    // =========================================================================
+
+    async _rbSavePreset() {
+      if (this._rbColumns.length === 0) {
+        this._showToast('Validation', 'Select at least one column before saving', 'error');
+        return;
+      }
+
+      var name = prompt('Enter a name for this preset:');
+      if (!name || !name.trim()) return;
+      name = name.trim();
+
+      var btn = document.getElementById('rbSavePresetBtn');
+      if (btn) this._setSaveButtonLoading(btn, true);
+
+      try {
+        var preset = {
+          name: name,
+          columns: this._rbColumns.slice(),
+          filters: this._getRbFilters()
+        };
+
+        var result = await this._serverCall('reportBuilderSavePreset', preset);
+
+        if (result && result.success) {
+          this._showToast('Success', 'Preset "' + name + '" saved', 'success');
+          this._rbLoadPresets();
+        } else {
+          this._showToast('Error', (result && result.error) || 'Failed to save preset', 'error');
+        }
+      } catch (error) {
+        console.error('Error saving preset:', error);
+        this._showToast('Error', error.message || 'Failed to save preset', 'error');
+      } finally {
+        if (btn) this._setSaveButtonLoading(btn, false);
+      }
+    },
+
+    async _rbLoadPresets() {
+      try {
+        var result = await this._serverCall('reportBuilderGetPresets');
+        if (result && result.success) {
+          this._rbPresets = (result.data && result.data.presets) || [];
+          this._renderPresetCards();
+        }
+      } catch (error) {
+        console.error('Error loading presets:', error);
+        this._showToast('Error', 'Failed to load saved presets', 'error');
+      }
+    },
+
+    _renderPresetCards() {
+      var self = this;
+      var container = document.getElementById('reportCards');
+      if (!container) return;
+
+      // Remove previously-appended user preset cards
+      container.querySelectorAll('.report-card--user-preset').forEach(function(el) { el.remove(); });
+
+      if (this._rbPresets.length === 0) return;
+
+      this._rbPresets.forEach(function(preset) {
+        var card = document.createElement('div');
+        card.className = 'report-card report-card--user-preset';
+        card.style.cursor = 'pointer';
+        card.innerHTML =
+          '<div class="report-card__icon"><i aria-hidden="true" class="fas fa-bookmark"></i></div>' +
+          '<div class="report-card__content">' +
+            '<div class="report-card__title">' + self._escapeHtml(preset.name) + '</div>' +
+            '<div class="report-card__desc">' +
+              (preset.columns ? preset.columns.length + ' columns' : '') +
+              (preset.createdAt ? ' &middot; ' + preset.createdAt : '') +
+            '</div>' +
+            '<div class="report-card__controls">' +
+              '<div class="report-card__actions">' +
+                '<button class="btn btn-primary btn-sm rb-preset-open">Open in Builder</button>' +
+                '<button class="btn btn-outline-danger btn-sm rb-preset-delete" title="Delete" aria-label="Delete preset"><i class="fas fa-trash-alt" aria-hidden="true"></i></button>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+
+        card.querySelector('.rb-preset-open').addEventListener('click', function(e) {
+          e.stopPropagation();
+          self._rbApplyPreset(preset);
+        });
+
+        card.querySelector('.rb-preset-delete').addEventListener('click', function(e) {
+          e.stopPropagation();
+          self._rbDeletePreset(preset.name);
+        });
+
+        container.appendChild(card);
+      });
+    },
+
+    _rbApplyPreset(preset) {
+      this._rbColumns = (preset.columns || []).slice();
+      var filters = preset.filters || {};
+
+      var dateEl = document.getElementById('rbFilterDateRange');
+      if (dateEl && dateEl._flatpickr) {
+        if (filters.dateFrom && filters.dateTo) {
+          dateEl._flatpickr.setDate([filters.dateFrom, filters.dateTo]);
+        } else {
+          dateEl._flatpickr.clear();
+        }
+      }
+
+      var statusEl = document.getElementById('rbFilterStatus');
+      if (statusEl) statusEl.value = filters.status || '';
+
+      var buEl = document.getElementById('rbFilterBU');
+      if (buEl) buEl.value = filters.bu || '';
+
+      this._renderPickerCategories();
+      this._renderSelectedColumns();
+
+      // Switch to Data Export tab
+      var tabContainer = document.getElementById('reportTabs');
+      if (tabContainer) {
+        tabContainer.querySelectorAll('.report-tab').forEach(function(t) {
+          t.classList.remove('report-tab--active');
+          if (t.dataset.reportView === 'dataExport') t.classList.add('report-tab--active');
+        });
+      }
+      var quickEl = document.getElementById('quickReportsSubview');
+      var exportEl = document.getElementById('dataExportSubview');
+      var feedbackEl = document.getElementById('feedbackSubview');
+      if (quickEl) quickEl.classList.add('hidden');
+      if (exportEl) exportEl.classList.remove('hidden');
+      if (feedbackEl) feedbackEl.classList.add('hidden');
+      this._reportSubview = 'dataExport';
+
+      this._fetchPreviewData();
+    },
+
+    async _rbDeletePreset(name) {
+      if (!confirm('Delete preset "' + name + '"?')) return;
+
+      try {
+        var result = await this._serverCall('reportBuilderDeletePreset', name);
+        if (result && result.success) {
+          this._showToast('Success', 'Preset deleted', 'success');
+          this._rbLoadPresets();
+        } else {
+          this._showToast('Error', (result && result.error) || 'Failed to delete preset', 'error');
+        }
+      } catch (error) {
+        console.error('Error deleting preset:', error);
+        this._showToast('Error', error.message || 'Failed to delete', 'error');
+      }
+    },
+
+    // =========================================================================
+    // UTILITIES
+    // =========================================================================
+
+    /**
+     * Wraps google.script.run in a Promise
+     */
+    _serverCall(functionName) {
+      var args = Array.prototype.slice.call(arguments, 1);
+      return new Promise(function(resolve, reject) {
+        var runner = google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject);
+        runner[functionName].apply(runner, args);
+      });
+    },
+
+    /**
+     * DOM-based HTML escaping for XSS prevention
+     */
+    _escapeHtml(text) {
+      if (!text && text !== 0) return '';
+      var div = document.createElement('div');
+      div.textContent = String(text);
+      return div.innerHTML;
+    },
+
+    /**
+     * Format currency as USD with 0 decimals
+     */
+    _formatCurrency(amount) {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(amount || 0);
+    },
+
+    /**
+     * Format a duration in days with a unit-aware shape.
+     *   < 24 hours → hours (e.g. 0.7 days → "16.8h")
+     *   ≥ 24 hours → days  (e.g. 1.2 days → "1.2d")
+     *   0 / falsy  → dashes
+     *
+     * Returns { value, unit, short, full }:
+     *   value  — bare number string ("16.8" / "1.2")
+     *   unit   — "hours" / "days" (long form, for stat-card subtitles)
+     *   short  — number + single-letter unit ("16.8h" / "1.2d") for chart
+     *            legends + table cells
+     *   full   — number + long unit ("16.8 hours" / "1.2 days")
+     */
+    _formatReviewDuration(days) {
+      var n = parseFloat(days) || 0;
+      if (n <= 0) return { value: '0', unit: 'days', short: '—', full: '—' };
+      if (n < 1) {
+        var hrs = Math.round(n * 24 * 10) / 10;
+        var hStr = (hrs < 10 ? hrs.toFixed(1) : Math.round(hrs).toString());
+        return { value: hStr, unit: 'hours', short: hStr + 'h', full: hStr + (hrs === 1 ? ' hour' : ' hours') };
+      }
+      var dStr = n.toFixed(1);
+      return { value: dStr, unit: 'days', short: dStr + 'd', full: dStr + (n === 1 ? ' day' : ' days') };
+    },
+
+    /**
+     * Format date string to short "Jan 15" format
+     */
+    _formatDate(dateStr) {
+      if (!dateStr) return '';
+      try {
+        var d = new Date(dateStr);
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      } catch (e) {
+        return '';
+      }
+    },
+
+    /**
+     * Get display label and CSS class for a status code
+     */
+    _getStatusDisplay(status) {
+      var statusMap = {
+        'PENDING_SECTOR': { label: 'Sector Review', class: 'pending' },
+        'PENDING_BU': { label: 'BU Review', class: 'pending' },
+        'PENDING_OSO': { label: 'AAS FO Review', class: 'pending-oso' },
+        'PENDING_FAS': { label: 'FAS Review', class: 'pending-oso' },
+        'NEEDS_INFO_SECTOR': { label: 'Needs Info', class: 'needs-info' },
+        'NEEDS_INFO_BU': { label: 'Needs Info', class: 'needs-info' },
+        'NEEDS_INFO_OSO': { label: 'Needs Info', class: 'needs-info' },
+        'APPROVED_GOGOV': { label: 'Approved', class: 'approved' },
+        'Pending_Correction': { label: 'Correction', class: 'pending' },
+        'Pending_DD_Confirmation': { label: 'DD Confirm', class: 'pending' },
+        'COMPLETED': { label: 'Completed', class: 'completed' },
+        'DENIED': { label: 'Denied', class: 'denied' },
+        'CANCELLED': { label: 'Cancelled', class: 'cancelled' },
+        'SUBMITTER_CANCELLED': { label: 'Cancelled', class: 'cancelled' }
+      };
+      return statusMap[status] || { label: status || 'Unknown', class: 'pending' };
+    },
+
+    /**
+     * Whether a status is "terminal" — request has been finalized and
+     * is no longer moving through the pipeline. Used to suppress
+     * fields that don't apply (Days at Stage, active Reviewer) and
+     * to limit the action menu to View-only.
+     */
+    _isTerminalStatus(status) {
+      return status === 'APPROVED_GOGOV'
+          || status === 'COMPLETED'
+          || status === 'DENIED'
+          || status === 'CANCELLED'
+          || status === 'SUBMITTER_CANCELLED';
+    },
+
+    /**
+     * Calculate days at current stage from updatedAt date string
+     */
+    _getDaysAtStage(updatedAt) {
+      if (!updatedAt) return 0;
+      try {
+        var updated = new Date(updatedAt);
+        if (isNaN(updated.getTime())) return 0;
+        var now = new Date();
+        var diff = (now - updated) / (1000 * 60 * 60 * 24);
+        return Math.round(diff);
+      } catch (e) {
+        return 0;
+      }
+    },
+
+    /**
+     * Get CSS class based on days at stage
+     * < 2 = ok, 2-4 = warn, >= 5 = critical
+     */
+    _getDaysClass(days) {
+      if (days < 2) return 'ok';
+      if (days < 5) return 'warn';
+      return 'critical';
+    },
+
+    /**
+     * Calculate days until travel start date
+     * Returns null if no date or date is in the past
+     */
+    _calcDaysUntilTravel(eventStartDate) {
+      if (!eventStartDate) return null;
+      try {
+        var start = new Date(eventStartDate);
+        if (isNaN(start.getTime())) return null;
+        var now = new Date();
+        now.setHours(0, 0, 0, 0);
+        start.setHours(0, 0, 0, 0);
+        var diff = (start - now) / (1000 * 60 * 60 * 24);
+        return Math.round(diff);
+      } catch (e) {
+        return null;
+      }
+    },
+
+    /**
+     * Build the travel-status chip for the slide-in panel.
+     * Returns chip HTML for upcoming-soon / today / currently-traveling
+     * trips, or '' when the trip is too far out, already done, or
+     * undated. Mirrors the helper on the reviewer dashboard so the
+     * panel reads identically for an admin viewing a request and a BU
+     * lead viewing the same one in their Action Center.
+     */
+    _buildTravelChip(eventStartDate, eventEndDate) {
+      if (!eventStartDate) return '';
+      var daysUntil = this._calcDaysUntilTravel(eventStartDate);
+      if (daysUntil === null) return '';
+
+      if (daysUntil < 0 && eventEndDate) {
+        var end = new Date(eventEndDate);
+        var today = new Date();
+        today.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+        if (!isNaN(end.getTime()) && end >= today) {
+          return '<span class="slidein__urgent-tag slidein__urgent-tag--current"><i aria-hidden="true" class="fas fa-plane"></i> Currently traveling</span>';
+        }
+        return '';
+      }
+      if (daysUntil < 0) return '';
+      if (daysUntil === 0) return '<span class="slidein__urgent-tag"><i aria-hidden="true" class="fas fa-bolt"></i> Travel today</span>';
+      if (daysUntil <= 10) return '<span class="slidein__urgent-tag"><i aria-hidden="true" class="fas fa-bolt"></i> Travel in ' + daysUntil + ' day' + (daysUntil === 1 ? '' : 's') + '</span>';
+      return '';
+    },
+
+    /**
+     * Show a toast notification using travel-toast pattern from base styles
+     * Creates a DOM element, auto-removes after 4s
+     */
+    _showToast(title, message, type) {
+      type = type || 'info';
+
+      // Remove any existing toasts
+      document.querySelectorAll('.travel-toast').forEach(function(t) { t.remove(); });
+
+      var iconMap = {
+        success: 'fa-check-circle',
+        error: 'fa-exclamation-circle',
+        warning: 'fa-exclamation-triangle',
+        info: 'fa-info-circle'
+      };
+
+      var toast = document.createElement('div');
+      toast.className = 'travel-toast travel-toast--' + type;
+      toast.innerHTML = '<i aria-hidden="true" class="fas ' + (iconMap[type] || iconMap.info) + '"></i>' +
+        '<span><strong>' + this._escapeHtml(title) + '</strong> ' + this._escapeHtml(message) + '</span>';
+
+      var container = document.getElementById('adminToastContainer');
+      if (container) {
+        container.appendChild(toast);
+      } else {
+        document.body.appendChild(toast);
+      }
+
+      // Trigger show animation
+      requestAnimationFrame(function() {
+        toast.classList.add('show');
+      });
+
+      // Auto-remove after 4 seconds
+      setTimeout(function() {
+        toast.classList.remove('show');
+        setTimeout(function() { toast.remove(); }, 300);
+      }, 4000);
+    }
+
+  }; // End Controller
+
+})();
+</script>

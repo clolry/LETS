@@ -1,0 +1,139 @@
+<script>
+/**
+ * Global Flatpickr Configuration
+ * Ensures all Flatpickr instances position correctly within viewport
+ */
+window.FlatpickrConfig = {
+  
+  // Default options for all Flatpickr instances
+  getDefaultOptions() {
+    return {
+      // Position calendar to stay within viewport
+      onOpen: function(selectedDates, dateStr, instance) {
+        // Force recalculation of position
+        setTimeout(() => {
+          FlatpickrConfig.positionCalendar(instance);
+        }, 1);
+      }
+    };
+  },
+
+  // Custom position function
+  positionCalendar: function(instance) {
+    const calendar = instance.calendarContainer;
+    const input = instance._input;
+        
+        if (!calendar || !input) return;
+        
+        // Get input position
+        const inputRect = input.getBoundingClientRect();
+        const calendarHeight = calendar.offsetHeight;
+        const calendarWidth = calendar.offsetWidth;
+        
+        // Calculate available space
+        const viewportHeight = window.innerHeight;
+        const viewportWidth = window.innerWidth;
+        const spaceBelow = viewportHeight - inputRect.bottom;
+        const spaceAbove = inputRect.top;
+        const spaceRight = viewportWidth - inputRect.left;
+        
+        // Default position below input
+        let top = inputRect.bottom + window.scrollY;
+        let left = inputRect.left + window.scrollX;
+        
+        // If not enough space below, position above
+        if (spaceBelow < calendarHeight && spaceAbove > calendarHeight) {
+          top = inputRect.top + window.scrollY - calendarHeight - 2;
+        }
+        
+        // If calendar would go off right edge, align to right edge of input
+        if (left + calendarWidth > viewportWidth) {
+          left = Math.max(10, inputRect.right - calendarWidth);
+        }
+        
+        // Ensure calendar doesn't go off left edge
+        left = Math.max(10, left);
+        
+        // Apply position
+        calendar.style.position = 'fixed';
+        calendar.style.top = `${top - window.scrollY}px`;
+        calendar.style.left = `${left - window.scrollX}px`;
+        calendar.style.zIndex = '10001';  // Higher than filter drawer (10000)
+  },
+  
+  // Fix all existing Flatpickr instances
+  fixAllInstances() {
+    if (window.flatpickr && window.flatpickr._instances) {
+      window.flatpickr._instances.forEach(instance => {
+        const originalOnOpen = instance.config.onOpen;
+        
+        instance.config.onOpen = function(selectedDates, dateStr, inst) {
+          // Position fix
+          setTimeout(() => {
+            const calendar = inst.calendarContainer;
+            if (calendar) {
+              FlatpickrConfig.positionCalendar(inst);
+            }
+          }, 1);
+          
+          // Call original onOpen if exists
+          if (originalOnOpen) {
+            originalOnOpen(selectedDates, dateStr, inst);
+          }
+        };
+      });
+    }
+  },
+  
+  // Initialize on page load
+  init() {
+    // Store the original flatpickr function BEFORE overriding
+    if (!window._originalFlatpickr) {
+      window._originalFlatpickr = window.flatpickr;
+    }
+    
+    const originalFlatpickr = window._originalFlatpickr;
+    
+    // Override default flatpickr function
+    window.flatpickr = function(selector, options = {}) {
+      const defaultOptions = FlatpickrConfig.getDefaultOptions();
+      const mergedOptions = { ...defaultOptions, ...options };
+      
+      // Override onOpen to include both default and custom behavior
+      const customOnOpen = options.onOpen;
+      mergedOptions.onOpen = function(selectedDates, dateStr, instance) {
+        // Call default positioning
+        defaultOptions.onOpen.call(instance, selectedDates, dateStr, instance);
+        
+        // Call custom onOpen if provided
+        if (customOnOpen) {
+          customOnOpen.call(instance, selectedDates, dateStr, instance);
+        }
+      };
+      
+      // Call the ORIGINAL flatpickr, not the overridden one
+      return originalFlatpickr(selector, mergedOptions);
+    };
+    
+    // Preserve original static methods
+    Object.keys(originalFlatpickr).forEach(key => {
+      window.flatpickr[key] = originalFlatpickr[key];
+    });
+    
+    // Fix any existing instances
+    this.fixAllInstances();
+  }
+};
+
+// Auto-initialize when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    FlatpickrConfig.init();
+  });
+} else {
+  // DOM already loaded
+  setTimeout(() => {
+    FlatpickrConfig.init();
+  }, 100);
+}
+</script>

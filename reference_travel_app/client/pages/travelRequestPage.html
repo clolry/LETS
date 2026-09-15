@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base target="_self">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AAS Travel Request</title>
+
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+
+  <!-- Font Awesome -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.1/css/all.min.css" rel="stylesheet">
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+
+  <!-- Flatpickr (date picker) -->
+  <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
+
+  <!-- Awesomplete (autocomplete) -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/awesomplete/1.1.5/awesomplete.min.css" rel="stylesheet">
+
+  <!-- AAS Branding (standalone - no modernUIStyles to avoid conflicts) -->
+  <?!= include('client/components/aasLogo'); ?>
+
+  <!-- Shared Base Styles -->
+  <?!= include('client/styles/tokens'); ?>
+  <?!= include('client/styles/travelBaseStyles'); ?>
+
+  <!-- Form Styles -->
+  <?!= include('client/styles/travelRequestStyles'); ?>
+</head>
+<body class="travel-form-body">
+  <!-- Skip Link for Accessibility -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <!-- Navigation Loader -->
+  <?!= include('client/components/navLoader'); ?>
+
+  <!-- Branded Header -->
+  <header class="travel-header">
+    <div class="travel-header__content">
+      <div class="travel-header__brand travel-header__brand--clickable" onclick="navigateToTravel('travel')" role="button" tabindex="0" aria-label="Return to Travel Portal">
+        <div class="travel-header__logo" id="headerLogo"></div>
+        <h1 class="aas-brand-header">
+          <span class="aas-brand-header__logo">TRIP</span>
+          <span class="aas-brand-header__sep"></span>
+          <span class="aas-brand-header__section">New Request</span>
+        </h1>
+      </div>
+      <div class="travel-header__right">
+        <div class="help-dropdown">
+          <button class="travel-header__help-btn" onclick="TravelHelp.toggle(event)" title="Help">
+            <i aria-hidden="true" class="fas fa-question"></i>
+          </button>
+          <div class="help-dropdown__menu">
+            <button class="help-dropdown__item" onclick="TravelHelp.open()">
+              <div class="help-dropdown__item-icon help-dropdown__item-icon--guide"><i aria-hidden="true" class="fas fa-book-open"></i></div>
+              <div class="help-dropdown__item-text">
+                <div class="help-dropdown__item-title">Help Guide</div>
+                <div class="help-dropdown__item-desc">How to use the portal</div>
+              </div>
+            </button>
+            <div class="help-dropdown__divider"></div>
+            <button class="help-dropdown__item" onclick="TravelHelp.openSOP()">
+              <div class="help-dropdown__item-icon help-dropdown__item-icon--sop"><i aria-hidden="true" class="fas fa-file-contract"></i></div>
+              <div class="help-dropdown__item-text">
+                <div class="help-dropdown__item-title">Submission Guidelines</div>
+                <div class="help-dropdown__item-desc">Travel policies &amp; SOP</div>
+              </div>
+            </button>
+            <div class="help-dropdown__divider"></div>
+            <button class="help-dropdown__item" onclick="TravelFeedback.openBugReport()">
+              <div class="help-dropdown__item-icon" style="background:#fef2f2;color:#dc2626;"><i aria-hidden="true" class="fas fa-bug"></i></div>
+              <div class="help-dropdown__item-text">
+                <div class="help-dropdown__item-title">Report a Bug</div>
+                <div class="help-dropdown__item-desc">Something not working?</div>
+              </div>
+            </button>
+            <button class="help-dropdown__item" onclick="TravelFeedback.openFeatureRequest()">
+              <div class="help-dropdown__item-icon" style="background:#f0fdf4;color:#16a34a;"><i aria-hidden="true" class="fas fa-lightbulb"></i></div>
+              <div class="help-dropdown__item-text">
+                <div class="help-dropdown__item-title">Request a Feature</div>
+                <div class="help-dropdown__item-desc">Suggest an improvement</div>
+              </div>
+            </button>
+          </div>
+        </div>
+        <span class="travel-header__user">
+          <i aria-hidden="true" class="fas fa-user-circle me-1"></i>
+          <?= userName ?>
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="travel-main" id="main-content">
+    <div class="travel-container">
+
+      <!-- Templated-from banner (visible only when ?duplicateFrom=... succeeded) -->
+      <div class="duplicate-banner hidden" id="duplicateBanner" role="status">
+        <div class="duplicate-banner__icon">
+          <i aria-hidden="true" class="fas fa-copy"></i>
+        </div>
+        <div class="duplicate-banner__body">
+          <div class="duplicate-banner__title">
+            Templated from <span id="duplicateBannerSource"></span>
+          </div>
+          <div class="duplicate-banner__sub">
+            Update dates to continue. Costs will recompute automatically. Attachments were not copied.
+          </div>
+        </div>
+        <button type="button" class="duplicate-banner__discard"
+                onclick="window.TravelRequest.Controller.discardDuplicateTemplate()">
+          Discard template
+        </button>
+      </div>
+
+      <!-- Accordion Stepper Layout -->
+      <div class="accordion-stepper">
+
+          <!-- ================================================================ -->
+          <!-- Step 1: Trip Overview -->
+          <!-- ================================================================ -->
+          <div class="accordion-step active" id="accordionStep1" data-step="1">
+            <div class="accordion-step__row">
+              <div class="accordion-step__indicator-col">
+                <div class="stepper-indicator active" data-step="1">
+                  <span class="step-number">1</span>
+                  <i aria-hidden="true" class="fas fa-check step-check"></i>
+                </div>
+                <div class="stepper-connector"></div>
+              </div>
+              <div class="accordion-step__content-col">
+                <div class="accordion-step__header" data-step="1">
+                  <div class="accordion-step__title">Trip Overview</div>
+                  <div class="accordion-step__summary" id="step1Summary"></div>
+                  <i aria-hidden="true" class="fas fa-chevron-down accordion-step__chevron"></i>
+                </div>
+                <div class="accordion-step__body">
+                  <!-- Row 1: All key fields compact with modern styling -->
+                  <div class="trip-overview-row1">
+                    <div class="form-group form-group--grow">
+                      <label class="form-label required">Event/Meeting Name</label>
+                      <input type="text" class="form-control form-control-sm" id="tripName"
+                             placeholder="e.g., OASIS+ Industry Day">
+                    </div>
+                    <div class="form-group form-group--medium">
+                      <label class="form-label required">Location Type</label>
+                      <select class="form-select form-select-sm" id="locationType">
+                        <option value="">Select...</option>
+                        <option value="client-site">Client Site</option>
+                        <option value="conference">Conference</option>
+                        <option value="contractor-site">Contractor Site</option>
+                        <option value="teb">TEB</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <div class="date-range-group">
+                      <div class="form-group form-group--date">
+                        <label class="form-label required">Event Dates</label>
+                        <div class="date-chip" id="eventStartChip" data-toggle>
+                          <i aria-hidden="true" class="fas fa-calendar-alt date-chip__icon" data-toggle></i>
+                          <input type="text" class="date-chip__input" id="eventStartDate" placeholder="Start" data-input>
+                        </div>
+                      </div>
+                      <span class="date-range-separator">-</span>
+                      <div class="form-group form-group--date">
+                        <label class="form-label form-label--hidden">End</label>
+                        <div class="date-chip" id="eventEndChip" data-toggle>
+                          <i aria-hidden="true" class="fas fa-calendar-alt date-chip__icon" data-toggle></i>
+                          <input type="text" class="date-chip__input" id="eventEndDate" placeholder="End" data-input>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Justification Section -->
+                  <div class="row g-2 mt-3">
+                    <div class="col-12">
+                      <label class="form-label required">BLUF (Bottom Line Up Front)</label>
+                      <textarea class="form-control form-control-sm focus-expand" id="justificationBluf"
+                                data-rows-min="1" data-rows-preview="2"
+                                placeholder="One or two sentences summarizing why this travel is necessary..."></textarea>
+                      <div class="form-text">
+                        <span class="char-count" id="blufCharCount">0</span>/500 characters
+                      </div>
+                    </div>
+                    <div class="col-12">
+                      <label class="form-label required">Detailed Purpose & Justification</label>
+                      <textarea class="form-control form-control-sm focus-expand" id="justificationPurpose"
+                                data-rows-min="1" data-rows-preview="3"
+                                placeholder="What activities will occur, why in-person is required, expected outcomes..."></textarea>
+                      <div class="form-text">
+                        <span class="char-count" id="purposeCharCount">0</span>/2000 characters
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Step 1 Footer -->
+                  <div class="accordion-step__footer">
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-action="save-draft">
+                      <i aria-hidden="true" class="fas fa-save me-2"></i>Save Draft
+                    </button>
+                    <button type="button" class="btn btn-primary" data-action="continue">
+                      Continue<i aria-hidden="true" class="fas fa-arrow-down ms-2"></i>
+                    </button>
+                  </div>
+                </div>
+              </div><!-- /.accordion-step__content-col -->
+            </div><!-- /.accordion-step__row -->
+          </div>
+
+          <!-- ================================================================ -->
+          <!-- Step 2: Itinerary -->
+          <!-- ================================================================ -->
+          <div class="accordion-step" id="accordionStep2" data-step="2">
+            <div class="accordion-step__row">
+              <div class="accordion-step__indicator-col">
+                <div class="stepper-indicator" data-step="2">
+                  <span class="step-number">2</span>
+                  <i aria-hidden="true" class="fas fa-check step-check"></i>
+                </div>
+                <div class="stepper-connector"></div>
+              </div>
+              <div class="accordion-step__content-col">
+                <div class="accordion-step__header" data-step="2">
+                  <div class="accordion-step__title">Itinerary</div>
+                  <div class="accordion-step__summary" id="step2Summary"></div>
+                  <i aria-hidden="true" class="fas fa-chevron-down accordion-step__chevron"></i>
+                </div>
+                <div class="accordion-step__body">
+                  <p class="form-text mb-3">Add each destination stop for this trip. For multi-city travel, add stops in order.</p>
+
+                  <!-- Event Date Range Display -->
+                  <div class="event-date-range hidden" id="eventDateRange">
+                    <i aria-hidden="true" class="fas fa-calendar-alt"></i>
+                    <span class="event-date-range__label">Event Dates:</span>
+                    <span class="event-date-range__dates" id="eventDateRangeText"></span>
+                  </div>
+
+                  <!-- Legs Container -->
+                  <div class="itinerary-legs" id="itineraryLegsContainer">
+                    <!-- Empty state -->
+                    <div class="itinerary-empty-state" id="itineraryEmptyState">
+                      <div class="itinerary-empty-state__icon">
+                        <i aria-hidden="true" class="fas fa-route"></i>
+                      </div>
+                      <div class="itinerary-empty-state__content">
+                        <h5>No destinations added yet</h5>
+                        <p>Add your first stop to build the itinerary</p>
+                      </div>
+                      <button type="button" class="btn btn-primary btn-sm" id="emptyStateAddLeg">
+                        <i aria-hidden="true" class="fas fa-plus me-1"></i>Add Destination
+                      </button>
+                    </div>
+                    <!-- Leg cards will be rendered here dynamically -->
+                  </div>
+
+                  <!-- Add Leg Button (hidden when empty state shows) -->
+                  <button type="button" class="btn btn-outline-primary btn-add-leg d-none" id="btnAddLeg">
+                    <i aria-hidden="true" class="fas fa-plus me-2"></i>Add Another Stop
+                  </button>
+
+                  <!-- Itinerary Summary -->
+                  <div class="itinerary-summary d-none" id="itinerarySummary">
+                    <div class="itinerary-summary__route">
+                      <i aria-hidden="true" class="fas fa-route me-2"></i>
+                      <span id="itineraryRouteText"></span>
+                    </div>
+                    <div class="itinerary-summary__dates">
+                      <i aria-hidden="true" class="fas fa-calendar me-2"></i>
+                      <span id="itineraryDatesText"></span>
+                    </div>
+                  </div>
+
+                  <!-- Step 2 Footer -->
+                  <div class="accordion-step__footer">
+                    <button type="button" class="btn btn-outline-secondary" data-action="back">
+                      <i aria-hidden="true" class="fas fa-arrow-up me-2"></i>Back
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-action="save-draft">
+                      <i aria-hidden="true" class="fas fa-save me-2"></i>Save Draft
+                    </button>
+                    <button type="button" class="btn btn-primary" data-action="continue">
+                      Continue<i aria-hidden="true" class="fas fa-arrow-down ms-2"></i>
+                    </button>
+                  </div>
+                </div>
+              </div><!-- /.accordion-step__content-col -->
+            </div><!-- /.accordion-step__row -->
+          </div>
+
+          <!-- ================================================================ -->
+          <!-- Step 3: Travelers -->
+          <!-- ================================================================ -->
+          <div class="accordion-step" id="accordionStep3" data-step="3">
+            <div class="accordion-step__row">
+              <div class="accordion-step__indicator-col">
+                <div class="stepper-indicator" data-step="3">
+                  <span class="step-number">3</span>
+                  <i aria-hidden="true" class="fas fa-check step-check"></i>
+                </div>
+                <div class="stepper-connector"></div>
+              </div>
+              <div class="accordion-step__content-col">
+                <div class="accordion-step__header" data-step="3">
+                  <div class="accordion-step__title">Travelers</div>
+                  <div class="accordion-step__summary" id="step3Summary"></div>
+                  <i aria-hidden="true" class="fas fa-chevron-down accordion-step__chevron"></i>
+                </div>
+                <div class="accordion-step__body">
+                  <div class="travelers-container" id="travelersContainer">
+                    <!-- Empty state - shown when no travelers -->
+                    <div class="travelers-empty-state" id="travelersEmptyState">
+                      <div class="travelers-empty-state__icon">
+                        <i aria-hidden="true" class="fas fa-users"></i>
+                      </div>
+                      <h5 class="travelers-empty-state__title">No travelers added yet</h5>
+                      <p class="travelers-empty-state__text">Add travelers to get started with the travel request.</p>
+                      <div class="travelers-empty-state__actions">
+                        <button type="button" class="btn btn-primary" id="emptyStateAddTraveler">
+                          <i aria-hidden="true" class="fas fa-plus me-2"></i>Add Traveler
+                        </button>
+                      </div>
+                    </div>
+                    <!-- Traveler accordions will be rendered here -->
+                  </div>
+                  <button type="button" class="btn btn-outline-primary btn-add-traveler" id="btnAddTraveler">
+                    <i aria-hidden="true" class="fas fa-plus me-2"></i>Add Traveler
+                  </button>
+                  <div class="travelers-total" id="travelersTotal">
+                    <div class="travelers-total__left">
+                      <span class="travelers-total__count">0 travelers</span>
+                      <div class="travelers-total__breakdown">
+                        <span>Transport: <strong id="travelersTotalTransport">$0.00</strong></span>
+                        <span>Lodging: <strong id="travelersTotalLodging">$0.00</strong></span>
+                        <span>M&IE: <strong id="travelersTotalMie">$0.00</strong></span>
+                        <span>Local: <strong id="travelersTotalLocal">$0.00</strong></span>
+                        <span>15% Gross-Up: <strong id="travelersTotalOther">$0.00</strong></span>
+                      </div>
+                    </div>
+                    <div class="travelers-total__right">
+                      <span class="travelers-total__label">TOTAL</span>
+                      <strong class="travelers-total__value">$0.00</strong>
+                    </div>
+                  </div>
+                  <!-- Step 3 Footer -->
+                  <div class="accordion-step__footer">
+                    <button type="button" class="btn btn-outline-secondary" data-action="back">
+                      <i aria-hidden="true" class="fas fa-arrow-up me-2"></i>Back
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-action="save-draft">
+                      <i aria-hidden="true" class="fas fa-save me-2"></i>Save Draft
+                    </button>
+                    <button type="button" class="btn btn-primary" data-action="continue">
+                      Continue<i aria-hidden="true" class="fas fa-arrow-down ms-2"></i>
+                    </button>
+                  </div>
+                </div>
+              </div><!-- /.accordion-step__content-col -->
+            </div><!-- /.accordion-step__row -->
+          </div>
+
+          <!-- ================================================================ -->
+          <!-- Step 4: Travel Classification -->
+          <!-- ================================================================ -->
+          <div class="accordion-step" id="accordionStep4" data-step="4">
+            <div class="accordion-step__row">
+              <div class="accordion-step__indicator-col">
+                <div class="stepper-indicator" data-step="4">
+                  <span class="step-number">4</span>
+                  <i aria-hidden="true" class="fas fa-check step-check"></i>
+                </div>
+                <div class="stepper-connector"></div>
+              </div>
+              <div class="accordion-step__content-col">
+                <div class="accordion-step__header" data-step="4">
+                  <div class="accordion-step__title">Travel Classification</div>
+                  <div class="accordion-step__summary" id="step4Summary"></div>
+                  <i aria-hidden="true" class="fas fa-chevron-down accordion-step__chevron"></i>
+                </div>
+                <div class="accordion-step__body">
+
+            <!-- Two-Column Classification Layout -->
+            <div class="classification-grid">
+              <!-- Left Column: Type of Travel -->
+              <div class="classification-column" id="travelTypesContainer">
+                <div class="classification-column__header">
+                  <i aria-hidden="true" class="fas fa-plane"></i>
+                  <span>Type of Travel</span>
+                  <span class="classification-column__required">Required</span>
+                </div>
+                <div class="classification-column__hint">Select all that apply</div>
+                <div class="classification-column__body">
+                  <label class="classification-option">
+                    <input type="checkbox" value="Local Travel">
+                    <span class="classification-option__text">Local Travel</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Internal Travel">
+                    <span class="classification-option__text">Internal Travel</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Customer Meeting">
+                    <span class="classification-option__text">Customer Meeting</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Vendor Meeting">
+                    <span class="classification-option__text">Vendor Meeting</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="International - Travel Between CONUS and OCONUS">
+                    <span class="classification-option__text">International (CONUS → OCONUS)</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Overseas Employee - Travel within OCONUS">
+                    <span class="classification-option__text">Overseas Employee (within OCONUS)</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Speaking Engagement">
+                    <span class="classification-option__text">Speaking Engagement</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="GSA Sponsored Conference">
+                    <span class="classification-option__text">GSA Sponsored Conference</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Non-GSA Sponsored Conference Attendance (including training)">
+                    <span class="classification-option__text">Non-GSA Conference / Training</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Right Column: Mission-Critical Travel -->
+              <div class="classification-column" id="missionCriticalContainer">
+                <div class="classification-column__header">
+                  <i aria-hidden="true" class="fas fa-shield-alt"></i>
+                  <span>Mission-Critical Travel</span>
+                  <span class="classification-column__required">Required</span>
+                </div>
+                <div class="classification-column__hint">Select all that apply</div>
+                <div class="classification-column__body">
+                  <label class="classification-option">
+                    <input type="checkbox" value="Acquisition activities conducted in a Sensitive Compartmented Information Facility (SCIF)">
+                    <span class="classification-option__text">SCIF Acquisition Activities</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Physical oversight of inventory/deliverables required explicitly by contract, or regulation">
+                    <span class="classification-option__text">Physical Oversight (Inventory/Deliverables)</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Physical inspection and acceptance of motor vehicles at manufacturing plants">
+                    <span class="classification-option__text">Vehicle Inspection at Plants</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Oversight of retail operations facilities">
+                    <span class="classification-option__text">Retail Operations Oversight</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Industry engagement related to acquisition activities">
+                    <span class="classification-option__text">Industry Engagement (Acquisitions)</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Technical Evaluation Boards that cannot be conducted virtually">
+                    <span class="classification-option__text">Technical Evaluation Boards</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+              <!-- Step 4 Footer -->
+              <div class="accordion-step__footer">
+                <button type="button" class="btn btn-outline-secondary" data-action="back">
+                  <i aria-hidden="true" class="fas fa-arrow-up me-2"></i>Back
+                </button>
+                <button type="button" class="btn btn-outline-primary btn-sm" data-action="save-draft">
+                  <i aria-hidden="true" class="fas fa-save me-2"></i>Save Draft
+                </button>
+                <button type="button" class="btn btn-primary" data-action="continue">
+                  Continue<i aria-hidden="true" class="fas fa-arrow-down ms-2"></i>
+                </button>
+              </div>
+                </div>
+              </div><!-- /.accordion-step__content-col -->
+            </div><!-- /.accordion-step__row -->
+          </div>
+
+          <!-- ================================================================ -->
+          <!-- Step 5: Shared Costs (Optional) -->
+          <!-- ================================================================ -->
+          <div class="accordion-step" id="accordionStep5" data-step="5">
+            <div class="accordion-step__row">
+              <div class="accordion-step__indicator-col">
+                <div class="stepper-indicator" data-step="5">
+                  <span class="step-number">5</span>
+                  <i aria-hidden="true" class="fas fa-check step-check"></i>
+                </div>
+                <div class="stepper-connector"></div>
+              </div>
+              <div class="accordion-step__content-col">
+                <div class="accordion-step__header" data-step="5">
+                  <div class="accordion-step__title">Shared Costs</div>
+                  <span class="accordion-step__optional-badge">Optional</span>
+                  <div class="accordion-step__summary" id="step5Summary"></div>
+                  <i aria-hidden="true" class="fas fa-chevron-down accordion-step__chevron"></i>
+                </div>
+                <div class="accordion-step__body">
+                  <!-- Compact Shared Costs Table -->
+                  <div class="sc-table" id="sharedCostsList">
+                    <div class="sc-row" data-category="facilities">
+                      <div class="sc-row__label">
+                        <i aria-hidden="true" class="fas fa-building"></i>
+                        <span>Facilities & Space</span>
+                      </div>
+                      <div class="sc-row__input">
+                        <div class="input-group input-group-sm">
+                          <span class="input-group-text">$</span>
+                          <input type="number" class="form-control shared-cost-amount" id="sharedCostAmount_facilities"
+                                 placeholder="0.00" min="0" step="0.01">
+                        </div>
+                      </div>
+                      <div class="sc-row__desc">
+                        <input type="text" class="form-control form-control-sm shared-cost-desc" id="sharedCostDesc_facilities"
+                               placeholder="Description (optional)">
+                      </div>
+                    </div>
+
+                    <div class="sc-row" data-category="audioVisual">
+                      <div class="sc-row__label">
+                        <i aria-hidden="true" class="fas fa-desktop"></i>
+                        <span>Audio/Visual & Tech</span>
+                      </div>
+                      <div class="sc-row__input">
+                        <div class="input-group input-group-sm">
+                          <span class="input-group-text">$</span>
+                          <input type="number" class="form-control shared-cost-amount" id="sharedCostAmount_audioVisual"
+                                 placeholder="0.00" min="0" step="0.01">
+                        </div>
+                      </div>
+                      <div class="sc-row__desc">
+                        <input type="text" class="form-control form-control-sm shared-cost-desc" id="sharedCostDesc_audioVisual"
+                               placeholder="Description (optional)">
+                      </div>
+                    </div>
+
+                    <div class="sc-row" data-category="logistics">
+                      <div class="sc-row__label">
+                        <i aria-hidden="true" class="fas fa-clipboard-list"></i>
+                        <span>Logistics & Operations</span>
+                      </div>
+                      <div class="sc-row__input">
+                        <div class="input-group input-group-sm">
+                          <span class="input-group-text">$</span>
+                          <input type="number" class="form-control shared-cost-amount" id="sharedCostAmount_logistics"
+                                 placeholder="0.00" min="0" step="0.01">
+                        </div>
+                      </div>
+                      <div class="sc-row__desc">
+                        <input type="text" class="form-control form-control-sm shared-cost-desc" id="sharedCostDesc_logistics"
+                               placeholder="Description (optional)">
+                      </div>
+                    </div>
+
+                    <div class="sc-row" data-category="other">
+                      <div class="sc-row__label">
+                        <i aria-hidden="true" class="fas fa-ellipsis-h"></i>
+                        <span>Other Shared Costs</span>
+                      </div>
+                      <div class="sc-row__input">
+                        <div class="input-group input-group-sm">
+                          <span class="input-group-text">$</span>
+                          <input type="number" class="form-control shared-cost-amount" id="sharedCostAmount_other"
+                                 placeholder="0.00" min="0" step="0.01">
+                        </div>
+                      </div>
+                      <div class="sc-row__desc">
+                        <input type="text" class="form-control form-control-sm shared-cost-desc" id="sharedCostDesc_other"
+                               placeholder="Description (required if amount entered)">
+                      </div>
+                    </div>
+
+                    <!-- Total Row -->
+                    <div class="sc-total" id="sharedCostsTotal">
+                      <span class="sc-total__label">Total Shared Costs</span>
+                      <span class="sc-total__value">$0.00</span>
+                    </div>
+                  </div>
+
+                  <!-- Step 5 Footer -->
+                  <div class="accordion-step__footer">
+                    <button type="button" class="btn btn-outline-secondary" data-action="back">
+                      <i aria-hidden="true" class="fas fa-arrow-up me-2"></i>Back
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-action="save-draft">
+                      <i aria-hidden="true" class="fas fa-save me-2"></i>Save Draft
+                    </button>
+                    <button type="button" class="btn btn-primary" data-action="continue">
+                      Continue<i aria-hidden="true" class="fas fa-arrow-down ms-2"></i>
+                    </button>
+                  </div>
+                </div>
+              </div><!-- /.accordion-step__content-col -->
+            </div><!-- /.accordion-step__row -->
+          </div>
+
+          <!-- ================================================================ -->
+          <!-- Step 6: Review & Submit -->
+          <!-- ================================================================ -->
+          <div class="accordion-step" id="accordionStep6" data-step="6">
+            <div class="accordion-step__row">
+              <div class="accordion-step__indicator-col">
+                <div class="stepper-indicator" data-step="6">
+                  <span class="step-number">6</span>
+                  <i aria-hidden="true" class="fas fa-check step-check"></i>
+                </div>
+                <!-- No connector after last step -->
+              </div>
+              <div class="accordion-step__content-col">
+                <div class="accordion-step__header" data-step="6">
+                  <div class="accordion-step__title">Review & Submit</div>
+                  <div class="accordion-step__summary" id="step6Summary"></div>
+                  <i aria-hidden="true" class="fas fa-chevron-down accordion-step__chevron"></i>
+                </div>
+                <div class="accordion-step__body">
+                  <!-- Document Upload Section - Two Column Layout -->
+                  <div class="doc-upload-section" id="docUploadSection">
+                    <div class="doc-upload-header">
+                      <div class="doc-upload-header__left">
+                        <i aria-hidden="true" class="fas fa-paperclip"></i>
+                        <span>Supporting Documents</span>
+                        <span class="doc-upload-count" id="docUploadCount"></span>
+                      </div>
+                      <span class="doc-upload-hint">PDF or images up to 10 MB</span>
+                    </div>
+
+                    <div class="doc-upload-dropzone" id="docUploadZone">
+                      <input type="file" id="docFileInput" multiple accept=".pdf,.png,.jpg,.jpeg" hidden>
+                      <i aria-hidden="true" class="fas fa-cloud-upload-alt doc-upload-dropzone__icon"></i>
+                      <span class="doc-upload-dropzone__text">Drag & drop or</span>
+                      <button type="button" class="doc-upload-dropzone__btn" id="docBrowseBtn">Browse Files</button>
+                    </div>
+
+                    <div class="doc-upload-list" id="docUploadList">
+                      <div class="doc-upload-list__empty">
+                        <i aria-hidden="true" class="fas fa-inbox"></i>
+                        <span>No documents uploaded yet</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Review Summary (populated dynamically) -->
+                  <div class="review-summary" id="reviewSummary">
+                    <!-- Populated by controller -->
+                  </div>
+
+                  <!-- Grand Total -->
+                  <div class="grand-total-section mt-4" id="grandTotalSection">
+                    <div class="grand-total-row">
+                      <span class="grand-total-label">Traveler Costs:</span>
+                      <span class="grand-total-value" id="reviewTravelerTotal">$0.00</span>
+                    </div>
+                    <div class="grand-total-row">
+                      <span class="grand-total-label">Shared Costs:</span>
+                      <span class="grand-total-value" id="reviewSharedCosts">$0.00</span>
+                    </div>
+                    <div class="grand-total-row grand-total-final">
+                      <span class="grand-total-label">Grand Total:</span>
+                      <span class="grand-total-value" id="reviewGrandTotal">$0.00</span>
+                    </div>
+                  </div>
+
+                  <!-- Step 6 Footer -->
+                  <div class="accordion-step__footer">
+                    <button type="button" class="btn btn-outline-secondary" data-action="back">
+                      <i aria-hidden="true" class="fas fa-arrow-up me-2"></i>Back
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-action="save-draft">
+                      <i aria-hidden="true" class="fas fa-save me-2"></i>Save Draft
+                    </button>
+                    <button type="button" class="btn btn-success" data-action="submit">
+                      <i aria-hidden="true" class="fas fa-paper-plane me-2"></i>Submit Request
+                    </button>
+                  </div>
+                </div>
+              </div><!-- /.accordion-step__content-col -->
+            </div><!-- /.accordion-step__row -->
+          </div>
+
+      </div><!-- /.accordion-stepper -->
+
+      <!-- Fixed Footer (always visible at bottom) -->
+      <div class="travel-fixed-footer" id="travelFixedFooter">
+        <div class="travel-fixed-footer__inner">
+          <div class="travel-fixed-footer__left">
+            <button type="button" class="btn btn-ghost" id="fixedFooterSaveDraft">
+              <i aria-hidden="true" class="fas fa-save me-2"></i>Save Draft
+            </button>
+          </div>
+          <div class="travel-fixed-footer__center">
+            <span class="help-text">Need help? Contact <a href="https://mail.google.com/mail/?view=cm&fs=1&to=aastravel@gsa.gov&su=Travel%20Request%20Help" target="_blank" rel="noopener" class="help-link">AAS Travel</a></span>
+          </div>
+          <div class="travel-fixed-footer__actions">
+            <button type="button" class="btn btn-outline-secondary hidden" id="fixedFooterBack">
+              <i aria-hidden="true" class="fas fa-arrow-up me-2"></i>Back
+            </button>
+            <button type="button" class="btn btn-primary" id="fixedFooterContinue">
+              Continue<i aria-hidden="true" class="fas fa-arrow-down ms-2"></i>
+            </button>
+            <button type="button" class="btn btn-success hidden" id="fixedFooterSubmit">
+              <i aria-hidden="true" class="fas fa-paper-plane me-2"></i>Submit Request
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/awesomplete/1.1.5/awesomplete.min.js"></script>
+
+  <!-- Shared Travel Services -->
+  <?!= include('client/components/flatpickrConfig'); ?>
+  <?!= include('client/shared/escapeHtml'); ?>
+  <?!= include('client/shared/serverCall'); ?>
+  <?!= include('client/shared/travelUtils'); ?>
+  <?!= include('client/shared/travelPerDiem'); ?>
+  <?!= include('client/shared/gsaCitiesBundle'); ?>
+  <?!= include('client/shared/travelLocationService'); ?>
+  <?!= include('client/shared/travelDateService'); ?>
+  <?!= include('client/shared/travelCostService'); ?>
+
+  <!-- Travel Request Components -->
+  <!-- HC Data Center (staffing autocomplete) -->
+  <?!= include('client/shared/hcDataCenterService'); ?>
+
+  <?!= include('client/controllers/form/travelRequestDraftStorage'); ?>
+  <?!= include('client/controllers/form/travelRequestState'); ?>
+  <?!= include('client/controllers/form/travelRequestController'); ?>
+  <?!= include('client/controllers/form/travelRequestItinerary'); ?>
+  <?!= include('client/controllers/form/travelRequestTravelers'); ?>
+
+  <!-- Confirm Modal -->
+  <?!= include('client/components/confirmModal'); ?>
+
+  <!-- Help Modal -->
+  <?!= include('client/shared/travelHelpModal'); ?>
+
+  <!-- Feedback System -->
+  <?!= include('client/shared/travelFeedbackModal'); ?>
+
+  <!-- Initialize -->
+  <script>
+    document.addEventListener('DOMContentLoaded', async function() {
+      // Initialize AAS Logo in header
+      const logoContainer = document.getElementById('headerLogo');
+      if (logoContainer && window.AAS_LOGO) {
+        logoContainer.innerHTML = window.AAS_LOGO.getHTML(36, '', true);
+      }
+
+      // Initialize and preload per diem data (DOS + DoD)
+      // Data cached in IndexedDB for instant lookups
+      if (window.TravelPerDiem) {
+        try {
+          await window.TravelPerDiem.init();
+          window.TravelPerDiem.preloadAll(); // Load DOS + DoD in background
+        } catch (error) {
+          console.warn('TravelPerDiem storage unavailable:', error);
+        }
+      }
+
+      // Initialize draft storage
+      if (window.TravelDraft) {
+        try {
+          await window.TravelDraft.init();
+        } catch (error) {
+          console.warn('TravelDraft storage unavailable:', error);
+        }
+      }
+
+      // Initialize feedback system
+      if (window.TravelFeedback) {
+        TravelFeedback.init({
+          contextPage: 'form',
+          userEmail: '<?= userEmail ?>',
+          userName: '<?= userName ?>'
+        });
+      }
+
+      // Initialize the travel request form
+      // draftId / duplicateBlueprint passed from server template
+      // (URL params aren't available in iframe so we inline server-side)
+      if (window.TravelRequest && window.TravelRequest.Controller) {
+        window.TravelRequest.Controller.init({
+          userEmail: '<?= userEmail ?>',
+          userName: '<?= userName ?>',
+          submitterBU: '<?= submitterBU ?>',
+          submitterBUName: '<?= submitterBUName ?>',
+          submitterOrgCode: '<?= submitterOrgCode ?>',
+          scriptUrl: (window._travelScriptUrl = '<?= scriptUrl ?>'),
+          draftId: '<?= draftId ?>' || null,
+          duplicateBlueprint: <?!= duplicateBlueprint ?>,
+          duplicateError: '<?= duplicateError ?>' || ''
+        });
+      }
+    });
+  </script>
+</body>
+</html>

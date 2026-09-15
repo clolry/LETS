@@ -1,0 +1,98 @@
+<div class="modal fade" id="confirmModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" id="confirmModalTitle">Please Confirm</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-2" id="confirmMessage"></div>
+      <div class="modal-footer border-0">
+        <button id="confirmCancelBtn" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button id="confirmOkBtn" class="btn btn-primary">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  /**
+   * showConfirm(options, callback)
+   *   options = {
+   *     title: 'Custom Title' (optional, defaults to 'Please Confirm'),
+   *     message: 'Confirmation message' (required),
+   *     confirmText: 'OK' (optional, defaults to 'Confirm'),
+   *     cancelText: 'Cancel' (optional, defaults to 'Cancel'),
+   *     confirmClass: 'btn-primary' (optional, defaults to 'btn-primary'),
+   *     icon: 'fas fa-icon' (optional, icon class to show before message),
+   *     showIcon: true/false (optional, whether to show icon)
+   *   }
+   *   callback = fn(confirmed:boolean)
+   * 
+   * For backward compatibility, can also be called as:
+   * showConfirm(message, callback)
+   */
+  function showConfirm(options, callback) {
+    // Handle backward compatibility
+    if (typeof options === 'string') {
+      options = { message: options };
+    }
+    
+    const modalEl = document.getElementById('confirmModal');
+    const titleEl = document.getElementById('confirmModalTitle');
+    const confirmMsg = document.getElementById('confirmMessage');
+    const okBtn = document.getElementById('confirmOkBtn');
+    const cancelBtn = document.getElementById('confirmCancelBtn');
+    
+    // Set content
+    titleEl.textContent = options.title || 'Please Confirm';
+    
+    // Build message with optional icon
+    let messageHtml = '';
+    if (options.icon) {
+      messageHtml += `<i class="${options.icon} me-2 text-primary"></i>`;
+    }
+    messageHtml += `<span>${options.message}</span>`;
+    
+    // Add details if provided
+    if (options.details) {
+      messageHtml += `<div class="mt-2 text-muted small">${options.details}</div>`;
+    }
+    
+    confirmMsg.innerHTML = messageHtml;
+    
+    // Set button text
+    okBtn.textContent = options.confirmText || 'Confirm';
+    cancelBtn.textContent = options.cancelText || 'Cancel';
+    
+    // Set button class
+    okBtn.className = `btn ${options.confirmClass || 'btn-primary'}`;
+    
+    // Remove old handlers by cloning
+    const newOk = okBtn.cloneNode(true);
+    const newCancel = cancelBtn.cloneNode(true);
+    okBtn.replaceWith(newOk);
+    cancelBtn.replaceWith(newCancel);
+    
+    // Add new handlers
+    document.getElementById('confirmOkBtn').addEventListener('click', () => {
+      callback(true);
+      bootstrap.Modal.getInstance(modalEl).hide();
+    });
+    
+    document.getElementById('confirmCancelBtn').addEventListener('click', () => {
+      callback(false);
+    });
+    
+    // Handle modal hidden event for cases where user closes with X or Escape
+    modalEl.addEventListener('hidden.bs.modal', function handler() {
+      modalEl.removeEventListener('hidden.bs.modal', handler);
+      // Only call callback(false) if not already called
+      if (callback) {
+        callback(false);
+        callback = null; // Prevent double-calling
+      }
+    }, { once: true });
+    
+    new bootstrap.Modal(modalEl).show();
+  }
+</script>

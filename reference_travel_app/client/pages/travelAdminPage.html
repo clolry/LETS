@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AAS Travel Admin</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Font Awesome -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+  <!-- Flatpickr for date range -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+
+  <!-- Base Styles (CSS foundation) -->
+  <?!= include('client/styles/tokens'); ?>
+  <?!= include('client/styles/travelBaseStyles'); ?>
+
+  <!-- Admin Styles -->
+  <?!= include('client/styles/travelAdminStyles'); ?>
+
+  <!-- Users-page styles (Phase 5 — unified user/role admin) -->
+  <?!= include('client/styles/travelUsersStyles'); ?>
+
+  <!-- HC staff directory (IndexedDB-cached, auto-inits on page load).
+       Typeahead in BU Reviewer / Admin User / Sector Override modals
+       queries this directly — no server roundtrip per modal open. -->
+  <?!= include('client/shared/hcDataCenterService'); ?>
+
+  <!-- Shared client helpers: escapeHtml/escapeAttr + serverCall Promise wrapper -->
+  <?!= include('client/shared/escapeHtml'); ?>
+  <?!= include('client/shared/serverCall'); ?>
+</head>
+
+<body class="admin-body">
+  <!-- Skip Link for Accessibility -->
+  <a href="#adminMain" class="skip-link">Skip to main content</a>
+
+  <!-- Navigation Loader -->
+  <?!= include('client/components/navLoader'); ?>
+
+  <!-- Main Layout -->
+  <div class="admin-layout" id="adminLayout">
+    <!-- Dark Sidebar — hover-expand -->
+    <aside class="admin-sidebar" id="adminSidebar">
+      <div class="admin-sidebar__brand">
+        <div class="admin-sidebar__brand-icon" id="sidebarLogo"></div>
+        <span class="admin-sidebar__brand-text aas-brand-header__logo" style="font-size: 1rem;">TRIP</span>
+      </div>
+      <nav class="admin-nav">
+        <button class="admin-nav__item admin-nav__item--active" data-view="dashboard">
+          <i aria-hidden="true" class="fas fa-gauge-high"></i>
+          <span>Dashboard</span>
+        </button>
+        <button class="admin-nav__item" data-view="requests">
+          <i aria-hidden="true" class="fas fa-list-check"></i>
+          <span>Requests</span>
+          <span class="admin-nav__badge" id="navPendingCount"></span>
+        </button>
+        <button class="admin-nav__item" data-view="users">
+          <i aria-hidden="true" class="fas fa-users-gear"></i>
+          <span>Users</span>
+        </button>
+        <button class="admin-nav__item" data-view="reports">
+          <i aria-hidden="true" class="fas fa-chart-bar"></i>
+          <span>Reports</span>
+        </button>
+      </nav>
+      <div class="admin-sidebar__footer">
+        <div class="admin-sidebar__user">
+          <div class="admin-sidebar__user-icon"><i aria-hidden="true" class="fas fa-user-shield"></i></div>
+          <span class="admin-sidebar__user-name"><?= userName ?></span>
+        </div>
+        <button class="admin-sidebar__help-btn" onclick="TravelHelp.open()" title="Help Guide">
+          <i aria-hidden="true" class="fas fa-book-open"></i>
+          <span>Help Guide</span>
+        </button>
+        <button class="admin-sidebar__help-btn" onclick="TravelHelp.openSOP()" title="Submission Guidelines">
+          <i aria-hidden="true" class="fas fa-file-contract"></i>
+          <span>Guidelines</span>
+        </button>
+        <button class="admin-sidebar__help-btn" onclick="TravelFeedback.openBugReport()" title="Report a Bug">
+          <i aria-hidden="true" class="fas fa-bug"></i>
+          <span>Report Bug</span>
+        </button>
+        <button class="admin-sidebar__help-btn" onclick="TravelFeedback.openFeatureRequest()" title="Request a Feature">
+          <i aria-hidden="true" class="fas fa-lightbulb"></i>
+          <span>Feature Idea</span>
+        </button>
+        <!-- Dev/admin affordance: opens the reviewer-facing Travel
+             Insights dashboard with force=1 so it doesn't auto-redirect
+             back to admin. Lets admins screenshot / test the reviewer
+             surface without leaving their admin context. -->
+        <a href="#" onclick="window.TravelAdmin.navigateTo('reviewer-dashboard', { force: '1' }); return false;" class="admin-sidebar__back admin-sidebar__back--secondary" title="Open the reviewer-facing Travel Insights dashboard for testing">
+          <i aria-hidden="true" class="fas fa-clipboard-check"></i>
+          <span>Travel Insights (test)</span>
+        </a>
+        <a href="#" onclick="window.TravelAdmin.navigateTo('travel'); return false;" class="admin-sidebar__back" title="Back to Portal">
+          <i aria-hidden="true" class="fas fa-arrow-left"></i>
+          <span>Back to Portal</span>
+        </a>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="admin-main" id="adminMain">
+
+      <!-- ========== DASHBOARD VIEW ========== -->
+      <div class="admin-view" id="dashboardView">
+        <!-- Sticky page header carries title + action ribbon chips +
+             period toggle in one band. Single source of truth for the
+             period selector so it controls every metric on the page. -->
+        <div class="admin-view-header">
+          <h2><i aria-hidden="true" class="fas fa-gauge-high"></i> Dashboard</h2>
+
+          <!-- Action ribbon — chips inline in the page header so a single
+               sticky band carries title + chips + period toggle, instead
+               of three stacked sticky rows. The detail panel sits below
+               in the body and stays collapsible. -->
+          <div class="action-ribbon" id="actionRibbon">
+            <button type="button" class="action-ribbon__chip" data-section="reviews" id="ribbonChipReviews">
+              <i aria-hidden="true" class="fas fa-inbox"></i>
+              <span class="action-ribbon__count" id="ribbonReviewsCount">0</span>
+              <span class="action-ribbon__label">Reviews</span>
+              <span class="action-ribbon__urgent hidden" id="ribbonReviewsUrgent">
+                <i aria-hidden="true" class="fas fa-bolt"></i><span id="ribbonReviewsUrgentCount">0</span>
+              </span>
+            </button>
+            <button type="button" class="action-ribbon__chip" data-section="stalled" id="ribbonChipStalled">
+              <i aria-hidden="true" class="fas fa-clock-rotate-left"></i>
+              <span class="action-ribbon__count" id="ribbonStalledCount">0</span>
+              <span class="action-ribbon__label">Stalled</span>
+            </button>
+            <button type="button" class="action-ribbon__chip action-ribbon__chip--denied hidden" data-section="denied" id="ribbonChipDenied">
+              <i aria-hidden="true" class="fas fa-circle-xmark"></i>
+              <span class="action-ribbon__count" id="ribbonDeniedCount">0</span>
+              <span class="action-ribbon__label" id="ribbonDeniedLabel">Denied</span>
+            </button>
+          </div>
+
+          <div class="admin-view-header__actions">
+            <div class="period-toggle" id="periodToggle">
+              <button class="period-toggle__btn period-toggle__btn--active" data-period="30d">30 Days</button>
+              <button class="period-toggle__btn" data-period="quarter">FY Quarter</button>
+              <button class="period-toggle__btn" data-period="fy">Fiscal Year</button>
+              <button class="period-toggle__btn" data-period="custom" id="customPeriodBtn">Custom</button>
+            </div>
+            <!-- Hidden flatpickr handle. The picker drops down from the
+                 Custom button via positionElement; this input never shows. -->
+            <input type="text" id="customDateRange" class="period-toggle__hidden-anchor" tabindex="-1" aria-hidden="true">
+          </div>
+        </div>
+
+        <!-- Body: scrollable content area, padded. Sits beneath the sticky
+             header above. The action detail panel for the ribbon expands
+             here when a chip is clicked. -->
+        <div class="admin-view-body">
+
+        <!-- Action Center detail content (the action-ribbon itself moved
+             up into the header above; this wrapper holds the collapsible
+             detail panel + the live pipeline + denied/cancelled alert). -->
+        <div id="actionCenterContent">
+
+          <!-- Collapsible detail panel: holds the existing two-card layout.
+               Stays in the DOM (not display:none) for skeleton render to
+               work; visibility is toggled via .is-collapsed class. -->
+          <div class="action-detail mb-4 is-collapsed" id="actionDetail">
+            <div class="row g-4">
+              <!-- Your Reviews -->
+              <div class="col-lg-6">
+                <div class="admin-card admin-card--info">
+                  <div class="admin-card__header">
+                    <h3 class="admin-card__title"><i aria-hidden="true" class="fas fa-inbox"></i> Your Reviews</h3>
+                    <a href="#" class="btn btn-sm btn-link" id="viewAllReviews" style="font-size:0.72rem;">View All</a>
+                  </div>
+                  <div class="admin-card__body" id="yourReviewsList" style="padding:0;">
+                    <div class="skeleton-action-item"><div class="skeleton skeleton-name"></div><div class="skeleton skeleton-badge"></div><div class="skeleton skeleton-amount"></div></div>
+                    <div class="skeleton-action-item"><div class="skeleton skeleton-name"></div><div class="skeleton skeleton-badge"></div><div class="skeleton skeleton-amount"></div></div>
+                    <div class="skeleton-action-item"><div class="skeleton skeleton-name"></div><div class="skeleton skeleton-badge"></div><div class="skeleton skeleton-amount"></div></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Stalled Requests -->
+              <div class="col-lg-6">
+                <div class="admin-card admin-card--stalled">
+                  <div class="admin-card__header">
+                    <h3 class="admin-card__title"><i aria-hidden="true" class="fas fa-clock-rotate-left"></i> Stalled Requests</h3>
+                  </div>
+                  <div class="admin-card__body" id="stalledRequestsList" style="padding:0;">
+                    <div class="skeleton-action-item"><div class="skeleton skeleton-name"></div><div class="skeleton skeleton-badge"></div><div class="skeleton skeleton-amount"></div></div>
+                    <div class="skeleton-action-item"><div class="skeleton skeleton-name"></div><div class="skeleton skeleton-badge"></div><div class="skeleton skeleton-amount"></div></div>
+                    <div class="skeleton-action-item"><div class="skeleton skeleton-name"></div><div class="skeleton skeleton-badge"></div><div class="skeleton skeleton-amount"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Hidden legacy alert — state still owned by _renderDeniedCancelledAlert
+               (text + link), but the chip in the ribbon above is what's now
+               visible to the user. Kept hidden so existing controller wiring
+               doesn't break and the click-to-Denied filter still works. -->
+          <div class="hidden" id="deniedCancelledAlert">
+            <span id="deniedCancelledText"></span>
+            <a href="#" id="viewDeniedLink"></a>
+          </div>
+
+          <!-- Pulse Strip — period-filtered metrics (top) above the dashed
+               divider, live in-flight load (bottom) below it. The strip
+               is one card so the dashboard reads as a single at-a-glance
+               panel; sections share visual chrome but have distinct
+               semantics (period vs. live). Funding split sits with the
+               period KPIs above the divider since it's period-filtered. -->
+          <section class="pulse-strip mb-4" id="pulseStrip">
+
+            <!-- Period KPIs (4 stat cards) -->
+            <div class="pulse-strip__row pulse-strip__row--metrics">
+              <div class="skeleton-stat-cards" id="statCardsSkeleton">
+                <div class="skeleton-stat-card"><div class="skeleton skeleton-label"></div><div class="skeleton skeleton-value"></div></div>
+                <div class="skeleton-stat-card"><div class="skeleton skeleton-label"></div><div class="skeleton skeleton-value"></div></div>
+                <div class="skeleton-stat-card"><div class="skeleton skeleton-label"></div><div class="skeleton skeleton-value"></div></div>
+                <div class="skeleton-stat-card"><div class="skeleton skeleton-label"></div><div class="skeleton skeleton-value"></div></div>
+              </div>
+              <div class="stat-cards" id="statCards">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+
+            <!-- Funding Source split (period-filtered, glance metric) -->
+            <div class="pulse-strip__row pulse-strip__row--funding" id="pulseFundingRow">
+              <!-- Populated dynamically by _renderFundingSplitInPulse -->
+            </div>
+
+            <!-- Live Pipeline (6 chips, always current) -->
+            <div class="pulse-strip__row pulse-strip__row--pipeline">
+              <div class="pulse-strip__live-tag" aria-hidden="true">Live</div>
+              <div class="pipeline-row" id="pipelineRow">
+                <div class="skeleton-pipeline" id="pipelineSkeleton">
+                  <div class="skeleton-pipeline-card"><div class="skeleton skeleton-count"></div><div class="skeleton skeleton-label"></div></div>
+                  <div class="skeleton-pipeline-card"><div class="skeleton skeleton-count"></div><div class="skeleton skeleton-label"></div></div>
+                  <div class="skeleton-pipeline-card"><div class="skeleton skeleton-count"></div><div class="skeleton skeleton-label"></div></div>
+                  <div class="skeleton-pipeline-card"><div class="skeleton skeleton-count"></div><div class="skeleton skeleton-label"></div></div>
+                  <div class="skeleton-pipeline-card"><div class="skeleton skeleton-count"></div><div class="skeleton skeleton-label"></div></div>
+                  <div class="skeleton-pipeline-card"><div class="skeleton skeleton-count"></div><div class="skeleton skeleton-label"></div></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Metrics Section (charts + perf) — driven by the period
+               toggle in the command bar at the top of the dashboard. -->
+          <div id="metricsSection">
+            <!-- Metrics Loading -->
+            <div class="admin-loading hidden" id="metricsLoading">
+              <div class="spinner"></div>
+              <span>Loading metrics...</span>
+            </div>
+
+            <!-- Charts -->
+            <div class="chart-grid mb-4" id="chartsRow">
+              <!-- Populated dynamically -->
+            </div>
+
+            <!-- Reviewer Performance -->
+            <div class="admin-card admin-card--chart" id="perfTableCard">
+              <div class="admin-card__header">
+                <div>
+                  <h3 class="admin-card__title"><i aria-hidden="true" class="fas fa-ranking-star"></i> Reviewer Performance</h3>
+                  <div class="admin-card__caption">All-time activity, business days only (skips Sat/Sun)</div>
+                </div>
+              </div>
+              <div class="admin-card__body" style="padding:0;">
+                <div id="perfTableContainer">
+                  <!-- Populated dynamically -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div><!-- /.admin-view-body -->
+      </div>
+
+      <!-- ========== REQUESTS VIEW ========== -->
+      <div class="admin-view admin-view--scroll-body hidden" id="requestsView">
+        <!-- Header carries title + status pills + search inline so the
+             whole filtering surface pins to the top of the scroll area
+             via the sticky page header. BU + date-range stay in the
+             body since they're less-frequently-used filters. -->
+        <div class="admin-view-header admin-view-header--requests">
+          <h2><i aria-hidden="true" class="fas fa-list-check"></i> All Requests</h2>
+
+          <!-- Status pills, grouped: in-flight on the left, decided
+               (denied/cancelled) on the right with a soft divider. -->
+          <div class="filter-pills filter-pills--grouped" id="statusFilterPills">
+            <!-- Populated dynamically -->
+          </div>
+
+          <div class="admin-view-header__actions">
+            <div class="search-input search-input--header">
+              <i aria-hidden="true" class="fas fa-search"></i>
+              <input type="text" id="filterSearch" class="form-control form-control-sm" placeholder="ID, trip name, submitter, reviewer...">
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-view-body">
+
+        <!-- Table Wrap -->
+        <div class="admin-table-wrap">
+          <!-- Secondary filters: BU + Date Range, both with clear buttons.
+               Search moved to the sticky header above so it stays visible
+               while scrolling. Row count sits at the right end as live
+               feedback for the filter set. -->
+          <div class="admin-table-filters">
+            <div class="filter-group">
+              <label>BU</label>
+              <div class="filter-input-wrap" id="filterBUWrap">
+                <select id="filterBU" class="form-select form-select-sm"></select>
+                <button type="button" class="filter-input-wrap__clear" id="filterBUClear" title="Clear BU filter" aria-label="Clear BU filter">
+                  <i aria-hidden="true" class="fas fa-xmark"></i>
+                </button>
+              </div>
+            </div>
+            <div class="filter-group">
+              <label>Date Range</label>
+              <div class="filter-input-wrap" id="filterDateRangeWrap">
+                <input type="text" id="filterDateRange" class="form-control form-control-sm" placeholder="Select dates...">
+                <button type="button" class="filter-input-wrap__clear" id="filterDateRangeClear" title="Clear date range" aria-label="Clear date range">
+                  <i aria-hidden="true" class="fas fa-xmark"></i>
+                </button>
+              </div>
+            </div>
+            <div class="admin-table-filters__count" id="requestsRowCount" aria-live="polite">
+              <!-- Populated by _updateRequestsCount -->
+            </div>
+          </div>
+
+          <!-- Bulk Action Bar (hidden until selections made). The
+               selectAllCheckbox in the table header already handles
+               deselect, so no separate button needed. -->
+          <div class="bulk-action-bar hidden" id="bulkActionBar">
+            <div class="bulk-action-bar__info">
+              <i aria-hidden="true" class="fas fa-check-square"></i>
+              <span id="bulkSelectedCount">0</span> request(s) selected
+            </div>
+            <div class="bulk-action-bar__actions">
+              <button class="btn btn-danger btn-sm" id="bulkDeleteBtn">
+                <i aria-hidden="true" class="fas fa-trash-alt me-1"></i>Delete Selected
+              </button>
+            </div>
+          </div>
+
+          <!-- Loading -->
+          <div class="admin-loading" id="requestsLoading">
+            <div class="spinner"></div>
+            <span>Loading requests...</span>
+          </div>
+
+          <!-- Table -->
+          <div class="admin-table-container hidden" id="requestsTableContainer">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th class="th-checkbox"><input type="checkbox" id="selectAllCheckbox" title="Select all"></th>
+                  <th class="sortable" data-sort="requestId">ID</th>
+                  <th class="sortable" data-sort="tripName">Trip Name</th>
+                  <th class="sortable" data-sort="submitterName">Submitter</th>
+                  <th class="sortable" data-sort="status">Status</th>
+                  <th class="sortable" data-sort="buCode">BU</th>
+                  <th class="sortable" data-sort="grandTotal">Amount</th>
+                  <th class="sortable" data-sort="submittedAt">Submitted</th>
+                  <th title="Days since the request last moved (entered or was acted on at this stage)">Days at Stage</th>
+                  <th>Reviewer</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="requestsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+        </div><!-- /.admin-view-body -->
+      </div>
+
+
+      <!-- ========== REPORTS VIEW ========== -->
+      <div class="admin-view hidden" id="reportsView">
+        <div class="admin-view-header">
+          <h2><i aria-hidden="true" class="fas fa-chart-bar"></i> Reports</h2>
+          <div class="report-tabs" id="reportTabs">
+            <button class="report-tab report-tab--active" data-report-view="quickReports">Quick Reports</button>
+            <button class="report-tab" data-report-view="dataExport">Data Export</button>
+            <button class="report-tab" data-report-view="feedback">Feedback</button>
+          </div>
+        </div>
+
+        <div class="admin-view-body">
+
+        <!-- Quick Reports sub-view -->
+        <div class="report-subview" id="quickReportsSubview">
+          <div class="report-cards" id="reportCards">
+            <!-- Reviewer Performance -->
+            <div class="report-card">
+              <div class="report-card__icon"><i aria-hidden="true" class="fas fa-ranking-star"></i></div>
+              <div class="report-card__content">
+                <div class="report-card__title">Reviewer Performance</div>
+                <div class="report-card__desc">Reviews completed, avg review time, denial rates, and currently pending counts per reviewer.</div>
+                <div class="report-card__controls">
+                  <select class="form-select form-select-sm report-card__period" data-report-type="reviewer_performance">
+                    <option value="30d">Last 30 Days</option>
+                    <option value="quarter">FY Quarter</option>
+                    <option value="fy">Fiscal Year</option>
+                  </select>
+                  <div class="report-card__actions">
+                    <button class="btn btn-primary btn-sm" onclick="TravelAdmin.Controller.runPresetReport('reviewer_performance', this)">
+                      <i aria-hidden="true" class="fas fa-table me-1"></i>Export to Sheets
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Monthly Summary -->
+            <div class="report-card">
+              <div class="report-card__icon"><i aria-hidden="true" class="fas fa-calendar-check"></i></div>
+              <div class="report-card__content">
+                <div class="report-card__title">Monthly Summary</div>
+                <div class="report-card__desc">Volume, approval rates, processing times, spend totals, and pipeline snapshot with per-request detail.</div>
+                <div class="report-card__controls">
+                  <select class="form-select form-select-sm report-card__period" data-report-type="monthly_summary">
+                    <option value="30d">Last 30 Days</option>
+                    <option value="quarter">FY Quarter</option>
+                    <option value="fy">Fiscal Year</option>
+                  </select>
+                  <div class="report-card__actions">
+                    <button class="btn btn-primary btn-sm" onclick="TravelAdmin.Controller.runPresetReport('monthly_summary', this)">
+                      <i aria-hidden="true" class="fas fa-table me-1"></i>Export to Sheets
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Denied & Cancelled Log -->
+            <div class="report-card">
+              <div class="report-card__icon report-card__icon--warn"><i aria-hidden="true" class="fas fa-ban"></i></div>
+              <div class="report-card__content">
+                <div class="report-card__title">Denied & Cancelled Log</div>
+                <div class="report-card__desc">All denied and cancelled requests with denial reason, stage, reviewer, and days in pipeline.</div>
+                <div class="report-card__controls">
+                  <select class="form-select form-select-sm report-card__period" data-report-type="denied_cancelled">
+                    <option value="30d">Last 30 Days</option>
+                    <option value="quarter">FY Quarter</option>
+                    <option value="fy">Fiscal Year</option>
+                  </select>
+                  <div class="report-card__actions">
+                    <button class="btn btn-primary btn-sm" onclick="TravelAdmin.Controller.runPresetReport('denied_cancelled', this)">
+                      <i aria-hidden="true" class="fas fa-table me-1"></i>Export to Sheets
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Stage Timing -->
+            <div class="report-card">
+              <div class="report-card__icon report-card__icon--accent"><i aria-hidden="true" class="fas fa-stopwatch"></i></div>
+              <div class="report-card__content">
+                <div class="report-card__title">Stage Timing Analysis</div>
+                <div class="report-card__desc">Per-request stage dwell times for completed requests, identifying bottleneck stages with averages.</div>
+                <div class="report-card__controls">
+                  <select class="form-select form-select-sm report-card__period" data-report-type="stage_timing">
+                    <option value="30d">Last 30 Days</option>
+                    <option value="quarter">FY Quarter</option>
+                    <option value="fy">Fiscal Year</option>
+                  </select>
+                  <div class="report-card__actions">
+                    <button class="btn btn-primary btn-sm" onclick="TravelAdmin.Controller.runPresetReport('stage_timing', this)">
+                      <i aria-hidden="true" class="fas fa-table me-1"></i>Export to Sheets
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Data Export sub-view — Report Builder -->
+        <div class="report-subview hidden" id="dataExportSubview">
+
+          <!-- Toolbar: filters + actions -->
+          <div class="rb-toolbar" id="rbToolbar">
+            <div class="rb-toolbar__filters">
+              <input type="text" id="rbFilterDateRange" class="form-control form-control-sm rb-toolbar__input" placeholder="Date range...">
+              <select id="rbFilterStatus" class="form-select form-select-sm rb-toolbar__input">
+                <option value="">All Statuses</option>
+              </select>
+              <select id="rbFilterBU" class="form-select form-select-sm rb-toolbar__input">
+                <option value="">All BUs</option>
+              </select>
+            </div>
+            <div class="rb-toolbar__actions">
+              <button class="btn btn-outline-secondary btn-sm" id="rbSavePresetBtn" onclick="TravelAdmin.Controller._rbSavePreset()">
+                <i aria-hidden="true" class="fas fa-bookmark me-1"></i>Save Preset
+              </button>
+              <button class="btn btn-primary btn-sm" id="rbExportBtn" onclick="TravelAdmin.Controller._rbExportSheets()">
+                <i aria-hidden="true" class="fas fa-table me-1"></i>Export to Sheets
+              </button>
+            </div>
+          </div>
+
+          <!-- Two-panel layout: column picker + selected columns -->
+          <div class="rb-panels">
+
+            <!-- Left: Column Picker -->
+            <div class="rb-picker" id="rbPicker">
+              <div class="rb-picker__search-wrap">
+                <i aria-hidden="true" class="fas fa-search"></i>
+                <input type="text" id="rbPickerSearch" class="form-control form-control-sm" placeholder="Search fields..." autocomplete="off">
+              </div>
+              <div id="rbPickerCategories">
+                <!-- Rendered dynamically by _renderPickerCategories -->
+              </div>
+            </div>
+
+            <!-- Right: Selected Columns -->
+            <div class="rb-selected" id="rbSelected">
+              <div class="rb-selected__header">
+                <span id="rbSelectedCount">0 columns selected</span>
+                <a href="#" class="rb-selected__clear" id="rbClearAll" onclick="TravelAdmin.Controller._rbClearAll(); return false;">Clear All</a>
+              </div>
+              <div class="rb-selected__list" id="rbSelectedList">
+                <!-- Rendered dynamically by _renderSelectedColumns -->
+              </div>
+              <div class="rb-selected__empty hidden" id="rbSelectedEmpty">
+                <i aria-hidden="true" class="fas fa-columns"></i>
+                <p>Select columns from the picker to build your export</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Preview -->
+          <div class="rb-preview" id="rbPreview">
+            <div class="rb-preview__header">
+              <span class="rb-preview__title">Preview</span>
+              <span class="rb-preview__count" id="rbPreviewCount"></span>
+            </div>
+            <div class="rb-preview__body" id="rbPreviewBody">
+              <div class="rb-preview__empty" id="rbPreviewEmpty">
+                <i aria-hidden="true" class="fas fa-eye"></i>
+                <p>Select columns to see a live preview</p>
+              </div>
+              <div class="rb-preview__table-wrap hidden" id="rbPreviewTableWrap">
+                <table class="rb-preview__table" id="rbPreviewTable">
+                  <thead id="rbPreviewHead"></thead>
+                  <tbody id="rbPreviewBody2"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feedback sub-view — card list with stats strip + chip filter -->
+        <div class="report-subview hidden" id="feedbackSubview">
+          <div class="feedback-stats" id="feedbackStats"></div>
+
+          <div class="feedback-toolbar">
+            <div class="feedback-chips" id="feedbackChips">
+              <button class="feedback-chip feedback-chip--active" data-type="">All <span class="feedback-chip__count" data-count-for="">0</span></button>
+              <button class="feedback-chip" data-type="thumbs_up"><i aria-hidden="true" class="fas fa-thumbs-up"></i>Up <span class="feedback-chip__count" data-count-for="thumbs_up">0</span></button>
+              <button class="feedback-chip" data-type="thumbs_down"><i aria-hidden="true" class="fas fa-thumbs-down"></i>Down <span class="feedback-chip__count" data-count-for="thumbs_down">0</span></button>
+              <button class="feedback-chip" data-type="nps"><i aria-hidden="true" class="fas fa-chart-line"></i>NPS <span class="feedback-chip__count" data-count-for="nps">0</span></button>
+              <button class="feedback-chip" data-type="bug_report"><i aria-hidden="true" class="fas fa-bug"></i>Bug <span class="feedback-chip__count" data-count-for="bug_report">0</span></button>
+              <button class="feedback-chip" data-type="feature_request"><i aria-hidden="true" class="fas fa-lightbulb"></i>Feature <span class="feedback-chip__count" data-count-for="feature_request">0</span></button>
+            </div>
+            <div class="feedback-search">
+              <i aria-hidden="true" class="fas fa-search"></i>
+              <input type="text" id="feedbackSearch" placeholder="Search comment or user..." autocomplete="off">
+            </div>
+            <div class="feedback-toolbar__spacer"></div>
+            <button class="btn btn-sm btn-outline-secondary" id="feedbackRefreshBtn">
+              <i aria-hidden="true" class="fas fa-sync-alt me-1"></i>Refresh
+            </button>
+          </div>
+
+          <div class="feedback-meta" id="feedbackMeta"></div>
+
+          <div class="feedback-loading hidden" id="feedbackLoading">
+            <div class="spinner"></div>
+            <div>Loading feedback...</div>
+          </div>
+
+          <div class="feedback-empty hidden" id="feedbackEmpty">
+            <i aria-hidden="true" class="fas fa-comments"></i>
+            <div id="feedbackEmptyText">No feedback entries match the current filters.</div>
+          </div>
+
+          <div class="feedback-list" id="feedbackList"></div>
+        </div>
+
+        <!-- Loading overlay -->
+        <div class="report-loading hidden" id="reportLoading">
+          <div class="report-loading__backdrop">
+            <div class="spinner"></div>
+            <span>Generating report...</span>
+          </div>
+        </div>
+        </div><!-- /.admin-view-body -->
+      </div>
+
+      <!-- ============================================================== -->
+      <!-- View: Users (Phase 5) — unified Travel_Users + Travel_User_Roles -->
+      <!-- Replaces the legacy Reviewers tab. All scoped CSS lives in       -->
+      <!-- travelUsersStyles.html under the .users-* prefix.               -->
+      <!-- ============================================================== -->
+      <div class="admin-view hidden" id="usersView">
+        <!-- Sticky page header — matches the dashboard / requests pattern -->
+        <div class="admin-view-header">
+          <h2><i aria-hidden="true" class="fas fa-users-gear"></i> Users</h2>
+          <div class="admin-view-header__actions">
+            <button type="button" class="btn btn-sm btn-primary users-add-btn" id="usersAddBtn">
+              <i aria-hidden="true" class="fas fa-plus me-1"></i>Add User
+            </button>
+          </div>
+        </div>
+
+        <div class="admin-view-body users-page">
+          <!-- Current Routing strip — single-active routing roles -->
+          <section class="users-routing" id="usersRouting">
+            <!-- populated by TravelUsers.Controller._renderRouting() -->
+          </section>
+
+          <!-- Search + filter bar -->
+          <div class="users-toolbar">
+            <div class="users-search">
+              <i aria-hidden="true" class="fas fa-search"></i>
+              <input type="text" id="usersSearch" placeholder="Search admins and approved users" autocomplete="off">
+            </div>
+            <div class="users-filter">
+              <label>Filter</label>
+              <select id="usersFilter">
+                <option value="all">All</option>
+                <option value="admin">Admins</option>
+                <option value="approved">Approved Users</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+            <span class="users-count" id="usersCount"></span>
+          </div>
+          <p class="users-toolbar-hint">
+            Looking for a reviewer? See the routing dashboard above.
+          </p>
+
+          <!-- Empty state -->
+          <div class="users-empty hidden" id="usersEmpty">
+            <i aria-hidden="true" class="fas fa-users"></i>
+            <p>No users match this filter.</p>
+          </div>
+
+          <!-- Role-grouped roster — the only roster view since Item 2 -->
+          <div class="users-roster" id="usersRoster"></div>
+        </div>
+
+        <!-- Right slidein for user detail / role management -->
+        <div class="users-slidein" id="usersSlidein" aria-hidden="true">
+          <div class="users-slidein__head">
+            <div class="users-slidein__head-info">
+              <div class="users-slidein__name" id="usersSlideinName"></div>
+              <div class="users-slidein__meta" id="usersSlideinMeta"></div>
+            </div>
+            <button type="button" class="users-slidein__close" id="usersSlideinClose" aria-label="Close">
+              <i aria-hidden="true" class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="users-slidein__body" id="usersSlideinBody">
+            <!-- populated dynamically -->
+          </div>
+        </div>
+        <div class="users-slidein__backdrop" id="usersSlideinBackdrop"></div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ========== SLIDE-IN DETAIL PANEL ========== -->
+  <div class="slidein-backdrop" id="slideinBackdrop"></div>
+  <div class="slidein-panel" id="slideinPanel">
+    <div class="slidein__header">
+      <div class="slidein__header-info">
+        <div class="slidein__request-id" id="slideinRequestId"></div>
+        <div class="slidein__trip-name" id="slideinTripName"></div>
+        <div class="slidein__submitter" id="slideinSubmitter"></div>
+      </div>
+      <button class="slidein__close" id="slideinClose" title="Close" aria-label="Close panel"><i class="fas fa-times" aria-hidden="true"></i></button>
+    </div>
+    <div class="slidein__body" id="slideinBody">
+      <!-- Loading state -->
+      <div class="admin-loading" id="slideinLoading">
+        <div class="spinner"></div>
+        <span>Loading request...</span>
+      </div>
+      <!-- Content populated dynamically -->
+      <div class="hidden" id="slideinContent"></div>
+    </div>
+    <div class="slidein__footer" id="slideinFooter">
+      <div class="slidein__footer-actions">
+        <button class="btn btn-primary btn-sm" id="slideinOpenReview">
+          <i aria-hidden="true" class="fas fa-external-link-alt me-1"></i>Open Full Review
+        </button>
+        <button class="btn btn-outline-secondary btn-sm" id="slideinOverride">
+          <i aria-hidden="true" class="fas fa-exchange-alt me-1"></i>Override
+        </button>
+        <button class="btn btn-outline-secondary btn-sm" id="slideinReassign">
+          <i aria-hidden="true" class="fas fa-user-edit me-1"></i>Reassign
+        </button>
+      </div>
+      <div class="slidein__footer-danger">
+        <button class="btn btn-outline-danger btn-sm" id="slideinDelete">
+          <i aria-hidden="true" class="fas fa-trash-alt me-1"></i>Delete Request
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== MODALS ========== -->
+
+  <!-- Override Status Modal -->
+  <div class="modal fade" id="overrideStatusModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content admin-modal">
+        <div class="admin-modal__header">
+          <i aria-hidden="true" class="fas fa-exchange-alt admin-modal__icon"></i>
+          <span class="admin-modal__title">Override Status</span>
+          <button type="button" class="admin-modal__close" data-bs-dismiss="modal" aria-label="Close dialog"><i class="fas fa-times" aria-hidden="true"></i></button>
+        </div>
+        <div class="admin-modal__body">
+          <input type="hidden" id="overrideRequestId">
+          <div class="mb-3">
+            <label class="form-label">Current Status</label>
+            <input type="text" id="overrideCurrentStatus" class="form-control" readonly>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">New Status</label>
+            <select id="overrideNewStatus" class="form-select">
+              <option value="">Select new status...</option>
+              <option value="PENDING_SECTOR">Pending Sector</option>
+              <option value="PENDING_BU">Pending BU</option>
+              <option value="PENDING_OSO">Pending AAS FO</option>
+              <option value="PENDING_FAS">Pending FAS</option>
+              <option value="APPROVED_GOGOV">Approved</option>
+              <option value="COMPLETED">Completed</option>
+              <option value="DENIED">Denied</option>
+              <option value="CANCELLED">Cancelled</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Reason (required)</label>
+            <textarea id="overrideReason" class="form-control" rows="3" placeholder="Explain why this status override is needed..."></textarea>
+          </div>
+        </div>
+        <div class="admin-modal__footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="TravelAdmin.Controller.submitOverrideStatus()">
+            <i aria-hidden="true" class="fas fa-check me-1"></i>Override
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reassign Reviewer Modal -->
+  <div class="modal fade" id="reassignModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content admin-modal">
+        <div class="admin-modal__header">
+          <i aria-hidden="true" class="fas fa-user-edit admin-modal__icon"></i>
+          <span class="admin-modal__title">Reassign Reviewer</span>
+          <button type="button" class="admin-modal__close" data-bs-dismiss="modal" aria-label="Close dialog"><i class="fas fa-times" aria-hidden="true"></i></button>
+        </div>
+        <div class="admin-modal__body">
+          <input type="hidden" id="reassignRequestId">
+          <div class="mb-3">
+            <label class="form-label">Current Reviewer</label>
+            <input type="text" id="reassignCurrentReviewer" class="form-control" readonly>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">New Reviewer Email</label>
+            <input type="email" id="reassignNewEmail" class="form-control" placeholder="reviewer@gsa.gov">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Reason (required)</label>
+            <textarea id="reassignReason" class="form-control" rows="3" placeholder="Explain why this reassignment is needed..."></textarea>
+          </div>
+        </div>
+        <div class="admin-modal__footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="TravelAdmin.Controller.submitReassign()">
+            <i aria-hidden="true" class="fas fa-check me-1"></i>Reassign
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BU Reviewer Modal -->
+
+  <!-- Delete Confirmation Modal -->
+  <div class="modal fade" id="deleteConfirmModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content admin-modal">
+        <div class="admin-modal__header admin-modal__header--danger">
+          <i aria-hidden="true" class="fas fa-trash-alt admin-modal__icon"></i>
+          <span class="admin-modal__title">Confirm Delete</span>
+          <button type="button" class="admin-modal__close" data-bs-dismiss="modal" aria-label="Close dialog"><i class="fas fa-times" aria-hidden="true"></i></button>
+        </div>
+        <div class="admin-modal__body">
+          <input type="hidden" id="deleteType">
+          <input type="hidden" id="deleteKey">
+          <p id="deleteConfirmMessage">Are you sure you want to delete this reviewer?</p>
+        </div>
+        <div class="admin-modal__footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger" onclick="TravelAdmin.Controller.confirmDelete()">
+            <i aria-hidden="true" class="fas fa-trash-alt me-1"></i>Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Request Modal -->
+  <div class="modal fade" id="deleteRequestModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content admin-modal">
+        <div class="admin-modal__header admin-modal__header--danger">
+          <i aria-hidden="true" class="fas fa-trash-alt admin-modal__icon"></i>
+          <span class="admin-modal__title">Delete Travel Request(s)</span>
+          <button type="button" class="admin-modal__close" data-bs-dismiss="modal" aria-label="Close dialog"><i class="fas fa-times" aria-hidden="true"></i></button>
+        </div>
+        <div class="admin-modal__body">
+          <!-- Loading state -->
+          <div id="deletePreviewLoading" class="admin-loading">
+            <div class="spinner"></div>
+            <span>Analyzing request data...</span>
+          </div>
+          <!-- Preview content (populated dynamically) -->
+          <div id="deletePreviewContent" class="hidden">
+            <div class="delete-preview__warning">
+              <i aria-hidden="true" class="fas fa-exclamation-triangle"></i>
+              <span>This action is <strong>permanent</strong> and cannot be undone.</span>
+            </div>
+            <div class="delete-preview__requests" id="deletePreviewRequests">
+              <!-- Request summaries populated dynamically -->
+            </div>
+            <table class="delete-preview__table">
+              <tbody>
+                <tr><td>Requests</td><td id="dpCountRequests">0</td></tr>
+                <tr><td>Destinations</td><td id="dpCountLegs">0</td></tr>
+                <tr><td>Travelers</td><td id="dpCountTravelers">0</td></tr>
+                <tr><td>Traveler Leg Costs</td><td id="dpCountCosts">0</td></tr>
+                <tr><td>Attachments</td><td id="dpCountAttachments">0</td></tr>
+                <tr><td>Approval Log Entries</td><td id="dpCountLog">0</td></tr>
+                <tr class="delete-preview__total"><td>Total rows to delete</td><td id="dpCountTotal">0</td></tr>
+              </tbody>
+            </table>
+            <div class="delete-preview__drive hidden" id="deletePreviewDrive">
+              <label>
+                <input type="checkbox" id="deleteTrashDriveFolder" checked>
+                Also trash Drive attachment folder(s)
+              </label>
+            </div>
+          </div>
+          <!-- Error state -->
+          <div id="deletePreviewError" class="hidden" style="text-align:center; padding:var(--space-4); color:var(--status-denied);">
+            <i aria-hidden="true" class="fas fa-exclamation-circle" style="font-size:1.5rem;"></i>
+            <p id="deletePreviewErrorMsg" style="margin-top:var(--space-2);"></p>
+          </div>
+        </div>
+        <div class="admin-modal__footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger" id="deleteConfirmBtn" disabled onclick="TravelAdmin.Controller.confirmDeleteRequests()">
+            <i aria-hidden="true" class="fas fa-trash-alt me-1"></i>Delete Permanently
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container (travel-toast from base styles) -->
+  <div id="adminToastContainer"></div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+  <!-- AAS Logo Component -->
+  <?!= include('client/components/aasLogo'); ?>
+
+  <!-- Admin Controller -->
+  <?!= include('client/controllers/admin/travelAdminController'); ?>
+
+  <!-- Users module (Phase 5 — replaces legacy Reviewers tab) -->
+  <?!= include('client/controllers/admin/travelUsersController'); ?>
+
+  <!-- Document Viewer -->
+  <?!= include('client/components/documentViewer'); ?>
+
+  <!-- Help Modal -->
+  <?!= include('client/shared/travelHelpModal'); ?>
+
+  <!-- Feedback System -->
+  <?!= include('client/shared/travelFeedbackModal'); ?>
+
+  <!-- Initialize -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Admin pages always have admin access
+      window._travelUserIsAdmin = true;
+
+      // Initialize AAS Logo in sidebar (white variant for dark background)
+      var logoEl = document.getElementById('sidebarLogo');
+      if (logoEl && window.AAS_LOGO) {
+        logoEl.innerHTML = window.AAS_LOGO.getHTML(22, '', true);
+      }
+
+      // Set script URL for navLoader synchronous navigation
+      window._travelScriptUrl = '<?= scriptUrl ?>';
+
+      // Initialize feedback system
+      if (window.TravelFeedback) {
+        TravelFeedback.init({
+          contextPage: 'admin',
+          userEmail: '<?= userEmail ?>',
+          userName: '<?= userName ?>'
+        });
+      }
+
+      // Initialize admin controller
+      if (window.TravelAdmin && window.TravelAdmin.Controller) {
+        window.TravelAdmin.Controller.init({
+          userEmail: '<?= userEmail ?>',
+          userName: '<?= userName ?>',
+          scriptUrl: '<?= scriptUrl ?>'
+        });
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,344 @@
+<!-- client/styles/travelBaseStyles.html -->
+<!-- Shared base styles for all Travel Request pages -->
+<!-- Include this FIRST in any travel page, before page-specific styles -->
+<style>
+/* ============================================================================
+   AAS BRAND TYPOGRAPHY
+   ============================================================================ */
+.aas-brand {
+  font-family: 'Bebas Neue', sans-serif;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.aas-brand-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.aas-brand-header__logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 1.6rem;
+  line-height: 1;
+  color: white;
+}
+
+.aas-brand-header__sep {
+  width: 1px;
+  height: 1.2em;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.aas-brand-header__section {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.01em;
+}
+
+/* ============================================================================
+   AAS Brand colors + semantic + slate scale + status + spacing + shadows +
+   borders + typography + layout + transitions were defined here in their
+   own :root block. As of Chunk 16.2 (2026-05-21) ALL of these tokens were
+   consolidated into client/styles/tokens.html as the single source of truth
+   (resolves OPEN_QUESTIONS Q23). Every name that used to live in this :root
+   is now a Layer 5 alias in tokens.html, so existing var(--foo) references
+   in this stylesheet keep resolving with no change.
+   ============================================================================ */
+
+/* ============================================================================
+   BASE RESET
+   ============================================================================ */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  font-family: var(--font-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================================
+   UTILITY CLASSES
+   ============================================================================ */
+
+/* Display Utilities */
+.hidden { display: none !important; }
+.visible { display: block !important; }
+.visible-flex { display: flex !important; }
+.visible-inline { display: inline !important; }
+.visible-inline-block { display: inline-block !important; }
+.visible-inline-flex { display: inline-flex !important; }
+
+/* Visually Hidden (accessible to screen readers) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Skip Link for Accessibility */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 0;
+  background: var(--color-primary);
+  color: white;
+  padding: 0.75rem 1.25rem;
+  z-index: 10000;
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-decoration: none;
+  border-radius: 0 0 var(--border-radius-base) 0;
+  transition: top var(--transition-fast);
+}
+
+.skip-link:focus {
+  top: 0;
+  outline: 2px solid var(--brand-gold);
+  outline-offset: 2px;
+}
+
+/* Focus Visible (better keyboard navigation) — uses the canonical
+   --color-focus-ring token from tokens.html. Falls back to --color-primary
+   (defined locally below) for pages that don't include tokens.html. */
+:focus-visible {
+  outline: 2px solid var(--color-focus-ring, var(--color-primary));
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Focus-ring scoped overrides for elements that sit on AAS-brand-colored
+   surfaces (headers, dark sidebars, brand-blue banner backgrounds).
+   The default focus ring is AAS Blue (--color-focus-ring) which provides
+   ~8.78:1 contrast against white but fails WCAG 1.4.11 "non-text contrast
+   ≥3:1 against adjacent colors" when the adjacent color is also AAS Blue
+   — i.e. a control inside the form's header would render with a near-
+   invisible focus indicator. Switching to AAS Gold (--aas-gold) on those
+   surfaces gives ~7:1 contrast against AAS Blue while staying inside the
+   established AAS palette. */
+.travel-header :focus-visible,
+.portal-header :focus-visible,
+.admin-sidebar :focus-visible,
+.trip-blocked-header :focus-visible {
+  outline-color: var(--aas-gold, #F4D06F);
+}
+
+/* Text Utilities */
+.text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.text-left { text-align: left; }
+
+/* ============================================================================
+   COMMON COMPONENTS
+   ============================================================================ */
+
+/* Toast Notifications */
+.travel-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  max-width: 400px;
+  padding: 0.875rem 1.25rem;
+  background: var(--color-slate-800);
+  color: white;
+  border-radius: var(--border-radius-base);
+  box-shadow: var(--shadow-lg);
+  font-size: 0.875rem;
+  font-weight: 500;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.travel-toast.show {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.travel-toast--success {
+  background: var(--color-success);
+}
+
+.travel-toast--error {
+  background: var(--status-denied);
+}
+
+.travel-toast--warning {
+  background: var(--color-warning);
+}
+
+.travel-toast--info {
+  background: var(--color-primary);
+}
+
+/* Status Badges */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--border-radius-full);
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.status-badge--pending {
+  background: var(--status-pending-bg);
+  color: var(--status-pending);
+}
+
+.status-badge--pending-oso {
+  background: var(--status-pending-oso-bg);
+  color: var(--status-pending-oso);
+}
+
+.status-badge--approved {
+  background: var(--status-approved-bg);
+  color: var(--status-approved);
+}
+
+.status-badge--needs-info {
+  background: var(--status-needs-info-bg);
+  color: var(--status-needs-info);
+}
+
+.status-badge--completed {
+  background: var(--status-completed-bg);
+  color: var(--status-completed);
+}
+
+.status-badge--cancelled {
+  background: var(--status-cancelled-bg);
+  color: var(--status-cancelled);
+}
+
+.status-badge--denied {
+  background: var(--status-denied-bg);
+  color: var(--status-denied);
+}
+
+/* Button Overrides for Brand Colors */
+.btn-primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.btn-primary:hover {
+  background: var(--color-primary-dark);
+  border-color: var(--color-primary-dark);
+}
+
+.btn-outline-primary {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.btn-outline-primary:hover {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+}
+
+.btn-success {
+  background: var(--color-success);
+  border-color: var(--color-success);
+}
+
+.btn-danger {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+/* ============================================================================
+   LOADING ANIMATIONS
+   ============================================================================ */
+
+/* Skeleton Loader */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-slate-100) 25%,
+    var(--color-slate-200) 50%,
+    var(--color-slate-100) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Spinner */
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-slate-200);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spinner-rotate 0.6s linear infinite;
+}
+
+@keyframes spinner-rotate {
+  to { transform: rotate(360deg); }
+}
+
+/* Bouncing Dots */
+.loading-dots span {
+  display: inline-block;
+  animation: dot-bounce 1.2s ease-in-out infinite;
+}
+
+.loading-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.loading-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes dot-bounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-3px); }
+}
+</style>

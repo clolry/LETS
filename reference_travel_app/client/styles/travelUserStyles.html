@@ -1,0 +1,1842 @@
+<style>
+/**
+ * Users page styles — Phase 5
+ *
+ * Designed for a 1280×551 admin viewport. Density-optimized: 36px rows,
+ * 28px table headers, slim toolbars. Flat aesthetic — no shadows or
+ * cards. Uses brand color tokens from travelBaseStyles only; nothing
+ * inherited from the old reviewer-card patterns.
+ *
+ * All selectors prefixed `users-` — zero collision with admin styles.
+ */
+
+/*
+ * Body container — admin-view-body already provides padding, so the
+ * users-page modifier just adds vertical layout for our sections.
+ */
+.users-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Add User button — slim override on the inherited btn-sm.btn-primary
+   so it feels lighter than the default (less rounded, lighter weight). */
+.users-add-btn {
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 5px;
+  letter-spacing: 0.01em;
+}
+.users-add-btn i { font-size: 0.7rem; }
+
+/* ---- Routing dashboard ---- */
+.users-routing {
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+  background: #fbfcfd;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  font-size: 0.82rem;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.users-routing__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #475569;
+}
+.users-routing__head i {
+  color: var(--brand-blue, #004f87);
+  font-size: 0.78rem;
+}
+
+.users-routing__body {
+  display: flex;
+  flex-direction: column;
+}
+
+.users-routing__divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 2px 14px;
+}
+
+.users-routing__row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1.1fr) minmax(0, 1.1fr) 120px;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 14px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.users-routing__row:last-child { border-bottom: none; }
+
+.users-routing__row--gap-primary {
+  background: #fff7ed;
+  box-shadow: inset 3px 0 0 #f97316;
+}
+.users-routing__row--gap-backup {
+  background: #fffbeb;
+  box-shadow: inset 3px 0 0 #facc15;
+}
+
+.users-routing__row-label {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 0.83rem;
+}
+
+.users-routing__row-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.users-routing__person {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #1f2937;
+  cursor: pointer;
+  text-decoration: none;
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin: -1px -4px;
+  min-width: 0;
+}
+.users-routing__person:hover {
+  background: #e0f2fe;
+  color: var(--brand-blue, #004f87);
+}
+.users-routing__person i { color: #94a3b8; font-size: 0.78rem; }
+.users-routing__person span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.users-routing__backup-label {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+
+.users-routing__vacant {
+  color: #c2410c;
+  font-style: normal;
+  font-size: 0.78rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.users-routing__vacant i { font-size: 0.72rem; }
+.users-routing__vacant--soft {
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.users-routing__inactive-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.users-routing__row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: end;
+}
+
+.users-routing__sector-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  font-size: 0.74rem;
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.users-routing__sector-toggle:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #1f2937;
+}
+.users-routing__sector-toggle i { font-size: 0.66rem; }
+
+.users-routing__sector-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1.1fr) minmax(0, 1.1fr) 120px;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 14px;
+  background: #f8fafc;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.78rem;
+}
+.users-routing__sector-row:last-child { border-bottom: none; }
+.users-routing__sector-row--clickable { cursor: pointer; }
+.users-routing__sector-row--clickable:hover { background: #eff6ff; }
+
+.users-routing__sector-indent {
+  display: inline-block;
+  width: 12px;
+  border-left: 2px solid #cbd5e1;
+  height: 14px;
+  margin-left: 12px;
+}
+.users-routing__sector-name {
+  color: #475569;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.users-routing__sector-code {
+  display: inline-block;
+  padding: 1px 6px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  background: #e2e8f0;
+  color: #475569;
+  border-radius: 3px;
+  cursor: default;
+}
+.users-routing__sector-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #334155;
+  min-width: 0;
+}
+.users-routing__sector-person i { color: #94a3b8; font-size: 0.74rem; }
+.users-routing__sector-source {
+  justify-self: end;
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.users-routing__sector-source--hc {
+  background: #ecfdf5;
+  color: #065f46;
+}
+.users-routing__sector-source--override {
+  background: #eff6ff;
+  color: #1e40af;
+}
+.users-routing__sector-source--vacant {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.users-routing__sector-row--vacant {
+  background: #fffaf0;
+}
+.users-routing__sector-person--vacant {
+  color: #b45309;
+  font-style: normal;
+}
+.users-routing__sector-person--vacant i {
+  color: #d97706;
+  font-size: 0.74rem;
+}
+
+/* ---- Gap CTAs (inline in routing slots) ---- */
+.users-routing__gap-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  font-size: 0.74rem;
+  font-weight: 500;
+  background: var(--brand-blue, #004f87);
+  color: #fff;
+  border: 1px solid var(--brand-blue, #004f87);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+  line-height: 1;
+}
+.users-routing__gap-cta:hover {
+  background: var(--brand-blue-dark, #003a66);
+  border-color: var(--brand-blue-dark, #003a66);
+}
+.users-routing__gap-cta i { font-size: 0.7rem; }
+.users-routing__gap-cta--replace {
+  background: #fff;
+  color: #b45309;
+  border-color: #fbbf24;
+}
+.users-routing__gap-cta--replace:hover {
+  background: #fef3c7;
+  color: #78350f;
+  border-color: #f59e0b;
+}
+
+/* Swap button — promote backup to primary in one click. Subtle by
+   default, brand-blue on hover so admin notices it's the "active"
+   pair-management affordance. */
+.users-routing__swap-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  margin-left: 4px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  background: transparent;
+  color: #64748b;
+  border: 1px dashed #cbd5e1;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+  line-height: 1;
+}
+.users-routing__swap-btn:hover {
+  background: var(--brand-blue, #004f87);
+  color: #fff;
+  border-color: var(--brand-blue, #004f87);
+  border-style: solid;
+}
+.users-routing__swap-btn i { font-size: 0.7rem; }
+
+/* Armed state — first click flips the button into a "Confirm" prompt
+   with an attention-grabbing amber treatment so admin notices a real
+   action is about to fire. Auto-reverts after 5s or on outside click. */
+.users-routing__swap-btn--armed,
+.users-routing__swap-btn--armed:hover {
+  background: #f59e0b;
+  border-color: #d97706;
+  border-style: solid;
+  color: #fff;
+  animation: users-routing__armed-pulse 1.2s ease-in-out infinite;
+}
+@keyframes users-routing__armed-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); }
+  50%      { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0); }
+}
+
+/* Loading state — fired on confirm click while the server promotes the
+   backup. Disables hover, dims the button, swaps to a wait cursor so
+   admin sees the click registered. The button gets replaced when the
+   routing dashboard re-renders after the RPC returns. */
+.users-routing__swap-btn--loading,
+.users-routing__swap-btn--loading:hover {
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+  border-style: solid;
+  color: #64748b;
+  cursor: wait;
+  animation: none;
+  pointer-events: none;
+  opacity: 0.85;
+}
+.users-routing__swap-btn--loading i { font-size: 0.7rem; }
+
+/* ---- Add User prefill context banner ---- */
+.users-add__prefill-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  margin-bottom: 14px;
+  font-size: 0.82rem;
+  color: #1e3a8a;
+}
+.users-add__prefill-banner i.fa-bullseye {
+  color: var(--brand-blue, #004f87);
+  font-size: 0.9rem;
+}
+.users-add__prefill-banner-action {
+  font-weight: 600;
+  color: #1e40af;
+}
+.users-add__prefill-banner-context {
+  flex: 1;
+  font-weight: 500;
+}
+.users-add__prefill-banner-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #64748b;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.users-add__prefill-banner-clear:hover {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+.users-add__prefill-banner-clear i { font-size: 0.78rem; }
+
+/* ---- Toolbar (search + filter) ---- */
+.users-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.users-search {
+  position: relative;
+  flex: 1;
+  max-width: 400px;
+}
+.users-search i {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-secondary); /* WCAG fix: was #9ca3af (2.85:1, fails AA) */
+  font-size: 0.78rem;
+}
+.users-search input {
+  width: 100%;
+  padding: 6px 10px 6px 30px;
+  font-size: 0.85rem;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 6px;
+  background: #fff;
+}
+.users-search input:focus {
+  outline: none;
+  border-color: var(--color-primary, #0a3d62);
+  box-shadow: 0 0 0 2px rgba(10, 61, 98, 0.1);
+}
+
+.users-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.users-filter label {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin: 0;
+}
+.users-filter select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding: 5px 28px 5px 10px;
+  font-size: 0.82rem;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 6px;
+  background-color: #fff;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 12px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.users-filter select:hover { border-color: #9ca3af; }
+.users-filter select:focus {
+  outline: none;
+  border-color: var(--color-primary, #0a3d62);
+  box-shadow: 0 0 0 2px rgba(10, 61, 98, 0.1);
+}
+.users-filter select::-ms-expand { display: none; }
+
+.users-count {
+  margin-left: auto;
+  font-size: 0.78rem;
+  color: #6b7280;
+  position: relative;
+  padding-right: 0;
+  transition: padding-right 0.16s ease;
+}
+.users-count--syncing {
+  padding-right: 18px;
+}
+.users-count--syncing::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-top: -6px;
+  border: 2px solid #d1d5db;
+  border-top-color: var(--color-primary, #0a3d62);
+  border-radius: 50%;
+  animation: users-spin 0.7s linear infinite;
+}
+@keyframes users-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Loading / empty ---- */
+.users-loading,
+.users-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #6b7280;
+  font-size: 0.85rem;
+  flex: 1;
+}
+.users-empty i {
+  font-size: 1.6rem;
+  margin-bottom: 8px;
+  color: #d1d5db;
+}
+.users-loading .spinner {
+  margin-bottom: 8px;
+}
+
+/* ---- Legacy table (DEAD — kept for any stragglers; safe to delete) ---- */
+.users-table-wrap {
+  display: none;
+}
+.users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.users-table thead th {
+  position: sticky;
+  top: 0;
+  background: #f9fafb;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  padding: 6px 12px;
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  height: 28px;
+}
+.users-table tbody tr {
+  border-bottom: 1px solid #f3f4f6;
+  cursor: pointer;
+  transition: background 0.08s ease;
+}
+.users-table tbody tr:hover {
+  background: #f9fafb;
+}
+.users-table tbody tr.users-table__row--selected {
+  background: rgba(10, 61, 98, 0.05);
+}
+.users-table tbody td {
+  padding: 8px 12px;
+  height: 36px;
+  vertical-align: middle;
+}
+
+/* ---- Source label ---- */
+.users-source {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary); /* WCAG fix: was #9ca3af (2.85:1, fails AA) */
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ---- Status pill ---- */
+.users-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #6b7280;
+}
+.users-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
+}
+.users-status--active {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+/* ---- Grouped view (DEAD — kept for any stragglers; safe to delete) ---- */
+.users-grouped {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.users-group {
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+}
+.users-group__head {
+  padding: 8px 14px;
+  background: #f9fafb;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.users-group__code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #fff;
+  padding: 1px 6px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 4px;
+  font-size: 0.72rem;
+}
+.users-group__rows {
+  display: flex;
+  flex-direction: column;
+}
+.users-group__row {
+  display: grid;
+  grid-template-columns: 180px 1fr 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  border-bottom: 1px solid #f3f4f6;
+  cursor: pointer;
+  transition: background 0.08s ease;
+}
+.users-group__row:hover { background: #f9fafb; }
+.users-group__row:last-child { border-bottom: none; }
+.users-group__row--readonly { cursor: default; opacity: 0.75; }
+.users-group__row--readonly:hover { background: transparent; }
+.users-group__row--vacant { color: var(--color-text-secondary); /* WCAG fix: was #9ca3af (2.85:1, fails AA) */ font-style: italic; }
+.users-group__role-label {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.users-group__source {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary); /* WCAG fix: was #9ca3af (2.85:1, fails AA) */
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ---- Slidein panel ---- */
+.users-slidein__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
+  z-index: 990;
+}
+.users-slidein__backdrop--open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.users-slidein {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 400px;            /* tightened from 460px — focused side panel */
+  max-width: 100vw;
+  height: 100vh;
+  background: #fff;
+  border-left: 1px solid var(--color-border, #e5e7eb);
+  box-shadow: -4px 0 12px rgba(17, 24, 39, 0.05);
+  transform: translateX(100%);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 991;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;        /* chrome stays put — only inner regions scroll */
+}
+.users-slidein--open {
+  transform: translateX(0);
+}
+
+/* Header — subtle tint anchors the chrome and visually separates from body.
+   Body stays pure white; cards inside body stay #f9fafb. Three layers:
+   page > slideout body > cards. */
+.users-slidein__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  background: #f9fafb;
+  flex-shrink: 0;
+}
+.users-slidein__head-info {
+  flex: 1;
+  min-width: 0;
+}
+.users-slidein__name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+/* Drop monospace from the meta line — it carries email + source + User_ID
+   joined by · and the proportional font reads better. The User_ID portion
+   gets monospace via an inner <code> wrapper applied in the renderer. */
+.users-slidein__meta {
+  font-size: 0.76rem;
+  color: #6b7280;
+}
+.users-slidein__meta code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  background: rgba(17, 24, 39, 0.05);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.users-slidein__close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.users-slidein__close:hover {
+  background: #f3f4f6;
+  color: #111;
+}
+
+/* Body — vertical scroll only. Horizontal scroll is suppressed; any
+   accidental overflow from a wide element (long select, oversized
+   chip) gets clipped, not turned into a horizontal scrollbar.
+   min-width:0 is important on flex children inside the body so they
+   constrain to the body width instead of intrinsic content width. */
+.users-slidein__body {
+  flex: 1;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 14px 16px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(17, 24, 39, 0.18) transparent;
+}
+.users-slidein__body::-webkit-scrollbar {
+  width: 6px;
+}
+.users-slidein__body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.users-slidein__body::-webkit-scrollbar-thumb {
+  background: rgba(17, 24, 39, 0.15);
+  border-radius: 3px;
+}
+.users-slidein__body::-webkit-scrollbar-thumb:hover {
+  background: rgba(17, 24, 39, 0.3);
+}
+
+/* Same thin scrollbar for search results inside Add User */
+.users-add__list {
+  max-height: 340px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(17, 24, 39, 0.18) transparent;
+}
+.users-add__list::-webkit-scrollbar { width: 6px; }
+.users-add__list::-webkit-scrollbar-track { background: transparent; }
+.users-add__list::-webkit-scrollbar-thumb {
+  background: rgba(17, 24, 39, 0.15);
+  border-radius: 3px;
+}
+.users-add__list::-webkit-scrollbar-thumb:hover { background: rgba(17, 24, 39, 0.3); }
+
+/* ---- Slidein body sections ---- */
+.users-slidein__section {
+  margin-bottom: 20px;
+}
+.users-slidein__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.users-slidein__section-title {
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  margin: 0 0 8px 0;
+}
+.users-slidein__empty {
+  color: var(--color-text-secondary); /* WCAG fix: was #9ca3af (2.85:1, fails AA) */
+  font-size: 0.82rem;
+  font-style: italic;
+  margin: 0;
+}
+
+/* Status section — top of body, single immediate toggle. No Save button;
+   the toggle commits optimistically and reverts on failure. */
+.users-slidein__section--status {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  background: #f9fafb;
+  border-radius: 6px;
+  border: 1px solid #f3f4f6;
+}
+.users-slidein__status-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  margin: 0;
+}
+.users-slidein__status-toggle input { margin-top: 3px; }
+.users-slidein__status-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.85rem;
+}
+.users-slidein__status-label strong { font-weight: 600; }
+.users-slidein__status-hint {
+  font-size: 0.74rem;
+  color: #6b7280;
+  font-weight: 400;
+}
+
+/* Collapsible Edit details — chevron rotates when open */
+.users-slidein__collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+.users-slidein__collapse-toggle:hover { color: #111; }
+.users-slidein__collapse-toggle i {
+  font-size: 0.7rem;
+  transition: transform 0.15s ease;
+}
+.users-slidein__collapse-toggle--open i {
+  transform: rotate(90deg);
+}
+.users-slidein__collapse-body {
+  padding: 4px 0;
+}
+
+/* Input with non-editable prefix — used for ext_ User_IDs in manual entry.
+   The prefix span sits inside the input bezel; cursor lives only in the
+   editable suffix. shadcn-style. */
+.users-input-with-prefix {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.users-input-with-prefix:focus-within {
+  border-color: var(--color-primary, #0a3d62);
+  box-shadow: 0 0 0 2px rgba(10, 61, 98, 0.1);
+}
+.users-input-with-prefix__prefix {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px 0 10px;
+  background: transparent;
+  color: #6b7280;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  user-select: none;
+  pointer-events: none;
+}
+.users-input-with-prefix input {
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 6px 10px 6px 0 !important;
+  background: transparent !important;
+  flex: 1;
+  min-width: 0;
+}
+.users-input-with-prefix input:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* ---- Forms inside slidein ---- */
+.users-slidein__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.users-slidein__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.users-slidein__field > span {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: #6b7280;
+}
+.users-slidein__field input,
+.users-slidein__field select {
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 6px;
+  background: #fff;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+.users-slidein__field input:focus,
+.users-slidein__field select:focus {
+  outline: none;
+  border-color: var(--color-primary, #0a3d62);
+  box-shadow: 0 0 0 2px rgba(10, 61, 98, 0.1);
+}
+.users-slidein__field input:hover,
+.users-slidein__field select:hover {
+  border-color: #9ca3af;
+}
+
+/* Custom select chrome — strip the native chevron and use a CSS-painted
+   one instead. Same border/hover/focus rhythm as inputs. Matches Linear/
+   shadcn-style dropdowns. */
+.users-slidein__field select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 28px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 12px;
+}
+.users-slidein__field select:hover {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23111827' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>");
+}
+.users-slidein__field select::-ms-expand { display: none; }
+.users-slidein__field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.users-slidein__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.users-slidein__toggle input { margin: 0; }
+
+/* ---- Role rows in slidein ---- */
+.users-slidein__roles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* Role row is column-flex so warn panels can append below the top row.
+   The top row (label + actions) lives in __top with its own row layout.  */
+.users-role-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 0.78rem;     /* ~12.5px — tighter than body text per chip-shrink convention */
+  background: #f9fafb;
+  border: 1px solid #f3f4f6;
+  border-radius: 6px;
+}
+.users-role-row__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* Inactive: muted, not crossed-out. Strikethrough connotes "deleted" which
+   is wrong here — the role is preserved, just turned off. */
+.users-role-row--inactive {
+  opacity: 0.55;
+}
+/* Main column — stacks label + optional notes sub-line vertically while
+   actions stay center-aligned to the right. */
+.users-role-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.users-role-row__label {
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Notes sub-line — small muted explanation rendered below the role label
+   when role.notes is present. Empty notes render nothing (no whitespace). */
+.users-role-row__notes {
+  font-size: 0.7rem;
+  color: #6b7280;
+  font-weight: 400;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Explicit Inactive pill — replaces the strikethrough as the visual signal */
+.users-role-row__inactive-tag {
+  font-size: 0.66rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  background: #e5e7eb;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.users-role-row__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.users-role-row__action {
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  font-size: 0.78rem;
+}
+.users-role-row__action:hover {
+  background: #fff;
+  color: #111;
+}
+.users-role-row__action--danger:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+/* ---- Buttons ---- */
+.users-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--color-border, #d1d5db);
+  background: #fff;
+  color: #111;
+  transition: all 0.12s ease;
+}
+.users-btn:hover { background: #f9fafb; }
+.users-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.users-btn--primary {
+  background: var(--color-primary, #0a3d62);
+  border-color: var(--color-primary, #0a3d62);
+  color: #fff;
+}
+.users-btn--primary:hover { background: var(--color-primary-dark, #062a44); }
+.users-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-primary, #0a3d62);
+}
+.users-btn--ghost:hover { background: rgba(10, 61, 98, 0.06); }
+
+/* ============================================
+   ADD USER FLOW (slidein in "new user" mode)
+   ============================================ */
+
+.users-add {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Hero search input — primary affordance in 'search' state */
+.users-add__hero {
+  position: relative;
+  margin-bottom: 12px;
+}
+.users-add__hero-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-secondary); /* WCAG fix: was #9ca3af (2.85:1, fails AA) */
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+.users-add__hero input {
+  width: 100%;
+  padding: 10px 12px 10px 36px;
+  font-size: 0.95rem;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 8px;
+  background: #fff;
+  box-sizing: border-box;
+}
+.users-add__hero input:focus {
+  outline: none;
+  border-color: var(--color-primary, #0a3d62);
+  box-shadow: 0 0 0 3px rgba(10, 61, 98, 0.6);
+}
+
+/* Inline live-search results */
+.users-add__results {
+  min-height: 60px;
+}
+.users-add__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+.users-add__result {
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background 0.08s ease;
+}
+.users-add__result:last-child { border-bottom: none; }
+.users-add__result:hover { background: #f9fafb; }
+
+/* Already-added users surface in search results with a muted appearance
+   and an inline tag. Clicking redirects to edit mode for the existing
+   user instead of starting a duplicate add. */
+.users-add__result--existing {
+  background: #f9fafb;
+}
+.users-add__result--existing:hover {
+  background: #f3f4f6;
+}
+.users-add__result-existing {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: 0.66rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #ecfdf5;
+  color: #047857;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+.users-add__result-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-bottom: 2px;
+  color: #111;
+}
+.users-add__result-meta {
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+.users-add__hint {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary); /* WCAG fix: was #9ca3af (2.85:1, fails AA) */
+  margin: 8px 4px 0 4px;
+  font-style: italic;
+}
+.users-add__hint--empty {
+  font-style: normal;
+  color: #6b7280;
+}
+
+/* "or" divider above the manual link — tighter top margin so divider sits
+   close to the live-search results instead of floating in dead space. */
+.users-add__divider {
+  position: relative;
+  text-align: center;
+  margin: 12px 0 10px 0;
+  font-size: 0.74rem;
+  color: var(--color-text-secondary); /* WCAG fix: was #9ca3af (2.85:1, fails AA) */
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.users-add__divider::before,
+.users-add__divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: calc(50% - 24px);
+  height: 1px;
+  background: var(--color-border, #e5e7eb);
+}
+.users-add__divider::before { left: 0; }
+.users-add__divider::after { right: 0; }
+.users-add__divider span {
+  background: #fff;
+  padding: 0 6px;
+}
+
+/* Manual entry CTA — full-width row, looks like a button */
+.users-add__manual-link {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  text-align: left;
+  background: #fff;
+  border: 1px dashed var(--color-border, #d1d5db);
+  border-radius: 8px;
+  cursor: pointer;
+  color: #111;
+  transition: all 0.12s ease;
+}
+.users-add__manual-link:hover {
+  background: #f9fafb;
+  border-color: var(--color-primary, #0a3d62);
+  color: var(--color-primary, #0a3d62);
+}
+.users-add__manual-link i { font-size: 0.9rem; color: var(--color-primary, #0a3d62); }
+.users-add__manual-link-hint {
+  margin-left: auto;
+  font-size: 0.74rem;
+  color: var(--color-text-secondary); /* WCAG fix: was #9ca3af (2.85:1, fails AA) */
+}
+
+/* HC-picked context line — replaces the old card. Identity lives in the
+   slidein header; the body just shows the supplemental context that
+   helps admin confirm the right person, then the role picker. */
+.users-add__context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #f9fafb;
+  border: 1px solid #f3f4f6;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: #374151;
+}
+.users-add__context i {
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+.users-add__context-text {
+  flex: 1;
+  min-width: 0;
+}
+.users-add__context-text--muted {
+  color: var(--color-text-secondary); /* WCAG fix: was #9ca3af (2.85:1, fails AA) */
+  font-style: italic;
+}
+.users-add__change-link {
+  font-size: 0.74rem;
+  color: var(--color-primary, #0a3d62);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.users-add__change-link:hover {
+  background: rgba(10, 61, 98, 0.06);
+  text-decoration: underline;
+}
+
+/* Two-column form row — used when the role picker needs a Scope field.
+   When the role type doesn't need scope, the row stays single-column
+   (the second slot is hidden). */
+.users-form-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.users-form-row--2col {
+  grid-template-columns: 1fr 1fr;
+}
+
+/* Sticky footer for Cancel / Create — never scrolls out of view */
+.users-add__footer {
+  position: sticky;
+  bottom: -16px;
+  margin: 20px -20px -16px -20px;
+  padding: 12px 20px;
+  background: #fff;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.users-slidein__hint {
+  font-size: 0.74rem;
+  color: var(--color-text-secondary); /* WCAG fix: was #9ca3af (2.85:1, fails AA) */
+  margin: 4px 0 0 0;
+  font-weight: 400;
+}
+/* Group label for the Initial Role section in Add User — visually
+   sub-divides the form so admin clearly sees that role pickup is a
+   distinct required step from identity. */
+.users-slidein__field-group-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+.users-slidein__hint code {
+  background: #f3f4f6;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+}
+
+/* Inline add-role form — flat treatment matches the rest of the slideout.
+   Dropped the dashed-border + tinted background; the form just sits
+   below the role list with a thin top divider so it reads as the
+   "what you can add next" continuation rather than a boxed-off panel. */
+.users-slidein__add-role {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border, #f3f4f6);
+}
+
+/* ============================================
+   ERROR + TOAST UI (replaces window.alert everywhere)
+   ============================================ */
+
+.users-slidein__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #b91c1c;
+  font-size: 0.82rem;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+  pointer-events: none;
+}
+.users-slidein__error--visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.users-slidein__error i { margin-top: 2px; }
+.users-slidein__error-msg { flex: 1; }
+.users-slidein__error-close {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: #b91c1c;
+  cursor: pointer;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: -2px;
+  font-size: 0.78rem;
+}
+.users-slidein__error-close:hover { background: #fee2e2; }
+
+/* Toast holder — top-right of viewport. Anchored to documentElement
+   (not body) so any transform/filter on .admin-body or grid layouts
+   above can't capture our position:fixed into a containing block.
+   Top-right placement was chosen because GAS web apps render in a
+   short iframe; a top anchor stays visible without scrolling regardless
+   of viewport height. */
+.users-toast-holder {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 99999;
+  pointer-events: none;
+}
+.users-toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 6px;
+  box-shadow: 0 8px 20px rgba(17, 24, 39, 0.12);
+  font-size: 0.85rem;
+  color: #111;
+  min-width: 280px;
+  max-width: 420px;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: auto;
+}
+.users-toast--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.users-toast--error {
+  border-left: 3px solid #b91c1c;
+}
+.users-toast--error i { color: #b91c1c; }
+.users-toast--success {
+  border-left: 3px solid #047857;
+}
+.users-toast--success i { color: #047857; }
+
+/* Pending state — optimistic UI: row is dimmed + actions show a tiny
+   spinner while the RPC is in flight. Action area becomes inert; the
+   row reverts on failure (controller restores prior state + re-renders). */
+.users-role-row--pending {
+  opacity: 0.55;
+  pointer-events: none;
+}
+.users-role-row--pending .users-role-row__actions {
+  position: relative;
+}
+.users-role-row--pending .users-role-row__actions::before {
+  content: '';
+  position: absolute;
+  right: -2px;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-top: -6px;
+  border: 2px solid rgba(17, 24, 39, 0.18);
+  border-top-color: var(--color-primary, #0a3d62);
+  border-radius: 50%;
+  animation: users-spin 0.7s linear infinite;
+}
+
+/* ============================================
+   ROUTING-PROTECTION WARN PANELS
+   ============================================ */
+
+/* Per-role warn — amber accent on the row, expanded panel below the
+   actions with status lines + buttons. Block (last admin) reuses
+   the same panel structure but with a red accent and no proceed btn. */
+.users-role-row--warn-deactivate {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+.users-role-row--block-deactivate {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.users-role-row__warn {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #fcd34d;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.users-role-row--block-deactivate .users-role-row__warn {
+  border-top-color: #fca5a5;
+}
+.users-role-row__warn-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.users-role-row__warn-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: #78350f;
+}
+.users-role-row__warn-line i {
+  margin-top: 2px;
+  font-size: 0.78rem;
+  color: #b45309;
+}
+.users-role-row__warn-line--gap { color: #991b1b; }
+.users-role-row__warn-line--gap i { color: #dc2626; }
+.users-role-row__warn-line--muted {
+  color: #6b7280;
+  padding-left: 22px;
+  font-style: italic;
+}
+.users-role-row--block-deactivate .users-role-row__warn-line {
+  color: #7f1d1d;
+}
+.users-role-row--block-deactivate .users-role-row__warn-line i {
+  color: #dc2626;
+}
+.users-role-row__warn-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.users-btn--danger {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #fff;
+}
+.users-btn--danger:hover { background: #991b1b; border-color: #991b1b; }
+
+/* Aggregate user-deactivation panel — lives inside the status section,
+   not inside any role row. Same amber/red treatment. */
+.users-slidein__status-warn {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.users-slidein__status-warn-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #78350f;
+}
+.users-slidein__status-warn-head i { color: #b45309; }
+.users-slidein__status-warn-body {
+  font-size: 0.78rem;
+  color: #6b7280;
+  margin: 0;
+}
+.users-slidein__status-warn-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.users-slidein__status-warn-row {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  padding: 4px 0;
+}
+.users-slidein__status-warn-row i {
+  color: #047857;
+  font-size: 0.78rem;
+}
+.users-slidein__status-warn-row--gap i { color: #dc2626; }
+.users-slidein__status-warn-row-label {
+  font-weight: 500;
+  color: #111;
+}
+.users-slidein__status-warn-row-detail {
+  color: #6b7280;
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+.users-slidein__status-warn-row--gap .users-slidein__status-warn-row-detail {
+  color: #991b1b;
+  font-weight: 500;
+}
+.users-slidein__status-warn-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* Block variant — red instead of amber */
+.users-slidein__status-warn:has(.users-slidein__status-warn-head .fa-shield) {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.users-slidein__status-warn:has(.users-slidein__status-warn-head .fa-shield) .users-slidein__status-warn-head {
+  color: #7f1d1d;
+}
+.users-slidein__status-warn:has(.users-slidein__status-warn-head .fa-shield) .users-slidein__status-warn-head i {
+  color: #dc2626;
+}
+
+/* Inline confirm-delete state on a role row */
+.users-role-row--confirm-delete {
+  background: #fef2f2 !important;
+  border-color: #fecaca !important;
+}
+.users-role-row--confirm-delete .users-role-row__label::before {
+  content: 'Confirm delete? ';
+  color: #b91c1c;
+  font-weight: 600;
+}
+.users-role-row--confirm-delete .users-role-row__action--danger {
+  background: #b91c1c;
+  color: #fff;
+}
+.users-role-row--confirm-delete .users-role-row__action--danger:hover {
+  background: #991b1b;
+}
+
+/* Responsive: slidein covers more on narrow viewports */
+@media (max-width: 900px) {
+  .users-slidein {
+    width: 100%;
+  }
+}
+
+.users-toolbar-hint {
+  margin: -2px 0 8px;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* ============================================================================
+   ROLE-GROUPED ROSTER (Item 2)
+   ============================================================================ */
+.users-roster {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+  /* No overflow:auto here — let .admin-main own the scroll so sticky
+     section headers can stick under the page header. */
+}
+@media (max-width: 800px) {
+  .users-roster { grid-template-columns: 1fr; }
+}
+
+.users-roster__section {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+  /* Bound the section so its body has a height to scroll inside.
+     Both grid columns share the same row height since the grid
+     row is sized by the taller section. */
+  display: flex;
+  flex-direction: column;
+  max-height: 480px;
+}
+
+.users-roster__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 14px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.users-roster__head-icon {
+  font-size: 0.86rem;
+  color: var(--brand-blue, #004f87);
+}
+.users-roster__head-title {
+  flex: 1;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+.users-roster__head-count {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: #64748b;
+  background: #e2e8f0;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.users-roster__body {
+  padding: 4px 0;
+  /* Each section scrolls independently when its list overflows. */
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.users-roster__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.users-roster__row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(0, 1.5fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 14px;
+  font-size: 0.84rem;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.1s, border-color 0.1s;
+}
+.users-roster__row:hover {
+  background: #f8fafc;
+  border-left-color: var(--brand-blue, #004f87);
+}
+.users-roster__row--selected {
+  background: #eff6ff;
+  border-left-color: var(--brand-blue, #004f87);
+}
+.users-roster__row--inactive { opacity: 0.55; }
+
+.users-roster__row-name {
+  font-weight: 500;
+  color: #1f2937;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.users-roster__row-email {
+  font-size: 0.78rem;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.users-roster__row-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: end;
+}
+
+.users-roster__tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.users-roster__tag--primary { background: #dcfce7; color: #166534; }
+.users-roster__tag--backup  { background: #f1f5f9; color: #475569; }
+.users-roster__tag--off     { background: #fee2e2; color: #b91c1c; }
+
+.users-roster__source {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.users-roster__source--synced { background: #ecfdf5; color: #065f46; }
+.users-roster__source--manual { background: #fef3c7; color: #92400e; }
+
+/* BU subgroups inside the BU Reviewers section */
+.users-roster__subgroup {
+  border-top: 1px solid #f1f5f9;
+}
+.users-roster__subgroup:first-child { border-top: none; }
+.users-roster__subgroup-head {
+  padding: 6px 14px;
+  background: #f8fafc;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.users-roster__empty {
+  padding: 14px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.84rem;
+  font-style: italic;
+}
+</style>

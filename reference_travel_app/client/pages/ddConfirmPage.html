@@ -1,0 +1,1409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirm Travel - Go.gov</title>
+
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts -->
+
+  <?!= include('client/styles/tokens'); ?>
+
+  <!-- Shared client helpers: escapeHtml/escapeAttr + serverCall Promise wrapper -->
+  <?!= include('client/shared/escapeHtml'); ?>
+  <?!= include('client/shared/serverCall'); ?>
+
+  <style>
+    :root {
+      --brand-blue: #004f87;
+      --brand-blue-dark: #003a66;
+      --brand-green: #286D3B;
+      --brand-green-light: #e8f5eb;
+      --brand-red: #522032;
+      --brand-gold: #F4D06F;
+      --funding-overhead: #0369a1;
+      --funding-overhead-bg: #e0f2fe;
+      --funding-client: #15803d;
+      --funding-client-bg: #dcfce7;
+      --gray-50: #f8fafc;
+      --gray-100: #f1f5f9;
+      --gray-200: #e2e8f0;
+      --gray-300: #cbd5e1;
+      --gray-400: #94a3b8;
+      --gray-500: #64748b;
+      --gray-600: #475569;
+      --gray-700: #334155;
+      --gray-800: #1e293b;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+      --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    .hidden { display: none !important; }
+
+    body {
+      font-family: Calibri, "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background: var(--gray-100);
+      color: var(--gray-800);
+      min-height: 100vh;
+      margin: 0;
+    }
+
+    /* Header */
+    .dd-header {
+      background: white;
+      border-bottom: 1px solid var(--gray-200);
+      padding: 0.5rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .dd-header__logos {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .dd-header__logo,
+    #headerLogo img {
+      height: 28px;
+      width: auto;
+    }
+
+    .dd-header__gogov-logo {
+      height: 24px;
+      width: auto;
+    }
+
+    .dd-header__title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--gray-800);
+    }
+
+    /* Main Layout */
+    .dd-main {
+      display: flex;
+      min-height: calc(100vh - 49px);
+    }
+
+    /* Left Panel - Context */
+    .dd-sidebar {
+      width: 280px;
+      background: white;
+      border-right: 1px solid var(--gray-200);
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .dd-sidebar__trip {
+      margin-bottom: 1.5rem;
+    }
+
+    .dd-sidebar__trip-name {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--gray-800);
+      margin: 0 0 0.5rem 0;
+      line-height: 1.3;
+    }
+
+    .dd-sidebar__meta {
+      font-size: 0.8rem;
+      color: var(--gray-500);
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .dd-sidebar__meta i {
+      width: 16px;
+      color: var(--gray-400);
+      margin-right: 0.35rem;
+    }
+
+    .dd-sidebar__divider {
+      height: 1px;
+      background: var(--gray-200);
+      margin: 1rem 0;
+    }
+
+    .dd-sidebar__instructions {
+      font-size: 0.8rem;
+      color: var(--gray-600);
+      line-height: 1.6;
+      flex: 1;
+    }
+
+    .dd-sidebar__instructions strong {
+      color: var(--gray-700);
+    }
+
+    .dd-sidebar__footer {
+      margin-top: auto;
+      padding-top: 1rem;
+    }
+
+    .dd-report-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      color: var(--gray-500);
+      font-size: 0.8rem;
+      text-decoration: none;
+      cursor: pointer;
+      transition: color 0.15s ease;
+    }
+
+    .dd-report-link:hover {
+      color: var(--brand-red);
+    }
+
+    .dd-back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      color: var(--gray-400);
+      font-size: 0.75rem;
+      text-decoration: none;
+      margin-top: 0.75rem;
+    }
+
+    .dd-back-link:hover {
+      color: var(--brand-blue);
+    }
+
+    /* Right Panel - Action */
+    .dd-content {
+      flex: 1;
+      padding: 1.5rem 2rem;
+      display: flex;
+      flex-direction: column;
+      max-width: 600px;
+    }
+
+    /* Progress */
+    .dd-progress {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .dd-progress__bar {
+      flex: 1;
+      height: 6px;
+      background: var(--gray-200);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .dd-progress__fill {
+      height: 100%;
+      background: var(--brand-green);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+
+    .dd-progress__text {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--gray-600);
+      white-space: nowrap;
+    }
+
+    .dd-progress__text span {
+      color: var(--brand-green);
+    }
+
+    /* Traveler List */
+    .dd-travelers {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 0.25rem;
+      margin-bottom: 1rem;
+    }
+
+    .dd-travelers::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    .dd-travelers::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .dd-travelers::-webkit-scrollbar-thumb {
+      background: var(--gray-300);
+      border-radius: 3px;
+    }
+
+    /* Traveler Row */
+    .dd-traveler {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.625rem 0.75rem;
+      background: white;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--gray-200);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+
+    .dd-traveler:hover {
+      border-color: var(--gray-300);
+      background: var(--gray-50);
+    }
+
+    .dd-traveler--checked {
+      background: var(--brand-green-light);
+      border-color: var(--brand-green);
+    }
+
+    .dd-traveler--checked:hover {
+      background: var(--brand-green-light);
+    }
+
+    /* Checkbox */
+    .dd-traveler__checkbox {
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--gray-300);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+    }
+
+    .dd-traveler__checkbox i {
+      font-size: 0.7rem;
+      color: white;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+
+    .dd-traveler--checked .dd-traveler__checkbox {
+      background: var(--brand-green);
+      border-color: var(--brand-green);
+    }
+
+    .dd-traveler--checked .dd-traveler__checkbox i {
+      opacity: 1;
+    }
+
+    /* Traveler Info */
+    .dd-traveler__name {
+      flex: 1;
+      font-weight: 500;
+      font-size: 0.875rem;
+      color: var(--gray-800);
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Funding Badge */
+    .dd-traveler__funding {
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      flex-shrink: 0;
+    }
+
+    .dd-traveler__funding--overhead {
+      background: var(--funding-overhead-bg);
+      color: var(--funding-overhead);
+    }
+
+    .dd-traveler__funding--client {
+      background: var(--funding-client-bg);
+      color: var(--funding-client);
+    }
+
+    /* Flag Button */
+    .dd-traveler__flag {
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: transparent;
+      color: var(--gray-300);
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+    }
+
+    .dd-traveler__flag:hover {
+      background: #fef2f2;
+      color: #f87171;
+    }
+
+    .dd-traveler__flag--active {
+      background: #fef2f2;
+      color: #dc2626;
+    }
+
+    .dd-traveler__flag--active:hover {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+
+    /* Flagged Traveler State */
+    .dd-traveler--flagged {
+      background: #fef2f2;
+      border-color: #fecaca;
+    }
+
+    .dd-traveler--flagged:hover {
+      background: #fef2f2;
+      border-color: #fca5a5;
+    }
+
+    .dd-traveler--flagged .dd-traveler__checkbox {
+      border-color: var(--gray-300);
+      background: white;
+    }
+
+    .dd-traveler--flagged .dd-traveler__checkbox i {
+      opacity: 0;
+    }
+
+    /* Report Issues Button */
+    .dd-report-btn {
+      width: 100%;
+      padding: 0.75rem 1.5rem;
+      background: white;
+      color: #dc2626;
+      border: 2px solid #fecaca;
+      border-radius: var(--radius-sm);
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: all 0.15s ease;
+      margin-top: 0.75rem;
+    }
+
+    .dd-report-btn:hover {
+      background: #fef2f2;
+      border-color: #f87171;
+    }
+
+    .dd-report-btn__count {
+      background: #dc2626;
+      color: white;
+      font-size: 0.7rem;
+      padding: 0.125rem 0.375rem;
+      border-radius: 10px;
+      min-width: 18px;
+      text-align: center;
+    }
+
+    /* Flagged List in Modal */
+    .issue-modal__flagged-list {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: var(--radius-sm);
+      padding: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .issue-modal__flagged-title {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #dc2626;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.5rem;
+    }
+
+    .issue-modal__flagged-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      color: var(--gray-700);
+      padding: 0.25rem 0;
+    }
+
+    .issue-modal__flagged-item i {
+      color: #dc2626;
+      font-size: 0.7rem;
+    }
+
+    .issue-modal__flagged-badge {
+      font-size: 0.65rem;
+      padding: 0.125rem 0.375rem;
+      border-radius: 3px;
+      font-weight: 600;
+      margin-left: auto;
+    }
+
+    .issue-modal__flagged-badge--overhead {
+      background: var(--funding-overhead-bg);
+      color: var(--funding-overhead);
+    }
+
+    .issue-modal__flagged-badge--client {
+      background: var(--funding-client-bg);
+      color: var(--funding-client);
+    }
+
+    /* Submit Section */
+    .dd-submit {
+      padding-top: 1rem;
+      border-top: 1px solid var(--gray-200);
+    }
+
+    .dd-submit-btn {
+      width: 100%;
+      padding: 0.75rem 1.5rem;
+      background: var(--brand-green);
+      color: white;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: all 0.15s ease;
+    }
+
+    .dd-submit-btn:hover:not(:disabled) {
+      background: #1f5a30;
+    }
+
+    .dd-submit-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .dd-submit-hint {
+      font-size: 0.75rem;
+      color: var(--gray-500);
+      text-align: center;
+      margin-top: 0.5rem;
+    }
+
+    /* States */
+    .dd-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 3rem 1.5rem;
+      flex: 1;
+    }
+
+    .dd-state__spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--gray-200);
+      border-top-color: var(--brand-blue);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 1rem;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .dd-state__icon {
+      font-size: 2.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .dd-state__icon--success {
+      color: var(--brand-green);
+    }
+
+    .dd-state__icon--error {
+      color: var(--brand-red);
+    }
+
+    .dd-state__title {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+    }
+
+    .dd-state__message {
+      color: var(--gray-500);
+      font-size: 0.85rem;
+    }
+
+    /* All Done Banner */
+    .dd-all-done {
+      background: var(--brand-green-light);
+      border: 1px solid var(--brand-green);
+      border-radius: var(--radius-sm);
+      padding: 0.75rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .dd-all-done i {
+      color: var(--brand-green);
+    }
+
+    .dd-all-done span {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--brand-green);
+    }
+
+    /* Issue Modal */
+    .issue-modal .modal-content {
+      border-radius: 12px;
+      overflow: hidden;
+      border: none;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+    }
+
+    .issue-modal .modal-header {
+      background: linear-gradient(135deg, #fff5f5 0%, #fff 100%);
+      border-bottom: 1px solid rgba(220, 53, 69, 0.1);
+      padding: 1rem 1.25rem 0.75rem;
+    }
+
+    .issue-modal .modal-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--gray-800);
+    }
+
+    .issue-modal .modal-body {
+      padding: 1rem 1.25rem;
+    }
+
+    .issue-modal textarea {
+      font-size: 0.85rem;
+      border-radius: var(--radius-sm);
+      border-color: var(--gray-300);
+      resize: none;
+      transition: all 0.2s ease;
+    }
+
+    .issue-modal textarea:focus {
+      border-color: var(--brand-blue);
+      box-shadow: 0 0 0 3px rgba(0, 79, 135, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+
+    .issue-modal .form-text {
+      font-size: 0.75rem;
+      color: var(--gray-500);
+      margin-top: 0.75rem;
+    }
+
+    .issue-modal .modal-footer {
+      padding: 0.75rem 1.25rem 1rem;
+    }
+
+    .issue-modal .btn-report {
+      background: var(--brand-red);
+      border: none;
+      font-weight: 600;
+      font-size: 0.85rem;
+      padding: 0.5rem 1.25rem;
+      border-radius: var(--radius-sm);
+      transition: all 0.2s ease;
+    }
+
+    .issue-modal .btn-report:hover:not(:disabled) {
+      background: #3d1826;
+      transform: translateY(-1px);
+    }
+
+    .issue-modal .btn-report:disabled {
+      background: var(--gray-400);
+      cursor: not-allowed;
+      opacity: 0.8;
+    }
+
+    .issue-modal .btn-cancel {
+      color: var(--gray-600);
+      font-size: 0.85rem;
+    }
+
+    .issue-modal .btn-cancel:hover {
+      color: var(--gray-800);
+    }
+
+    /* Toast Notifications */
+    .dd-toast-container {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      pointer-events: none;
+    }
+
+    .dd-toast {
+      background: white;
+      border-radius: var(--radius-sm);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      min-width: 300px;
+      max-width: 420px;
+      pointer-events: auto;
+      transform: translateX(120%);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .dd-toast.dd-toast--visible {
+      transform: translateX(0);
+      opacity: 1;
+    }
+
+    .dd-toast.dd-toast--exiting {
+      transform: translateX(120%);
+      opacity: 0;
+    }
+
+    .dd-toast__icon {
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+    }
+
+    .dd-toast--success .dd-toast__icon {
+      background: var(--brand-green-light);
+      color: var(--brand-green);
+    }
+
+    .dd-toast--error .dd-toast__icon {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+
+    .dd-toast--warning .dd-toast__icon {
+      background: #fef3c7;
+      color: #d97706;
+    }
+
+    .dd-toast__content {
+      flex: 1;
+    }
+
+    .dd-toast__title {
+      font-weight: 600;
+      font-size: 0.875rem;
+      color: var(--gray-800);
+      margin-bottom: 0.125rem;
+    }
+
+    .dd-toast__message {
+      font-size: 0.8rem;
+      color: var(--gray-600);
+      line-height: 1.4;
+    }
+
+    .dd-toast__close {
+      flex-shrink: 0;
+      background: none;
+      border: none;
+      color: var(--gray-400);
+      cursor: pointer;
+      padding: 0;
+      font-size: 1rem;
+      line-height: 1;
+    }
+
+    .dd-toast__close:hover {
+      color: var(--gray-600);
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .dd-main {
+        flex-direction: column;
+      }
+
+      .dd-sidebar {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--gray-200);
+        padding: 1rem;
+      }
+
+      .dd-sidebar__instructions {
+        display: none;
+      }
+
+      .dd-sidebar__footer {
+        display: none;
+      }
+
+      .dd-content {
+        padding: 1rem;
+        max-width: 100%;
+      }
+
+      .dd-travelers {
+        max-height: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Skip Link for Accessibility (inline style — this page doesn't import travelBaseStyles) -->
+  <a href="#main-content" style="position:absolute;top:-100%;left:0;background:var(--brand-blue);color:white;padding:0.75rem 1.25rem;z-index:10000;font-weight:600;font-size:0.875rem;text-decoration:none;transition:top 0.15s ease;" onfocus="this.style.top='0'" onblur="this.style.top='-100%'">Skip to main content</a>
+
+  <!-- Header -->
+  <header class="dd-header">
+    <div class="dd-header__logos">
+      <div id="headerLogo"></div>
+      <img src="data:image/png;base64,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" alt="Go.gov" class="dd-header__gogov-logo">
+    </div>
+    <div class="dd-header__title">Confirmation</div>
+  </header>
+
+  <!-- Main Layout -->
+  <div class="dd-main hidden" id="mainLayout">
+    <!-- Left Panel - Context -->
+    <aside class="dd-sidebar">
+      <div class="dd-sidebar__trip">
+        <h1 class="dd-sidebar__trip-name" id="tripName"></h1>
+        <div class="dd-sidebar__meta">
+          <span><i aria-hidden="true" class="fas fa-calendar"></i><span id="tripDates"></span></span>
+          <span><i aria-hidden="true" class="fas fa-user"></i>Submitted by <span id="submitterName"></span></span>
+        </div>
+      </div>
+
+      <div class="dd-sidebar__divider"></div>
+
+      <div class="dd-sidebar__instructions">
+        <strong>Verify Go.gov Funding</strong><br><br>
+        <span style="color: var(--brand-green);">✓</span> <strong>Check</strong> travelers whose funding matches Go.gov<br><br>
+        <span style="color: #dc2626;">⚑</span> <strong>Flag</strong> travelers with incorrect funding using the flag icon<br><br>
+        Flagged travelers will be sent back to the Travel Coordinator for correction.
+      </div>
+
+      <div class="dd-sidebar__footer">
+        <a href="#" onclick="navigateTo('travel'); return false;" class="dd-back-link">
+          <i aria-hidden="true" class="fas fa-arrow-left"></i>Back to Portal
+        </a>
+      </div>
+    </aside>
+
+    <!-- Right Panel - Action -->
+    <main class="dd-content" id="main-content">
+      <!-- All Done Banner -->
+      <div id="allDoneBanner" class="dd-all-done hidden">
+        <i aria-hidden="true" class="fas fa-check-circle"></i>
+        <span>All travelers confirmed!</span>
+      </div>
+
+      <!-- Progress -->
+      <div class="dd-progress">
+        <div class="dd-progress__bar">
+          <div class="dd-progress__fill" id="progressFill" style="width: 0%"></div>
+        </div>
+        <div class="dd-progress__text">
+          <span id="confirmedCount">0</span> of <span id="totalCount">0</span> confirmed
+        </div>
+      </div>
+
+      <!-- Traveler List -->
+      <div class="dd-travelers" id="travelersList">
+        <!-- Travelers populated here -->
+      </div>
+
+      <!-- Submit Section -->
+      <div class="dd-submit" id="submitSection">
+        <button type="button" class="dd-submit-btn" id="submitBtn" onclick="submitConfirmation()" disabled>
+          <i aria-hidden="true" class="fas fa-check"></i>
+          <span>Submit Confirmation</span>
+        </button>
+        <div class="dd-submit-hint" id="submitHint">Check at least one traveler to submit</div>
+
+        <!-- Report Issues Button (shows when travelers are flagged) -->
+        <button type="button" class="dd-report-btn hidden" id="reportIssuesBtn" onclick="openIssueModal()">
+          <i aria-hidden="true" class="fas fa-flag"></i>
+          <span>Report Issues</span>
+          <span class="dd-report-btn__count" id="flaggedCount">0</span>
+        </button>
+      </div>
+    </main>
+  </div>
+
+  <!-- Loading State -->
+  <div class="dd-main" id="loadingState">
+    <div class="dd-state" style="width: 100%;">
+      <div class="dd-state__spinner"></div>
+      <div class="dd-state__title">Loading...</div>
+      <div class="dd-state__message">Fetching traveler information</div>
+    </div>
+  </div>
+
+  <!-- Error State -->
+  <div class="dd-main hidden" id="errorState">
+    <div class="dd-state" style="width: 100%;">
+      <div class="dd-state__icon dd-state__icon--error">
+        <i aria-hidden="true" class="fas fa-exclamation-circle"></i>
+      </div>
+      <div class="dd-state__title">Unable to Load</div>
+      <div class="dd-state__message" id="errorMessage">Something went wrong</div>
+    </div>
+  </div>
+
+  <!-- Success State -->
+  <div class="dd-main hidden" id="successState">
+    <div class="dd-state" style="width: 100%;">
+      <div class="dd-state__icon dd-state__icon--success">
+        <i aria-hidden="true" class="fas fa-check-circle"></i>
+      </div>
+      <div class="dd-state__title">Confirmed!</div>
+      <div class="dd-state__message" id="successMessage">Your travelers have been confirmed.</div>
+      <a href="#" onclick="navigateTo('travel'); return false;" class="dd-back-link" style="margin-top: 1rem;">
+        <i aria-hidden="true" class="fas fa-arrow-left"></i>Back to Portal
+      </a>
+    </div>
+  </div>
+
+
+  <!-- Toast Container -->
+  <div class="dd-toast-container" id="toastContainer"></div>
+
+  <!-- Issue Report Modal -->
+  <div class="modal fade issue-modal" id="issueModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i aria-hidden="true" class="fas fa-flag text-danger me-2"></i>Report Funding Issue</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <!-- Flagged Travelers List -->
+          <div class="issue-modal__flagged-list hidden" id="flaggedTravelersList">
+            <div class="issue-modal__flagged-title">
+              <i aria-hidden="true" class="fas fa-flag me-1"></i>Flagged Travelers
+            </div>
+            <div id="flaggedTravelersContent"></div>
+          </div>
+
+          <p class="text-muted small mb-3">Describe the funding issue for the flagged traveler(s). The request will be sent back to the Travel Coordinator for correction.</p>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Issue Description</label>
+            <textarea class="form-control" id="issueDescription" rows="3" placeholder="Example: Should be Client-Paid. Go.gov shows FEMA as the funding source."></textarea>
+          </div>
+          <div class="form-text">
+            <i aria-hidden="true" class="fas fa-info-circle me-1"></i>
+            This will change the request status and notify the submitter.
+          </div>
+        </div>
+        <div class="modal-footer border-0 pt-0">
+          <button type="button" class="btn btn-link btn-cancel" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger btn-report" id="submitIssueBtn" onclick="submitIssue()">
+            <i aria-hidden="true" class="fas fa-paper-plane me-1"></i>Send Report
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- AAS Logo Component -->
+  <?!= include('client/components/aasLogo'); ?>
+
+  <!-- Nav loader — defines window.safeTopNavigate (used by Back to Portal links) -->
+  <?!= include('client/components/navLoader'); ?>
+
+  <script>
+    // Script URL for navigation
+    const _scriptUrl = (window._travelScriptUrl = '<?= scriptUrl ?>');
+
+    // Navigate to a different mode
+    function navigateTo(mode, params = {}) {
+      const queryParams = new URLSearchParams();
+      queryParams.set('mode', mode);
+      Object.keys(params).forEach(key => {
+        if (params[key]) queryParams.set(key, params[key]);
+      });
+      let baseUrl = _scriptUrl;
+      if (!baseUrl) {
+        try {
+          baseUrl = window.top.location.href.split('?')[0];
+        } catch (e) { return; }
+      }
+      safeTopNavigate(baseUrl + '?' + queryParams.toString());
+    }
+
+    // Set header logo
+    (function() {
+      const logoContainer = document.getElementById('headerLogo');
+      if (logoContainer && window.AAS_LOGO) {
+        logoContainer.innerHTML = window.AAS_LOGO.getHTML(28);
+      }
+    })();
+
+    // Toast notification system
+    function showToast(type, title, message, duration = 5000) {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `dd-toast dd-toast--${type}`;
+
+      const icons = {
+        success: 'fa-check',
+        error: 'fa-times',
+        warning: 'fa-exclamation'
+      };
+
+      toast.innerHTML = `
+        <div class="dd-toast__icon">
+          <i aria-hidden="true" class="fas ${icons[type] || icons.warning}"></i>
+        </div>
+        <div class="dd-toast__content">
+          <div class="dd-toast__title">${title}</div>
+          ${message ? `<div class="dd-toast__message">${message}</div>` : ''}
+        </div>
+        <button class="dd-toast__close" onclick="this.parentElement.remove()">
+          <i aria-hidden="true" class="fas fa-times"></i>
+        </button>
+      `;
+
+      container.appendChild(toast);
+
+      // Trigger animation
+      requestAnimationFrame(() => {
+        toast.classList.add('dd-toast--visible');
+      });
+
+      // Auto remove
+      if (duration > 0) {
+        setTimeout(() => {
+          toast.classList.remove('dd-toast--visible');
+          toast.classList.add('dd-toast--exiting');
+          setTimeout(() => toast.remove(), 300);
+        }, duration);
+      }
+    }
+
+    // Page data
+    const requestId = '<?= requestId ?>';
+    let pageData = null;
+    let checkedTravelers = new Set();
+    let flaggedTravelers = new Set();
+
+    // Initialize on load
+    document.addEventListener('DOMContentLoaded', function() {
+      if (!requestId) {
+        showError('No request ID provided');
+        return;
+      }
+      loadData();
+    });
+
+    // Load confirmation data
+    async function loadData() {
+      try {
+        const result = await new Promise((resolve, reject) => {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject)
+            .getDDConfirmationData(requestId);
+        });
+
+        if (!result || !result.success) {
+          showError(result?.error || 'Failed to load data');
+          return;
+        }
+
+        pageData = result.data || {};
+        renderContent(pageData);
+
+      } catch (error) {
+        console.error('Error loading data:', error);
+        showError(error.message || 'An unexpected error occurred');
+      }
+    }
+
+    // Render the content
+    function renderContent(data) {
+      const { request, travelers, allConfirmed } = data;
+
+      // Set trip info
+      document.getElementById('tripName').textContent = request.tripName || 'Travel Request';
+      document.getElementById('tripDates').textContent = formatDateRange(request.eventStartDate, request.eventEndDate);
+      document.getElementById('submitterName').textContent = request.submitterName || '';
+
+      // Set counts
+      document.getElementById('totalCount').textContent = travelers.length;
+
+      // Check if already confirmed
+      const alreadyConfirmed = travelers.every(t => t.ddConfirmed);
+
+      if (alreadyConfirmed) {
+        // All already confirmed - mark all as checked
+        travelers.forEach((t, idx) => checkedTravelers.add(idx));
+        document.getElementById('allDoneBanner').classList.remove('hidden');
+        document.getElementById('submitSection').classList.add('hidden');
+      }
+
+      // Render travelers
+      const list = document.getElementById('travelersList');
+      list.innerHTML = travelers.map((t, idx) => renderTraveler(t, idx, alreadyConfirmed)).join('');
+
+      // Update progress
+      updateProgress();
+
+      // Show content
+      document.getElementById('loadingState').classList.add('hidden');
+      document.getElementById('mainLayout').classList.remove('hidden');
+    }
+
+    // Render a single traveler
+    function renderTraveler(t, idx, alreadyConfirmed) {
+      const isClientPaid = String(t.isClientPaid || '').toLowerCase().includes('client');
+      const fundingClass = isClientPaid ? 'dd-traveler__funding--client' : 'dd-traveler__funding--overhead';
+      const fundingLabel = isClientPaid ? 'Client' : 'Overhead';
+      const isChecked = t.ddConfirmed || checkedTravelers.has(idx);
+      const isFlagged = flaggedTravelers.has(idx);
+      const checkedClass = isChecked && !isFlagged ? 'dd-traveler--checked' : '';
+      const flaggedClass = isFlagged ? 'dd-traveler--flagged' : '';
+      const flagActiveClass = isFlagged ? 'dd-traveler__flag--active' : '';
+
+      return `
+        <div class="dd-traveler ${checkedClass} ${flaggedClass}" data-idx="${idx}" role="button" tabindex="0" aria-pressed="${isChecked}" onclick="toggleTraveler(${idx}, ${alreadyConfirmed})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+          <div class="dd-traveler__checkbox">
+            <i aria-hidden="true" class="fas fa-check"></i>
+          </div>
+          <div class="dd-traveler__name">${escapeHtml(formatName(t.employeeName))}</div>
+          <div class="dd-traveler__funding ${fundingClass}">${fundingLabel}</div>
+          ${!alreadyConfirmed ? `
+            <button type="button" class="dd-traveler__flag ${flagActiveClass}" data-idx="${idx}" onclick="event.stopPropagation(); toggleFlag(${idx})" title="Flag funding issue">
+              <i aria-hidden="true" class="fas fa-flag"></i>
+            </button>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    // Toggle traveler checkbox
+    function toggleTraveler(idx, alreadyConfirmed) {
+      if (alreadyConfirmed) return; // Can't toggle if already submitted
+      if (flaggedTravelers.has(idx)) return; // Can't check if flagged
+
+      const el = document.querySelector(`.dd-traveler[data-idx="${idx}"]`);
+      if (!el) return;
+
+      if (checkedTravelers.has(idx)) {
+        checkedTravelers.delete(idx);
+        el.classList.remove('dd-traveler--checked');
+      } else {
+        checkedTravelers.add(idx);
+        el.classList.add('dd-traveler--checked');
+      }
+
+      updateProgress();
+    }
+
+    // Toggle traveler flag
+    function toggleFlag(idx) {
+      const el = document.querySelector(`.dd-traveler[data-idx="${idx}"]`);
+      const flagBtn = document.querySelector(`.dd-traveler__flag[data-idx="${idx}"]`);
+      if (!el || !flagBtn) return;
+
+      if (flaggedTravelers.has(idx)) {
+        // Unflag
+        flaggedTravelers.delete(idx);
+        el.classList.remove('dd-traveler--flagged');
+        flagBtn.classList.remove('dd-traveler__flag--active');
+      } else {
+        // Flag - also uncheck if checked
+        flaggedTravelers.add(idx);
+        checkedTravelers.delete(idx);
+        el.classList.remove('dd-traveler--checked');
+        el.classList.add('dd-traveler--flagged');
+        flagBtn.classList.add('dd-traveler__flag--active');
+      }
+
+      updateProgress();
+      updateFlaggedUI();
+    }
+
+    // Update flagged travelers UI
+    function updateFlaggedUI() {
+      const count = flaggedTravelers.size;
+      const btn = document.getElementById('reportIssuesBtn');
+      const countEl = document.getElementById('flaggedCount');
+
+      if (count > 0) {
+        btn.classList.remove('hidden');
+        countEl.textContent = count;
+      } else {
+        btn.classList.add('hidden');
+      }
+    }
+
+    // Update progress bar and button state
+    function updateProgress() {
+      const total = pageData?.travelers?.length || 0;
+      const confirmed = checkedTravelers.size;
+      const pct = total > 0 ? (confirmed / total) * 100 : 0;
+
+      document.getElementById('confirmedCount').textContent = confirmed;
+      document.getElementById('progressFill').style.width = pct + '%';
+
+      const btn = document.getElementById('submitBtn');
+      const hint = document.getElementById('submitHint');
+
+      if (confirmed === 0) {
+        btn.disabled = true;
+        hint.textContent = 'Check at least one traveler to submit';
+      } else if (confirmed < total) {
+        btn.disabled = false;
+        hint.textContent = `${total - confirmed} traveler${total - confirmed === 1 ? '' : 's'} unchecked`;
+      } else {
+        btn.disabled = false;
+        hint.textContent = 'All travelers verified';
+      }
+    }
+
+    // Submit confirmation
+    async function submitConfirmation() {
+      if (checkedTravelers.size === 0) return;
+
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i> <span>Submitting...</span>';
+
+      try {
+        // Get traveler IDs for checked travelers
+        const total = pageData.travelers.length;
+        const allChecked = checkedTravelers.size === total;
+
+        // If all checked, pass empty array (server will confirm all)
+        // Otherwise pass specific traveler IDs
+        let travelerIds = [];
+        if (!allChecked) {
+          travelerIds = Array.from(checkedTravelers).map(idx => {
+            return pageData.travelers[idx]?.travelerId || '';
+          }).filter(id => id);
+        }
+
+        const result = await new Promise((resolve, reject) => {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject)
+            .confirmDDTravelers(requestId, travelerIds);
+        });
+
+        if (!result || !result.success) {
+          showError(result?.error || 'Failed to confirm');
+          return;
+        }
+
+        // Show success
+        document.getElementById('mainLayout').classList.add('hidden');
+        document.getElementById('successState').classList.remove('hidden');
+
+        const allConfirmed = (result.data && result.data.allConfirmed) || false;
+        const msg = allConfirmed
+          ? 'All Division Directors have confirmed. The request is now complete!'
+          : 'Your travelers have been confirmed. Waiting for other DDs to confirm.';
+        document.getElementById('successMessage').textContent = msg;
+
+      } catch (error) {
+        console.error('Error confirming:', error);
+        btn.disabled = false;
+        btn.innerHTML = '<i aria-hidden="true" class="fas fa-check"></i> <span>Submit Confirmation</span>';
+        showToast('error', 'Error', error.message || 'An unexpected error occurred');
+      }
+    }
+
+    // Open issue modal with flagged travelers
+    function openIssueModal() {
+      if (flaggedTravelers.size === 0) {
+        showToast('warning', 'No Travelers Flagged', 'Click the flag icon next to a traveler to report an issue.');
+        return;
+      }
+
+      // Populate flagged travelers list
+      const listEl = document.getElementById('flaggedTravelersList');
+      const contentEl = document.getElementById('flaggedTravelersContent');
+
+      const flaggedHtml = Array.from(flaggedTravelers).map(idx => {
+        const t = pageData.travelers[idx];
+        if (!t) return '';
+        const isClientPaid = String(t.isClientPaid || '').toLowerCase().includes('client');
+        const badgeClass = isClientPaid ? 'issue-modal__flagged-badge--client' : 'issue-modal__flagged-badge--overhead';
+        const badgeLabel = isClientPaid ? 'Client' : 'Overhead';
+        return `
+          <div class="issue-modal__flagged-item">
+            <i aria-hidden="true" class="fas fa-flag"></i>
+            <span>${escapeHtml(formatName(t.employeeName))}</span>
+            <span class="issue-modal__flagged-badge ${badgeClass}">${badgeLabel}</span>
+          </div>
+        `;
+      }).join('');
+
+      contentEl.innerHTML = flaggedHtml;
+      listEl.classList.remove('hidden');
+
+      // Show modal
+      const modal = new bootstrap.Modal(document.getElementById('issueModal'));
+      modal.show();
+    }
+
+    // Submit issue report
+    async function submitIssue() {
+      const description = document.getElementById('issueDescription').value.trim();
+      if (!description) {
+        showToast('warning', 'Missing Description', 'Please describe the issue before submitting.');
+        return;
+      }
+
+      if (flaggedTravelers.size === 0) {
+        showToast('warning', 'No Travelers Flagged', 'Please flag at least one traveler.');
+        return;
+      }
+
+      const btn = document.getElementById('submitIssueBtn');
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin me-1"></i>Sending...';
+
+      try {
+        // Build flagged travelers data
+        const flaggedData = Array.from(flaggedTravelers).map(idx => {
+          const t = pageData.travelers[idx];
+          return {
+            travelerId: t?.travelerId || '',
+            employeeName: t?.employeeName || '',
+            currentFunding: t?.isClientPaid === 'client' ? 'Client' : 'Overhead'
+          };
+        }).filter(t => t.travelerId);
+
+        const result = await new Promise((resolve, reject) => {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject)
+            .reportDDFundingIssue(requestId, description, flaggedData);
+        });
+
+        if (!result || !result.success) {
+          showToast('error', 'Failed to Send', result?.error || 'Failed to send report. Please try again.');
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+          return;
+        }
+
+        // Close modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('issueModal'));
+        modal.hide();
+        document.getElementById('issueDescription').value = '';
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+
+        // Show success and redirect
+        document.getElementById('mainLayout').classList.add('hidden');
+        document.getElementById('successState').classList.remove('hidden');
+        document.getElementById('successMessage').textContent = 'Issue reported. The request has been sent back to the Travel Coordinator for correction.';
+
+      } catch (error) {
+        console.error('Error submitting issue:', error);
+        showToast('error', 'Error', error.message || 'An unexpected error occurred');
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+    }
+
+    // Show error state
+    function showError(message) {
+      document.getElementById('loadingState').classList.add('hidden');
+      document.getElementById('mainLayout').classList.add('hidden');
+      document.getElementById('errorMessage').textContent = message;
+      document.getElementById('errorState').classList.remove('hidden');
+    }
+
+    // Format name - "LastName,FirstName M" -> "FirstName LastName"
+    function formatName(name) {
+      if (!name) return '';
+      if (name.includes(',')) {
+        const parts = name.split(',');
+        const lastName = parts[0].trim();
+        const firstPart = parts[1] ? parts[1].trim().split(/\s+/)[0] : '';
+        return firstPart + ' ' + lastName;
+      }
+      return name;
+    }
+
+    // Format date range
+    function formatDateRange(start, end) {
+      if (!start) return '';
+      const s = new Date(start);
+      const e = end ? new Date(end) : null;
+      const opts = { month: 'short', day: 'numeric' };
+      if (!e || s.toDateString() === e.toDateString()) {
+        return s.toLocaleDateString('en-US', { ...opts, year: 'numeric' });
+      }
+      // Same year?
+      if (s.getFullYear() === e.getFullYear()) {
+        return `${s.toLocaleDateString('en-US', opts)} - ${e.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`;
+      }
+      return `${s.toLocaleDateString('en-US', { ...opts, year: 'numeric' })} - ${e.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`;
+    }
+
+    // Escape HTML
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

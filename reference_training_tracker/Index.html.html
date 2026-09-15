@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --text: #172033;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --primary: #1f4e79;
+      --primary-2: #2563eb;
+      --green: #15803d;
+      --green-bg: #dcfce7;
+      --amber: #b45309;
+      --amber-bg: #fef3c7;
+      --red: #b91c1c;
+      --red-bg: #fee2e2;
+      --blue-bg: #dbeafe;
+      --shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+      --radius: 18px;
+      --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background:
+        radial-gradient(circle at top left, rgba(37, 99, 235, 0.10), transparent 30%),
+        radial-gradient(circle at top right, rgba(31, 78, 121, 0.10), transparent 35%),
+        var(--bg);
+      color: var(--text);
+    }
+
+    .app {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-start;
+      margin-bottom: 24px;
+    }
+
+    .title-block h1 {
+      margin: 0;
+      font-size: 34px;
+      letter-spacing: -0.04em;
+      color: #111827;
+    }
+
+    .title-block p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .user-card {
+      min-width: 300px;
+      background: rgba(255, 255, 255, 0.85);
+      border: 1px solid rgba(229, 231, 235, 0.9);
+      box-shadow: var(--shadow);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      backdrop-filter: blur(12px);
+    }
+
+    .user-card .label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
+    }
+
+    .user-card .value {
+      font-weight: 700;
+      font-size: 14px;
+      word-break: break-word;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: var(--blue-bg);
+      color: var(--primary);
+      font-weight: 700;
+      font-size: 12px;
+      margin-top: 10px;
+    }
+
+    .filters {
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: var(--shadow);
+      margin-bottom: 22px;
+      display: grid;
+      grid-template-columns: repeat(6, minmax(150px, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+
+    .field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 800;
+      color: #374151;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    select,
+    input {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 12px;
+      padding: 10px 12px;
+      color: var(--text);
+      outline: none;
+      font-size: 14px;
+    }
+
+    select:focus,
+    input:focus {
+      border-color: var(--primary-2);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    }
+
+    .btn {
+      border: none;
+      border-radius: 12px;
+      padding: 11px 14px;
+      cursor: pointer;
+      font-weight: 800;
+      color: white;
+      background: linear-gradient(135deg, var(--primary), var(--primary-2));
+      box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
+    }
+
+    .btn.secondary {
+      background: #ffffff;
+      color: var(--primary);
+      border: 1px solid var(--border);
+      box-shadow: none;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(229, 231, 235, 0.9);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      min-height: 132px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::after {
+      content: "";
+      position: absolute;
+      right: -36px;
+      top: -36px;
+      width: 110px;
+      height: 110px;
+      border-radius: 999px;
+      background: rgba(37, 99, 235, 0.08);
+    }
+
+    .card .card-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 10px;
+    }
+
+    .card .card-value {
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: -0.04em;
+      line-height: 1.05;
+    }
+
+    .card .card-sub {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .status {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 5px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .status.green {
+      background: var(--green-bg);
+      color: var(--green);
+    }
+
+    .status.amber {
+      background: var(--amber-bg);
+      color: var(--amber);
+    }
+
+    .status.red {
+      background: var(--red-bg);
+      color: var(--red);
+    }
+
+    .section-grid {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .panel {
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .panel h2 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+
+    .panel .hint {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .bar-chart {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 80px 1fr 120px;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .bar-label {
+      font-weight: 900;
+      color: #374151;
+      font-size: 13px;
+    }
+
+    .bar-stack {
+      height: 18px;
+      background: #eef2f7;
+      border-radius: 999px;
+      overflow: hidden;
+      display: flex;
+      border: 1px solid #e5e7eb;
+    }
+
+    .bar-spent {
+      background: linear-gradient(90deg, #2563eb, #1f4e79);
+      height: 100%;
+    }
+
+    .bar-remaining {
+      background: #d1fae5;
+      height: 100%;
+    }
+
+    .bar-value {
+      font-size: 13px;
+      font-weight: 800;
+      color: #374151;
+      text-align: right;
+    }
+
+    .category-chart {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .category-card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      background: #fafafa;
+    }
+
+    .category-card .big {
+      font-weight: 900;
+      font-size: 24px;
+      letter-spacing: -0.03em;
+    }
+
+    .category-card .small {
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 13px;
+      margin-top: 5px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      font-size: 13px;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: #f8fafc;
+      color: #374151;
+      text-align: left;
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 12px;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+    }
+
+    tr:hover td {
+      background: #f8fafc;
+    }
+
+    .num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .progress {
+      height: 9px;
+      background: #eef2f7;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .progress span {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+    }
+
+    .empty {
+      padding: 20px;
+      color: var(--muted);
+      background: #fff;
+      border-radius: 14px;
+      border: 1px dashed var(--border);
+      text-align: center;
+      font-weight: 700;
+    }
+
+    .loading {
+      display: flex;
+      min-height: 420px;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .spinner {
+      width: 46px;
+      height: 46px;
+      border: 5px solid #dbeafe;
+      border-top-color: var(--primary-2);
+      border-radius: 999px;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .alert {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-left: 6px solid var(--red);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      color: #111827;
+    }
+
+    .alert h2 {
+      margin-top: 0;
+    }
+
+    .footer {
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+      margin: 24px 0 6px;
+    }
+
+    @media (max-width: 1200px) {
+      .summary-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .filters {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .section-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .app {
+        padding: 16px;
+      }
+
+      .header {
+        flex-direction: column;
+      }
+
+      .user-card {
+        width: 100%;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .filters {
+        grid-template-columns: 1fr;
+      }
+
+      .bar-row {
+        grid-template-columns: 1fr;
+      }
+
+      .bar-value {
+        text-align: left;
+      }
+
+      .category-chart {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .filters,
+      .btn,
+      .footer {
+        display: none !important;
+      }
+
+      .card,
+      .panel,
+      .user-card {
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <div id="root">
+      <div class="loading">
+        <div class="spinner"></div>
+        <div>Loading FCB Budget dashboard...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let dashboardData = null;
+
+    const state = {
+      fiscalYear: 'All',
+      office: 'All',
+      category: 'All',
+      startDate: '',
+      endDate: '',
+      search: ''
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadDashboard();
+    });
+
+    function loadDashboard() {
+      renderLoading();
+
+      google.script.run
+        .withSuccessHandler(handleData)
+        .withFailureHandler(handleFailure)
+        .getDashboardData(state);
+    }
+
+    function handleData(data) {
+      if (!data || !data.ok) {
+        if (data && data.accessDenied) {
+          renderAccessDenied(data);
+        } else {
+          renderError(data ? data.message : 'Unknown error loading dashboard.');
+        }
+        return;
+      }
+
+      dashboardData = data;
+      renderDashboard(data);
+    }
+
+    function handleFailure(err) {
+      renderError(err && err.message ? err.message : String(err));
+    }
+
+    function renderLoading() {
+      document.getElementById('root').innerHTML = `
+        <div class="loading">
+          <div class="spinner"></div>
+          <div>Loading FCB Budget dashboard...</div>
+        </div>
+      `;
+    }
+
+    function renderAccessDenied(data) {
+      document.getElementById('root').innerHTML = `
+        <div class="alert">
+          <h2>Access Denied</h2>
+          <p>${escapeHtml(data.message || 'You do not currently have access.')}</p>
+          <p><strong>User:</strong> ${escapeHtml(data.user && data.user.email ? data.user.email : '')}</p>
+        </div>
+      `;
+    }
+
+    function renderError(message) {
+      document.getElementById('root').innerHTML = `
+        <div class="alert">
+          <h2>Dashboard Error</h2>
+          <p>${escapeHtml(message)}</p>
+          <p>Please verify that the required tabs exist and that the column headers match the configuration in <strong>Code.gs</strong>.</p>
+        </div>
+      `;
+    }
+
+    function renderDashboard(data) {
+      const root = document.getElementById('root');
+
+      root.innerHTML = `
+        ${renderHeader(data)}
+        ${renderFilters(data)}
+        ${renderSummary(data.summary)}
+        <div class="section-grid">
+          ${renderBudgetVsSpentChart(data.chartData.budgetVsSpent)}
+          ${renderCategoryChart(data.summary)}
+        </div>
+        ${renderOfficeTable(data.officeRows)}
+        <br>
+        ${renderRecentTransactions(data.recentTransactions)}
+        <div class="footer">
+          FCB Budget dashboard. Data is filtered server-side based on authorized role and org code.
+        </div>
+      `;
+
+      bindFilterEvents();
+    }
+
+    function renderHeader(data) {
+      const user = data.user || {};
+      const refreshed = data.generatedAt ? new Date(data.generatedAt).toLocaleString() : '';
+
+      return `
+        <div class="header">
+          <div class="title-block">
+            <h1>FCB Budget</h1>
+            <p>Executive training budget dashboard showing paid Purchase Card spend against FY training allocations.</p>
+          </div>
+
+          <div class="user-card">
+            <div class="label">Signed in as</div>
+            <div class="value">${escapeHtml(user.email || '')}</div>
+
+            <div style="height:10px"></div>
+
+            <div class="label">Role / Scope</div>
+            <div class="value">${escapeHtml(user.role || '')} · ${escapeHtml(user.orgCode || '')}</div>
+
+            <div class="pill">${user.fullAccess ? 'Full FCB Access' : 'Role-Based Access'}</div>
+            <div style="margin-top:10px; color:var(--muted); font-size:12px;">
+              Last refreshed: ${escapeHtml(refreshed)}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderFilters(data) {
+      const fyOptions = ['All'].concat(data.filterOptions.fiscalYears || []);
+      const offices = [{ orgCode: 'All', officeName: 'All Offices' }].concat(data.filterOptions.offices || []);
+      const categories = data.filterOptions.categories || ['All', 'Other', 'AWT'];
+
+      return `
+        <div class="filters">
+          <div class="field">
+            <label>Fiscal Year</label>
+            <select id="filterFiscalYear">
+              ${fyOptions.map(fy => `<option value="${escapeHtml(fy)}" ${state.fiscalYear === fy ? 'selected' : ''}>${escapeHtml(fy)}</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Office</label>
+            <select id="filterOffice">
+              ${offices.map(o => `
+                <option value="${escapeHtml(o.orgCode)}" ${state.office === o.orgCode ? 'selected' : ''}>
+                  ${escapeHtml(o.orgCode === 'All' ? 'All Offices' : o.orgCode + ' — ' + o.officeName)}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Spend Category</label>
+            <select id="filterCategory">
+              ${categories.map(c => `<option value="${escapeHtml(c)}" ${state.category === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Start Date</label>
+            <input id="filterStartDate" type="date" value="${escapeHtml(state.startDate)}">
+          </div>
+
+          <div class="field">
+            <label>End Date</label>
+            <input id="filterEndDate" type="date" value="${escapeHtml(state.endDate)}">
+          </div>
+
+          <div class="field">
+            <label>Search</label>
+            <input id="filterSearch" type="text" placeholder="Employee, vendor, course..." value="${escapeHtml(state.search)}">
+          </div>
+
+          <button class="btn" id="applyFilters">Apply Filters</button>
+          <button class="btn secondary" id="resetFilters">Reset</button>
+        </div>
+      `;
+    }
+
+    function renderSummary(s) {
+      return `
+        <div class="summary-grid">
+          ${summaryCard('Total Budget', money(s.totalBudget), 'Authorized allocation', '')}
+          ${summaryCard('Total Spent', money(s.totalSpent), `${number(s.transactionCount)} paid transaction(s)`, '')}
+          ${summaryCard('Remaining', money(s.remaining), 'Budget less paid spend', '')}
+          ${summaryCard('Percent Used', percent(s.percentUsed), money(s.totalSpent) + ' spent', statusClass(s.percentUsed))}
+          ${summaryCard('Other Remaining', money(s.otherRemaining), `${percent(s.otherPercentUsed)} used`, statusClass(s.otherPercentUsed))}
+          ${summaryCard('AWT Remaining', money(s.awtRemaining), `${percent(s.awtPercentUsed)} used`, statusClass(s.awtPercentUsed))}
+        </div>
+      `;
+    }
+
+    function summaryCard(label, value, sub, status) {
+      const statusHtml = status
+        ? `<div class="status ${status}">${statusLabel(status)}</div>`
+        : '';
+
+      return `
+        <div class="card">
+          <div class="card-label">${escapeHtml(label)}</div>
+          <div class="card-value">${escapeHtml(value)}</div>
+          <div class="card-sub">${escapeHtml(sub)}</div>
+          ${statusHtml}
+        </div>
+      `;
+    }
+
+    function renderBudgetVsSpentChart(rows) {
+      if (!rows || !rows.length) {
+        return `
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Budget vs. Spent by Office</h2>
+            </div>
+            <div class="empty">No budget data available for your access scope.</div>
+          </div>
+        `;
+      }
+
+      const maxBudget = Math.max(...rows.map(r => r.budget || 0), 1);
+
+      return `
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Budget vs. Spent by Office</h2>
+              <div class="hint">Blue shows paid spend. Green shows remaining budget.</div>
+            </div>
+          </div>
+
+          <div class="bar-chart">
+            ${rows.map(r => {
+              const spentPctOfBudget = r.budget ? Math.min((r.spent / r.budget) * 100, 100) : 0;
+              const totalWidth = Math.max((r.budget / maxBudget) * 100, 8);
+              const remainingPct = Math.max(100 - spentPctOfBudget, 0);
+
+              return `
+                <div class="bar-row">
+                  <div class="bar-label">${escapeHtml(r.orgCode)}</div>
+                  <div class="bar-stack" title="${escapeHtml(r.officeName)}" style="width:${totalWidth}%">
+                    <div class="bar-spent" style="width:${spentPctOfBudget}%"></div>
+                    <div class="bar-remaining" style="width:${remainingPct}%"></div>
+                  </div>
+                  <div class="bar-value">${money(r.spent)} / ${money(r.budget)}</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCategoryChart(s) {
+      return `
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Spend by Category</h2>
+              <div class="hint">Purchase Card dropdown values are grouped as Other or AWT.</div>
+            </div>
+          </div>
+
+          <div class="category-chart">
+            <div class="category-card">
+              <div class="small">Other Training Spent</div>
+              <div class="big">${money(s.otherSpent)}</div>
+              <div class="small">Budget: ${money(s.otherBudget)}</div>
+              <div class="progress">
+                <span style="width:${Math.min(s.otherPercentUsed, 100)}%; background:${progressColor(s.otherPercentUsed)}"></span>
+              </div>
+            </div>
+
+            <div class="category-card">
+              <div class="small">AWT Training Spent</div>
+              <div class="big">${money(s.awtSpent)}</div>
+              <div class="small">Budget: ${money(s.awtBudget)}</div>
+              <div class="progress">
+                <span style="width:${Math.min(s.awtPercentUsed, 100)}%; background:${progressColor(s.awtPercentUsed)}"></span>
+              </div>
+            </div>
+          </div>
+
+          <div style="height:18px"></div>
+
+          ${renderMonthlyTrend(dashboardData.chartData.monthlyTrend)}
+        </div>
+      `;
+    }
+
+    function renderMonthlyTrend(rows) {
+      if (!rows || !rows.length) {
+        return `<div class="empty">No monthly trend data available.</div>`;
+      }
+
+      const max = Math.max(...rows.map(r => r.amount || 0), 1);
+
+      return `
+        <h2 style="font-size:15px; margin:0 0 12px;">Monthly Spend Trend</h2>
+        <div class="bar-chart">
+          ${rows.map(r => `
+            <div class="bar-row" style="grid-template-columns:80px 1fr 100px;">
+              <div class="bar-label">${escapeHtml(r.month)}</div>
+              <div class="bar-stack">
+                <div class="bar-spent" style="width:${Math.max((r.amount / max) * 100, 4)}%"></div>
+              </div>
+              <div class="bar-value">${money(r.amount)}</div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function renderOfficeTable(rows) {
+      return `
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Office Budget Table</h2>
+              <div class="hint">Budget, paid spend, and remaining funds by funding office.</div>
+            </div>
+          </div>
+
+          ${rows && rows.length ? `
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Org</th>
+                    <th>Office</th>
+                    <th class="num">Total Budget</th>
+                    <th class="num">Spent</th>
+                    <th class="num">Remaining</th>
+                    <th class="num">% Used</th>
+                    <th class="num">Other Budget</th>
+                    <th class="num">Other Spent</th>
+                    <th class="num">AWT Budget</th>
+                    <th class="num">AWT Spent</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rows.map(r => `
+                    <tr>
+                      <td><strong>${escapeHtml(r.orgCode)}</strong></td>
+                      <td>${escapeHtml(r.officeName)}</td>
+                      <td class="num">${money(r.totalBudget)}</td>
+                      <td class="num">${money(r.spent)}</td>
+                      <td class="num">${money(r.remaining)}</td>
+                      <td class="num">
+                        ${percent(r.percentUsed)}
+                        <div class="progress">
+                          <span style="width:${Math.min(r.percentUsed, 100)}%; background:${progressColor(r.percentUsed)}"></span>
+                        </div>
+                      </td>
+                      <td class="num">${money(r.otherBudget)}</td>
+                      <td class="num">${money(r.otherSpent)}</td>
+                      <td class="num">${money(r.awtBudget)}</td>
+                      <td class="num">${money(r.awtSpent)}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          ` : `<div class="empty">No office budget rows available for your access scope.</div>`}
+        </div>
+      `;
+    }
+
+    function renderRecentTransactions(rows) {
+      return `
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Recent Paid Training Transactions</h2>
+              <div class="hint">Latest paid transactions from the Purchase Card tab.</div>
+            </div>
+          </div>
+
+          ${rows && rows.length ? `
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Paid Date</th>
+                    <th>Employee</th>
+                    <th>Org</th>
+                    <th>Office</th>
+                    <th>Vendor / Training</th>
+                    <th>Spend Category</th>
+                    <th>Allocation Dropdown</th>
+                    <th class="num">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rows.map(tx => `
+                    <tr>
+                      <td>${dateText(tx.paidDate)}</td>
+                      <td>${escapeHtml(tx.employeeName)}</td>
+                      <td><strong>${escapeHtml(tx.orgCode)}</strong></td>
+                      <td>${escapeHtml(tx.officeName)}</td>
+                      <td>
+                        <strong>${escapeHtml(tx.vendor || '')}</strong>
+                        <div style="color:var(--muted); margin-top:3px;">${escapeHtml(tx.description || '')}</div>
+                      </td>
+                      <td>${escapeHtml(tx.category)}</td>
+                      <td>${escapeHtml(tx.allocationValue || '')}</td>
+                      <td class="num">${money(tx.amount)}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          ` : `<div class="empty">No paid training transactions match the selected filters.</div>`}
+        </div>
+      `;
+    }
+
+    function bindFilterEvents() {
+      document.getElementById('applyFilters').addEventListener('click', () => {
+        state.fiscalYear = document.getElementById('filterFiscalYear').value;
+        state.office = document.getElementById('filterOffice').value;
+        state.category = document.getElementById('filterCategory').value;
+        state.startDate = document.getElementById('filterStartDate').value;
+        state.endDate = document.getElementById('filterEndDate').value;
+        state.search = document.getElementById('filterSearch').value;
+        loadDashboard();
+      });
+
+      document.getElementById('resetFilters').addEventListener('click', () => {
+        state.fiscalYear = 'All';
+        state.office = 'All';
+        state.category = 'All';
+        state.startDate = '';
+        state.endDate = '';
+        state.search = '';
+        loadDashboard();
+      });
+
+      document.getElementById('filterSearch').addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          document.getElementById('applyFilters').click();
+        }
+      });
+    }
+
+    function money(value) {
+      const n = Number(value) || 0;
+      return n.toLocaleString(undefined, {
+        style: 'currency',
+        currency: 'USD',
+        maximumFractionDigits: 0
+      });
+    }
+
+    function number(value) {
+      const n = Number(value) || 0;
+      return n.toLocaleString();
+    }
+
+    function percent(value) {
+      const n = Number(value) || 0;
+      return n.toFixed(1) + '%';
+    }
+
+    function statusClass(percentUsed) {
+      const n = Number(percentUsed) || 0;
+      if (n >= 90) return 'red';
+      if (n >= 70) return 'amber';
+      return 'green';
+    }
+
+    function statusLabel(cls) {
+      if (cls === 'red') return 'High Utilization';
+      if (cls === 'amber') return 'Monitor';
+      return 'On Track';
+    }
+
+    function progressColor(percentUsed) {
+      const cls = statusClass(percentUsed);
+      if (cls === 'red') return '#b91c1c';
+      if (cls === 'amber') return '#b45309';
+      return '#15803d';
+    }
+
+    function dateText(value) {
+      if (!value) return '';
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleDateString();
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+  </script>
+</body>
+</html>

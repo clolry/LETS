@@ -1,0 +1,1102 @@
+<!-- client/controllers/form/travelRequestState.html -->
+<!-- State management for the Travel Request multi-step form -->
+<!-- Updated to support multi-leg itineraries -->
+<script>
+(function() {
+  'use strict';
+
+  window.TravelRequest = window.TravelRequest || {};
+
+  /**
+   * State Management for Travel Request Form
+   * Handles form data, step navigation, itinerary legs, and traveler management
+   */
+  // Cost calculation constants
+  window.TravelRequest.COST_CATEGORIES = ['transportation', 'lodging', 'mie', 'other'];
+  window.TravelRequest.DEFAULT_VEHICLE_TYPE = 'air';
+
+  // Mileage rates - will be loaded from server, these are fallback defaults
+  // Fallback values from TravelUtils.TRAVEL_CONFIG
+  const CONFIG = TravelUtils?.TRAVEL_CONFIG?.MILEAGE_RATES || { PRIVATE: 0.70, GOVERNMENT: 0.22 };
+  window.TravelRequest.MILEAGE_RATES = {
+    private: CONFIG.PRIVATE,   // Private vehicle rate $/mile (fallback)
+    gov: CONFIG.GOVERNMENT     // Government vehicle rate $/mile (fallback)
+  };
+
+  /**
+   * Load mileage rates from server.
+   * Delegates to TravelCostService (canonical loader) and mirrors the result
+   * into window.TravelRequest.MILEAGE_RATES so existing call sites that read
+   * .private/.gov keep working without change. TravelCostService dedupes
+   * concurrent loads via an internal Promise, so calling this multiple times
+   * still results in a single RPC roundtrip.
+   */
+  window.TravelRequest.loadMileageRates = function() {
+    if (window.TravelCostService && typeof window.TravelCostService.loadMileageRates === 'function') {
+      window.TravelCostService.loadMileageRates().then(function(rates) {
+        if (rates) {
+          window.TravelRequest.MILEAGE_RATES.private = rates.private;
+          window.TravelRequest.MILEAGE_RATES.gov = rates.gov;
+        }
+      });
+    } else {
+      console.warn('TravelCostService not available; mileage rates remain at fallback defaults');
+    }
+  };
+
+  /**
+   * Get mileage rate for a vehicle type
+   * @param {string} vehicleType - 'private' or 'gov'
+   * @returns {number} Mileage rate per mile
+   */
+  window.TravelRequest.getMileageRate = function(vehicleType) {
+    return vehicleType === 'gov'
+      ? window.TravelRequest.MILEAGE_RATES.gov
+      : window.TravelRequest.MILEAGE_RATES.private;
+  };
+
+  // OCONUS states/territories are defined in TravelUtils.OCONUS_STATES
+  // Use TravelUtils.isOCONUS(stateAbbr) for checks
+
+  window.TravelRequest.State = {
+    // Current step (1-6)
+    _currentStep: 1,
+
+    // Highest step user has reached (for navigation)
+    _highestCompletedStep: 0,
+
+    // User info
+    _userEmail: '',
+    _userName: '',
+
+    // Form data object
+    _formData: {
+      // Step 1: Trip Overview
+      tripName: '',
+      locationType: '',        // 'conference', 'client-site', 'contractor-site', 'teb', or 'other'
+      eventStartDate: '',      // When the event/meeting begins
+      eventEndDate: '',        // When the event/meeting ends
+
+      // Step 2: Itinerary (array of legs)
+      legs: [],
+
+      // Step 3: Travelers
+      travelers: [],
+
+      // Step 4: Travel Classification
+      travelTypes: [],
+      missionCriticalTypes: [],
+
+      // Justification (now part of Step 1)
+      bluf: '',
+      purpose: '',
+
+      // Step 5: Shared Costs (predefined categories)
+      sharedCosts: {
+        facilities: { amount: 0, description: '' },    // Room rentals, setup, utilities
+        audioVisual: { amount: 0, description: '' },   // A/V equipment, technical support
+        logistics: { amount: 0, description: '' },     // Event coordination, contracted facilitators
+        other: { amount: 0, description: '' }          // Catch-all for anything else
+      },
+
+      // Metadata
+      draftId: null,
+      status: 'draft'
+    },
+
+    // Step titles and descriptions (6 steps)
+    _stepInfo: {
+      1: {
+        title: 'Trip Overview',
+        description: 'Provide the event name, type of location, and justification.'
+      },
+      2: {
+        title: 'Itinerary',
+        description: 'Build your trip itinerary by adding destination stops.'
+      },
+      3: {
+        title: 'Travelers',
+        description: 'Add travelers, select which legs they\'re attending, and estimate costs.'
+      },
+      4: {
+        title: 'Travel Classification',
+        description: 'Select the type(s) of travel and any applicable mission-critical categories.'
+      },
+      5: {
+        title: 'Shared Costs',
+        description: 'Add any costs that are shared across all travelers.',
+        optional: true
+      },
+      6: {
+        title: 'Review & Submit',
+        description: 'Review all information before submitting your travel request.'
+      }
+    },
+
+    /**
+     * Initialize state with user info
+     * @param {string} userEmail - User's email
+     * @param {string} userName - User's display name
+     * @param {Object} submitterInfo - Optional submitter info { buCode, buName, orgCode }
+     */
+    init(userEmail, userName, submitterInfo) {
+      this._userEmail = userEmail;
+      this._userName = userName;
+      this._formData.submitterEmail = userEmail;
+      this._formData.submitterName = userName;
+
+      // Store submitter BU info if provided (from staffing or Test_Submitters)
+      if (submitterInfo) {
+        this._formData.submitterBU = submitterInfo.buCode || '';
+        this._formData.submitterBUName = submitterInfo.buName || '';
+        this._formData.submitterOrgCode = submitterInfo.orgCode || '';
+      }
+    },
+
+    // =========================================================================
+    // STEP NAVIGATION
+    // =========================================================================
+
+    getCurrentStep() {
+      return this._currentStep;
+    },
+
+    getStepInfo(step) {
+      return this._stepInfo[step] || this._stepInfo[1];
+    },
+
+    setStep(step) {
+      if (step >= 1 && step <= 6) {
+        this._currentStep = step;
+        return true;
+      }
+      return false;
+    },
+
+    nextStep() {
+      if (this._currentStep < 6) {
+        this._currentStep++;
+        // Track highest step reached
+        if (this._currentStep > this._highestCompletedStep) {
+          this._highestCompletedStep = this._currentStep;
+        }
+        return true;
+      }
+      return false;
+    },
+
+    prevStep() {
+      if (this._currentStep > 1) {
+        this._currentStep--;
+        return true;
+      }
+      return false;
+    },
+
+    getHighestCompletedStep() {
+      return this._highestCompletedStep;
+    },
+
+    setHighestCompletedStep(step) {
+      if (step >= 1 && step <= 6) {
+        this._highestCompletedStep = step;
+      }
+    },
+
+    // =========================================================================
+    // FORM FIELD MANAGEMENT
+    // =========================================================================
+
+    updateField(field, value) {
+      if (field in this._formData) {
+        this._formData[field] = value;
+      }
+    },
+
+    getFormData() {
+      return JSON.parse(JSON.stringify(this._formData));
+    },
+
+    getField(field) {
+      return this._formData[field];
+    },
+
+    // =========================================================================
+    // ITINERARY LEG MANAGEMENT
+    // =========================================================================
+
+    /**
+     * Add a new leg to the itinerary
+     * @param {Object} initialData - Optional initial data (for restoring from draft)
+     * @returns {Object} The new leg object
+     */
+    addLeg(initialData = null) {
+      // Use provided ID or generate new one
+      const legId = initialData?.id || ('leg_' + Date.now());
+      const legNumber = this._formData.legs.length + 1;
+
+      const newLeg = {
+        id: legId,
+        legNumber: legNumber,
+
+        // Location
+        siteName: '',          // For client-site or contractor-site type
+        city: '',
+        state: '',             // US only
+        country: 'United States',
+
+        // Dates at this location
+        startDate: '',
+        endDate: '',
+
+        // Computed flags
+        isInternational: false,
+        isOCONUS: false,
+
+        // Per diem rates (fetched from GSA/DoD/DOS)
+        perDiemSource: 'GSA',  // 'GSA', 'DoD', or 'DOS'
+        perDiemRates: null,    // { lodging: X, mie: Y, ... }
+
+        // UI state
+        isExpanded: true,
+
+        // Merge any initial data (for draft restoration)
+        ...initialData
+      };
+
+      // Ensure ID is correct after spread (initialData might override)
+      newLeg.id = legId;
+
+      // Collapse all existing legs
+      this._formData.legs.forEach(leg => {
+        leg.isExpanded = false;
+      });
+
+      this._formData.legs.push(newLeg);
+
+      // Add new leg to all existing travelers
+      this._formData.travelers.forEach(traveler => {
+        // Add to attending legs
+        if (!traveler.attendingLegs.includes(legId)) {
+          traveler.attendingLegs.push(legId);
+        }
+        // Initialize leg costs
+        if (!traveler.legCosts[legId]) {
+          traveler.legCosts[legId] = {
+            // Independent lodging dates
+            lodgingStartDate: '',
+            lodgingEndDate: '',
+            lodgingUsesItineraryDates: true,
+            // Independent M&IE dates
+            mieStartDate: '',
+            mieEndDate: '',
+            mieUsesItineraryDates: true,
+
+            lodgingRate: 0,
+            lodgingNights: 0,
+            lodgingCalculated: 0,
+            lodgingOverride: false,
+            lodgingOverrideAmount: 0,
+            lodgingOverrideReason: '',
+            lodgingTotal: 0,
+            mieRate: 0,
+            mieDays: 0,
+            mieCalculated: 0,
+            mieOverride: false,
+            mieOverrideAmount: 0,
+            mieOverrideReason: '',
+            mieTotal: 0,
+
+            // Local travel fields
+            isLocalTravel: false,
+            localMilesDriven: 0,
+            wasGovVehicleAvailable: false,
+            localParking: 0,
+            localTolls: 0,
+            localTravelTotal: 0,
+            legSubtotal: 0
+          };
+        }
+      });
+
+      return newLeg;
+    },
+
+    /**
+     * Update a leg field
+     */
+    updateLeg(legId, field, value) {
+      const leg = this._formData.legs.find(l => l.id === legId);
+      if (!leg) return;
+
+      leg[field] = value;
+
+      // Auto-detect international
+      if (field === 'country') {
+        leg.isInternational = (value !== 'United States');
+        if (leg.isInternational) {
+          leg.isOCONUS = false;
+          leg.state = '';
+          leg.perDiemSource = 'DOS';
+        } else {
+          // Switching back to US - reset to GSA (will be updated to DoD if OCONUS state selected)
+          leg.perDiemSource = 'GSA';
+        }
+      }
+
+      // Auto-detect OCONUS (only for US locations) - use shared utility
+      if (field === 'state' && !leg.isInternational) {
+        leg.isOCONUS = TravelUtils.isOCONUS(value);
+        leg.perDiemSource = leg.isOCONUS ? 'DoD' : 'GSA';
+      }
+
+      // Local-travel re-evaluation hook. Whenever a leg's city or state
+      // changes — via autocomplete, manual blur entry, paste, programmatic
+      // edit on review, or any future code path — re-run the local-travel
+      // detection for every (traveler, leg) pair. Previously this fired
+      // only on the city-autocomplete onSelect path, so users who typed a
+      // city and tabbed out bypassed the detection entirely and could
+      // submit a request that should have been local travel as if it
+      // weren't. Reported via REQ-2026-0166 (Springfield VA → Tysons VA).
+      //
+      // The recheck is server-cached (Controller._distanceCache + server
+      // geocoding cache), so repeated triggers on the same (origin, dest)
+      // pair cost essentially nothing.
+      //
+      // Wrapped in setTimeout(0) so the state mutation completes before
+      // the recheck reads from state (defensive against any re-entrant
+      // updates the recheck might trigger).
+      if (field === 'city' || field === 'state') {
+        if (window.TravelRequest &&
+            window.TravelRequest.Controller &&
+            typeof window.TravelRequest.Controller._recheckLocalTravelForAllTravelers === 'function') {
+          setTimeout(function() {
+            window.TravelRequest.Controller._recheckLocalTravelForAllTravelers();
+          }, 0);
+        }
+      }
+    },
+
+    /**
+     * Update leg with per diem rates
+     */
+    updateLegPerDiem(legId, perDiemData) {
+      const leg = this._formData.legs.find(l => l.id === legId);
+      if (leg) {
+        leg.perDiemRates = perDiemData;
+      }
+    },
+
+    /**
+     * Remove a leg
+     */
+    removeLeg(legId) {
+      const index = this._formData.legs.findIndex(l => l.id === legId);
+      if (index > -1) {
+        this._formData.legs.splice(index, 1);
+        // Renumber remaining legs
+        this._formData.legs.forEach((leg, i) => {
+          leg.legNumber = i + 1;
+        });
+        // Also remove this leg from any travelers' attendingLegs
+        this._formData.travelers.forEach(traveler => {
+          const legIndex = traveler.attendingLegs.indexOf(legId);
+          if (legIndex > -1) {
+            traveler.attendingLegs.splice(legIndex, 1);
+          }
+        });
+        return true;
+      }
+      return false;
+    },
+
+    /**
+     * Toggle leg expanded state
+     */
+    toggleLegExpanded(legId) {
+      const leg = this._formData.legs.find(l => l.id === legId);
+      if (leg) {
+        this._formData.legs.forEach(l => {
+          l.isExpanded = (l.id === legId) ? !l.isExpanded : false;
+        });
+      }
+    },
+
+    /**
+     * Get all legs
+     */
+    getLegs() {
+      return this._formData.legs;
+    },
+
+    /**
+     * Get leg by ID
+     */
+    getLeg(legId) {
+      return this._formData.legs.find(l => l.id === legId);
+    },
+
+    /**
+     * Get leg count
+     */
+    getLegCount() {
+      return this._formData.legs.length;
+    },
+
+    /**
+     * Check if any leg is international
+     */
+    hasInternationalLeg() {
+      return this._formData.legs.some(leg => leg.isInternational);
+    },
+
+    /**
+     * Check if any leg is OCONUS
+     */
+    hasOCONUSLeg() {
+      return this._formData.legs.some(leg => leg.isOCONUS);
+    },
+
+    /**
+     * Get trip date range (earliest start to latest end)
+     */
+    getTripDateRange() {
+      if (this._formData.legs.length === 0) {
+        return { startDate: '', endDate: '' };
+      }
+
+      const starts = this._formData.legs
+        .filter(l => l.startDate)
+        .map(l => new Date(l.startDate));
+      const ends = this._formData.legs
+        .filter(l => l.endDate)
+        .map(l => new Date(l.endDate));
+
+      if (starts.length === 0 || ends.length === 0) {
+        return { startDate: '', endDate: '' };
+      }
+
+      const minStart = new Date(Math.min(...starts));
+      const maxEnd = new Date(Math.max(...ends));
+
+      return {
+        startDate: minStart.toISOString().split('T')[0],
+        endDate: maxEnd.toISOString().split('T')[0]
+      };
+    },
+
+    /**
+     * Format a leg's location for display
+     */
+    formatLegLocation(leg) {
+      if (!leg) return '';
+
+      const parts = [];
+
+      // Add site name for client-site or contractor-site locations
+      const locationType = this._formData.locationType;
+      if ((locationType === 'client-site' || locationType === 'contractor-site') && leg.siteName) {
+        parts.push(leg.siteName);
+      }
+
+      // Build city/state/country portion
+      let locationPart = '';
+      if (leg.city) {
+        locationPart = leg.city;
+        if (!leg.isInternational && leg.state) {
+          locationPart += ', ' + leg.state;
+        } else if (leg.isInternational && leg.country) {
+          locationPart += ', ' + leg.country;
+        }
+      }
+
+      if (locationPart) {
+        parts.push(locationPart);
+      }
+
+      return parts.join(' - ');
+    },
+
+    /**
+     * Get formatted itinerary string (all legs)
+     */
+    getFormattedItinerary() {
+      if (this._formData.legs.length === 0) return '';
+
+      return this._formData.legs
+        .map(leg => this.formatLegLocation(leg))
+        .filter(loc => loc)
+        .join(' → ');
+    },
+
+    // =========================================================================
+    // TRAVELER MANAGEMENT
+    // =========================================================================
+
+    /**
+     * Add a new traveler
+     * @param {Object} initialData - Optional initial data (for restoring from draft)
+     * @returns {Object} The new traveler object
+     */
+    addTraveler(initialData = null) {
+      // Use provided ID or generate new one
+      const travelerId = initialData?.id || ('traveler_' + Date.now());
+
+      // Default to attending all legs (unless restoring from draft)
+      const allLegIds = this._formData.legs.map(l => l.id);
+
+      const newTraveler = {
+        id: travelerId,
+        employeeId: '',
+        employeeName: '',
+        email: '',
+        orgCode: '',
+        businessUnit: '',
+        lcat: '',
+        ddName: '',
+        ddEmail: '',
+        dutyLocation: '',
+
+        // Origin (where traveler is coming from)
+        originCity: '',
+        originState: '',
+
+        // Which legs this traveler is attending
+        attendingLegs: allLegIds,
+
+        // Costs per leg (keyed by legId)
+        legCosts: {},
+
+        // Transportation (origin to first leg, last leg to origin)
+        milesToDeparture: 0,
+        milesFromArrival: 0,
+        vehicleType: window.TravelRequest.DEFAULT_VEHICLE_TYPE,
+        ticketCost: 0,
+        transportMode: 'air',
+        needsRentalCar: false,
+        rentalCarCost: 0,
+        transportationTotal: 0,
+
+        // Aggregated totals (sum across attended legs)
+        lodgingTotal: 0,
+        mieTotal: 0,
+        localTravelTotal: 0,
+        otherPercentage: 15,
+        otherTotal: 0,
+        subtotal: 0,
+
+        // Legacy fields for backward compatibility
+        transportation: 0,
+        lodging: 0,
+        mie: 0,
+        other: 0,
+        otherExplanation: '',
+
+        // Classification
+        isClientPaid: '',
+        roleJustification: '',
+
+        // International fields (shown if any attended leg is international)
+        hasSecurityClearance: null,
+        hasValidPassport: null,
+        isSpeaking: null,
+        eventOpenToPress: null,
+        receivingNFS: null,
+        nfsFileId: null,
+        nfsFileName: null,
+        nfsWorksheetSubmitted: false,
+
+        // Local travel fields (commute info - applies across all local legs)
+        isFullTimeTelework: false,
+        normalCommuteDistance: 0,      // Round-trip commute in miles
+        normalCommuteParking: 0,       // Normal daily parking cost
+        dutyStationAddress: '',        // From staffing data
+        dutyStationCity: '',
+        dutyStationState: '',
+
+        // UI state
+        isExpanded: true,
+
+        // Merge any initial data (for draft restoration)
+        ...initialData
+      };
+
+      // Ensure ID is correct after spread
+      newTraveler.id = travelerId;
+
+      // Initialize leg costs for each leg (only if not restoring from draft with existing legCosts)
+      if (!initialData?.legCosts || Object.keys(initialData.legCosts).length === 0) {
+        this._formData.legs.forEach(leg => {
+          newTraveler.legCosts[leg.id] = {
+            // Independent lodging dates (can differ from leg dates)
+            lodgingStartDate: leg.startDate || '',
+            lodgingEndDate: leg.endDate || '',
+            lodgingUsesItineraryDates: true, // true = use leg dates, false = custom
+
+            // Independent M&IE dates (can differ from leg dates and lodging dates)
+            mieStartDate: leg.startDate || '',
+            mieEndDate: leg.endDate || '',
+            mieUsesItineraryDates: true, // true = use leg dates, false = custom
+
+            lodgingRate: 0,
+            lodgingNights: 0,
+            lodgingCalculated: 0,
+            lodgingOverride: false,
+            lodgingOverrideAmount: 0,
+            lodgingOverrideReason: '',
+            lodgingTotal: 0,
+
+            mieRate: 0,
+            mieDays: 0,
+            mieCalculated: 0,
+            mieOverride: false,
+            mieOverrideAmount: 0,
+            mieOverrideReason: '',
+            mieTotal: 0,
+
+            // Local travel fields (per-leg)
+            isLocalTravel: false,          // Calculated: distance < 50 miles
+            localMilesDriven: 0,           // Actual miles driven for this leg
+            wasGovVehicleAvailable: false, // Affects mileage rate
+            localParking: 0,               // Parking costs for this leg
+            localTolls: 0,                 // Toll costs for this leg
+            localTravelTotal: 0,           // Calculated reimbursement
+
+            // Leg subtotal (lodging + M&IE for this leg, or local travel total)
+            legSubtotal: 0
+          };
+        });
+      }
+
+      // Collapse all existing travelers
+      this._formData.travelers.forEach(traveler => {
+        traveler.isExpanded = false;
+      });
+
+      this._formData.travelers.push(newTraveler);
+      return newTraveler;
+    },
+
+    /**
+     * Update a traveler field
+     */
+    updateTraveler(travelerId, field, value) {
+      const traveler = this._formData.travelers.find(t => t.id === travelerId);
+      if (traveler) {
+        traveler[field] = value;
+
+        // Recalculate totals based on which field changed
+        this._recalculateTravelerCosts(traveler, field);
+      }
+    },
+
+    /**
+     * Update traveler's leg attendance
+     */
+    updateTravelerLegs(travelerId, legIds) {
+      const traveler = this._formData.travelers.find(t => t.id === travelerId);
+      if (traveler) {
+        traveler.attendingLegs = legIds;
+
+        // Initialize costs for any new legs
+        legIds.forEach(legId => {
+          if (!traveler.legCosts[legId]) {
+            const leg = this._formData.legs.find(l => l.id === legId);
+            traveler.legCosts[legId] = {
+              // Independent lodging dates
+              lodgingStartDate: leg?.startDate || '',
+              lodgingEndDate: leg?.endDate || '',
+              lodgingUsesItineraryDates: true,
+              // Independent M&IE dates
+              mieStartDate: leg?.startDate || '',
+              mieEndDate: leg?.endDate || '',
+              mieUsesItineraryDates: true,
+
+              lodgingRate: 0,
+              lodgingNights: 0,
+              lodgingCalculated: 0,
+              lodgingOverride: false,
+              lodgingOverrideAmount: 0,
+              lodgingOverrideReason: '',
+              lodgingTotal: 0,
+              mieRate: 0,
+              mieDays: 0,
+              mieCalculated: 0,
+              mieOverride: false,
+              mieOverrideAmount: 0,
+              mieOverrideReason: '',
+              mieTotal: 0,
+
+              // Local travel fields
+              isLocalTravel: false,
+              localMilesDriven: 0,
+              wasGovVehicleAvailable: false,
+              localParking: 0,
+              localTolls: 0,
+              localTravelTotal: 0,
+
+              legSubtotal: 0
+            };
+          }
+        });
+
+        // Recalculate totals
+        this._recalculateTravelerCosts(traveler, 'attendingLegs');
+      }
+    },
+
+    /**
+     * Update traveler's cost for a specific leg
+     */
+    updateTravelerLegCost(travelerId, legId, field, value) {
+      const traveler = this._formData.travelers.find(t => t.id === travelerId);
+      if (traveler && traveler.legCosts[legId]) {
+        traveler.legCosts[legId][field] = value;
+
+        // Recalculate leg totals
+        const legCost = traveler.legCosts[legId];
+
+        // When marking as local travel, clear per diem values (no per diem for local travel)
+        if (field === 'isLocalTravel' && value === true) {
+          legCost.lodgingRate = 0;
+          legCost.lodgingNights = 0;
+          legCost.lodgingCalculated = 0;
+          legCost.lodgingTotal = 0;
+          legCost.mieRate = 0;
+          legCost.mieDays = 0;
+          legCost.mieCalculated = 0;
+          legCost.mieTotal = 0;
+        }
+
+        // Recalculate lodging total when override or calculated value changes
+        if (field === 'lodgingOverride' || field === 'lodgingOverrideAmount' || field === 'lodgingCalculated') {
+          legCost.lodgingTotal = legCost.lodgingOverride
+            ? (parseFloat(legCost.lodgingOverrideAmount) || 0)
+            : (legCost.lodgingCalculated || 0);
+        }
+
+        // Recalculate M&IE total when override or calculated value changes
+        if (field === 'mieOverride' || field === 'mieOverrideAmount' || field === 'mieCalculated') {
+          legCost.mieTotal = legCost.mieOverride
+            ? (parseFloat(legCost.mieOverrideAmount) || 0)
+            : (legCost.mieCalculated || 0);
+        }
+
+        // Update leg subtotal (local travel uses localTravelTotal, regular uses lodging+M&IE)
+        if (legCost.isLocalTravel) {
+          legCost.legSubtotal = legCost.localTravelTotal || 0;
+        } else {
+          legCost.legSubtotal = (legCost.lodgingTotal || 0) + (legCost.mieTotal || 0);
+        }
+
+        // Recalculate overall totals
+        this._recalculateTravelerCosts(traveler, 'legCost');
+      }
+    },
+
+    /**
+     * Update traveler leg with per diem calculation results
+     */
+    updateTravelerLegPerDiem(travelerId, legId, perDiemData) {
+      const traveler = this._formData.travelers.find(t => t.id === travelerId);
+      if (!traveler || !traveler.legCosts[legId]) return;
+
+      const legCost = traveler.legCosts[legId];
+
+      // Skip per diem updates for local travel legs - they don't get per diem
+      if (legCost.isLocalTravel) {
+        return;
+      }
+
+      // Update lodging
+      if (perDiemData.lodging) {
+        legCost.lodgingRate = perDiemData.lodging.averageRate || perDiemData.lodging.rate || 0;
+        legCost.lodgingNights = perDiemData.lodging.nights || 0;
+        legCost.lodgingCalculated = perDiemData.lodging.total || 0;
+        legCost.lodgingBreakdown = perDiemData.lodging.breakdown || null;
+        legCost.lodgingRatesVaried = perDiemData.lodging.ratesVaried || false;
+        if (!legCost.lodgingOverride) {
+          legCost.lodgingTotal = legCost.lodgingCalculated;
+        }
+      }
+
+      // Update M&IE
+      if (perDiemData.mie) {
+        legCost.mieRate = perDiemData.mie.dailyRate || perDiemData.mie.rate || 0;
+        legCost.mieDays = perDiemData.mie.days || 0;
+        legCost.mieCalculated = perDiemData.mie.total || 0;
+        if (!legCost.mieOverride) {
+          legCost.mieTotal = legCost.mieCalculated;
+        }
+      }
+
+      // Update leg subtotal
+      legCost.legSubtotal = (legCost.lodgingTotal || 0) + (legCost.mieTotal || 0);
+
+      // Recalculate overall totals
+      this._recalculateTravelerCosts(traveler, 'perDiemUpdate');
+    },
+
+    /**
+     * Calculate local travel reimbursement for a single leg
+     * Based on GSA Order OAS 5770.1B
+     * @param {Object} traveler - The traveler object
+     * @param {Object} legCost - The leg cost object
+     * @returns {Object} Calculated local travel amounts
+     */
+    _calculateLocalTravelReimbursement(traveler, legCost) {
+      const localMiles = parseFloat(legCost.localMilesDriven) || 0;
+      const localParking = parseFloat(legCost.localParking) || 0;
+      const localTolls = parseFloat(legCost.localTolls) || 0;
+
+      // Commute distance is 0 for telework employees
+      const commuteDistance = traveler.isFullTimeTelework ? 0 : (parseFloat(traveler.normalCommuteDistance) || 0);
+      const commuteParking = traveler.isFullTimeTelework ? 0 : (parseFloat(traveler.normalCommuteParking) || 0);
+
+      // Reimbursable mileage = actual - commute (minimum 0)
+      const reimbursableMiles = Math.max(0, localMiles - commuteDistance);
+
+      // Mileage rate: reduced if gov vehicle was available but chose POV
+      const mileageRate = legCost.wasGovVehicleAvailable
+        ? window.TravelRequest.MILEAGE_RATES.gov   // Reduced rate
+        : window.TravelRequest.MILEAGE_RATES.private; // Standard rate
+
+      const mileageReimbursement = reimbursableMiles * mileageRate;
+
+      // Parking: reimburse excess over normal commute parking
+      const excessParking = Math.max(0, localParking - commuteParking);
+
+      // Tolls: fully reimbursable
+      const tollsReimbursement = localTolls;
+
+      // Total local travel reimbursement
+      const total = mileageReimbursement + excessParking + tollsReimbursement;
+
+      return {
+        reimbursableMiles,
+        mileageRate,
+        mileageReimbursement,
+        excessParking,
+        tollsReimbursement,
+        total
+      };
+    },
+
+    /**
+     * Recalculate traveler costs
+     * @private
+     */
+    _recalculateTravelerCosts(traveler, changedField) {
+      // Sum lodging, M&IE, and local travel across attended legs
+      let lodgingTotal = 0;
+      let mieTotal = 0;
+      let localTravelTotal = 0;
+
+      traveler.attendingLegs.forEach(legId => {
+        const legCost = traveler.legCosts[legId];
+        if (legCost) {
+          if (legCost.isLocalTravel) {
+            // Local travel leg - calculate reimbursement
+            const localCalc = this._calculateLocalTravelReimbursement(traveler, legCost);
+            legCost.localTravelTotal = localCalc.total;
+            legCost.legSubtotal = localCalc.total;
+            localTravelTotal += localCalc.total;
+          } else {
+            // Normal TDY leg - use lodging + M&IE
+            lodgingTotal += legCost.lodgingTotal || 0;
+            mieTotal += legCost.mieTotal || 0;
+          }
+        }
+      });
+
+      traveler.lodgingTotal = lodgingTotal;
+      traveler.lodging = lodgingTotal; // Legacy
+
+      traveler.mieTotal = mieTotal;
+      traveler.mie = mieTotal; // Legacy
+
+      traveler.localTravelTotal = localTravelTotal;
+
+      // Transportation (ticket + mileage) - only for non-local travel
+      const ticketCost = parseFloat(traveler.ticketCost) || 0;
+      const transportMode = traveler.transportMode || '';
+
+      // Only calculate mileage for private or gov vehicle
+      let mileageCost = 0;
+      let mileageRate = 0;
+      if (transportMode === 'private' || transportMode === 'gov') {
+        const mileageTo = parseFloat(traveler.milesToDeparture) || 0;
+        const mileageFrom = parseFloat(traveler.milesFromArrival) || 0;
+        const totalMileage = mileageTo + mileageFrom;
+        mileageRate = window.TravelRequest.getMileageRate(transportMode);
+        mileageCost = totalMileage * mileageRate;
+      }
+      traveler.mileageTotal = mileageCost;
+      traveler.mileageRate = mileageRate;
+
+      // Add rental car cost if applicable (not shown when primary mode is rental)
+      const rentalCarCost = (traveler.needsRentalCar && transportMode !== 'rental') ? (parseFloat(traveler.rentalCarCost) || 0) : 0;
+      traveler.transportationTotal = ticketCost + mileageCost + rentalCarCost;
+      traveler.transportation = traveler.transportationTotal; // Legacy
+
+      // Other (15% of transportation + lodging + M&IE) - excludes local travel
+      const baseForOther = traveler.transportationTotal + traveler.lodgingTotal + traveler.mieTotal;
+      traveler.otherTotal = baseForOther * (traveler.otherPercentage / 100);
+      traveler.other = traveler.otherTotal; // Legacy
+
+      // Subtotal (includes local travel)
+      traveler.subtotal = traveler.transportationTotal + traveler.lodgingTotal + traveler.mieTotal + traveler.otherTotal + traveler.localTravelTotal;
+    },
+
+    /**
+     * Remove a traveler
+     */
+    removeTraveler(travelerId) {
+      const index = this._formData.travelers.findIndex(t => t.id === travelerId);
+      if (index > -1) {
+        this._formData.travelers.splice(index, 1);
+        return true;
+      }
+      return false;
+    },
+
+    /**
+     * Toggle traveler expanded state
+     */
+    toggleTravelerExpanded(travelerId) {
+      const traveler = this._formData.travelers.find(t => t.id === travelerId);
+      if (traveler) {
+        this._formData.travelers.forEach(t => {
+          t.isExpanded = (t.id === travelerId) ? !t.isExpanded : false;
+        });
+      }
+    },
+
+    /**
+     * Get all travelers
+     */
+    getTravelers() {
+      return this._formData.travelers;
+    },
+
+    /**
+     * Get traveler by ID
+     */
+    getTraveler(travelerId) {
+      return this._formData.travelers.find(t => t.id === travelerId);
+    },
+
+    /**
+     * Get traveler count
+     */
+    getTravelerCount() {
+      return this._formData.travelers.length;
+    },
+
+    /**
+     * Check if traveler is attending any international leg
+     */
+    travelerHasInternationalLeg(travelerId) {
+      const traveler = this._formData.travelers.find(t => t.id === travelerId);
+      if (!traveler) return false;
+
+      return traveler.attendingLegs.some(legId => {
+        const leg = this._formData.legs.find(l => l.id === legId);
+        return leg && leg.isInternational;
+      });
+    },
+
+    /**
+     * Calculate total traveler costs
+     */
+    getTravelerTotal() {
+      return this._formData.travelers.reduce((sum, t) => sum + (t.subtotal || 0), 0);
+    },
+
+    // =========================================================================
+    // SHARED COSTS
+    // =========================================================================
+
+    getSharedCostsTotal() {
+      const costs = this._formData.sharedCosts;
+      return (parseFloat(costs.facilities.amount) || 0) +
+             (parseFloat(costs.audioVisual.amount) || 0) +
+             (parseFloat(costs.logistics.amount) || 0) +
+             (parseFloat(costs.other.amount) || 0);
+    },
+
+    getGrandTotal() {
+      return this.getTravelerTotal() + this.getSharedCostsTotal();
+    },
+
+    getSharedCosts() {
+      return this._formData.sharedCosts;
+    },
+
+    updateSharedCost(category, field, value) {
+      if (this._formData.sharedCosts[category]) {
+        this._formData.sharedCosts[category][field] = value;
+      }
+    },
+
+    getSharedCostCategories() {
+      return [
+        { id: 'facilities', label: 'Facilities & Space', hint: 'Room rentals, setup, utilities', icon: 'fa-building' },
+        { id: 'audioVisual', label: 'Audio/Visual & Technology', hint: 'A/V equipment, technical support', icon: 'fa-desktop' },
+        { id: 'logistics', label: 'Logistics & Operations', hint: 'Event coordination, contracted facilitators', icon: 'fa-clipboard-list' },
+        { id: 'other', label: 'Other Shared Costs', hint: 'Any other shared expenses', icon: 'fa-ellipsis-h' }
+      ];
+    },
+
+    // =========================================================================
+    // UTILITY FUNCTIONS
+    // =========================================================================
+
+    formatCurrency(amount) {
+      return '$' + (parseFloat(amount) || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    },
+
+    /**
+     * Get formatted location string (legacy - returns first leg or itinerary)
+     * @returns {string} Formatted location
+     */
+    getFormattedLocation() {
+      if (this._formData.legs.length === 0) return '';
+      if (this._formData.legs.length === 1) {
+        return this.formatLegLocation(this._formData.legs[0]);
+      }
+      return this.getFormattedItinerary();
+    },
+
+    // =========================================================================
+    // LEGACY COMPATIBILITY
+    // =========================================================================
+
+    /**
+     * Check if travel is international (any leg)
+     * @deprecated Use hasInternationalLeg() instead
+     */
+    isInternational() {
+      return this.hasInternationalLeg();
+    },
+
+    /**
+     * Check if travel is OCONUS (any leg)
+     * @deprecated Use hasOCONUSLeg() instead
+     */
+    isOCONUS() {
+      return this.hasOCONUSLeg();
+    },
+
+    /**
+     * Get the per diem source based on first leg
+     * @deprecated Per diem source is now per-leg
+     */
+    getPerDiemSource() {
+      if (this._formData.legs.length === 0) return 'GSA';
+      return this._formData.legs[0].perDiemSource || 'GSA';
+    }
+  };
+
+})();
+</script>
