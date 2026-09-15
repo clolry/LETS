@@ -1,0 +1,124 @@
+<div style="margin-bottom: 2rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+    <div>
+      <h2 style="font-size: 1.25rem; font-weight: 700; color: #fff;">System & Financial Configuration</h2>
+      <p style="font-size: 0.8125rem; color: var(--text-secondary);">Manage annual baseline budgets, mid-year supplemental funding, and DAC approver routing</p>
+    </div>
+    <span class="badge badge-blue">Administrative Governance</span>
+  </div>
+
+  <!-- Section 1: Mid-Year Budget Adjustments -->
+  <div class="lets-card">
+    <div class="lets-card-title">
+      <span>Mid-Year Budget Adjustments & Funding Augmentation</span>
+      <span class="badge badge-green">Audit Trail Active</span>
+    </div>
+    <p style="font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 1rem;">
+      Record mid-year supplemental budget allocations or reprogramming. The system will automatically recalculate total discretionary balances and proportional shares.
+    </p>
+
+    <form id="form-budget-adj" onsubmit="handleBudgetAdjustment(event)">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label" for="adj-office">Target Office / DAC</label>
+          <select class="form-control" id="adj-office" required>
+            <option value="OMD">OMD DAC</option>
+            <option value="IDV">IDV DAC</option>
+            <option value="CM">CM DAC</option>
+            <option value="FO">Front Office / AC</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="adj-amount">Adjustment Amount ($) (Use positive or negative)</label>
+          <input type="number" step="0.01" class="form-control" id="adj-amount" required placeholder="e.g. 25000">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="adj-reason">Justification / Funding Source</label>
+          <input type="text" class="form-control" id="adj-reason" required placeholder="e.g. Q3 Reallocation / Supplemental">
+        </div>
+
+        <div class="form-group" style="justify-content: flex-end;">
+          <button type="submit" class="btn btn-primary" style="height: 42px; margin-top: auto;">Record Budget Adjustment</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- Section 2: Configurable DAC Approvers -->
+  <div class="lets-card">
+    <div class="lets-card-title">
+      <span>DAC Approver Routing Configuration</span>
+      <span class="badge badge-purple">Dynamic Routing Engine</span>
+    </div>
+    <p style="font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 1rem;">
+      Define designated primary and alternate approvers for each DAC. Requests submitted under each Owning Office automatically route to these approvers during leadership review.
+    </p>
+
+    <div class="table-responsive">
+      <table class="lets-table">
+        <thead>
+          <tr>
+            <th>Owning Office</th>
+            <th>Primary Approver Name</th>
+            <th>Primary Approver Email</th>
+            <th>Alternate / Delegate Name</th>
+            <th>Alternate Email</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="approvers-tbody">
+          <tr>
+            <td style="font-weight: 700; color: #fff;">OMD DAC</td>
+            <td><input type="text" class="form-control" value="OMD Director" style="padding: 0.35rem 0.5rem;"></td>
+            <td><input type="email" class="form-control" value="omd.director@gsa.gov" style="padding: 0.35rem 0.5rem;"></td>
+            <td><input type="text" class="form-control" value="OMD Deputy" style="padding: 0.35rem 0.5rem;"></td>
+            <td><input type="email" class="form-control" value="omd.deputy@gsa.gov" style="padding: 0.35rem 0.5rem;"></td>
+            <td><button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;" onclick="saveApprover('OMD')">Save</button></td>
+          </tr>
+          <tr>
+            <td style="font-weight: 700; color: #fff;">IDV DAC</td>
+            <td><input type="text" class="form-control" value="IDV Director" style="padding: 0.35rem 0.5rem;"></td>
+            <td><input type="email" class="form-control" value="idv.director@gsa.gov" style="padding: 0.35rem 0.5rem;"></td>
+            <td><input type="text" class="form-control" value="IDV Deputy" style="padding: 0.35rem 0.5rem;"></td>
+            <td><input type="email" class="form-control" value="idv.deputy@gsa.gov" style="padding: 0.35rem 0.5rem;"></td>
+            <td><button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;" onclick="saveApprover('IDV')">Save</button></td>
+          </tr>
+          <tr>
+            <td style="font-weight: 700; color: #fff;">CM DAC</td>
+            <td><input type="text" class="form-control" value="CM Director" style="padding: 0.35rem 0.5rem;"></td>
+            <td><input type="email" class="form-control" value="cm.director@gsa.gov" style="padding: 0.35rem 0.5rem;"></td>
+            <td><input type="text" class="form-control" value="CM Deputy" style="padding: 0.35rem 0.5rem;"></td>
+            <td><input type="email" class="form-control" value="cm.deputy@gsa.gov" style="padding: 0.35rem 0.5rem;"></td>
+            <td><button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;" onclick="saveApprover('CM')">Save</button></td>
+          </tr>
+          <tr>
+            <td style="font-weight: 700; color: #fff;">Front Office / AC</td>
+            <td><input type="text" class="form-control" value="Front Office Director" style="padding: 0.35rem 0.5rem;"></td>
+            <td><input type="email" class="form-control" value="fo.director@gsa.gov" style="padding: 0.35rem 0.5rem;"></td>
+            <td><input type="text" class="form-control" value="Front Office Deputy" style="padding: 0.35rem 0.5rem;"></td>
+            <td><input type="email" class="form-control" value="fo.deputy@gsa.gov" style="padding: 0.35rem 0.5rem;"></td>
+            <td><button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.75rem;" onclick="saveApprover('FO')">Save</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  function handleBudgetAdjustment(e) {
+    e.preventDefault();
+    const office = document.getElementById('adj-office').value;
+    const amount = parseFloat(document.getElementById('adj-amount').value);
+    const reason = document.getElementById('adj-reason').value;
+
+    alert(`Budget adjustment recorded for ${office}: $${amount.toLocaleString()} (${reason}). Recalculating balances.`);
+    document.getElementById('form-budget-adj').reset();
+  }
+
+  function saveApprover(officeCode) {
+    alert(`Approver settings for ${officeCode} updated.`);
+  }
+</script>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LETS - Logistics, Events, and Travel System</title>
+  <?!= include('client/styles/letsStyles'); ?>
+</head>
+<body>
+  <!-- Header Navigation -->
+  <header class="lets-nav-header">
+    <div class="lets-logo">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+        <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.3c.4-.2.6-.6.5-1.1z"/>
+      </svg>
+      <span>LETS</span>
+      <span class="lets-badge-fy">FY27 ACTIVE</span>
+    </div>
+
+    <nav class="lets-nav-links">
+      <button class="lets-nav-btn active" id="nav-kanban" onclick="switchView('kanban')">Kanban Workflow</button>
+      <button class="lets-nav-btn" id="nav-request" onclick="switchView('request')">New Travel Request</button>
+      <button class="lets-nav-btn" id="nav-dashboard" onclick="switchView('dashboard')">Executive Dashboard</button>
+      <button class="lets-nav-btn" id="nav-config" onclick="switchView('config')">Budget & Approvers</button>
+    </nav>
+  </header>
+
+  <!-- Live Discretionary Balance Ticker -->
+  <section class="lets-balance-ticker" id="balance-ticker">
+    <div class="ticker-item">
+      <span class="ticker-label">Front Office:</span>
+      <span class="ticker-val" id="ticker-fo">$4,000</span>
+    </div>
+    <div class="ticker-item">
+      <span class="ticker-label">OMD DAC:</span>
+      <span class="ticker-val" id="ticker-omd">$136,940</span>
+    </div>
+    <div class="ticker-item">
+      <span class="ticker-label">IDV DAC:</span>
+      <span class="ticker-val" id="ticker-idv">$633,720</span>
+    </div>
+    <div class="ticker-item">
+      <span class="ticker-label">CM DAC:</span>
+      <span class="ticker-val" id="ticker-cm">$113,840</span>
+    </div>
+    <div class="ticker-item" style="margin-left: auto;">
+      <span class="ticker-label">Net Discretionary Pool:</span>
+      <span class="ticker-val" id="ticker-total" style="color: #38bdf8;">$888,500</span>
+    </div>
+  </section>
+
+  <!-- Main View Container -->
+  <main class="lets-container">
+    <div id="view-kanban" class="view-panel">
+      <?!= include('client/pages/letsKanbanPage'); ?>
+    </div>
+
+    <div id="view-request" class="view-panel" style="display: none;">
+      <?!= include('client/pages/letsRequestPage'); ?>
+    </div>
+
+    <div id="view-dashboard" class="view-panel" style="display: none;">
+      <?!= include('client/pages/letsDashboardPage'); ?>
+    </div>
+
+    <div id="view-config" class="view-panel" style="display: none;">
+      <?!= include('client/pages/letsConfigPage'); ?>
+    </div>
+  </main>
+
+  <script>
+    // Global Application State Store
+    let APP_STATE = {
+      userEmail: 'user@gsa.gov',
+      portfolio: null,
+      requests: [],
+      travelers: [],
+      approvers: {},
+      setAsides: []
+    };
+
+    function switchView(viewName) {
+      document.querySelectorAll('.view-panel').forEach(el => el.style.display = 'none');
+      document.querySelectorAll('.lets-nav-btn').forEach(btn => btn.classList.remove('active'));
+
+      const targetView = document.getElementById('view-' + viewName);
+      const targetBtn = document.getElementById('nav-' + viewName);
+
+      if (targetView) targetView.style.display = 'block';
+      if (targetBtn) targetBtn.classList.add('active');
+
+      if (viewName === 'kanban' && typeof renderKanbanCards === 'function') renderKanbanCards();
+      if (viewName === 'dashboard' && typeof renderDashboardMetrics === 'function') renderDashboardMetrics();
+    }
+
+    // Initialize application data from server
+    window.addEventListener('DOMContentLoaded', () => {
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(onInitialDataLoaded)
+          .withFailureHandler(err => console.error('Failed to load initial data:', err))
+          .apiGetInitialData();
+      } else {
+        console.log('Running in local/static mode. Mock state loaded.');
+      }
+    });
+
+    function onInitialDataLoaded(res) {
+      if (!res || !res.success) return;
+      APP_STATE = res;
+      updateTicker(res.portfolioSummary);
+      if (typeof renderKanbanCards === 'function') renderKanbanCards();
+      if (typeof renderDashboardMetrics === 'function') renderDashboardMetrics();
+    }
+
+    function updateTicker(portfolio) {
+      if (!portfolio || !portfolio.dacSummaries) return;
+      const s = portfolio.dacSummaries;
+      if (s.FO) document.getElementById('ticker-fo').textContent = '$' + s.FO.remainingDiscretionaryBalance.toLocaleString();
+      if (s.OMD) document.getElementById('ticker-omd').textContent = '$' + s.OMD.remainingDiscretionaryBalance.toLocaleString();
+      if (s.IDV) document.getElementById('ticker-idv').textContent = '$' + s.IDV.remainingDiscretionaryBalance.toLocaleString();
+      if (s.CM) document.getElementById('ticker-cm').textContent = '$' + s.CM.remainingDiscretionaryBalance.toLocaleString();
+      document.getElementById('ticker-total').textContent = '$' + portfolio.totalRemainingBalance.toLocaleString();
+    }
+  </script>
+</body>
+</html>

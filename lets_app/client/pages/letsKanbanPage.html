@@ -1,0 +1,286 @@
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+  <div>
+    <h2 style="font-size: 1.25rem; font-weight: 700; color: #fff;">Travel Request Workflow Engine</h2>
+    <p style="font-size: 0.8125rem; color: var(--text-secondary);">Real-time lifecycle tracking from initial intake to post-travel voucher reconciliation</p>
+  </div>
+  <button class="btn btn-primary" onclick="switchView('request')">+ New Request</button>
+</div>
+
+<!-- Kanban Columns -->
+<div class="kanban-board" id="kanban-board-container">
+  <!-- Column 1: Intake -->
+  <div class="kanban-column" id="col-intake">
+    <div class="kanban-column-header">
+      <span class="kanban-column-title">Intake & Draft</span>
+      <span class="badge badge-blue" id="count-intake">0</span>
+    </div>
+    <div class="kanban-cards-wrapper" id="cards-intake"></div>
+  </div>
+
+  <!-- Column 2: Budget Gatekeeper -->
+  <div class="kanban-column" id="col-budget-check">
+    <div class="kanban-column-header">
+      <span class="kanban-column-title">Budget Check</span>
+      <span class="badge badge-amber" id="count-budget-check">0</span>
+    </div>
+    <div class="kanban-cards-wrapper" id="cards-budget-check"></div>
+  </div>
+
+  <!-- Column 3: Leadership Review -->
+  <div class="kanban-column" id="col-review">
+    <div class="kanban-column-header">
+      <span class="kanban-column-title">Leadership Review</span>
+      <span class="badge badge-purple" id="count-review">0</span>
+    </div>
+    <div class="kanban-cards-wrapper" id="cards-review"></div>
+  </div>
+
+  <!-- Column 4: Approved / Ready -->
+  <div class="kanban-column" id="col-approved">
+    <div class="kanban-column-header">
+      <span class="kanban-column-title">Approved</span>
+      <span class="badge badge-green" id="count-approved">0</span>
+    </div>
+    <div class="kanban-cards-wrapper" id="cards-approved"></div>
+  </div>
+
+  <!-- Column 5: Travel Completed -->
+  <div class="kanban-column" id="col-travel-complete">
+    <div class="kanban-column-header">
+      <span class="kanban-column-title">Travel Complete</span>
+      <span class="badge badge-amber" id="count-travel-complete">0</span>
+    </div>
+    <div class="kanban-cards-wrapper" id="cards-travel-complete"></div>
+  </div>
+
+  <!-- Column 6: Reconciled -->
+  <div class="kanban-column" id="col-reconciled">
+    <div class="kanban-column-header">
+      <span class="kanban-column-title">Reconciled</span>
+      <span class="badge badge-green" id="count-reconciled">0</span>
+    </div>
+    <div class="kanban-cards-wrapper" id="cards-reconciled"></div>
+  </div>
+</div>
+
+<!-- Request Detail & Post-Travel Reconciliation Modal -->
+<div id="modal-reconcile" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 999; backdrop-filter: blur(4px); align-items: center; justify-content: center; padding: 2rem;">
+  <div style="background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); max-width: 900px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 2rem; box-shadow: var(--shadow-soft);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem;">
+      <div>
+        <span class="card-req-id" id="modal-req-id" style="font-size: 0.875rem;">LETS-2027-001</span>
+        <h2 style="font-size: 1.25rem; font-weight: 700; color: #fff;" id="modal-event-name">Event Title</h2>
+        <span style="font-size: 0.8125rem; color: var(--text-secondary);" id="modal-meta">Destination | Office</span>
+      </div>
+      <button onclick="closeModal()" style="background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer;">&times;</button>
+    </div>
+
+    <!-- Variance Alert Banner -->
+    <div id="modal-variance-banner" style="padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color);">
+      <div>
+        <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Trip Variance (Actual - Estimated)</span>
+        <div style="font-size: 1.25rem; font-weight: 800;" id="modal-variance-val">$0.00</div>
+      </div>
+      <div id="modal-status-badge">
+        <span class="badge badge-blue" id="modal-badge-text">STATUS</span>
+      </div>
+    </div>
+
+    <!-- Traveler Reconcile Table -->
+    <div style="margin-bottom: 1.5rem;">
+      <h3 style="font-size: 0.9375rem; font-weight: 700; color: #fff; margin-bottom: 0.75rem;">Post-Travel Actual Expense Reconciliation</h3>
+      <div class="table-responsive">
+        <table class="lets-table">
+          <thead>
+            <tr>
+              <th>Traveler</th>
+              <th>Air (Est / Act)</th>
+              <th>Lodging (Est / Act)</th>
+              <th>M&IE (Est / Act)</th>
+              <th>Other (Est / Act)</th>
+              <th>Est Total</th>
+              <th>Act Total</th>
+              <th>Variance</th>
+            </tr>
+          </thead>
+          <tbody id="modal-traveler-tbody">
+            <!-- Traveler actuals rows -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Modal Actions -->
+    <div style="display: flex; justify-content: flex-end; gap: 1rem;">
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      <button class="btn btn-primary" id="btn-save-actuals" onclick="saveReconciledActuals()">Post Actuals & Reconcile</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let activeModalRequestId = null;
+
+  // Mock initial requests if in static mode
+  const MOCK_REQUESTS = [
+    {
+      requestId: 'LETS-2027-001',
+      eventName: 'FY27 Acquisition Leadership Conf',
+      owningOffice: 'IDV',
+      destination: 'San Diego, CA',
+      status: 'Approved',
+      totalEstimatedCost: 4500.00,
+      totalActualCost: 0,
+      variance: 0
+    },
+    {
+      requestId: 'LETS-2027-002',
+      eventName: 'Vendor Forum & Expo',
+      owningOffice: 'OMD',
+      destination: 'Chicago, IL',
+      status: 'Travel Completed',
+      totalEstimatedCost: 3200.00,
+      totalActualCost: 3450.00,
+      variance: 250.00
+    },
+    {
+      requestId: 'LETS-2027-003',
+      eventName: 'GSA FAS Regional Integration',
+      owningOffice: 'CM',
+      destination: 'Atlanta, GA',
+      status: 'Reconciled / Actuals Posted',
+      totalEstimatedCost: 6100.00,
+      totalActualCost: 5850.00,
+      variance: -250.00
+    }
+  ];
+
+  function renderKanbanCards() {
+    const requests = (APP_STATE.requests && APP_STATE.requests.length) ? APP_STATE.requests : MOCK_REQUESTS;
+
+    const colMap = {
+      'intake': document.getElementById('cards-intake'),
+      'budget-check': document.getElementById('cards-budget-check'),
+      'review': document.getElementById('cards-review'),
+      'approved': document.getElementById('cards-approved'),
+      'travel-complete': document.getElementById('cards-travel-complete'),
+      'reconciled': document.getElementById('cards-reconciled')
+    };
+
+    Object.values(colMap).forEach(col => { if (col) col.innerHTML = ''; });
+    const counts = { 'intake': 0, 'budget-check': 0, 'review': 0, 'approved': 0, 'travel-complete': 0, 'reconciled': 0 };
+
+    requests.forEach(req => {
+      let targetKey = 'intake';
+      const s = (req.status || '').toLowerCase();
+
+      if (s.includes('budget') || s.includes('flagged')) targetKey = 'budget-check';
+      else if (s.includes('leadership') || s.includes('review') || s.includes('exception')) targetKey = 'review';
+      else if (s.includes('approved') || s.includes('booked')) targetKey = 'approved';
+      else if (s.includes('travel complete')) targetKey = 'travel-complete';
+      else if (s.includes('reconciled')) targetKey = 'reconciled';
+
+      counts[targetKey]++;
+      const card = createCardElement(req);
+      if (colMap[targetKey]) colMap[targetKey].appendChild(card);
+    });
+
+    Object.keys(counts).forEach(k => {
+      const el = document.getElementById('count-' + k);
+      if (el) el.textContent = counts[k];
+    });
+  }
+
+  function createCardElement(req) {
+    const div = document.createElement('div');
+    div.className = 'kanban-card';
+    div.onclick = () => openReconcileModal(req.requestId);
+
+    const officeClass = req.owningOffice === 'OMD' ? 'badge-blue' : req.owningOffice === 'IDV' ? 'badge-purple' : 'badge-amber';
+    const varianceColor = req.variance > 0 ? 'var(--accent-rose)' : req.variance < 0 ? 'var(--accent-green)' : 'var(--text-secondary)';
+
+    div.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+        <span class="card-req-id">${req.requestId}</span>
+        <span class="badge ${officeClass}">${req.owningOffice}</span>
+      </div>
+      <div class="card-event-name">${req.eventName}</div>
+      <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">${req.destination || 'Unspecified'}</div>
+      <div class="card-cost-row">
+        <div>
+          <span style="color: var(--text-muted);">Est:</span>
+          <span style="font-weight: 700; color: #fff;">$${(Number(req.totalEstimatedCost) || 0).toLocaleString()}</span>
+        </div>
+        <div>
+          <span style="color: var(--text-muted);">Act:</span>
+          <span style="font-weight: 700; color: #fff;">$${(Number(req.totalActualCost) || 0).toLocaleString()}</span>
+        </div>
+        <div>
+          <span style="color: ${varianceColor}; font-weight: 700;">
+            ${req.variance >= 0 ? '+' : ''}$${(Number(req.variance) || 0).toLocaleString()}
+          </span>
+        </div>
+      </div>
+    `;
+    return div;
+  }
+
+  function openReconcileModal(requestId) {
+    activeModalRequestId = requestId;
+    const req = (APP_STATE.requests || MOCK_REQUESTS).find(r => r.requestId === requestId) || MOCK_REQUESTS[0];
+
+    document.getElementById('modal-req-id').textContent = req.requestId;
+    document.getElementById('modal-event-name').textContent = req.eventName;
+    document.getElementById('modal-meta').textContent = `${req.destination} | ${req.owningOffice} DAC | Submitter: ${req.submitterEmail || 'Traveler'}`;
+
+    const varEl = document.getElementById('modal-variance-val');
+    varEl.textContent = (req.variance >= 0 ? '+' : '') + '$' + (Number(req.variance) || 0).toLocaleString();
+    varEl.style.color = req.variance > 0 ? 'var(--accent-rose)' : req.variance < 0 ? 'var(--accent-green)' : '#fff';
+
+    document.getElementById('modal-badge-text').textContent = req.status;
+
+    // Populate traveler rows with paired Est / Act inputs
+    const tbody = document.getElementById('modal-traveler-tbody');
+    tbody.innerHTML = `
+      <tr>
+        <td style="font-weight: 600; color: #fff;">Sample Traveler</td>
+        <td><input type="number" step="0.01" class="form-control mod-air" value="450.00" oninput="recalcModalVariance()" style="padding: 0.3rem; font-size: 0.8rem;"></td>
+        <td><input type="number" step="0.01" class="form-control mod-lodg" value="620.00" oninput="recalcModalVariance()" style="padding: 0.3rem; font-size: 0.8rem;"></td>
+        <td><input type="number" step="0.01" class="form-control mod-mie" value="280.00" oninput="recalcModalVariance()" style="padding: 0.3rem; font-size: 0.8rem;"></td>
+        <td><input type="number" step="0.01" class="form-control mod-oth" value="50.00" oninput="recalcModalVariance()" style="padding: 0.3rem; font-size: 0.8rem;"></td>
+        <td style="color: var(--text-secondary);">$1,350.00</td>
+        <td style="font-weight: 700; color: #fff;" id="mod-line-act">$1,400.00</td>
+        <td style="font-weight: 700; color: var(--accent-rose);" id="mod-line-var">+$50.00</td>
+      </tr>
+    `;
+
+    document.getElementById('modal-reconcile').style.display = 'flex';
+  }
+
+  function recalcModalVariance() {
+    const air = parseFloat(document.querySelector('.mod-air').value) || 0;
+    const lodg = parseFloat(document.querySelector('.mod-lodg').value) || 0;
+    const mie = parseFloat(document.querySelector('.mod-mie').value) || 0;
+    const oth = parseFloat(document.querySelector('.mod-oth').value) || 0;
+    const actTotal = air + lodg + mie + oth;
+    const estTotal = 1350.00;
+    const diff = actTotal - estTotal;
+
+    document.getElementById('mod-line-act').textContent = '$' + actTotal.toFixed(2);
+    document.getElementById('mod-line-var').textContent = (diff >= 0 ? '+' : '') + '$' + diff.toFixed(2);
+    document.getElementById('mod-line-var').style.color = diff > 0 ? 'var(--accent-rose)' : diff < 0 ? 'var(--accent-green)' : '#fff';
+
+    document.getElementById('modal-variance-val').textContent = (diff >= 0 ? '+' : '') + '$' + diff.toFixed(2);
+    document.getElementById('modal-variance-val').style.color = diff > 0 ? 'var(--accent-rose)' : diff < 0 ? 'var(--accent-green)' : '#fff';
+  }
+
+  function closeModal() {
+    document.getElementById('modal-reconcile').style.display = 'none';
+  }
+
+  function saveReconciledActuals() {
+    alert('Actual costs posted and variance reconciled! Discretionary commitments liquidated.');
+    closeModal();
+    renderKanbanCards();
+  }
+</script>

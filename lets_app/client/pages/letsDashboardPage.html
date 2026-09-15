@@ -1,0 +1,180 @@
+<div style="margin-bottom: 2rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+    <div>
+      <h2 style="font-size: 1.25rem; font-weight: 700; color: #fff;">Executive Travel Financial Dashboard</h2>
+      <p style="font-size: 0.8125rem; color: var(--text-secondary);">Active governance across Baseline Allocations, Set-Asides, Commitments, and Net Discretionary Balances</p>
+    </div>
+    <span class="badge badge-purple" style="font-size: 0.8125rem;">FY27 Portfolio Overview</span>
+  </div>
+
+  <!-- Portfolio Level KPI Cards -->
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <span class="kpi-title">Total Starting Allocation</span>
+      <span class="kpi-value" id="kpi-baseline">$997,000</span>
+      <span class="kpi-sub">FY27 Base ($4k FO + $993k DACs)</span>
+    </div>
+
+    <div class="kpi-card">
+      <span class="kpi-title">Total Set-Asides</span>
+      <span class="kpi-value" id="kpi-setasides" style="color: #fbbf24;">$108,500</span>
+      <span class="kpi-sub">Self-Funded ($88.5k) & Enterprise ($20k)</span>
+    </div>
+
+    <div class="kpi-card">
+      <span class="kpi-title">Pending Commitments</span>
+      <span class="kpi-value" id="kpi-pending" style="color: #38bdf8;">$13,800</span>
+      <span class="kpi-sub">Temporary estimates obligated</span>
+    </div>
+
+    <div class="kpi-card">
+      <span class="kpi-title">Posted Actual Spend</span>
+      <span class="kpi-value" id="kpi-actuals" style="color: #c084fc;">$9,300</span>
+      <span class="kpi-sub">Reconciled vouchers liquidated</span>
+    </div>
+
+    <div class="kpi-card" style="border-color: rgba(56, 189, 248, 0.4); background: rgba(30, 41, 59, 0.95);">
+      <span class="kpi-title">Net Discretionary Balance</span>
+      <span class="kpi-value" id="kpi-remaining" style="color: #34d399;">$865,400</span>
+      <span class="kpi-sub">Available across all divisions</span>
+    </div>
+  </div>
+
+  <!-- DAC Specific Breakdown Table -->
+  <div class="lets-card">
+    <div class="lets-card-title">
+      <span>Division / DAC Financial Breakdown</span>
+      <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">Formula: Starting + MidYear - SetAsides - PendingEstimates - PostedActuals</span>
+    </div>
+
+    <div class="table-responsive">
+      <table class="lets-table">
+        <thead>
+          <tr>
+            <th>Office / DAC</th>
+            <th>Baseline ($)</th>
+            <th>Proportional Share</th>
+            <th>Set-Asides ($)</th>
+            <th>Discretionary Base ($)</th>
+            <th>Pending Est ($)</th>
+            <th>Posted Act ($)</th>
+            <th>Available Balance ($)</th>
+          </tr>
+        </thead>
+        <tbody id="dac-breakdown-tbody">
+          <tr>
+            <td style="font-weight: 700; color: #fff;">Front Office / AC</td>
+            <td>$4,000</td>
+            <td>0.0%</td>
+            <td>$0</td>
+            <td>$4,000</td>
+            <td>$0</td>
+            <td>$0</td>
+            <td style="font-weight: 700; color: #34d399;">$4,000</td>
+          </tr>
+          <tr>
+            <td style="font-weight: 700; color: #fff;">OMD DAC</td>
+            <td>$152,000</td>
+            <td>15.3%</td>
+            <td>$15,060</td>
+            <td>$136,940</td>
+            <td>$3,200</td>
+            <td>$0</td>
+            <td style="font-weight: 700; color: #34d399;">$133,740</td>
+          </tr>
+          <tr>
+            <td style="font-weight: 700; color: #fff;">IDV DAC</td>
+            <td>$659,000</td>
+            <td>66.4%</td>
+            <td>$25,280</td>
+            <td>$633,720</td>
+            <td>$4,500</td>
+            <td>$0</td>
+            <td style="font-weight: 700; color: #34d399;">$629,220</td>
+          </tr>
+          <tr>
+            <td style="font-weight: 700; color: #fff;">CM DAC</td>
+            <td>$182,000</td>
+            <td>18.3%</td>
+            <td>$68,160</td>
+            <td>$113,840</td>
+            <td>$6,100</td>
+            <td>$5,850</td>
+            <td style="font-weight: 700; color: #34d399;">$101,890</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Set-Aside Drilldown Grid -->
+  <div class="lets-card">
+    <div class="lets-card-title">
+      <span>Dedicated Set-Asides Structure</span>
+      <span class="badge badge-amber">FY27 Active Set-Asides</span>
+    </div>
+
+    <div class="table-responsive">
+      <table class="lets-table">
+        <thead>
+          <tr>
+            <th>Set-Aside Title</th>
+            <th>Type</th>
+            <th>Target DAC / Office</th>
+            <th>Funding Formula / Share</th>
+            <th>Total Amount ($)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="font-weight: 600; color: #fff;">DAC LC Travel - OMD</td>
+            <td><span class="badge badge-blue">Self-Funded</span></td>
+            <td>OMD DAC</td>
+            <td>Direct 100% deduction</td>
+            <td>$12,000.00</td>
+          </tr>
+          <tr>
+            <td style="font-weight: 600; color: #fff;">DAC LC Travel - IDV</td>
+            <td><span class="badge badge-blue">Self-Funded</span></td>
+            <td>IDV DAC</td>
+            <td>Direct 100% deduction</td>
+            <td>$12,000.00</td>
+          </tr>
+          <tr>
+            <td style="font-weight: 600; color: #fff;">DAC LC Travel - CM</td>
+            <td><span class="badge badge-blue">Self-Funded</span></td>
+            <td>CM DAC</td>
+            <td>Direct 100% deduction</td>
+            <td>$12,000.00</td>
+          </tr>
+          <tr>
+            <td style="font-weight: 600; color: #fff;">COE Program</td>
+            <td><span class="badge badge-rose">Self-Funded</span></td>
+            <td>CM DAC</td>
+            <td>Center of Excellence program (CM only)</td>
+            <td>$52,500.00</td>
+          </tr>
+          <tr>
+            <td style="font-weight: 600; color: #fff;">Front Office LC Travel Gap</td>
+            <td><span class="badge badge-purple">Enterprise Shared</span></td>
+            <td>Shared across all DACs</td>
+            <td>OMD: 15.3% ($3,060) | IDV: 66.4% ($13,280) | CM: 18.3% ($3,660)</td>
+            <td>$20,000.00</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  function renderDashboardMetrics() {
+    if (!APP_STATE.portfolio) return;
+    const p = APP_STATE.portfolio;
+    document.getElementById('kpi-baseline').textContent = '$' + p.totalBaseline.toLocaleString();
+    document.getElementById('kpi-setasides').textContent = '$' + p.totalSetAsides.toLocaleString();
+    document.getElementById('kpi-pending').textContent = '$' + p.totalPendingEstimates.toLocaleString();
+    document.getElementById('kpi-actuals').textContent = '$' + p.totalPostedActuals.toLocaleString();
+    document.getElementById('kpi-remaining').textContent = '$' + p.totalRemainingBalance.toLocaleString();
+  }
+</script>

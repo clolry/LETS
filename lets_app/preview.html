@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LETS - Logistics, Events, and Travel System (Local Preview)</title>
+  <style>
+    /* Injected CSS from client/styles/letsStyles.html */
+    :root {
+      --bg-main: #0f172a;
+      --bg-surface: #1e293b;
+      --bg-card: rgba(30, 41, 59, 0.85);
+      --bg-card-hover: #334155;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(59, 130, 246, 0.4);
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent-blue: #38bdf8;
+      --accent-indigo: #6366f1;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --accent-purple: #a855f7;
+      --radius-sm: 6px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --shadow-soft: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+      --shadow-glow: 0 0 25px -5px rgba(56, 189, 248, 0.25);
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font-sans); background-color: var(--bg-main); color: var(--text-primary); line-height: 1.5; min-height: 100vh; }
+    .lets-nav-header { background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border-color); position: sticky; top: 0; z-index: 100; padding: 0.75rem 2rem; display: flex; justify-content: space-between; align-items: center; }
+    .lets-logo { display: flex; align-items: center; gap: 0.75rem; font-size: 1.25rem; font-weight: 700; color: #fff; }
+    .lets-badge-fy { font-size: 0.75rem; font-weight: 600; background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo)); color: #fff; padding: 0.2rem 0.6rem; border-radius: 9999px; }
+    .lets-nav-links { display: flex; gap: 0.5rem; }
+    .lets-nav-btn { background: transparent; border: none; color: var(--text-secondary); padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 600; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s ease; }
+    .lets-nav-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.05); }
+    .lets-nav-btn.active { color: var(--accent-blue); background: rgba(56, 189, 248, 0.1); border-bottom: 2px solid var(--accent-blue); }
+    .lets-balance-ticker { display: flex; gap: 1.5rem; background: rgba(30, 41, 59, 0.5); border-bottom: 1px solid var(--border-color); padding: 0.5rem 2rem; font-size: 0.8125rem; overflow-x: auto; }
+    .ticker-item { display: flex; align-items: center; gap: 0.4rem; }
+    .ticker-label { color: var(--text-muted); font-weight: 500; }
+    .ticker-val { color: var(--text-primary); font-weight: 700; }
+    .lets-container { max-width: 1440px; margin: 0 auto; padding: 2rem; }
+    .lets-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 1.5rem; box-shadow: var(--shadow-soft); margin-bottom: 1.5rem; }
+    .lets-card-title { font-size: 1.125rem; font-weight: 700; margin-bottom: 1rem; color: #fff; display: flex; justify-content: space-between; align-items: center; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; margin-bottom: 2rem; }
+    .kpi-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 1.25rem; display: flex; flex-direction: column; gap: 0.35rem; }
+    .kpi-title { font-size: 0.8125rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 600; }
+    .kpi-value { font-size: 1.75rem; font-weight: 800; letter-spacing: -0.03em; color: #fff; }
+    .kpi-sub { font-size: 0.75rem; color: var(--text-secondary); }
+    .badge { display: inline-flex; align-items: center; padding: 0.25rem 0.65rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .badge-green { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-blue { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+    .badge-amber { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-rose { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
+    .badge-purple { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+    .kanban-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; align-items: start; }
+    .kanban-column { background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 1rem; display: flex; flex-direction: column; min-height: 500px; }
+    .kanban-column-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 0.75rem; margin-bottom: 0.75rem; border-bottom: 1px solid var(--border-color); }
+    .kanban-column-title { font-size: 0.875rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.05em; }
+    .kanban-card { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 0.75rem; cursor: pointer; transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
+    .kanban-card:hover { transform: translateY(-2px); border-color: var(--accent-blue); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); }
+    .card-req-id { font-size: 0.75rem; font-weight: 700; color: var(--accent-blue); margin-bottom: 0.25rem; }
+    .card-event-name { font-size: 0.9375rem; font-weight: 600; color: #fff; margin-bottom: 0.5rem; }
+    .card-cost-row { display: flex; justify-content: space-between; font-size: 0.8125rem; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid rgba(255, 255, 255, 0.05); }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem; }
+    .form-group { display: flex; flex-direction: column; gap: 0.4rem; }
+    .form-label { font-size: 0.8125rem; font-weight: 600; color: var(--text-secondary); }
+    .form-control { background: #0f172a; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: var(--radius-sm); color: #fff; padding: 0.65rem 0.85rem; font-size: 0.875rem; font-family: inherit; outline: none; transition: border-color 0.2s; }
+    .form-control:focus { border-color: var(--accent-blue); box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2); }
+    .table-responsive { overflow-x: auto; margin-top: 1rem; }
+    .lets-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; text-align: left; }
+    .lets-table th { background: rgba(15, 23, 42, 0.8); color: var(--text-secondary); padding: 0.75rem 1rem; font-weight: 600; border-bottom: 1px solid var(--border-color); }
+    .lets-table td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color); color: var(--text-primary); }
+    .lets-table tr:hover td { background: rgba(255, 255, 255, 0.02); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.65rem 1.25rem; border-radius: var(--radius-sm); font-size: 0.875rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s ease; }
+    .btn-primary { background: linear-gradient(135deg, #2563eb, #38bdf8); color: #fff; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3); }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45); }
+    .btn-secondary { background: #334155; color: var(--text-primary); }
+    .btn-secondary:hover { background: #475569; }
+  </style>
+</head>
+<body>
+  <!-- Header Navigation -->
+  <header class="lets-nav-header">
+    <div class="lets-logo">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+        <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.3c.4-.2.6-.6.5-1.1z"/>
+      </svg>
+      <span>LETS</span>
+      <span class="lets-badge-fy">FY27 ACTIVE</span>
+    </div>
+
+    <nav class="lets-nav-links">
+      <button class="lets-nav-btn active" id="nav-kanban" onclick="switchView('kanban')">Kanban Workflow</button>
+      <button class="lets-nav-btn" id="nav-request" onclick="switchView('request')">New Travel Request</button>
+      <button class="lets-nav-btn" id="nav-dashboard" onclick="switchView('dashboard')">Executive Dashboard</button>
+      <button class="lets-nav-btn" id="nav-config" onclick="switchView('config')">Budget & Approvers</button>
+    </nav>
+  </header>
+
+  <!-- Live Discretionary Balance Ticker -->
+  <section class="lets-balance-ticker" id="balance-ticker">
+    <div class="ticker-item">
+      <span class="ticker-label">Front Office:</span>
+      <span class="ticker-val" id="ticker-fo">$4,000</span>
+    </div>
+    <div class="ticker-item">
+      <span class="ticker-label">OMD DAC:</span>
+      <span class="ticker-val" id="ticker-omd">$133,740</span>
+    </div>
+    <div class="ticker-item">
+      <span class="ticker-label">IDV DAC:</span>
+      <span class="ticker-val" id="ticker-idv">$629,220</span>
+    </div>
+    <div class="ticker-item">
+      <span class="ticker-label">CM DAC:</span>
+      <span class="ticker-val" id="ticker-cm">$101,890</span>
+    </div>
+    <div class="ticker-item" style="margin-left: auto;">
+      <span class="ticker-label">Net Discretionary Pool:</span>
+      <span class="ticker-val" id="ticker-total" style="color: #38bdf8;">$868,850</span>
+    </div>
+  </section>
+
+  <!-- Main View Container -->
+  <main class="lets-container">
+    <!-- View 1: Kanban -->
+    <div id="view-kanban" class="view-panel">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <div>
+          <h2 style="font-size: 1.25rem; font-weight: 700; color: #fff;">Travel Request Workflow Engine</h2>
+          <p style="font-size: 0.8125rem; color: var(--text-secondary);">Real-time lifecycle tracking from initial intake to post-travel voucher reconciliation</p>
+        </div>
+        <button class="btn btn-primary" onclick="switchView('request')">+ New Request</button>
+      </div>
+
+      <div class="kanban-board">
+        <div class="kanban-column">
+          <div class="kanban-column-header">
+            <span class="kanban-column-title">Intake & Draft</span>
+            <span class="badge badge-blue">1</span>
+          </div>
+          <div class="kanban-cards-wrapper">
+            <div class="kanban-card" onclick="openReconcileModal('LETS-2027-004')">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                <span class="card-req-id">LETS-2027-004</span>
+                <span class="badge badge-blue">OMD</span>
+              </div>
+              <div class="card-event-name">Regional Procurement Summit</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">Dallas, TX</div>
+              <div class="card-cost-row">
+                <div><span style="color: var(--text-muted);">Est:</span> <span style="font-weight: 700; color: #fff;">$2,450</span></div>
+                <div><span style="color: var(--text-muted);">Act:</span> <span style="font-weight: 700; color: #fff;">$0</span></div>
+                <div><span style="color: var(--text-secondary); font-weight: 700;">$0</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="kanban-column">
+          <div class="kanban-column-header">
+            <span class="kanban-column-title">Budget Check</span>
+            <span class="badge badge-amber">1</span>
+          </div>
+          <div class="kanban-cards-wrapper">
+            <div class="kanban-card" onclick="openReconcileModal('LETS-2027-005')">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                <span class="card-req-id">LETS-2027-005</span>
+                <span class="badge badge-purple">IDV</span>
+              </div>
+              <div class="card-event-name">Vendor Integration Workshop</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">San Francisco, CA</div>
+              <div class="card-cost-row">
+                <div><span style="color: var(--text-muted);">Est:</span> <span style="font-weight: 700; color: #fff;">$3,800</span></div>
+                <div><span style="color: var(--text-muted);">Act:</span> <span style="font-weight: 700; color: #fff;">$0</span></div>
+                <div><span style="color: var(--text-secondary); font-weight: 700;">$0</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="kanban-column">
+          <div class="kanban-column-header">
+            <span class="kanban-column-title">Leadership Review</span>
+            <span class="badge badge-purple">1</span>
+          </div>
+          <div class="kanban-cards-wrapper">
+            <div class="kanban-card" onclick="openReconcileModal('LETS-2027-001')">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                <span class="card-req-id">LETS-2027-001</span>
+                <span class="badge badge-amber">CM</span>
+              </div>
+              <div class="card-event-name">FY27 Acquisition Leadership Conf</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">San Diego, CA</div>
+              <div class="card-cost-row">
+                <div><span style="color: var(--text-muted);">Est:</span> <span style="font-weight: 700; color: #fff;">$4,500</span></div>
+                <div><span style="color: var(--text-muted);">Act:</span> <span style="font-weight: 700; color: #fff;">$0</span></div>
+                <div><span style="color: var(--text-secondary); font-weight: 700;">$0</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="kanban-column">
+          <div class="kanban-column-header">
+            <span class="kanban-column-title">Approved</span>
+            <span class="badge badge-green">1</span>
+          </div>
+          <div class="kanban-cards-wrapper">
+            <div class="kanban-card" onclick="openReconcileModal('LETS-2027-006')">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                <span class="card-req-id">LETS-2027-006</span>
+                <span class="badge badge-blue">OMD</span>
+              </div>
+              <div class="card-event-name">National Stakeholder Forum</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">Washington, DC</div>
+              <div class="card-cost-row">
+                <div><span style="color: var(--text-muted);">Est:</span> <span style="font-weight: 700; color: #fff;">$1,950</span></div>
+                <div><span style="color: var(--text-muted);">Act:</span> <span style="font-weight: 700; color: #fff;">$0</span></div>
+                <div><span style="color: var(--text-secondary); font-weight: 700;">$0</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="kanban-column">
+          <div class="kanban-column-header">
+            <span class="kanban-column-title">Travel Complete</span>
+            <span class="badge badge-amber">1</span>
+          </div>
+          <div class="kanban-cards-wrapper">
+            <div class="kanban-card" onclick="openReconcileModal('LETS-2027-002')">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                <span class="card-req-id">LETS-2027-002</span>
+                <span class="badge badge-blue">OMD</span>
+              </div>
+              <div class="card-event-name">Vendor Forum & Expo</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">Chicago, IL</div>
+              <div class="card-cost-row">
+                <div><span style="color: var(--text-muted);">Est:</span> <span style="font-weight: 700; color: #fff;">$3,200</span></div>
+                <div><span style="color: var(--text-muted);">Act:</span> <span style="font-weight: 700; color: #fff;">$3,450</span></div>
+                <div><span style="color: var(--accent-rose); font-weight: 700;">+$250</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="kanban-column">
+          <div class="kanban-column-header">
+            <span class="kanban-column-title">Reconciled</span>
+            <span class="badge badge-green">1</span>
+          </div>
+          <div class="kanban-cards-wrapper">
+            <div class="kanban-card" onclick="openReconcileModal('LETS-2027-003')">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                <span class="card-req-id">LETS-2027-003</span>
+                <span class="badge badge-amber">CM</span>
+              </div>
+              <div class="card-event-name">GSA FAS Regional Integration</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;">Atlanta, GA</div>
+              <div class="card-cost-row">
+                <div><span style="color: var(--text-muted);">Est:</span> <span style="font-weight: 700; color: #fff;">$6,100</span></div>
+                <div><span style="color: var(--text-muted);">Act:</span> <span style="font-weight: 700; color: #fff;">$5,850</span></div>
+                <div><span style="color: var(--accent-green); font-weight: 700;">-$250</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- View 2: Request Intake -->
+    <div id="view-request" class="view-panel" style="display: none;">
+      <div class="lets-card">
+        <div class="lets-card-title">
+          <span>Travel & Event Request Intake</span>
+          <span class="badge badge-blue">Mandatory Budget Check Enabled</span>
+        </div>
+
+        <form id="travel-request-form" onsubmit="handleRequestSubmit(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label" for="req-owning-office">Owning Office (Primary Budget Pool) *</label>
+              <select class="form-control" id="req-owning-office" required onchange="onOfficeSelectionChanged()">
+                <option value="">-- Select Owning Office --</option>
+                <option value="OMD">OMD DAC</option>
+                <option value="IDV">IDV DAC</option>
+                <option value="CM">CM DAC</option>
+                <option value="FO">Front Office / AC</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="req-event-name">Event / Trip Title *</label>
+              <input type="text" class="form-control" id="req-event-name" required placeholder="e.g. FY27 AAS Leadership Summit">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="req-destination">Destination (City, State / Country)</label>
+              <input type="text" class="form-control" id="req-destination" placeholder="e.g. Denver, CO">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="req-funding-source">Funding Source</label>
+              <select class="form-control" id="req-funding-source">
+                <option value="Discretionary">Discretionary Travel Pool</option>
+                <option value="SetAside">Set-Aside Allocated</option>
+                <option value="Reimbursable">Reimbursable</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label" for="req-start-date">Start Date</label>
+              <input type="date" class="form-control" id="req-start-date">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="req-end-date">End Date</label>
+              <input type="date" class="form-control" id="req-end-date">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="req-set-aside-type">Set-Aside Category</label>
+              <select class="form-control" id="req-set-aside-type">
+                <option value="NONE">None (General Discretionary)</option>
+                <option value="DAC_LC">DAC LC Travel Set-Aside ($12k)</option>
+                <option value="COE_PROGRAM">COE Program (CM DAC Only)</option>
+                <option value="FO_LC_GAP">Front Office LC Gap (Proportional Share)</option>
+              </select>
+            </div>
+
+            <div class="form-group" style="justify-content: center;">
+              <label class="form-label">Classification Flags</label>
+              <div style="display: flex; gap: 1rem; align-items: center; margin-top: 0.25rem;">
+                <label style="font-size: 0.8125rem; display: flex; align-items: center; gap: 0.35rem; color: var(--text-secondary);">
+                  <input type="checkbox" id="flag-event-plan"> Event Plan Item
+                </label>
+                <label style="font-size: 0.8125rem; display: flex; align-items: center; gap: 0.35rem; color: var(--text-secondary);">
+                  <input type="checkbox" id="flag-lc-travel"> LC Travel
+                </label>
+                <label style="font-size: 0.8125rem; display: flex; align-items: center; gap: 0.35rem; color: var(--text-secondary);">
+                  <input type="checkbox" id="flag-coe-travel"> COE Travel
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Traveler Schedule -->
+          <div style="margin-top: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+              <h3 style="font-size: 1rem; color: #fff; font-weight: 700;">Travelers & Expense Breakdown (Go.gov Lifecycle)</h3>
+              <button type="button" class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.75rem;" onclick="addTravelerRow()">
+                + Add Traveler
+              </button>
+            </div>
+
+            <div class="table-responsive">
+              <table class="lets-table" id="traveler-table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Traveler Name</th>
+                    <th style="width: 15%;">Airfare ($)</th>
+                    <th style="width: 15%;">Lodging ($)</th>
+                    <th style="width: 15%;">M&IE ($)</th>
+                    <th style="width: 15%;">Other / Trans ($)</th>
+                    <th style="width: 15%;">Line Total ($)</th>
+                    <th style="width: 5%;"></th>
+                  </tr>
+                </thead>
+                <tbody id="traveler-tbody">
+                  <!-- Row 1 seeded -->
+                  <tr id="t-row-1">
+                    <td><input type="text" class="form-control t-name" placeholder="Full Name" value="Jane Doe" required style="padding: 0.4rem 0.6rem;"></td>
+                    <td>
+                      <div style="display: flex; gap: 0.25rem;">
+                        <input type="number" step="0.01" min="0" class="form-control t-air-est" placeholder="Est" value="480.00" oninput="recalcTotals()" style="padding: 0.4rem 0.4rem; font-size: 0.8rem;">
+                        <input type="number" step="0.01" min="0" class="form-control t-air-act" placeholder="Act" disabled style="padding: 0.4rem 0.4rem; font-size: 0.8rem; opacity: 0.5;">
+                      </div>
+                    </td>
+                    <td>
+                      <div style="display: flex; gap: 0.25rem;">
+                        <input type="number" step="0.01" min="0" class="form-control t-lodg-est" placeholder="Est" value="650.00" oninput="recalcTotals()" style="padding: 0.4rem 0.4rem; font-size: 0.8rem;">
+                        <input type="number" step="0.01" min="0" class="form-control t-lodg-act" placeholder="Act" disabled style="padding: 0.4rem 0.4rem; font-size: 0.8rem; opacity: 0.5;">
+                      </div>
+                    </td>
+                    <td>
+                      <div style="display: flex; gap: 0.25rem;">
+                        <input type="number" step="0.01" min="0" class="form-control t-mie-est" placeholder="Est" value="295.00" oninput="recalcTotals()" style="padding: 0.4rem 0.4rem; font-size: 0.8rem;">
+                        <input type="number" step="0.01" min="0" class="form-control t-mie-act" placeholder="Act" disabled style="padding: 0.4rem 0.4rem; font-size: 0.8rem; opacity: 0.5;">
+                      </div>
+                    </td>
+                    <td>
+                      <div style="display: flex; gap: 0.25rem;">
+                        <input type="number" step="0.01" min="0" class="form-control t-oth-est" placeholder="Est" value="75.00" oninput="recalcTotals()" style="padding: 0.4rem 0.4rem; font-size: 0.8rem;">
+                        <input type="number" step="0.01" min="0" class="form-control t-oth-act" placeholder="Act" disabled style="padding: 0.4rem 0.4rem; font-size: 0.8rem; opacity: 0.5;">
+                      </div>
+                    </td>
+                    <td style="font-weight: 700; color: #fff;" class="t-line-total">$1,500.00</td>
+                    <td><button type="button" style="background: transparent; border: none; color: var(--accent-rose); cursor: pointer; font-size: 1rem;" onclick="removeTravelerRow(1)">&times;</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Live Gatekeeper Box -->
+          <div style="margin-top: 1.5rem; padding: 1.25rem; background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color); border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <span style="font-size: 0.8125rem; color: var(--text-muted); display: block;">Total Trip Estimate (Obligation)</span>
+              <span style="font-size: 1.75rem; font-weight: 800; color: #38bdf8;" id="form-total-estimate">$1,500.00</span>
+            </div>
+
+            <div id="budget-gatekeeper-status" style="text-align: right;">
+              <span class="badge badge-amber" id="gatekeeper-badge">Select Office to Verify Funds</span>
+              <span style="display: block; font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.35rem;" id="gatekeeper-msg">
+                Discretionary funds availability will be checked in real-time.
+              </span>
+            </div>
+          </div>
+
+          <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem;">
+            <button type="button" class="btn btn-secondary" onclick="switchView('kanban')">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btn-submit-request">Submit Request & Commit Funds</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- View 3: Executive Dashboard -->
+    <div id="view-dashboard" class="view-panel" style="display: none;">
+      <div style="margin-bottom: 2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+          <div>
+            <h2 style="font-size: 1.25rem; font-weight: 700; color: #fff;">Executive Travel Financial Dashboard</h2>
+            <p style="font-size: 0.8125rem; color: var(--text-secondary);">Active governance across Baseline Allocations, Set-Asides, Commitments, and Net Discretionary Balances</p>
+          </div>
+          <span class="badge badge-purple" style="font-size: 0.8125rem;">FY27 Portfolio Overview</span>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <span class="kpi-title">Total Starting Allocation</span>
+            <span class="kpi-value">$997,000</span>
+            <span class="kpi-sub">FY27 Base ($4k FO + $993k DACs)</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-title">Total Set-Asides</span>
+            <span class="kpi-value" style="color: #fbbf24;">$108,500</span>
+            <span class="kpi-sub">Self-Funded ($88.5k) & Enterprise ($20k)</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-title">Pending Commitments</span>
+            <span class="kpi-value" style="color: #38bdf8;">$13,800</span>
+            <span class="kpi-sub">Temporary estimates obligated</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-title">Posted Actual Spend</span>
+            <span class="kpi-value" style="color: #c084fc;">$9,300</span>
+            <span class="kpi-sub">Reconciled vouchers liquidated</span>
+          </div>
+          <div class="kpi-card" style="border-color: rgba(56, 189, 248, 0.4); background: rgba(30, 41, 59, 0.95);">
+            <span class="kpi-title">Net Discretionary Balance</span>
+            <span class="kpi-value" style="color: #34d399;">$865,400</span>
+            <span class="kpi-sub">Available across all divisions</span>
+          </div>
+        </div>
+
+        <div class="lets-card">
+          <div class="lets-card-title">
+            <span>Division / DAC Financial Breakdown</span>
+            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">Formula: Starting + MidYear - SetAsides - PendingEstimates - PostedActuals</span>
+          </div>
+          <div class="table-responsive">
+            <table class="lets-table">
+              <thead>
+                <tr>
+                  <th>Office / DAC</th>
+                  <th>Baseline ($)</th>
+                  <th>Proportional Share</th>
+                  <th>Set-Asides ($)</th>
+                  <th>Discretionary Base ($)</th>
+                  <th>Pending Est ($)</th>
+                  <th>Posted Act ($)</th>
+                  <th>Available Balance ($)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style="font-weight: 700; color: #fff;">Front Office / AC</td>
+                  <td>$4,000</td>
+                  <td>0.0%</td>
+                  <td>$0</td>
+                  <td>$4,000</td>
+                  <td>$0</td>
+                  <td>$0</td>
+                  <td style="font-weight: 700; color: #34d399;">$4,000</td>
+                </tr>
+                <tr>
+                  <td style="font-weight: 700; color: #fff;">OMD DAC</td>
+                  <td>$152,000</td>
+                  <td>15.3%</td>
+                  <td>$15,060</td>
+                  <td>$136,940</td>
+                  <td>$3,200</td>
+                  <td>$0</td>
+                  <td style="font-weight: 700; color: #34d399;">$133,740</td>
+                </tr>
+                <tr>
+                  <td style="font-weight: 700; color: #fff;">IDV DAC</td>
+                  <td>$659,000</td>
+                  <td>66.4%</td>
+                  <td>$25,280</td>
+                  <td>$633,720</td>
+                  <td>$4,500</td>
+                  <td>$0</td>
+                  <td style="font-weight: 700; color: #34d399;">$629,220</td>
+                </tr>
+                <tr>
+                  <td style="font-weight: 700; color: #fff;">CM DAC</td>
+                  <td>$182,000</td>
+                  <td>18.3%</td>
+                  <td>$68,160</td>
+                  <td>$113,840</td>
+                  <td>$6,100</td>
+                  <td>$5,850</td>
+                  <td style="font-weight: 700; color: #34d399;">$101,890</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- View 4: Config & Approvers -->
+    <div id="view-config" class="view-panel" style="display: none;">
+      <div class="lets-card">
+        <div class="lets-card-title">
+          <span>DAC Approver Routing Configuration</span>
+          <span class="badge badge-purple">Dynamic Routing Engine</span>
+        </div>
+        <div class="table-responsive">
+          <table class="lets-table">
+            <thead>
+              <tr>
+                <th>Owning Office</th>
+                <th>Primary Approver</th>
+                <th>Primary Email</th>
+                <th>Alternate Approver</th>
+                <th>Alternate Email</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight: 700; color: #fff;">OMD DAC</td>
+                <td>OMD Director</td>
+                <td>omd.director@gsa.gov</td>
+                <td>OMD Deputy</td>
+                <td>omd.deputy@gsa.gov</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: #fff;">IDV DAC</td>
+                <td>IDV Director</td>
+                <td>idv.director@gsa.gov</td>
+                <td>IDV Deputy</td>
+                <td>idv.deputy@gsa.gov</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: #fff;">CM DAC</td>
+                <td>CM Director</td>
+                <td>cm.director@gsa.gov</td>
+                <td>CM Deputy</td>
+                <td>cm.deputy@gsa.gov</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: #fff;">Front Office / AC</td>
+                <td>Front Office Director</td>
+                <td>fo.director@gsa.gov</td>
+                <td>Front Office Deputy</td>
+                <td>fo.deputy@gsa.gov</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    function switchView(viewName) {
+      document.querySelectorAll('.view-panel').forEach(el => el.style.display = 'none');
+      document.querySelectorAll('.lets-nav-btn').forEach(btn => btn.classList.remove('active'));
+
+      const targetView = document.getElementById('view-' + viewName);
+      const targetBtn = document.getElementById('nav-' + viewName);
+
+      if (targetView) targetView.style.display = 'block';
+      if (targetBtn) targetBtn.classList.add('active');
+    }
+
+    let travelerRowCount = 1;
+    function addTravelerRow() {
+      travelerRowCount++;
+      const tbody = document.getElementById('traveler-tbody');
+      const tr = document.createElement('tr');
+      tr.id = 't-row-' + travelerRowCount;
+      tr.innerHTML = `
+        <td><input type="text" class="form-control t-name" placeholder="Full Name" required style="padding: 0.4rem 0.6rem;"></td>
+        <td>
+          <div style="display: flex; gap: 0.25rem;">
+            <input type="number" step="0.01" min="0" class="form-control t-air-est" placeholder="Est" oninput="recalcTotals()" style="padding: 0.4rem 0.4rem; font-size: 0.8rem;">
+            <input type="number" step="0.01" min="0" class="form-control t-air-act" placeholder="Act" disabled style="padding: 0.4rem 0.4rem; font-size: 0.8rem; opacity: 0.5;">
+          </div>
+        </td>
+        <td>
+          <div style="display: flex; gap: 0.25rem;">
+            <input type="number" step="0.01" min="0" class="form-control t-lodg-est" placeholder="Est" oninput="recalcTotals()" style="padding: 0.4rem 0.4rem; font-size: 0.8rem;">
+            <input type="number" step="0.01" min="0" class="form-control t-lodg-act" placeholder="Act" disabled style="padding: 0.4rem 0.4rem; font-size: 0.8rem; opacity: 0.5;">
+          </div>
+        </td>
+        <td>
+          <div style="display: flex; gap: 0.25rem;">
+            <input type="number" step="0.01" min="0" class="form-control t-mie-est" placeholder="Est" oninput="recalcTotals()" style="padding: 0.4rem 0.4rem; font-size: 0.8rem;">
+            <input type="number" step="0.01" min="0" class="form-control t-mie-act" placeholder="Act" disabled style="padding: 0.4rem 0.4rem; font-size: 0.8rem; opacity: 0.5;">
+          </div>
+        </td>
+        <td>
+          <div style="display: flex; gap: 0.25rem;">
+            <input type="number" step="0.01" min="0" class="form-control t-oth-est" placeholder="Est" oninput="recalcTotals()" style="padding: 0.4rem 0.4rem; font-size: 0.8rem;">
+            <input type="number" step="0.01" min="0" class="form-control t-oth-act" placeholder="Act" disabled style="padding: 0.4rem 0.4rem; font-size: 0.8rem; opacity: 0.5;">
+          </div>
+        </td>
+        <td style="font-weight: 700; color: #fff;" class="t-line-total">$0.00</td>
+        <td><button type="button" style="background: transparent; border: none; color: var(--accent-rose); cursor: pointer; font-size: 1rem;" onclick="removeTravelerRow(${travelerRowCount})">&times;</button></td>
+      `;
+      tbody.appendChild(tr);
+      recalcTotals();
+    }
+
+    function removeTravelerRow(id) {
+      const row = document.getElementById('t-row-' + id);
+      if (row) row.remove();
+      recalcTotals();
+    }
+
+    function recalcTotals() {
+      let tripTotal = 0;
+      const rows = document.querySelectorAll('#traveler-tbody tr');
+      rows.forEach(tr => {
+        const air = parseFloat(tr.querySelector('.t-air-est').value) || 0;
+        const lodg = parseFloat(tr.querySelector('.t-lodg-est').value) || 0;
+        const mie = parseFloat(tr.querySelector('.t-mie-est').value) || 0;
+        const oth = parseFloat(tr.querySelector('.t-oth-est').value) || 0;
+        const line = air + lodg + mie + oth;
+        tr.querySelector('.t-line-total').textContent = '$' + line.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        tripTotal += line;
+      });
+      document.getElementById('form-total-estimate').textContent = '$' + tripTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      updateGatekeeper(tripTotal);
+    }
+
+    function onOfficeSelectionChanged() {
+      recalcTotals();
+    }
+
+    function updateGatekeeper(tripTotal) {
+      const office = document.getElementById('req-owning-office').value;
+      const badge = document.getElementById('gatekeeper-badge');
+      const msg = document.getElementById('gatekeeper-msg');
+
+      if (!office) {
+        badge.className = 'badge badge-amber';
+        badge.textContent = 'Select Office to Verify Funds';
+        msg.textContent = 'Discretionary funds availability will be checked in real-time.';
+        return;
+      }
+
+      const balances = { 'FO': 4000, 'OMD': 133740, 'IDV': 629220, 'CM': 101890 };
+      const avail = balances[office] || 100000;
+
+      if (tripTotal <= avail) {
+        badge.className = 'badge badge-green';
+        badge.textContent = 'Funds Available';
+        msg.textContent = `Sufficient funds ($${avail.toLocaleString()} available in ${office} DAC). Request will proceed directly to Leadership.`;
+      } else {
+        badge.className = 'badge badge-rose';
+        badge.textContent = 'Insufficient Funds';
+        msg.textContent = `Deficit of -$${(tripTotal - avail).toLocaleString()}! Request will be flagged for Exception Approval.`;
+      }
+    }
+
+    function handleRequestSubmit(e) {
+      e.preventDefault();
+      alert('Request submitted! Budget Check PASSED. Funds committed against DAC balance.');
+      switchView('kanban');
+    }
+  </script>
+</body>
+</html>

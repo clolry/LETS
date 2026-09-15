@@ -1,0 +1,287 @@
+<div class="lets-card">
+  <div class="lets-card-title">
+    <span>Travel & Event Request Intake</span>
+    <span class="badge badge-blue">Mandatory Budget Check Enabled</span>
+  </div>
+
+  <form id="travel-request-form" onsubmit="handleRequestSubmit(event)">
+    <!-- Event & Office Metadata -->
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label" for="req-owning-office">Owning Office (Primary Budget Pool) *</label>
+        <select class="form-control" id="req-owning-office" required onchange="onOfficeSelectionChanged()">
+          <option value="">-- Select Owning Office --</option>
+          <option value="OMD">OMD DAC</option>
+          <option value="IDV">IDV DAC</option>
+          <option value="CM">CM DAC</option>
+          <option value="FO">Front Office / AC</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="req-event-name">Event / Trip Title *</label>
+        <input type="text" class="form-control" id="req-event-name" required placeholder="e.g. FY27 AAS Leadership Summit">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="req-destination">Destination (City, State / Country)</label>
+        <input type="text" class="form-control" id="req-destination" placeholder="e.g. Denver, CO">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="req-funding-source">Funding Source</label>
+        <select class="form-control" id="req-funding-source">
+          <option value="Discretionary">Discretionary Travel Pool</option>
+          <option value="SetAside">Set-Aside Allocated</option>
+          <option value="Reimbursable">Reimbursable</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Date Range & Classification Flags -->
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label" for="req-start-date">Start Date</label>
+        <input type="date" class="form-control" id="req-start-date">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="req-end-date">End Date</label>
+        <input type="date" class="form-control" id="req-end-date">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="req-set-aside-type">Set-Aside Category</label>
+        <select class="form-control" id="req-set-aside-type">
+          <option value="NONE">None (General Discretionary)</option>
+          <option value="DAC_LC">DAC LC Travel Set-Aside ($12k)</option>
+          <option value="COE_PROGRAM">COE Program (CM DAC Only)</option>
+          <option value="FO_LC_GAP">Front Office LC Gap (Proportional Share)</option>
+        </select>
+      </div>
+
+      <div class="form-group" style="justify-content: center;">
+        <label class="form-label">Classification Flags</label>
+        <div style="display: flex; gap: 1rem; align-items: center; margin-top: 0.25rem;">
+          <label style="font-size: 0.8125rem; display: flex; align-items: center; gap: 0.35rem; color: var(--text-secondary);">
+            <input type="checkbox" id="flag-event-plan"> Event Plan Item
+          </label>
+          <label style="font-size: 0.8125rem; display: flex; align-items: center; gap: 0.35rem; color: var(--text-secondary);">
+            <input type="checkbox" id="flag-lc-travel"> LC Travel
+          </label>
+          <label style="font-size: 0.8125rem; display: flex; align-items: center; gap: 0.35rem; color: var(--text-secondary);">
+            <input type="checkbox" id="flag-coe-travel"> COE Travel
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Traveler & Cost Schedule Table -->
+    <div style="margin-top: 2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+        <h3 style="font-size: 1rem; color: #fff; font-weight: 700;">Travelers & Expense Breakdown (Go.gov Lifecycle)</h3>
+        <button type="button" class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.75rem;" onclick="addTravelerRow()">
+          + Add Traveler
+        </button>
+      </div>
+
+      <div class="table-responsive">
+        <table class="lets-table" id="traveler-table">
+          <thead>
+            <tr>
+              <th style="width: 20%;">Traveler Name</th>
+              <th style="width: 15%;">Airfare ($)</th>
+              <th style="width: 15%;">Lodging ($)</th>
+              <th style="width: 15%;">M&IE ($)</th>
+              <th style="width: 15%;">Other / Trans ($)</th>
+              <th style="width: 15%;">Line Total ($)</th>
+              <th style="width: 5%;"></th>
+            </tr>
+          </thead>
+          <tbody id="traveler-tbody">
+            <!-- Dynamic Rows will be inserted here -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Live Cost & Budget Gatekeeper Summary Box -->
+    <div style="margin-top: 1.5rem; padding: 1.25rem; background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color); border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <span style="font-size: 0.8125rem; color: var(--text-muted); display: block;">Total Trip Estimate (Obligation)</span>
+        <span style="font-size: 1.75rem; font-weight: 800; color: #38bdf8;" id="form-total-estimate">$0.00</span>
+      </div>
+
+      <div id="budget-gatekeeper-status" style="text-align: right;">
+        <span class="badge badge-amber" id="gatekeeper-badge">Select Office to Verify Funds</span>
+        <span style="display: block; font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.35rem;" id="gatekeeper-msg">
+          Discretionary funds availability will be checked in real-time.
+        </span>
+      </div>
+    </div>
+
+    <!-- Submission Actions -->
+    <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem;">
+      <button type="button" class="btn btn-secondary" onclick="switchView('kanban')">Cancel</button>
+      <button type="submit" class="btn btn-primary" id="btn-submit-request">Submit Request & Commit Funds</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  let travelerRowCount = 0;
+
+  function addTravelerRow(name = '', air = 0, lodging = 0, mie = 0, other = 0) {
+    travelerRowCount++;
+    const tbody = document.getElementById('traveler-tbody');
+    const tr = document.createElement('tr');
+    tr.id = 't-row-' + travelerRowCount;
+    tr.innerHTML = `
+      <td>
+        <input type="text" class="form-control t-name" placeholder="Full Name" value="${name}" required style="padding: 0.4rem 0.6rem;">
+      </td>
+      <td>
+        <div style="display: flex; gap: 0.25rem;">
+          <input type="number" step="0.01" min="0" class="form-control t-air-est" placeholder="Est" value="${air || ''}" oninput="recalcTotals()" style="padding: 0.4rem 0.4rem; font-size: 0.8rem;">
+          <input type="number" step="0.01" min="0" class="form-control t-air-act" placeholder="Act" disabled style="padding: 0.4rem 0.4rem; font-size: 0.8rem; opacity: 0.5;">
+        </div>
+      </td>
+      <td>
+        <div style="display: flex; gap: 0.25rem;">
+          <input type="number" step="0.01" min="0" class="form-control t-lodg-est" placeholder="Est" value="${lodging || ''}" oninput="recalcTotals()" style="padding: 0.4rem 0.4rem; font-size: 0.8rem;">
+          <input type="number" step="0.01" min="0" class="form-control t-lodg-act" placeholder="Act" disabled style="padding: 0.4rem 0.4rem; font-size: 0.8rem; opacity: 0.5;">
+        </div>
+      </td>
+      <td>
+        <div style="display: flex; gap: 0.25rem;">
+          <input type="number" step="0.01" min="0" class="form-control t-mie-est" placeholder="Est" value="${mie || ''}" oninput="recalcTotals()" style="padding: 0.4rem 0.4rem; font-size: 0.8rem;">
+          <input type="number" step="0.01" min="0" class="form-control t-mie-act" placeholder="Act" disabled style="padding: 0.4rem 0.4rem; font-size: 0.8rem; opacity: 0.5;">
+        </div>
+      </td>
+      <td>
+        <div style="display: flex; gap: 0.25rem;">
+          <input type="number" step="0.01" min="0" class="form-control t-oth-est" placeholder="Est" value="${other || ''}" oninput="recalcTotals()" style="padding: 0.4rem 0.4rem; font-size: 0.8rem;">
+          <input type="number" step="0.01" min="0" class="form-control t-oth-act" placeholder="Act" disabled style="padding: 0.4rem 0.4rem; font-size: 0.8rem; opacity: 0.5;">
+        </div>
+      </td>
+      <td style="font-weight: 700; color: #fff;" class="t-line-total">$0.00</td>
+      <td>
+        <button type="button" style="background: transparent; border: none; color: var(--accent-rose); cursor: pointer; font-size: 1rem;" onclick="removeTravelerRow(${travelerRowCount})">&times;</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+    recalcTotals();
+  }
+
+  function removeTravelerRow(id) {
+    const row = document.getElementById('t-row-' + id);
+    if (row) row.remove();
+    recalcTotals();
+  }
+
+  function recalcTotals() {
+    let tripTotal = 0;
+    const rows = document.querySelectorAll('#traveler-tbody tr');
+
+    rows.forEach(tr => {
+      const air = parseFloat(tr.querySelector('.t-air-est').value) || 0;
+      const lodg = parseFloat(tr.querySelector('.t-lodg-est').value) || 0;
+      const mie = parseFloat(tr.querySelector('.t-mie-est').value) || 0;
+      const oth = parseFloat(tr.querySelector('.t-oth-est').value) || 0;
+      const line = air + lodg + mie + oth;
+      tr.querySelector('.t-line-total').textContent = '$' + line.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      tripTotal += line;
+    });
+
+    document.getElementById('form-total-estimate').textContent = '$' + tripTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    updateGatekeeper(tripTotal);
+  }
+
+  function onOfficeSelectionChanged() {
+    recalcTotals();
+  }
+
+  function updateGatekeeper(tripTotal) {
+    const officeCode = document.getElementById('req-owning-office').value;
+    const badge = document.getElementById('gatekeeper-badge');
+    const msg = document.getElementById('gatekeeper-msg');
+
+    if (!officeCode) {
+      badge.className = 'badge badge-amber';
+      badge.textContent = 'Select Office to Verify Funds';
+      msg.textContent = 'Discretionary funds availability will be checked in real-time.';
+      return;
+    }
+
+    const dacData = APP_STATE.portfolio && APP_STATE.portfolio.dacSummaries && APP_STATE.portfolio.dacSummaries[officeCode];
+    const avail = dacData ? dacData.remainingDiscretionaryBalance : 100000;
+
+    if (tripTotal <= avail) {
+      badge.className = 'badge badge-green';
+      badge.textContent = 'Funds Available';
+      msg.textContent = `Sufficient funds ($${avail.toLocaleString()} available in ${officeCode}). Request will route directly to Leadership.`;
+    } else {
+      badge.className = 'badge badge-rose';
+      badge.textContent = 'Insufficient Funds';
+      msg.textContent = `Deficit of -$${(tripTotal - avail).toLocaleString()}! Request will be flagged for Exception Approval.`;
+    }
+  }
+
+  function handleRequestSubmit(e) {
+    e.preventDefault();
+    const rows = document.querySelectorAll('#traveler-tbody tr');
+    if (rows.length === 0) {
+      alert('Please add at least one traveler.');
+      return;
+    }
+
+    const travelers = [];
+    rows.forEach(tr => {
+      travelers.push({
+        travelerName: tr.querySelector('.t-name').value,
+        estAirfare: parseFloat(tr.querySelector('.t-air-est').value) || 0,
+        estLodging: parseFloat(tr.querySelector('.t-lodg-est').value) || 0,
+        estMie: parseFloat(tr.querySelector('.t-mie-est').value) || 0,
+        estOther: parseFloat(tr.querySelector('.t-oth-est').value) || 0
+      });
+    });
+
+    const formData = {
+      owningOffice: document.getElementById('req-owning-office').value,
+      eventName: document.getElementById('req-event-name').value,
+      destination: document.getElementById('req-destination').value,
+      fundingSource: document.getElementById('req-funding-source').value,
+      startDate: document.getElementById('req-start-date').value,
+      endDate: document.getElementById('req-end-date').value,
+      setAsideType: document.getElementById('req-set-aside-type').value,
+      isEventPlanItem: document.getElementById('flag-event-plan').checked,
+      is_LC_Travel: document.getElementById('flag-lc-travel').checked,
+      is_COE_Travel: document.getElementById('flag-coe-travel').checked,
+      travelers: travelers
+    };
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      document.getElementById('btn-submit-request').disabled = true;
+      google.script.run
+        .withSuccessHandler(res => {
+          alert('Request ' + res.requestId + ' submitted successfully! Status: ' + res.status);
+          switchView('kanban');
+        })
+        .withFailureHandler(err => {
+          alert('Submission failed: ' + err.message);
+          document.getElementById('btn-submit-request').disabled = false;
+        })
+        .apiSubmitRequest(formData);
+    } else {
+      alert('Request simulated locally! Funds committed.');
+      switchView('kanban');
+    }
+  }
+
+  // Pre-seed one row on load
+  window.addEventListener('DOMContentLoaded', () => {
+    if (document.getElementById('traveler-tbody').children.length === 0) {
+      addTravelerRow();
+    }
+  });
+</script>
