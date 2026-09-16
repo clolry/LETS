@@ -1,0 +1,42 @@
+name: Deploy to Google Apps Script
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy-to-gas:
+    name: Clasp Push to Google Apps Script
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Clasp
+        run: npm install -g @google/clasp
+
+      - name: Configure Clasp Authentication
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ]; then
+            echo "ERROR: CLASPRC_JSON secret is missing! Please configure CLASPRC_JSON in your GitHub repository secrets."
+            exit 1
+          fi
+          echo "$CLASPRC_JSON" > ~/.clasprc.json
+          chmod 600 ~/.clasprc.json
+
+      - name: Push Code to GAS Project
+        run: |
+          cd lets_app
+          clasp push --force
