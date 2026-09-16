@@ -1,0 +1,833 @@
+<!-- client/controllers/form/travelRequestItinerary.html -->
+<!-- Itinerary Module: Leg management and location autocomplete -->
+<script>
+(function() {
+  'use strict';
+
+  const Controller = window.TravelRequest.Controller;
+
+  // ==========================================================================
+  // ITINERARY MODULE
+  // Extends Controller with leg management functionality
+  // ==========================================================================
+
+  /**
+   * Initialize itinerary module
+   */
+  Controller._initItinerary = function() {
+    const self = this;
+
+    // Bind add leg buttons
+    if (this._elements.emptyStateAddLeg) {
+      this._elements.emptyStateAddLeg.addEventListener('click', () => self._handleAddLeg());
+    }
+    if (this._elements.btnAddLeg) {
+      this._elements.btnAddLeg.addEventListener('click', () => self._handleAddLeg());
+    }
+
+    // Auto-add first leg - every trip needs at least one destination
+    const state = window.TravelRequest.State;
+    if (state.getLegCount() === 0) {
+      this._handleAddLeg();
+    }
+
+    // Update UI (empty state hidden since we always have at least 1 leg)
+    this._updateItineraryEmptyState();
+  };
+
+  // ==========================================================================
+  // LEG MANAGEMENT
+  // ==========================================================================
+
+  /**
+   * Handle add leg button click
+   */
+  Controller._handleAddLeg = function() {
+    const state = window.TravelRequest.State;
+    const leg = state.addLeg();
+
+    // Render the leg card
+    this._renderLegCard(leg);
+
+    // Update UI
+    this._updateItineraryEmptyState();
+    this._updateItinerarySummary();
+  };
+
+  /**
+   * Remove a leg
+   */
+  Controller._removeLeg = function(legId) {
+    const state = window.TravelRequest.State;
+
+    // Prevent removing the last leg - every trip needs at least one destination
+    if (state.getLegCount() <= 1) {
+      if (this._showToast) {
+        this._showToast('At least one destination is required', 'warning');
+      }
+      return;
+    }
+
+    if (state.removeLeg(legId)) {
+      // Remove from DOM
+      const legCard = this._elements.itineraryLegsContainer.querySelector(`[data-leg-id="${legId}"]`);
+      if (legCard) {
+        legCard.remove();
+      }
+
+      // Clean up autocomplete instances
+      this._cleanupLegAutocomplete(legId);
+
+      // Update UI
+      this._updateItineraryEmptyState();
+      this._updateItinerarySummary();
+      this._renumberLegs();
+
+      // Recalculate date constraints for remaining legs
+      this._updateLegDateConstraints();
+    }
+  };
+
+  /**
+   * Clean up autocomplete instances for a leg
+   */
+  Controller._cleanupLegAutocomplete = function(legId) {
+    const keys = [`leg_country_${legId}`, `leg_state_${legId}`, `leg_city_${legId}`];
+    keys.forEach(key => {
+      if (this._autocompleteInstances[key]) {
+        this._autocompleteInstances[key].destroy();
+        delete this._autocompleteInstances[key];
+      }
+    });
+
+    // Clean up date pickers
+    const dateKeys = [`leg_start_${legId}`, `leg_end_${legId}`];
+    dateKeys.forEach(key => {
+      if (this._datePickers[key]) {
+        this._datePickers[key].destroy();
+        delete this._datePickers[key];
+      }
+    });
+  };
+
+  /**
+   * Update itinerary empty state visibility
+   */
+  Controller._updateItineraryEmptyState = function() {
+    const state = window.TravelRequest.State;
+    const hasLegs = state.getLegCount() > 0;
+
+    if (this._elements.itineraryEmptyState) {
+      this._elements.itineraryEmptyState.classList.toggle('d-none', hasLegs);
+    }
+    if (this._elements.btnAddLeg) {
+      this._elements.btnAddLeg.classList.toggle('d-none', !hasLegs);
+    }
+    if (this._elements.itinerarySummary) {
+      this._elements.itinerarySummary.classList.toggle('d-none', !hasLegs);
+    }
+  };
+
+  /**
+   * Update itinerary summary display
+   */
+  Controller._updateItinerarySummary = function() {
+    const state = window.TravelRequest.State;
+
+    // Update route text
+    if (this._elements.itineraryRouteText) {
+      this._elements.itineraryRouteText.textContent = state.getFormattedItinerary() || 'No destinations';
+    }
+
+    // Update dates text
+    if (this._elements.itineraryDatesText) {
+      const dateRange = state.getTripDateRange();
+      if (dateRange.startDate && dateRange.endDate) {
+        const startFormatted = this._formatDateDisplay(dateRange.startDate);
+        const endFormatted = this._formatDateDisplay(dateRange.endDate);
+        this._elements.itineraryDatesText.textContent = `${startFormatted} - ${endFormatted}`;
+      } else {
+        this._elements.itineraryDatesText.textContent = 'Dates not set';
+      }
+    }
+  };
+
+  /**
+   * Renumber leg cards after removal
+   */
+  Controller._renumberLegs = function() {
+    const state = window.TravelRequest.State;
+    const legs = state.getLegs();
+
+    legs.forEach((leg, index) => {
+      const legCard = this._elements.itineraryLegsContainer.querySelector(`[data-leg-id="${leg.id}"]`);
+      if (legCard) {
+        const numberEl = legCard.querySelector('.leg-card__number');
+        if (numberEl) {
+          numberEl.textContent = index + 1;
+        }
+      }
+    });
+  };
+
+  // ==========================================================================
+  // LEG RENDERING
+  // ==========================================================================
+
+  /**
+   * Render a leg card
+   */
+  Controller._renderLegCard = function(leg) {
+    const state = window.TravelRequest.State;
+    const locationType = state.getField('locationType');
+    const showSiteName = locationType === 'client-site' || locationType === 'contractor-site';
+
+    const cardHtml = `
+      <div class="leg-card leg-card--compact" data-leg-id="${leg.id}">
+        <div class="leg-card__row">
+          <!-- Stop number -->
+          <div class="leg-card__stop">
+            <span class="leg-card__number">${leg.legNumber}</span>
+          </div>
+
+          <!-- Dates group - using date chips -->
+          <div class="leg-card__dates">
+            <div class="date-chip date-chip--compact" id="legStartChip_${leg.id}" data-toggle>
+              <i aria-hidden="true" class="fas fa-calendar-alt date-chip__icon" data-toggle></i>
+              <input type="text" class="date-chip__input" id="legStart_${leg.id}"
+                     placeholder="Travel Start" data-input data-leg-id="${leg.id}">
+            </div>
+            <span class="leg-card__separator">→</span>
+            <div class="date-chip date-chip--compact" id="legEndChip_${leg.id}" data-toggle>
+              <i aria-hidden="true" class="fas fa-calendar-alt date-chip__icon" data-toggle></i>
+              <input type="text" class="date-chip__input" id="legEnd_${leg.id}"
+                     placeholder="Travel End" data-input data-leg-id="${leg.id}">
+            </div>
+          </div>
+
+          <!-- Divider -->
+          <div class="leg-card__divider"></div>
+
+          <!-- Location group -->
+          <div class="leg-card__location">
+            <div class="leg-card__field leg-card__field--country">
+              <label>Country</label>
+              <input type="text" class="form-control form-control-sm leg-country" id="legCountry_${leg.id}"
+                     value="United States" autocomplete="off" data-leg-id="${leg.id}">
+            </div>
+            <div class="leg-card__field leg-card__field--state" id="legStateCol_${leg.id}">
+              <label>State <span class="field-tooltip" data-tooltip="Includes U.S. territories"><i aria-hidden="true" class="fas fa-info-circle"></i></span></label>
+              <input type="text" class="form-control form-control-sm leg-state" id="legState_${leg.id}"
+                     placeholder="ST" maxlength="2"
+                     autocomplete="off" data-leg-id="${leg.id}">
+            </div>
+            <div class="leg-card__field leg-card__field--city">
+              <label>City <span class="field-tooltip" data-tooltip="Type any city—dropdown shows cities with special per diem rates"><i aria-hidden="true" class="fas fa-info-circle"></i></span></label>
+              <div class="city-input-wrapper">
+                <input type="text" class="form-control form-control-sm leg-city" id="legCity_${leg.id}"
+                       placeholder="Select state" autocomplete="off" data-leg-id="${leg.id}">
+                <div class="city-loading hidden" id="legCityLoading_${leg.id}">
+                  <i aria-hidden="true" class="fas fa-spinner fa-spin"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Site name (inline if client-site or contractor-site) -->
+          ${showSiteName ? `
+          <div class="leg-card__field leg-card__field--site">
+            <label>Site</label>
+            <input type="text" class="form-control form-control-sm leg-site-name" id="legSite_${leg.id}"
+                   placeholder="Site name" data-leg-id="${leg.id}">
+          </div>
+          ` : ''}
+
+          <!-- Remove button -->
+          <button type="button" class="btn btn-sm btn-link leg-card__remove"
+                  onclick="TravelRequest.Controller._removeLeg('${leg.id}')" title="Remove stop">
+            <i aria-hidden="true" class="fas fa-times"></i>
+          </button>
+        </div>
+
+        <!-- International travel notice (shown below when applicable) -->
+        <div class="leg-card__notice hidden" id="legIntlNotice_${leg.id}">
+          <i aria-hidden="true" class="fas fa-globe me-2"></i>
+          <span>International travel - additional info required in Travelers section</span>
+        </div>
+      </div>
+    `;
+
+    // Insert the card
+    if (this._elements.itineraryEmptyState) {
+      this._elements.itineraryEmptyState.insertAdjacentHTML('beforebegin', cardHtml);
+    } else {
+      this._elements.itineraryLegsContainer.insertAdjacentHTML('beforeend', cardHtml);
+    }
+
+    // Initialize the leg's inputs
+    this._initLegInputs(leg);
+
+    // Populate values from leg data (for draft restoration)
+    this._populateLegInputs(leg);
+  };
+
+  /**
+   * Initialize inputs for a leg
+   */
+  Controller._initLegInputs = function(leg) {
+    const self = this;
+    const legId = leg.id;
+
+    // Initialize date pickers
+    this._initLegDatePickers(legId);
+
+    // Initialize country autocomplete
+    this._initLegCountryAutocomplete(legId);
+
+    // Initialize state autocomplete
+    this._initLegStateAutocomplete(legId);
+
+    // Bind site name input if it exists
+    this._bindSiteNameInput(legId);
+  };
+
+  /**
+   * Populate leg input fields with saved values (for draft restoration)
+   */
+  Controller._populateLegInputs = function(leg) {
+    const legId = leg.id;
+
+    // Country
+    const countryInput = document.getElementById(`legCountry_${legId}`);
+    if (countryInput && leg.country) {
+      countryInput.value = leg.country;
+    }
+
+    // State
+    const stateInput = document.getElementById(`legState_${legId}`);
+    if (stateInput && leg.state) {
+      stateInput.value = leg.state;
+    }
+
+    // City
+    const cityInput = document.getElementById(`legCity_${legId}`);
+    if (cityInput && leg.city) {
+      cityInput.value = leg.city;
+    }
+
+    // Site name
+    const siteInput = document.getElementById(`legSite_${legId}`);
+    if (siteInput && leg.siteName) {
+      siteInput.value = leg.siteName;
+    }
+
+    // Start date - use flatpickr API if available
+    const startPicker = this._datePickers[`leg_start_${legId}`];
+    if (startPicker && leg.startDate) {
+      startPicker.setDate(leg.startDate, false); // false = don't trigger onChange
+      const startChip = document.getElementById(`legStartChip_${legId}`);
+      if (startChip) startChip.classList.add('date-chip--filled');
+    }
+
+    // End date - use flatpickr API if available
+    const endPicker = this._datePickers[`leg_end_${legId}`];
+    if (endPicker && leg.endDate) {
+      endPicker.setDate(leg.endDate, false); // false = don't trigger onChange
+      const endChip = document.getElementById(`legEndChip_${legId}`);
+      if (endChip) endChip.classList.add('date-chip--filled');
+    }
+
+    // Show international notice if applicable
+    if (leg.isInternational) {
+      const notice = document.getElementById(`legIntlNotice_${legId}`);
+      if (notice) notice.classList.remove('hidden');
+    }
+  };
+
+  /**
+   * Bind event handler for site name input
+   */
+  Controller._bindSiteNameInput = function(legId) {
+    const self = this;
+    const siteInput = document.getElementById(`legSite_${legId}`);
+    if (siteInput && !siteInput._boundEvents) {
+      siteInput._boundEvents = true;
+      siteInput.addEventListener('blur', function() {
+        window.TravelRequest.State.updateLeg(legId, 'siteName', this.value.trim());
+        self._updateItinerarySummary();
+      });
+    }
+  };
+
+  /**
+   * Refresh site name field visibility for all existing legs
+   * Called when location type changes
+   */
+  Controller._refreshLegSiteNameFields = function() {
+    const state = window.TravelRequest.State;
+    const locationType = state.getField('locationType');
+    const showSiteName = locationType === 'client-site' || locationType === 'contractor-site';
+    const legs = state.getLegs() || [];
+
+    legs.forEach(leg => {
+      const legCard = document.querySelector(`[data-leg-id="${leg.id}"]`);
+      if (!legCard) return;
+
+      const existingSiteField = legCard.querySelector('.leg-card__field--site');
+      const removeBtn = legCard.querySelector('.leg-card__remove');
+
+      if (showSiteName && !existingSiteField) {
+        // Add site name field before the remove button
+        const siteFieldHtml = `
+          <div class="leg-card__field leg-card__field--site">
+            <label>Site</label>
+            <input type="text" class="form-control form-control-sm leg-site-name" id="legSite_${leg.id}"
+                   placeholder="Site name" data-leg-id="${leg.id}" value="${leg.siteName || ''}">
+          </div>
+        `;
+        removeBtn.insertAdjacentHTML('beforebegin', siteFieldHtml);
+        this._bindSiteNameInput(leg.id);
+      } else if (!showSiteName && existingSiteField) {
+        // Remove site name field
+        existingSiteField.remove();
+      }
+    });
+  };
+
+  // ==========================================================================
+  // LEG DATE PICKERS
+  // ==========================================================================
+
+  /**
+   * Initialize date pickers for a leg using date chip wrap mode
+   */
+  Controller._initLegDatePickers = function(legId) {
+    const self = this;
+    const state = window.TravelRequest.State;
+
+    const startChip = document.getElementById(`legStartChip_${legId}`);
+    const endChip = document.getElementById(`legEndChip_${legId}`);
+
+    if (startChip) {
+      this._datePickers[`leg_start_${legId}`] = flatpickr(startChip, {
+        dateFormat: 'Y-m-d',
+        altInput: true,
+        altFormat: 'M j, Y',
+        allowInput: true,
+        wrap: true,
+        onOpen: function(selectedDates, dateStr, instance) {
+          self._datePickerOpen = true;
+          self._ensureFlatpickrVisible(startChip);
+        },
+        onClose: function() {
+          self._datePickerOpen = false;
+        },
+        onChange: function(selectedDates, dateStr) {
+          state.updateLeg(legId, 'startDate', dateStr);
+          // Toggle filled state on chip
+          startChip.classList.toggle('date-chip--filled', !!dateStr);
+          self._updateItinerarySummary();
+
+          // Update end date min for this leg
+          if (self._datePickers[`leg_end_${legId}`] && selectedDates[0]) {
+            self._datePickers[`leg_end_${legId}`].set('minDate', selectedDates[0]);
+          }
+
+          // Update date constraints for all subsequent legs
+          self._updateLegDateConstraints();
+        }
+      });
+    }
+
+    if (endChip) {
+      this._datePickers[`leg_end_${legId}`] = flatpickr(endChip, {
+        dateFormat: 'Y-m-d',
+        altInput: true,
+        altFormat: 'M j, Y',
+        allowInput: true,
+        wrap: true,
+        onOpen: function(selectedDates, dateStr, instance) {
+          self._datePickerOpen = true;
+          self._ensureFlatpickrVisible(endChip);
+        },
+        onClose: function() {
+          self._datePickerOpen = false;
+        },
+        onChange: function(selectedDates, dateStr) {
+          state.updateLeg(legId, 'endDate', dateStr);
+          // Toggle filled state on chip
+          endChip.classList.toggle('date-chip--filled', !!dateStr);
+          self._updateItinerarySummary();
+
+          // Update date constraints for all subsequent legs
+          self._updateLegDateConstraints();
+        }
+      });
+    }
+
+    // Apply initial constraints based on existing legs
+    this._updateLegDateConstraints();
+  };
+
+  /**
+   * Update date constraints across all legs to prevent overlapping
+   * Each leg's start date must be >= previous leg's end date
+   */
+  Controller._updateLegDateConstraints = function() {
+    const state = window.TravelRequest.State;
+    const legs = state.getLegs();
+
+    legs.forEach((leg, index) => {
+      const startPicker = this._datePickers[`leg_start_${leg.id}`];
+      const endPicker = this._datePickers[`leg_end_${leg.id}`];
+
+      if (index === 0) {
+        // First leg: no minimum start date constraint from previous legs
+        if (startPicker) {
+          startPicker.set('minDate', null);
+        }
+      } else {
+        // Subsequent legs: start date must be >= previous leg's end date
+        const prevLeg = legs[index - 1];
+        if (startPicker && prevLeg.endDate) {
+          startPicker.set('minDate', prevLeg.endDate);
+
+          // If current start date is before the new minimum, clear it
+          if (leg.startDate && leg.startDate < prevLeg.endDate) {
+            startPicker.clear();
+            state.updateLeg(leg.id, 'startDate', '');
+          }
+        }
+      }
+
+      // End date must be >= start date (within same leg)
+      if (endPicker && leg.startDate) {
+        endPicker.set('minDate', leg.startDate);
+
+        // If current end date is before start date, clear it
+        if (leg.endDate && leg.endDate < leg.startDate) {
+          endPicker.clear();
+          state.updateLeg(leg.id, 'endDate', '');
+        }
+      }
+    });
+  };
+
+  // ==========================================================================
+  // LEG COUNTRY AUTOCOMPLETE
+  // ==========================================================================
+
+  /**
+   * Initialize country autocomplete for a leg using TravelLocationService
+   */
+  Controller._initLegCountryAutocomplete = async function(legId) {
+    const self = this;
+    const countryInput = document.getElementById(`legCountry_${legId}`);
+    if (!countryInput) return;
+
+    // Destroy existing instance if refreshing
+    const instanceKey = `leg_country_${legId}`;
+    if (this._autocompleteInstances[instanceKey]) {
+      this._autocompleteInstances[instanceKey].destroy();
+      delete this._autocompleteInstances[instanceKey];
+    }
+
+    // Use TravelLocationService for country autocomplete setup
+    const awInstance = await TravelLocationService.setupCountryAutocomplete(countryInput, {
+      onSelect: function(country) {
+        self._handleLegCountryChange(legId, country);
+      }
+    });
+
+    if (awInstance) {
+      this._autocompleteInstances[instanceKey] = awInstance;
+
+      // Only add additional event listeners if not already added
+      if (!countryInput._countryEventsAttached) {
+        countryInput._countryEventsAttached = true;
+
+        // Handle blur for manual entry
+        countryInput.addEventListener('blur', function() {
+          const country = this.value.trim();
+          if (country) {
+            self._handleLegCountryChange(legId, country);
+          }
+        });
+
+        // Auto-select text on focus for easier typing
+        countryInput.addEventListener('focus', function() {
+          this.select();
+        });
+      }
+
+      // Float the dropdown with minimum width for full country names
+      this._floatAwesomplete(awInstance, { minWidth: 200 });
+    }
+  };
+
+  /**
+   * Handle country change for a leg
+   */
+  Controller._handleLegCountryChange = function(legId, country) {
+    const state = window.TravelRequest.State;
+    state.updateLeg(legId, 'country', country);
+
+    const isInternational = country !== 'United States';
+
+    // Update UI visibility
+    const stateCol = document.getElementById(`legStateCol_${legId}`);
+    const intlNotice = document.getElementById(`legIntlNotice_${legId}`);
+    const cityInput = document.getElementById(`legCity_${legId}`);
+
+    // Show/hide state field based on country (using CSS utility class)
+    if (stateCol) {
+      stateCol.classList.toggle('hidden', isInternational);
+    }
+
+    // Show international notice when applicable (using CSS utility class)
+    if (intlNotice) {
+      intlNotice.classList.toggle('hidden', !isInternational);
+    }
+
+    // Update city placeholder and load appropriate data
+    if (cityInput) {
+      if (isInternational) {
+        cityInput.placeholder = 'Type city...';
+        // Load cities for international country
+        this._loadLegCitiesForCountry(legId, country);
+      } else {
+        cityInput.placeholder = 'Select state';
+        // Reset city autocomplete
+        this._resetLegCityAutocomplete(legId);
+      }
+    }
+
+    // Clear state if international
+    if (isInternational) {
+      const stateInput = document.getElementById(`legState_${legId}`);
+      if (stateInput) {
+        stateInput.value = '';
+        state.updateLeg(legId, 'state', '');
+      }
+    }
+
+    this._updateItinerarySummary();
+  };
+
+  // ==========================================================================
+  // LEG STATE AUTOCOMPLETE
+  // ==========================================================================
+
+  /**
+   * Initialize state autocomplete for a leg using TravelLocationService
+   */
+  Controller._initLegStateAutocomplete = function(legId) {
+    const self = this;
+    const stateInput = document.getElementById(`legState_${legId}`);
+    if (!stateInput) return;
+
+    // Destroy existing instance if refreshing
+    const instanceKey = `leg_state_${legId}`;
+    if (this._autocompleteInstances[instanceKey]) {
+      this._autocompleteInstances[instanceKey].destroy();
+      delete this._autocompleteInstances[instanceKey];
+    }
+
+    // Use TravelLocationService for state autocomplete setup
+    const awInstance = TravelLocationService.setupStateAutocomplete(stateInput, {
+      onSelect: function(stateAbbr) {
+        self._handleLegStateChange(legId, stateAbbr);
+      },
+      showFullName: true
+    });
+
+    if (awInstance) {
+      this._autocompleteInstances[instanceKey] = awInstance;
+
+      // Float the dropdown with minimum width for full state names
+      this._floatAwesomplete(awInstance, { minWidth: 180 });
+    }
+
+    // Clear city immediately when state is cleared or changed
+    let lastStateValue = stateInput.value.trim().toUpperCase();
+    stateInput.addEventListener('input', function() {
+      const currentValue = stateInput.value.trim().toUpperCase();
+      // If state was cleared or changed, clear the city
+      if (lastStateValue && currentValue !== lastStateValue) {
+        self._clearLegCity(legId);
+      }
+      lastStateValue = currentValue;
+    });
+  };
+
+  /**
+   * Clear city field for a leg
+   */
+  Controller._clearLegCity = function(legId) {
+    const state = window.TravelRequest.State;
+    const cityInput = document.getElementById(`legCity_${legId}`);
+
+    if (cityInput && cityInput.value) {
+      cityInput.value = '';
+      state.updateLeg(legId, 'city', '');
+      cityInput.placeholder = 'Select state first';
+    }
+  };
+
+  /**
+   * Handle state change for a leg
+   */
+  Controller._handleLegStateChange = function(legId, stateAbbr) {
+    const state = window.TravelRequest.State;
+    state.updateLeg(legId, 'state', stateAbbr);
+
+    const leg = state.getLeg(legId);
+
+    // Load cities for this state
+    this._loadLegCitiesForUSState(legId, stateAbbr, leg.isOCONUS);
+
+    this._updateItinerarySummary();
+  };
+
+  // ==========================================================================
+  // LEG CITY AUTOCOMPLETE
+  // ==========================================================================
+
+  /**
+   * Load cities for a location using TravelLocationService
+   * Unified handler for GSA (CONUS), DoD (OCONUS), and DOS (International)
+   */
+  Controller._loadLegCities = async function(legId, location) {
+    const self = this;
+    const cityInput = document.getElementById(`legCity_${legId}`);
+    const loadingEl = document.getElementById(`legCityLoading_${legId}`);
+
+    if (!cityInput) return;
+
+    // Show loading
+    if (loadingEl) loadingEl.classList.remove('hidden');
+    cityInput.placeholder = 'Loading cities...';
+
+    try {
+      // Use shared TravelLocationService
+      const result = await TravelLocationService.loadCities(location);
+
+      if (loadingEl) loadingEl.classList.add('hidden');
+
+      if (result.success && result.cities.length > 0) {
+        self._setupLegCityAutocomplete(legId, result.cities, result.source);
+      } else {
+        cityInput.placeholder = 'Type any city...';
+      }
+    } catch (error) {
+      if (loadingEl) loadingEl.classList.add('hidden');
+      cityInput.placeholder = 'Type any city...';
+      console.error('Failed to load cities:', error);
+    }
+  };
+
+  /**
+   * Load cities for a US state - wrapper for _loadLegCities
+   */
+  Controller._loadLegCitiesForUSState = function(legId, stateAbbr, isOCONUS) {
+    this._loadLegCities(legId, {
+      country: 'United States',
+      state: stateAbbr
+    });
+  };
+
+  /**
+   * Load cities for an international country - wrapper for _loadLegCities
+   */
+  Controller._loadLegCitiesForCountry = function(legId, country) {
+    if (country === 'United States') return;
+    this._loadLegCities(legId, { country: country });
+  };
+
+  /**
+   * Set up city autocomplete with loaded data
+   */
+  Controller._setupLegCityAutocomplete = function(legId, cities, source) {
+    const self = this;
+    const cityInput = document.getElementById(`legCity_${legId}`);
+    if (!cityInput) return;
+
+    // Destroy existing instance
+    if (this._autocompleteInstances[`leg_city_${legId}`]) {
+      this._autocompleteInstances[`leg_city_${legId}`].destroy();
+    }
+
+    // Update placeholder
+    cityInput.placeholder = 'Type any city...';
+
+    // Use TravelLocationService for autocomplete setup
+    const awInstance = TravelLocationService.setupCityAutocomplete(cityInput, cities, {
+      onSelect: function(city) {
+        window.TravelRequest.State.updateLeg(legId, 'city', city);
+        self._updateItinerarySummary();
+        // Leg destination just finalized — re-evaluate local-travel for all
+        // travelers. (The Travelers controller's initial check fires on
+        // employee selection, before the leg has a city/state.)
+        if (Controller._recheckLocalTravelForAllTravelers) {
+          Controller._recheckLocalTravelForAllTravelers();
+        }
+      }
+    });
+
+    if (awInstance) {
+      this._autocompleteInstances[`leg_city_${legId}`] = awInstance;
+
+      // Handle blur for manual entry
+      cityInput.addEventListener('blur', function() {
+        const city = this.value.trim();
+        if (city) {
+          window.TravelRequest.State.updateLeg(legId, 'city', city);
+          self._updateItinerarySummary();
+        }
+      });
+
+      // Float the dropdown with minimum width for full city names
+      this._floatAwesomplete(awInstance, { minWidth: 200 });
+    }
+  };
+
+  /**
+   * Reset city autocomplete for a leg
+   */
+  Controller._resetLegCityAutocomplete = function(legId) {
+    const cityInput = document.getElementById(`legCity_${legId}`);
+
+    // Destroy existing instance
+    if (this._autocompleteInstances[`leg_city_${legId}`]) {
+      this._autocompleteInstances[`leg_city_${legId}`].destroy();
+      delete this._autocompleteInstances[`leg_city_${legId}`];
+    }
+
+    // Reset input
+    if (cityInput) {
+      cityInput.value = '';
+      window.TravelRequest.State.updateLeg(legId, 'city', '');
+    }
+  };
+
+  // ==========================================================================
+  // UTILITY FUNCTIONS
+  // ==========================================================================
+
+  /**
+   * Format date for display
+   * Delegates to TravelUtils.formatDateDisplay()
+   */
+  Controller._formatDateDisplay = function(dateStr) {
+    if (window.TravelUtils && TravelUtils.formatDateDisplay) {
+      return TravelUtils.formatDateDisplay(dateStr);
+    }
+    // Fallback if TravelUtils not available
+    if (!dateStr) return '';
+    const date = new Date(dateStr + 'T00:00:00');
+    const options = { month: 'short', day: 'numeric', year: 'numeric' };
+    return date.toLocaleDateString('en-US', options);
+  };
+
+})();
+</script>

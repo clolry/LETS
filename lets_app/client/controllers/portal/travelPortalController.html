@@ -1,0 +1,1464 @@
+<!-- client/controllers/portal/travelPortalController.html -->
+<!-- Controller for the Travel Request Portal page -->
+<script>
+(function() {
+  'use strict';
+
+  window.TravelPortal = window.TravelPortal || {};
+
+  // Store the script URL (set during init)
+  window.TravelPortal._scriptUrl = '';
+
+  // Navigation loader timer
+  let _navLoaderTimer = null;
+
+  /**
+   * Show the navigation loader (with optional delay)
+   * @param {number} delayMs - Delay before showing (default 200ms)
+   */
+  window.TravelPortal.showNavLoader = function(delayMs = 200) {
+    clearTimeout(_navLoaderTimer);
+    _navLoaderTimer = setTimeout(() => {
+      const navLoader = document.getElementById('navLoader');
+      if (navLoader) {
+        navLoader.classList.add('on');
+      }
+    }, delayMs);
+  };
+
+  /**
+   * Hide the navigation loader
+   */
+  window.TravelPortal.hideNavLoader = function() {
+    clearTimeout(_navLoaderTimer);
+    const navLoader = document.getElementById('navLoader');
+    if (navLoader) {
+      navLoader.classList.remove('on');
+    }
+  };
+
+  /**
+   * Navigate to a different mode in the travel app
+   * @param {string} mode - The mode to navigate to ('form', 'travel')
+   * @param {Object} params - Additional URL parameters (e.g., { draftId: 'xxx' })
+   */
+  window.TravelPortal.navigateTo = function(mode, params = {}) {
+    // Show navigation loader
+    window.TravelPortal.showNavLoader();
+
+    // Build query parameters
+    const queryParams = new URLSearchParams();
+    queryParams.set('mode', mode);
+
+    // Add any additional parameters
+    Object.keys(params).forEach(key => {
+      if (params[key]) {
+        queryParams.set(key, params[key]);
+      }
+    });
+
+    // Use stored script URL or fallback to constructing from current location
+    let baseUrl = window.TravelPortal._scriptUrl;
+    if (!baseUrl) {
+      // Fallback: try to get from top window
+      try {
+        const topUrl = window.top.location.href;
+        baseUrl = topUrl.split('?')[0];
+      } catch (e) {
+        // If cross-origin, use google.script.run to get URL
+        console.error('Cannot access top location, using server call');
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+          google.script.run
+            .withSuccessHandler(function(url) {
+              safeTopNavigate(url + '?' + queryParams.toString());
+            })
+            .withFailureHandler(function(err) {
+              console.error('Failed to get script URL:', err);
+            })
+            .getScriptUrl();
+        } else {
+          console.error('google.script.run not available');
+        }
+        return;
+      }
+    }
+
+    // Navigate to the new URL
+    safeTopNavigate(baseUrl + '?' + queryParams.toString());
+  };
+
+  /**
+   * Portal Controller
+   * Manages drafts display, requests loading, and user interactions
+   */
+  window.TravelPortal.Controller = {
+
+    // User info
+    _userEmail: '',
+    _userName: '',
+
+    // DOM element references
+    _elements: {},
+
+    // Store all requests for filtering
+    _allRequests: [],
+    _currentFilter: 'all',
+
+    // =========================================================================
+    // INITIALIZATION
+    // =========================================================================
+
+    /**
+     * Initialize the portal controller
+     */
+    async init(options = {}) {
+      this._userEmail = options.userEmail || '';
+      this._userName = options.userName || '';
+
+      // Cache DOM elements
+      this._cacheElements();
+
+      // Initialize section behaviors (scroll shadow, filters, event delegation)
+      this._initSectionBehaviors();
+
+      // Drafts are client-side IndexedDB — independent of the bootstrap call,
+      // can run in parallel with the server call without queuing.
+      const draftsPromise = this._loadDrafts();
+
+      // Single round-trip for admin/reviewer access + requests list + DD actions.
+      // Falls back to the legacy 3-call path on failure so we don't regress.
+      try {
+        await this._bootstrap();
+      } catch (e) {
+        console.warn('Portal bootstrap failed, falling back to legacy init:', e);
+        this._checkAdminAccess();
+        this._checkReviewerAccess();
+        await this._loadRequests();
+      }
+
+      await draftsPromise;
+    },
+
+    /**
+     * Single-call portal init via getPortalBootstrap. Replaces three queued
+     * google.script.run calls (admin check, reviewer check, requests list).
+     * Returns a promise that resolves once the page is hydrated, or rejects
+     * so the caller can fall back to the legacy init path.
+     */
+    _bootstrap() {
+      const self = this;
+      return new Promise((resolve, reject) => {
+        // Stale-while-revalidate: try localStorage first. If we have a
+        // valid cached bootstrap from a recent visit, render it instantly
+        // (perceived 0ms cold load), then fetch fresh data in the background
+        // and silently update the UI when it arrives.
+        const cached = self._loadBootstrapCache();
+        let renderedFromCache = false;
+        if (cached) {
+          self._applyBootstrapResult(cached);
+          renderedFromCache = true;
+          resolve();  // Page is interactive from cached data
+        }
+
+        // Delay-show skeleton: only relevant when we have NO cached data
+        // (otherwise the page is already populated). 200ms timer fires only
+        // if both: cache miss AND fresh fetch still pending.
+        let skeletonTimer = null;
+        let bootstrapDone = false;
+        if (!renderedFromCache && self._elements.requestsLoading) {
+          skeletonTimer = setTimeout(() => {
+            if (!bootstrapDone && self._elements.requestsLoading) {
+              self._elements.requestsLoading.classList.remove('hidden');
+            }
+          }, 200);
+        }
+        const finishLoading = () => {
+          bootstrapDone = true;
+          if (skeletonTimer) clearTimeout(skeletonTimer);
+          if (self._elements.requestsLoading) {
+            self._elements.requestsLoading.classList.add('hidden');
+          }
+        };
+
+        google.script.run
+          .withSuccessHandler((result) => {
+            try {
+              if (!result || !result.success) {
+                finishLoading();
+                if (!renderedFromCache) {
+                  reject(new Error((result && result.error) || 'Bootstrap unsuccessful'));
+                }
+                // If we already rendered from cache, swallow the fresh-fetch
+                // failure — the user has a working page from cached data.
+                return;
+              }
+
+              finishLoading();
+              self._applyBootstrapResult(result);
+              self._saveBootstrapCache(result);
+
+              if (!renderedFromCache) resolve();
+            } catch (err) {
+              finishLoading();
+              if (!renderedFromCache) reject(err);
+            }
+          })
+          .withFailureHandler((err) => {
+            finishLoading();
+            if (!renderedFromCache) reject(err);
+            // Cached path already resolved — fresh fetch failure is silent
+          })
+          .getPortalBootstrap();
+      });
+    },
+
+    /**
+     * Apply a bootstrap result to the page UI: header links + requests list.
+     * Used for both cached and fresh data paths so they're guaranteed to
+     * render identically.
+     */
+    _applyBootstrapResult(result) {
+      // Header link visibility — admin overrides reviewer (admin > reviewer
+      // in the role hierarchy). Admins switch into the reviewer surface
+      // via the "Open Action Center (test)" link inside the admin
+      // dashboard, not through the portal header.
+      if (result.isAdmin) {
+        window._travelUserIsAdmin = true;
+        const adminLink = document.getElementById('adminLink');
+        if (adminLink) adminLink.classList.remove('hidden');
+      } else if (result.isReviewer) {
+        const link = document.getElementById('reviewerDashboardLink');
+        if (link) link.classList.remove('hidden');
+      }
+
+      // Reuse the existing render path so all action-card / list styling
+      // stays identical between cached + fresh paths.
+      this._processRequests(
+        result.requests || [],
+        result.pendingReview || [],
+        result.pendingDDConfirmations || []
+      );
+    },
+
+    /**
+     * Read last-saved bootstrap result from localStorage.
+     * Returns null when:
+     *   - no entry, malformed JSON, or quota issue
+     *   - cached email doesn't match current session (browser swapped users)
+     *   - entry is older than 24 hours (stale enough to risk showing wrong
+     *     data — fall through to a normal cold load instead)
+     */
+    _loadBootstrapCache() {
+      try {
+        const raw = localStorage.getItem('trip_portal_cache');
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.email || !parsed.cachedAt || !parsed.data) return null;
+
+        // Email mismatch — different user signed in on this browser
+        if (this._userEmail && parsed.email !== this._userEmail) return null;
+
+        const ageMs = Date.now() - new Date(parsed.cachedAt).getTime();
+        if (!isFinite(ageMs) || ageMs > 24 * 60 * 60 * 1000) return null;
+
+        return parsed.data;
+      } catch (_) {
+        return null;
+      }
+    },
+
+    /**
+     * Persist the bootstrap result to localStorage for next visit's fast path.
+     * Failures (storage disabled, quota exceeded, etc.) are silently swallowed.
+     */
+    _saveBootstrapCache(result) {
+      try {
+        const payload = {
+          email: this._userEmail || result.userEmail || '',
+          cachedAt: new Date().toISOString(),
+          data: {
+            isAdmin: !!result.isAdmin,
+            isReviewer: !!result.isReviewer,
+            role: result.role || 'none',
+            label: result.label || '',
+            requests: result.requests || [],
+            pendingReview: result.pendingReview || [],
+            pendingDDConfirmations: result.pendingDDConfirmations || []
+          }
+        };
+        localStorage.setItem('trip_portal_cache', JSON.stringify(payload));
+      } catch (_) {
+        // Silent — caching is best-effort
+      }
+    },
+
+    /**
+     * Cache DOM element references
+     */
+    _cacheElements() {
+      this._elements = {
+        // Sidebar and mobile toggle
+        sidebar: document.querySelector('.portal-sidebar'),
+        sidebarToggle: document.getElementById('sidebarToggle'),
+        sidebarOverlay: document.getElementById('sidebarOverlay'),
+
+        // Sidebar drafts
+        draftsList: document.getElementById('draftsList'),
+        draftsCount: document.getElementById('draftsCount'),
+        draftsEmptyState: document.getElementById('draftsEmptyState'),
+
+        // Action Required section
+        actionSection: document.getElementById('actionSection'),
+        actionList: document.getElementById('actionList'),
+        actionCount: document.getElementById('actionCount'),
+
+        // Requests section
+        requestsSection: document.getElementById('requestsSection'),
+        requestsList: document.getElementById('requestsList'),
+        requestsCount: document.getElementById('requestsCount'),
+        requestsFilter: document.getElementById('requestsFilter'),
+        requestsLoading: document.getElementById('requestsLoading'),
+        requestsEmptyState: document.getElementById('requestsEmptyState')
+      };
+    },
+
+    /**
+     * Initialize section behaviors (scroll shadow, filters, mobile sidebar)
+     */
+    _initSectionBehaviors() {
+      // Get all portal sections - add scroll shadow detection
+      const sections = document.querySelectorAll('.portal-section');
+
+      sections.forEach(section => {
+        const header = section.querySelector('.portal-section__header');
+        const bodies = section.querySelectorAll('.portal-section__body');
+
+        // Scroll shadow detection on the body (header & filter stay pinned)
+        bodies.forEach(body => {
+          body.addEventListener('scroll', () => {
+            if (body.scrollTop > 0) {
+              header?.classList.add('scrolled');
+            } else {
+              header?.classList.remove('scrolled');
+            }
+          });
+        });
+      });
+
+      // Mobile sidebar toggle
+      if (this._elements.sidebarToggle && this._elements.sidebar) {
+        this._elements.sidebarToggle.addEventListener('click', () => {
+          this._toggleSidebar();
+        });
+
+        // Close sidebar when clicking overlay
+        if (this._elements.sidebarOverlay) {
+          this._elements.sidebarOverlay.addEventListener('click', () => {
+            this._closeSidebar();
+          });
+        }
+
+        // Close sidebar when navigating (clicking "New Request" or a draft)
+        this._elements.sidebar.addEventListener('click', (e) => {
+          const btn = e.target.closest('.portal-sidebar__new-btn');
+          const draft = e.target.closest('.sidebar-draft');
+          if (btn || (draft && !draft.classList.contains('sidebar-draft--confirming'))) {
+            this._closeSidebar();
+          }
+        });
+      }
+
+      // Requests filter (with debounce protection)
+      if (this._elements.requestsFilter) {
+        this._elements.requestsFilter.addEventListener('click', (e) => {
+          const chip = e.target.closest('.filter-chip');
+          if (!chip) return;
+
+          // Debounce: ignore rapid clicks within 300ms
+          const now = Date.now();
+          if (this._lastFilterClick && (now - this._lastFilterClick) < 300) {
+            return;
+          }
+          this._lastFilterClick = now;
+
+          // Update active state
+          this._elements.requestsFilter.querySelectorAll('.filter-chip').forEach(c => {
+            c.classList.remove('filter-chip--active');
+          });
+          chip.classList.add('filter-chip--active');
+
+          // Apply filter
+          const filter = chip.dataset.filter;
+          this._applyRequestFilter(filter);
+        });
+      }
+
+      // Event delegation for drafts (bound once, not on each render)
+      this._bindDraftActions();
+
+      // Event delegation for action cards (bound once)
+      this._bindActionHandlers();
+
+      // Event delegation for request cards (bound once)
+      this._bindRequestActions();
+    },
+
+    /**
+     * Check if current user is an admin and show admin link
+     */
+    _checkAdminAccess() {
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result && result.success && result.isAdmin) {
+            window._travelUserIsAdmin = true;
+            const adminLink = document.getElementById('adminLink');
+            if (adminLink) {
+              adminLink.classList.remove('hidden');
+            }
+          }
+        })
+        .withFailureHandler((err) => {
+          console.error('Admin check failed:', err);
+        })
+        .checkTravelAdminAccess();
+    },
+
+    /**
+     * Check if current user is an active reviewer (BU/SD/OSO, not admin)
+     * and show the Action Center link. Admins see the Admin link only —
+     * they reach the reviewer surface via the in-admin test link.
+     */
+    _checkReviewerAccess() {
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result && result.success && result.isReviewer && !result.isAdmin) {
+            const link = document.getElementById('reviewerDashboardLink');
+            if (link) link.classList.remove('hidden');
+          }
+        })
+        .withFailureHandler((err) => {
+          console.error('Reviewer check failed:', err);
+        })
+        .checkTravelReviewerAccess();
+    },
+
+    /**
+     * Toggle mobile sidebar open/closed
+     */
+    _toggleSidebar() {
+      const isOpen = this._elements.sidebar.classList.contains('portal-sidebar--open');
+      if (isOpen) {
+        this._closeSidebar();
+      } else {
+        this._openSidebar();
+      }
+    },
+
+    /**
+     * Open mobile sidebar
+     */
+    _openSidebar() {
+      this._elements.sidebar.classList.add('portal-sidebar--open');
+      if (this._elements.sidebarOverlay) {
+        this._elements.sidebarOverlay.classList.add('sidebar-overlay--visible');
+      }
+    },
+
+    /**
+     * Close mobile sidebar
+     */
+    _closeSidebar() {
+      this._elements.sidebar.classList.remove('portal-sidebar--open');
+      if (this._elements.sidebarOverlay) {
+        this._elements.sidebarOverlay.classList.remove('sidebar-overlay--visible');
+      }
+    },
+
+    // =========================================================================
+    // DRAFTS (Sidebar)
+    // =========================================================================
+
+    /**
+     * Load drafts from IndexedDB
+     */
+    async _loadDrafts() {
+      if (!window.TravelDraft) {
+        this._renderDraftsEmpty();
+        return;
+      }
+
+      try {
+        const drafts = await window.TravelDraft.getAllDrafts();
+        this._renderDrafts(drafts);
+      } catch (error) {
+        console.error('Error loading drafts:', error);
+        this._renderDraftsEmpty();
+      }
+    },
+
+    /**
+     * Render drafts list in sidebar
+     */
+    _renderDrafts(drafts) {
+      if (!this._elements.draftsList) return;
+
+      // Update count
+      if (this._elements.draftsCount) {
+        this._elements.draftsCount.textContent = drafts.length;
+      }
+
+      // Empty state
+      if (drafts.length === 0) {
+        this._renderDraftsEmpty();
+        return;
+      }
+
+      // Hide empty state, show list
+      if (this._elements.draftsEmptyState) {
+        this._elements.draftsEmptyState.classList.add('hidden');
+      }
+      this._elements.draftsList.classList.remove('hidden');
+
+      // Render compact draft cards for sidebar
+      const cardsHtml = drafts.map(draft => this._renderSidebarDraftCard(draft)).join('');
+      this._elements.draftsList.innerHTML = cardsHtml;
+    },
+
+    /**
+     * Render a compact draft card for sidebar
+     */
+    _renderSidebarDraftCard(draft) {
+      const tripName = this._escapeHtml(draft.tripName || 'Untitled Draft');
+      const dateRange = TravelDateService.formatDateRangeCompact(draft.eventStartDate, draft.eventEndDate);
+      const travelerCount = draft.travelerCount || 0;
+      const lastUpdated = this._formatRelativeTime(draft.updatedAt);
+
+      return `
+        <div class="sidebar-draft" data-draft-id="${draft.id}" data-action="continue">
+          <h4 class="sidebar-draft__title">${tripName}</h4>
+          <div class="sidebar-draft__meta">
+            ${dateRange ? `<span><i aria-hidden="true" class="fas fa-calendar"></i> ${dateRange}</span>` : ''}
+            <span><i aria-hidden="true" class="fas fa-users"></i> ${travelerCount}</span>
+            <span><i aria-hidden="true" class="fas fa-clock"></i> ${lastUpdated}</span>
+          </div>
+          <div class="sidebar-draft__actions">
+            <button class="sidebar-draft__delete" data-action="delete" data-draft-id="${draft.id}" data-draft-name="${this._escapeHtml(tripName)}" title="Delete draft">
+              <i aria-hidden="true" class="fas fa-trash-alt"></i>
+            </button>
+          </div>
+        </div>
+      `;
+    },
+
+    /**
+     * Render empty drafts state
+     */
+    _renderDraftsEmpty() {
+      // Show empty state
+      if (this._elements.draftsEmptyState) {
+        this._elements.draftsEmptyState.classList.remove('hidden');
+      }
+      // Hide list
+      if (this._elements.draftsList) {
+        this._elements.draftsList.classList.add('hidden');
+        this._elements.draftsList.innerHTML = '';
+      }
+      // Update count
+      if (this._elements.draftsCount) {
+        this._elements.draftsCount.textContent = '0';
+      }
+    },
+
+    /**
+     * Bind draft action button handlers
+     */
+    _bindDraftActions() {
+      if (!this._elements.draftsList) return;
+
+      this._elements.draftsList.addEventListener('click', (e) => {
+        // Check for cancel delete button
+        const cancelBtn = e.target.closest('[data-action="cancel-delete"]');
+        if (cancelBtn) {
+          e.stopPropagation();
+          const draftId = cancelBtn.dataset.draftId;
+          this._cancelDelete(draftId);
+          return;
+        }
+
+        // Check for confirm delete button
+        const confirmBtn = e.target.closest('[data-action="confirm-delete"]');
+        if (confirmBtn) {
+          e.stopPropagation();
+          const draftId = confirmBtn.dataset.draftId;
+          this._confirmDelete(draftId);
+          return;
+        }
+
+        // Check for delete button (initial trash icon click)
+        const deleteBtn = e.target.closest('[data-action="delete"]');
+        if (deleteBtn) {
+          e.stopPropagation();
+          const draftId = deleteBtn.dataset.draftId;
+          const draftName = deleteBtn.dataset.draftName || 'this draft';
+          this._promptDeleteDraft(draftId, draftName);
+          return;
+        }
+
+        // Click on card itself = continue (but not if confirming)
+        const card = e.target.closest('.sidebar-draft');
+        if (card && !card.classList.contains('sidebar-draft--confirming')) {
+          const draftId = card.dataset.draftId;
+          this._continueDraft(draftId);
+        }
+      });
+    },
+
+    /**
+     * Continue editing a draft
+     */
+    _continueDraft(draftId) {
+      window.TravelPortal.navigateTo('form', { draftId: draftId });
+    },
+
+    /**
+     * Show inline delete confirmation on the draft card
+     */
+    _promptDeleteDraft(draftId, draftName) {
+      const card = document.querySelector(`.sidebar-draft[data-draft-id="${draftId}"]`);
+      if (!card) return;
+
+      // Store original content for cancel
+      card.dataset.originalHtml = card.innerHTML;
+
+      // Add confirming class and replace content with confirmation UI
+      card.classList.add('sidebar-draft--confirming');
+      card.innerHTML = `
+        <div class="sidebar-draft__confirm">
+          <div class="sidebar-draft__confirm-text">
+            <i aria-hidden="true" class="fas fa-exclamation-triangle"></i>
+            <span>Delete this draft?</span>
+          </div>
+          <div class="sidebar-draft__confirm-actions">
+            <button class="sidebar-draft__confirm-cancel" data-action="cancel-delete" data-draft-id="${draftId}">Cancel</button>
+            <button class="sidebar-draft__confirm-delete" data-action="confirm-delete" data-draft-id="${draftId}">Delete</button>
+          </div>
+        </div>
+      `;
+    },
+
+    /**
+     * Cancel delete and restore original card content
+     */
+    _cancelDelete(draftId) {
+      const card = document.querySelector(`.sidebar-draft[data-draft-id="${draftId}"]`);
+      if (!card || !card.dataset.originalHtml) return;
+
+      card.classList.remove('sidebar-draft--confirming');
+      card.innerHTML = card.dataset.originalHtml;
+      delete card.dataset.originalHtml;
+    },
+
+    /**
+     * Confirm and execute draft deletion
+     */
+    async _confirmDelete(draftId) {
+      const card = document.querySelector(`.sidebar-draft[data-draft-id="${draftId}"]`);
+
+      // Add deleting state for animation
+      if (card) {
+        card.classList.add('sidebar-draft--deleting');
+      }
+
+      // Delete from IndexedDB
+      if (window.TravelDraft) {
+        try {
+          await window.TravelDraft.deleteDraft(draftId);
+          // Reload drafts list after short delay for animation
+          setTimeout(() => this._loadDrafts(), 200);
+        } catch (error) {
+          console.error('Error deleting draft:', error);
+          // Restore card on error
+          if (card) {
+            card.classList.remove('sidebar-draft--deleting');
+            this._cancelDelete(draftId);
+          }
+        }
+      }
+    },
+
+    // =========================================================================
+    // REQUESTS & ACTIONS
+    // =========================================================================
+
+    /**
+     * Load user's submitted requests from server
+     */
+    async _loadRequests() {
+      // Show loading state
+      if (this._elements.requestsLoading) {
+        this._elements.requestsLoading.classList.remove('hidden');
+      }
+      if (this._elements.requestsEmptyState) {
+        this._elements.requestsEmptyState.classList.add('hidden');
+      }
+
+      try {
+        // Call server function
+        const result = await new Promise((resolve, reject) => {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject)
+            .getMyTravelRequests();
+        });
+
+        // Hide loading
+        if (this._elements.requestsLoading) {
+          this._elements.requestsLoading.classList.add('hidden');
+        }
+
+        if (result && result.success && result.requests) {
+          this._processRequests(result.requests, result.pendingReview || [], result.pendingDDConfirmations || []);
+        } else {
+          this._renderRequestsEmpty();
+          this._hideActionSection();
+        }
+      } catch (error) {
+        console.error('Error loading requests:', error);
+        if (this._elements.requestsLoading) {
+          this._elements.requestsLoading.classList.add('hidden');
+        }
+        this._renderRequestsError();
+        this._hideActionSection();
+      }
+    },
+
+    /**
+     * Render error state when requests fail to load
+     */
+    _renderRequestsError() {
+      if (this._elements.requestsEmptyState) {
+        const textEl = this._elements.requestsEmptyState.querySelector('.portal-section__empty-text');
+        const subtextEl = this._elements.requestsEmptyState.querySelector('.portal-section__empty-subtext');
+        const iconEl = this._elements.requestsEmptyState.querySelector('i');
+
+        if (textEl) textEl.textContent = 'Unable to load requests';
+        if (subtextEl) subtextEl.textContent = 'Please refresh the page to try again';
+        if (iconEl) iconEl.className = 'fas fa-exclamation-triangle';
+
+        this._elements.requestsEmptyState.classList.remove('hidden');
+      }
+
+      if (this._elements.requestsList) {
+        this._elements.requestsList.classList.add('hidden');
+      }
+
+      if (this._elements.requestsCount) {
+        this._elements.requestsCount.textContent = '—';
+      }
+    },
+
+    /**
+     * Process requests and separate into action items vs regular requests
+     */
+    _processRequests(requests, pendingReview, pendingDDConfirmations = []) {
+      // Separate requests that need action from regular requests
+      const actionItems = [];
+      const regularRequests = [];
+
+      requests.forEach(req => {
+        const needsInfo = req.status === 'NEEDS_INFO_SECTOR' || req.status === 'NEEDS_INFO_BU' || req.status === 'NEEDS_INFO_OSO';
+        const needsCorrection = req.status === 'Pending_Correction';
+        if (needsCorrection) {
+          actionItems.push({ ...req, actionType: 'funding-correction' });
+        } else if (needsInfo) {
+          actionItems.push({ ...req, actionType: 'needs-info' });
+        } else {
+          regularRequests.push(req);
+        }
+      });
+
+      // Add pending review items (if user is a reviewer)
+      pendingReview.forEach(req => {
+        actionItems.push({ ...req, actionType: 'review' });
+      });
+
+      // Add pending DD-confirmation items (if user is a Division Director on
+      // any unconfirmed traveler in a Pending_DD_Confirmation request)
+      pendingDDConfirmations.forEach(req => {
+        actionItems.push({ ...req, actionType: 'dd-confirm' });
+      });
+
+      // Render action section if there are items
+      if (actionItems.length > 0) {
+        this._renderActionSection(actionItems);
+      } else {
+        this._hideActionSection();
+      }
+
+      // Render regular requests
+      this._renderRequests(regularRequests);
+    },
+
+    /**
+     * Render Action Required section
+     */
+    _renderActionSection(actionItems) {
+      if (!this._elements.actionSection || !this._elements.actionList) return;
+
+      // Show section
+      this._elements.actionSection.classList.remove('hidden');
+
+      // Update count
+      if (this._elements.actionCount) {
+        this._elements.actionCount.textContent = actionItems.length;
+      }
+
+      // Render action cards
+      const cardsHtml = actionItems.map(item => this._renderActionCard(item)).join('');
+      this._elements.actionList.innerHTML = cardsHtml;
+    },
+
+    /**
+     * Render a single action card
+     */
+    _renderActionCard(item) {
+      const tripName = this._escapeHtml(item.eventName || 'Untitled Request');
+      const locationType = this._formatLocationType(item.locationType);
+      const dateRange = TravelDateService.formatDateRangeCompact(item.eventStartDate, item.eventEndDate);
+      const total = this._formatCurrency(item.grandTotal || 0);
+      const travelerCount = item.travelerCount || 1;
+      const destination = this._escapeHtml(item.destination || '');
+      const isNeedsInfo = item.actionType === 'needs-info';
+      const isReview = item.actionType === 'review';
+      const isFundingCorrection = item.actionType === 'funding-correction';
+      const isDDConfirm = item.actionType === 'dd-confirm';
+
+      // Calculate days waiting
+      const daysWaiting = this._calculateDaysWaiting(item.submittedAt || item.updatedAt);
+
+      // Determine button/icon based on action type
+      let iconClass, icon, btnClass, btnLabel, btnAction;
+      if (isFundingCorrection) {
+        iconClass = 'action-card__icon--correction';
+        icon = 'fa-flag';
+        btnClass = 'btn-danger';
+        btnLabel = 'Fix Funding';
+        btnAction = 'funding-correction';
+      } else if (isNeedsInfo) {
+        iconClass = 'action-card__icon--needs-info';
+        icon = 'fa-exclamation-circle';
+        btnClass = 'btn-warning';
+        btnLabel = 'Update';
+        btnAction = 'edit';
+      } else if (isDDConfirm) {
+        iconClass = 'action-card__icon--review';
+        icon = 'fa-money-check-dollar';
+        btnClass = 'btn-primary';
+        btnLabel = 'Confirm Funding';
+        btnAction = 'dd-confirm';
+      } else {
+        iconClass = 'action-card__icon--review';
+        icon = 'fa-clipboard-check';
+        btnClass = 'btn-primary';
+        btnLabel = 'Review';
+        btnAction = 'review';
+      }
+
+      // Build single info line: location type, dates, travelers, destination, total
+      const infoParts = [];
+      if (locationType) infoParts.push(locationType);
+      if (dateRange) infoParts.push(dateRange);
+
+      // For DD-confirm, surface the user's slice ("your 2 of 5 travelers") rather
+      // than the request-level traveler count, since DDs only sign off on theirs.
+      if (isDDConfirm && item.ddTravelerCount) {
+        infoParts.push(`your ${item.ddTravelerCount} of ${travelerCount} traveler${travelerCount !== 1 ? 's' : ''}`);
+        if (destination) infoParts.push(destination);
+        infoParts.push(this._formatCurrency(item.ddTravelerSubtotal || 0) + ' attributable');
+      } else {
+        infoParts.push(`${travelerCount} traveler${travelerCount !== 1 ? 's' : ''}`);
+        if (destination) infoParts.push(destination);
+        infoParts.push(total);
+      }
+      const infoLine = infoParts.join(' · ');
+
+      // Submitter info for review + DD-confirm items (DDs want to see who's asking)
+      const submitterHtml = (isReview || isDDConfirm) && item.submitterName
+        ? `<span class="action-card__submitter">Submitted by: ${this._escapeHtml(item.submitterName)}</span>`
+        : '';
+
+      // Days waiting badge
+      const daysLabel = daysWaiting === 0 ? 'Today' : daysWaiting === 1 ? '1 day' : `${daysWaiting} days`;
+      const daysClass = daysWaiting >= 5 ? 'action-card__days--urgent' : daysWaiting >= 3 ? 'action-card__days--warning' : '';
+
+      return `
+        <div class="action-card" data-request-id="${item.requestId}">
+          <div class="action-card__icon ${iconClass}">
+            <i aria-hidden="true" class="fas ${icon}"></i>
+          </div>
+          <div class="action-card__content">
+            <h3 class="action-card__title">${tripName}</h3>
+            <div class="action-card__info">${infoLine}</div>
+          </div>
+          <div class="action-card__actions">
+            ${submitterHtml}
+            <span class="action-card__days ${daysClass}">${daysLabel}</span>
+            <button class="btn ${btnClass} btn-sm" data-action="${btnAction}" data-request-id="${item.requestId}">
+              ${btnLabel}
+            </button>
+          </div>
+        </div>
+      `;
+    },
+
+    /**
+     * Hide action section
+     */
+    _hideActionSection() {
+      if (this._elements.actionSection) {
+        this._elements.actionSection.classList.add('hidden');
+      }
+    },
+
+    /**
+     * Bind action card event handlers
+     */
+    _bindActionHandlers() {
+      if (!this._elements.actionList) return;
+
+      this._elements.actionList.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-action]');
+        if (!btn) return;
+
+        const action = btn.dataset.action;
+        const requestId = btn.dataset.requestId;
+
+        if (action === 'edit') {
+          this._editRequest(requestId);
+        } else if (action === 'review') {
+          this._reviewRequest(requestId);
+        } else if (action === 'funding-correction') {
+          this._showFundingCorrectionModal(requestId);
+        } else if (action === 'dd-confirm') {
+          window.TravelPortal.navigateTo('dd-confirm', { requestId: requestId });
+        }
+      });
+    },
+
+    // =========================================================================
+    // FUNDING CORRECTION MODAL
+    // =========================================================================
+
+    _fundingCorrectionRequestId: null,
+    _fundingCorrectionData: null,
+
+    /**
+     * Show Funding Correction modal
+     */
+    async _showFundingCorrectionModal(requestId) {
+      this._fundingCorrectionRequestId = requestId;
+
+      const modal = document.getElementById('fundingCorrectionModal');
+      const loadingView = document.getElementById('fundingCorrectionLoading');
+      const formView = document.getElementById('fundingCorrectionForm');
+      const successView = document.getElementById('fundingCorrectionSuccess');
+      const errorView = document.getElementById('fundingCorrectionError');
+
+      // Reset views
+      loadingView.classList.remove('hidden');
+      formView.classList.add('hidden');
+      successView.classList.add('hidden');
+      errorView.classList.add('hidden');
+
+      // Show modal
+      const bsModal = new bootstrap.Modal(modal);
+      bsModal.show();
+
+      // Load correction data
+      try {
+        const result = await new Promise((resolve, reject) => {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject)
+            .getFundingCorrectionData(requestId);
+        });
+
+        if (!result || !result.success) {
+          this._showFundingCorrectionError(result?.error || 'Failed to load correction data');
+          return;
+        }
+
+        this._fundingCorrectionData = result.data || {};
+        this._renderFundingCorrectionForm(this._fundingCorrectionData);
+
+      } catch (error) {
+        this._showFundingCorrectionError(error.message || 'An unexpected error occurred');
+      }
+    },
+
+    /**
+     * Render the funding correction form
+     */
+    _renderFundingCorrectionForm(data) {
+      const loadingView = document.getElementById('fundingCorrectionLoading');
+      const formView = document.getElementById('fundingCorrectionForm');
+
+      // Set trip name
+      document.getElementById('correctionTripName').textContent = data.tripName || 'Travel Request';
+
+      // Set DD notes
+      document.getElementById('correctionDdNotes').textContent = data.ddNotes || 'No notes provided';
+
+      // Set DD reporter
+      document.getElementById('correctionDdReporter').textContent = data.ddReporter || 'Unknown';
+
+      // Render flagged travelers (now with who-flagged-whom tracking for multi-DD scenarios)
+      const list = document.getElementById('correctionTravelerList');
+      list.innerHTML = (data.flaggedTravelers || []).map((t, idx) => {
+        const name = this._formatTravelerName(t.employeeName);
+        const isClient = t.currentFunding === 'Client-Paid';
+        // Show who flagged this traveler (for multi-DD tracking)
+        const flaggedByText = t.flaggedByName ? `Flagged by ${this._escapeHtml(t.flaggedByName)}` : '';
+        return `
+          <div class="correction-traveler" data-traveler-id="${t.travelerId}">
+            <div class="correction-traveler__info">
+              <i aria-hidden="true" class="fas fa-flag correction-traveler__flag"></i>
+              <div class="correction-traveler__details">
+                <span class="correction-traveler__name">${this._escapeHtml(name)}</span>
+                ${flaggedByText ? `<span class="correction-traveler__flagged-by">${flaggedByText}</span>` : ''}
+              </div>
+            </div>
+            <div class="correction-traveler__funding">
+              <label class="correction-funding-option">
+                <input type="radio" name="funding_${idx}" value="Overhead" ${!isClient ? 'checked' : ''}>
+                <span class="correction-funding-label correction-funding-label--overhead">Overhead</span>
+              </label>
+              <label class="correction-funding-option">
+                <input type="radio" name="funding_${idx}" value="Client-Paid" ${isClient ? 'checked' : ''}>
+                <span class="correction-funding-label correction-funding-label--client">Client</span>
+              </label>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Show form
+      loadingView.classList.add('hidden');
+      formView.classList.remove('hidden');
+    },
+
+    /**
+     * Submit funding corrections
+     */
+    async _submitFundingCorrection() {
+      const requestId = this._fundingCorrectionRequestId;
+      const data = this._fundingCorrectionData;
+      if (!requestId || !data) return;
+
+      // Gather corrections
+      const corrections = [];
+      data.flaggedTravelers.forEach((t, idx) => {
+        const radios = document.getElementsByName(`funding_${idx}`);
+        let selectedFunding = t.currentFunding;
+        radios.forEach(r => {
+          if (r.checked) selectedFunding = r.value;
+        });
+        corrections.push({
+          travelerId: t.travelerId,
+          newFunding: selectedFunding
+        });
+      });
+
+      // Disable button and show loading
+      const btn = document.getElementById('fundingCorrectionSubmitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin me-1"></i>Submitting...';
+
+      try {
+        const result = await new Promise((resolve, reject) => {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject)
+            .submitFundingCorrection(requestId, corrections);
+        });
+
+        if (result && result.success) {
+          document.getElementById('fundingCorrectionForm').classList.add('hidden');
+          document.getElementById('fundingCorrectionSuccess').classList.remove('hidden');
+
+          // Refresh after delay
+          setTimeout(() => {
+            bootstrap.Modal.getInstance(document.getElementById('fundingCorrectionModal')).hide();
+            this._loadRequests();
+          }, 2000);
+        } else {
+          this._showFundingCorrectionError(result?.error || 'Failed to submit corrections');
+          btn.disabled = false;
+          btn.innerHTML = '<i aria-hidden="true" class="fas fa-paper-plane me-1"></i>Submit & Resubmit for DD Confirmation';
+        }
+      } catch (error) {
+        this._showFundingCorrectionError(error.message || 'An unexpected error occurred');
+        btn.disabled = false;
+        btn.innerHTML = '<i aria-hidden="true" class="fas fa-paper-plane me-1"></i>Submit & Resubmit for DD Confirmation';
+      }
+    },
+
+    /**
+     * Show funding correction error
+     */
+    _showFundingCorrectionError(message) {
+      document.getElementById('fundingCorrectionLoading').classList.add('hidden');
+      document.getElementById('fundingCorrectionForm').classList.add('hidden');
+      document.getElementById('fundingCorrectionError').classList.remove('hidden');
+      document.getElementById('fundingCorrectionErrorMessage').textContent = message;
+    },
+
+    /**
+     * Format traveler name for display
+     */
+    _formatTravelerName(name) {
+      if (!name) return 'Unknown';
+      if (name.includes(',')) {
+        const parts = name.split(',');
+        const lastName = parts[0].trim();
+        const firstPart = parts[1] ? parts[1].trim().split(/\s+/)[0] : '';
+        return firstPart + ' ' + lastName;
+      }
+      return name;
+    },
+
+    /**
+     * Render requests list (also stores for filtering)
+     */
+    _renderRequests(requests) {
+      if (!this._elements.requestsList) return;
+
+      // Store all requests for filtering
+      this._allRequests = requests;
+      this._currentFilter = 'all';
+
+      // Reset filter UI
+      if (this._elements.requestsFilter) {
+        this._elements.requestsFilter.querySelectorAll('.filter-chip').forEach(c => {
+          c.classList.remove('filter-chip--active');
+        });
+        const allChip = this._elements.requestsFilter.querySelector('[data-filter="all"]');
+        if (allChip) allChip.classList.add('filter-chip--active');
+      }
+
+      // Update filter counts
+      this._updateFilterCounts();
+
+      // Render with current filter
+      this._renderFilteredRequests(requests);
+    },
+
+    /**
+     * Update filter chip counts based on all requests
+     */
+    _updateFilterCounts() {
+      if (!this._elements.requestsFilter) return;
+
+      // Calculate counts for each category
+      const counts = {
+        all: this._allRequests.length,
+        pending: this._allRequests.filter(r =>
+          r.status === 'PENDING_SECTOR' || r.status === 'PENDING_BU' || r.status === 'PENDING_OSO' || r.status === 'PENDING_FAS'
+        ).length,
+        approved: this._allRequests.filter(r =>
+          r.status === 'APPROVED_GOGOV'
+        ).length,
+        completed: this._allRequests.filter(r =>
+          r.status === 'COMPLETED' || r.status === 'CANCELLED' || r.status === 'DENIED'
+        ).length
+      };
+
+      // Update each count span
+      Object.keys(counts).forEach(filter => {
+        const countEl = this._elements.requestsFilter.querySelector(`[data-count="${filter}"]`);
+        if (countEl) {
+          countEl.textContent = counts[filter] > 0 ? `(${counts[filter]})` : '';
+        }
+      });
+    },
+
+    /**
+     * Apply filter to requests
+     */
+    _applyRequestFilter(filter) {
+      this._currentFilter = filter;
+
+      let filtered = this._allRequests;
+
+      if (filter === 'pending') {
+        filtered = this._allRequests.filter(r =>
+          r.status === 'PENDING_SECTOR' || r.status === 'PENDING_BU' || r.status === 'PENDING_OSO' || r.status === 'PENDING_FAS'
+        );
+      } else if (filter === 'approved') {
+        filtered = this._allRequests.filter(r =>
+          r.status === 'APPROVED_GOGOV'
+        );
+      } else if (filter === 'completed') {
+        filtered = this._allRequests.filter(r =>
+          r.status === 'COMPLETED' || r.status === 'CANCELLED' || r.status === 'DENIED'
+        );
+      }
+
+      this._renderFilteredRequests(filtered);
+    },
+
+    /**
+     * Render filtered requests list
+     */
+    _renderFilteredRequests(requests) {
+      // Hide loading state
+      if (this._elements.requestsLoading) {
+        this._elements.requestsLoading.classList.add('hidden');
+      }
+
+      // Update count
+      if (this._elements.requestsCount) {
+        this._elements.requestsCount.textContent = requests.length;
+      }
+
+      // Empty state
+      if (requests.length === 0) {
+        this._renderRequestsEmpty();
+        return;
+      }
+
+      // Hide empty state, show list
+      if (this._elements.requestsEmptyState) {
+        this._elements.requestsEmptyState.classList.add('hidden');
+      }
+      this._elements.requestsList.classList.remove('hidden');
+
+      // Render request cards
+      const cardsHtml = requests.map(req => this._renderRequestCard(req)).join('');
+      this._elements.requestsList.innerHTML = cardsHtml;
+    },
+
+    /**
+     * Render a single request card (no ID, trip name prominent)
+     */
+    _renderRequestCard(request) {
+      const tripName = this._escapeHtml(request.eventName || 'Untitled Request');
+      const status = request.status || 'PENDING_BU';
+      const statusDisplay = this._getStatusDisplay(status);
+      const total = this._formatCurrency(request.grandTotal || 0);
+      const dateRange = TravelDateService.formatDateRangeCompact(request.eventStartDate, request.eventEndDate);
+      const lastUpdated = this._formatRelativeTime(request.updatedAt);
+
+      return `
+        <div class="request-card" data-request-id="${request.requestId}">
+          <div class="request-card__status">
+            <span class="status-badge status-badge--${statusDisplay.class}">
+              <i aria-hidden="true" class="fas ${statusDisplay.icon}"></i>
+              ${statusDisplay.label}
+            </span>
+          </div>
+          <div class="request-card__content">
+            <h3 class="request-card__title">${tripName}</h3>
+            <div class="request-card__meta">
+              ${dateRange ? `<span><i aria-hidden="true" class="fas fa-calendar"></i> ${dateRange}</span>` : ''}
+              <span class="request-card__total">${total}</span>
+            </div>
+          </div>
+          <div class="request-card__actions">
+            <span class="request-card__date"><i aria-hidden="true" class="fas fa-clock"></i> ${lastUpdated}</span>
+            ${(status === 'COMPLETED' || status === 'APPROVED_GOGOV') ? `
+              <button class="btn btn-outline-secondary btn-sm" data-action="duplicate" data-request-id="${request.requestId}"
+                      title="Use this trip as a template for a new request">
+                <i aria-hidden="true" class="fas fa-copy me-1"></i>Duplicate
+              </button>
+            ` : ''}
+            <button class="btn btn-outline-primary btn-sm" data-action="view" data-request-id="${request.requestId}">
+              <i aria-hidden="true" class="fas fa-eye me-1"></i>View
+            </button>
+          </div>
+        </div>
+      `;
+    },
+
+    /**
+     * Render empty requests state
+     */
+    _renderRequestsEmpty() {
+      // Hide loading state
+      if (this._elements.requestsLoading) {
+        this._elements.requestsLoading.classList.add('hidden');
+      }
+
+      // Update empty state text based on current filter
+      if (this._elements.requestsEmptyState) {
+        const textEl = this._elements.requestsEmptyState.querySelector('.portal-section__empty-text');
+        const subtextEl = this._elements.requestsEmptyState.querySelector('.portal-section__empty-subtext');
+        const iconEl = this._elements.requestsEmptyState.querySelector('i');
+
+        if (this._currentFilter === 'all' || !this._allRequests.length) {
+          if (textEl) textEl.textContent = 'No travel requests yet';
+          if (subtextEl) subtextEl.textContent = 'Submit a new request to get started';
+          if (iconEl) iconEl.className = 'fas fa-paper-plane';
+        } else {
+          const filterLabels = {
+            pending: 'pending',
+            approved: 'approved',
+            completed: 'completed'
+          };
+          if (textEl) textEl.textContent = `No ${filterLabels[this._currentFilter] || ''} requests`;
+          if (subtextEl) subtextEl.textContent = 'Try a different filter or submit a new request';
+          if (iconEl) iconEl.className = 'fas fa-filter';
+        }
+
+        this._elements.requestsEmptyState.classList.remove('hidden');
+      }
+
+      // Hide list
+      if (this._elements.requestsList) {
+        this._elements.requestsList.classList.add('hidden');
+        this._elements.requestsList.innerHTML = '';
+      }
+
+      // Update count
+      if (this._elements.requestsCount) {
+        this._elements.requestsCount.textContent = '0';
+      }
+    },
+
+    /**
+     * Bind request action button handlers
+     */
+    _bindRequestActions() {
+      if (!this._elements.requestsList) return;
+
+      this._elements.requestsList.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-action]');
+        if (!btn) return;
+
+        const action = btn.dataset.action;
+        const requestId = btn.dataset.requestId;
+
+        if (action === 'view') {
+          this._viewRequest(requestId);
+        } else if (action === 'duplicate') {
+          window.TravelPortal.navigateTo('form', { duplicateFrom: requestId });
+        }
+      });
+    },
+
+    /**
+     * View request details (navigates to review page in submitter view mode)
+     */
+    _viewRequest(requestId) {
+      window.TravelPortal.navigateTo('review', { requestId: requestId, viewMode: 'submitter' });
+    },
+
+    /**
+     * Edit request (for needs info status)
+     */
+    _editRequest(requestId) {
+      window.TravelPortal.navigateTo('review', { requestId: requestId, viewMode: 'submitter' });
+    },
+
+    /**
+     * Review request (for reviewers)
+     */
+    _reviewRequest(requestId) {
+      window.TravelPortal.navigateTo('review', { requestId: requestId });
+    },
+
+    // =========================================================================
+    // UTILITIES
+    // =========================================================================
+
+    /**
+     * Escape HTML to prevent XSS
+     */
+    _escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    },
+
+    /**
+     * Format location type for display
+     */
+    _formatLocationType(locationType) {
+      const typeLabels = {
+        'conference': 'Conference',
+        'client-site': 'Client Site',
+        'contractor-site': 'Contractor Site',
+        'teb': 'TEB',
+        'other': 'Other'
+      };
+      return typeLabels[locationType] || '';
+    },
+
+    /**
+     * Calculate days waiting since a date
+     */
+    _calculateDaysWaiting(isoString) {
+      if (!isoString) return 0;
+      const date = new Date(isoString);
+      const now = new Date();
+      const diffMs = now - date;
+      return Math.floor(diffMs / 86400000); // ms per day
+    },
+
+    /**
+     * Format relative time (e.g., "2 hours ago")
+     */
+    _formatRelativeTime(isoString) {
+      if (!isoString) return '';
+
+      const date = new Date(isoString);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffHours < 24) return `${diffHours}h ago`;
+      if (diffDays < 7) return `${diffDays}d ago`;
+
+      // More than a week - show date
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    },
+
+    /**
+     * Format currency (no decimal places for portal list)
+     */
+    _formatCurrency(amount) {
+      // Delegate to shared utility with 0 decimals for compact display
+      return TravelUtils?.formatCurrency?.(amount, 0) ||
+        new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount || 0);
+    },
+
+    /**
+     * Get status display info
+     */
+    _getStatusDisplay(status) {
+      const statusMap = {
+        'PENDING_SECTOR': { label: 'Sector Review', class: 'pending', icon: 'fa-clock' },
+        'PENDING_BU': { label: 'BU Review', class: 'pending', icon: 'fa-clock' },
+        'PENDING_OSO': { label: 'FO Review', class: 'pending-oso', icon: 'fa-clock' },
+        'PENDING_FAS': { label: 'FAS Review', class: 'pending-oso', icon: 'fa-clock' },
+        'APPROVED_GOGOV': { label: 'Approved', class: 'approved', icon: 'fa-check-circle' },
+        'COMPLETED': { label: 'Completed', class: 'completed', icon: 'fa-flag-checkered' },
+        'NEEDS_INFO_SECTOR': { label: 'Needs Info', class: 'needs-info', icon: 'fa-exclamation-circle' },
+        'NEEDS_INFO_BU': { label: 'Needs Info', class: 'needs-info', icon: 'fa-exclamation-circle' },
+        'NEEDS_INFO_OSO': { label: 'Needs Info', class: 'needs-info', icon: 'fa-exclamation-circle' },
+        'CANCELLED': { label: 'Cancelled', class: 'cancelled', icon: 'fa-times-circle' },
+        'DENIED': { label: 'Denied', class: 'denied', icon: 'fa-times-circle' }
+      };
+
+      return statusMap[status] || { label: status, class: 'pending', icon: 'fa-clock' };
+    }
+
+  }; // End Controller
+
+})();
+</script>

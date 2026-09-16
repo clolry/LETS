@@ -1,0 +1,246 @@
+<!--
+  tokens.html
+  CSS custom properties — canonical source of truth for AAS brand colors,
+  workflow/status colors, surfaces, text, focus rings, typography, spacing,
+  shadows, radius, and motion.
+
+  Include this BEFORE every other stylesheet so the variables are defined
+  when downstream styles try to use them. Email templates can't use custom
+  properties (most clients don't support them) — those mirror the same
+  hex values inline via the EMAIL_STYLES.colors object in 30_services/Email.js.
+  The _verifyEmailColorMirror() editor diagnostic flags drift between the
+  two sources.
+
+  Layered structure (each layer references the previous):
+
+    Layer 1 — AAS brand palette (--aas-*). Canonical hex values from BRAND.md.
+    Layer 2 — Workflow + status semantics (--color-stage-*, --color-status-*).
+    Layer 3 — Surfaces, text, borders, focus.
+    Layer 4 — Type, spacing, shadows, radius, motion.
+    Layer 5 — Legacy aliases (--brand-*, --color-primary, --color-slate-*,
+              --color-red-*, --color-green-*, --status-*, --font-primary,
+              --border-radius-*, etc.). These existed in travelBaseStyles.html
+              and travelReviewStyles.html :root blocks before Chunk 16.2
+              consolidation. Kept as aliases so existing consumers don't
+              need to be touched. New code should prefer canonical Layer 1-4
+              tokens; legacy aliases will be deprecated in v3 once usage
+              drops below threshold.
+
+  WCAG-AA notes:
+    --color-text-primary (#424143 AAS dark grey, 8.21:1 on white — AAA)
+    --color-text-secondary (#6B7280, 4.83:1 on white — AA)
+    --color-text-muted (#9CA3AF, 2.85:1 — large text / UI only, NEVER body)
+  Per BRAND.md: --aas-grey (#BBBDBF) must NEVER be used for text on white.
+
+  Chunk 16 history (2026-05-21):
+    16.1 — Canonical --aas-* palette added; brand-primary → AAS Blue;
+           text-primary → AAS Dark Grey; --font-sans → Calibri stack.
+    16.2 — Three-token-system consolidation. travelBaseStyles.html and
+           travelReviewStyles.html :root blocks deleted; their tokens are
+           now Layer 5 aliases here. Resolves OPEN_QUESTIONS Q23.
+-->
+<style>
+  :root {
+    /* ========================================================================
+       LAYER 1 — AAS Brand Palette (per BRAND.md)
+       Canonical source for every brand color in the codebase.
+       ======================================================================== */
+    --aas-blue:                  #004F87;  /* Primary brand color (AAS general / umbrella) */
+    --aas-blue-dark:             #003a66;  /* Derived darker — for hover / pressed states */
+    --aas-fedsim-blue:           #1B7CAC;  /* AAS FEDSIM service delivery model */
+    --aas-flex-green:            #286D3B;  /* AAS FLEX service delivery model */
+    --aas-innovate-burgundy:     #522032;  /* AAS INNOVATE service delivery model */
+    --aas-orange:                #CF4817;  /* Accent / highlight */
+    --aas-dark-grey:             #424143;  /* Default body text color on white (AAA) */
+    --aas-grey:                  #BBBDBF;  /* Secondary UI elements — NEVER for text on white */
+    --aas-light-grey:            #F2F2F2;  /* Background fills */
+
+    /* Out-of-brand-guide AAS palette extras (used in the codebase but not
+       documented in BRAND.md). Kept for back-compat; flag for review during
+       any future brand-guide refresh. */
+    --aas-gold:                  #F4D06F;
+    --aas-light-orange:          #F19A4D;
+
+    /* ========================================================================
+       LAYER 2 — Workflow stages + request statuses
+       Stage colors map to AAS service-delivery-model brand pairings.
+       ======================================================================== */
+    --color-stage-sector:        var(--aas-blue);              /* Sector Director review */
+    --color-stage-bu:            var(--aas-fedsim-blue);       /* BU reviewer (FEDSIM aesthetic) */
+    --color-stage-oso:           var(--aas-orange);            /* OSO/AAS FO reviewer */
+    --color-stage-fas:           var(--aas-flex-green);        /* FAS (FLEX aesthetic) */
+
+    --color-status-draft:        #6B7280;  /* Slate */
+    --color-status-pending:      #d97706;  /* Amber */
+    --color-status-needs-info:   #f59e0b;  /* Light amber */
+    --color-status-approved:     #16a34a;  /* Green (distinct from FLEX brand green) */
+    --color-status-denied:       #dc2626;  /* Red */
+    --color-status-cancelled:    #9CA3AF;  /* Light slate */
+
+    /* ========================================================================
+       LAYER 3 — Brand, text, surfaces, borders, focus
+       The semantic tokens consumed by UI chrome. Most reference Layer 1.
+       ======================================================================== */
+    /* Brand aliases used by primary actions (buttons, links, focus rings) */
+    --color-brand-primary:       var(--aas-blue);
+    --color-brand-dark:          var(--aas-blue-dark);
+
+    /* Text — default body text uses AAS dark grey per BRAND.md */
+    --color-text-primary:        var(--aas-dark-grey);  /* 8.21:1 on white — AAA */
+    --color-text-secondary:      #6B7280;               /* 4.83:1 on white — AA */
+    --color-text-muted:          #9CA3AF;               /* 2.85:1 — UI / large text only */
+
+    /* Surfaces + borders */
+    --color-surface:             #ffffff;
+    --color-surface-alt:         #f9fafb;
+    --color-surface-tint:        var(--aas-light-grey); /* Subtle fill */
+    --color-border:              #e5e7eb;
+    --color-border-strong:       #d1d5db;
+    --color-border-muted:        var(--aas-grey);       /* Quiet border (NOT text) */
+
+    /* Focus ring (Section 508 baseline) */
+    --color-focus-ring:          var(--aas-blue);
+    --focus-ring-width:          2px;
+    --focus-ring-offset:         2px;
+
+    /* ========================================================================
+       LAYER 4 — Typography, spacing, shadows, radius, motion
+       ======================================================================== */
+    /* Font stack per BRAND.md — Calibri primary, system fallbacks. */
+    --font-sans:                 Calibri, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --font-mono:                 'SF Mono', Menlo, Consolas, ui-monospace, monospace;
+    --font-wordmark:             'Bebas Neue', sans-serif;  /* TRIP wordmark (kept distinct) */
+
+    /* Spacing — rem-based to scale with user font size preferences */
+    --space-1: 0.25rem;   /* 4px */
+    --space-2: 0.5rem;    /* 8px */
+    --space-3: 0.75rem;   /* 12px */
+    --space-4: 1rem;      /* 16px */
+    --space-5: 1.25rem;   /* 20px */
+    --space-6: 1.5rem;    /* 24px */
+    --space-7: 1.75rem;   /* 28px */
+    --space-8: 2rem;      /* 32px */
+
+    /* Shadows (subtle depth) */
+    --shadow-sm:                 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-base:               0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+    --shadow-md:                 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+    --shadow-lg:                 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+    --shadow-xl:                 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+
+    /* Radius — two parallel naming conventions kept for back-compat */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --border-width:              1px;
+    --border-radius-sm:          6px;
+    --border-radius-base:        8px;
+    --border-radius-md:          10px;
+    --border-radius-lg:          12px;
+    --border-radius-xl:          16px;
+    --border-radius-full:        9999px;
+
+    /* Motion */
+    --transition-fast:           150ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-base:           250ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow:           350ms cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* Layout */
+    --header-height:             48px;
+    --sidebar-width:             280px;
+
+    /* ========================================================================
+       LAYER 5 — Legacy aliases (back-compat for pre-Chunk-16 names)
+
+       The two stylesheets that used to define these in their own :root
+       blocks — travelBaseStyles.html and travelReviewStyles.html — were
+       consolidated here in Chunk 16.2 (2026-05-21). Their consumers
+       reference these names via var(); aliasing means we don't have to
+       sweep every consumer in one commit.
+
+       Each alias points at the canonical Layer 1-4 token where one exists,
+       or holds the original value where the token wasn't already canonical.
+       ======================================================================== */
+    /* --brand-* (from travelBaseStyles "AAS BRAND COLORS - Single Source of Truth") */
+    --brand-dark:                var(--aas-dark-grey);
+    --brand-darkGrey:            var(--aas-dark-grey);
+    --brand-blue:                var(--aas-blue);
+    --brand-blue-dark:           var(--aas-blue-dark);
+    --brand-gold:                var(--aas-gold);
+    --brand-orange:              var(--aas-orange);
+    --brand-light-orange:        var(--aas-light-orange);
+    --brand-green:               var(--aas-flex-green);
+    --brand-red:                 var(--aas-innovate-burgundy);
+    --brand-lightBlue:           var(--aas-fedsim-blue);
+    --brand-lightGrey:           var(--aas-light-grey);
+    --brand-mediumGrey:          var(--aas-grey);
+    --brand-bg-light:            #FFFFFF;
+
+    /* --color-primary/* — semantic primary used widely; aliased to brand chain */
+    --color-primary:             var(--aas-blue);
+    --color-primary-dark:        var(--aas-blue-dark);
+    --color-primary-light:       var(--aas-fedsim-blue);
+    --color-accent:              var(--aas-fedsim-blue);
+
+    /* Semantic state colors with light-tint variants */
+    --color-success:             var(--aas-flex-green);
+    --color-success-light:       #ECFDF5;
+    --color-warning:             var(--aas-orange);
+    --color-warning-dark:        #b83d12;
+    --color-warning-light:       #FFF4ED;
+    --color-danger:              var(--aas-innovate-burgundy);
+    --color-danger-light:        #FEF2F2;
+    --color-error:               var(--aas-innovate-burgundy);
+    --color-error-light:         #FEF2F2;
+    --color-info:                #0dcaf0;
+    --color-white:               #ffffff;
+
+    /* Neutral slate scale */
+    --color-slate-50:            #f8fafc;
+    --color-slate-100:           #f1f5f9;
+    --color-slate-150:           #e9eef5;
+    --color-slate-200:           #e2e8f0;
+    --color-slate-300:           #cbd5e1;
+    --color-slate-400:           #94a3b8;
+    --color-slate-500:           #64748b;
+    --color-slate-600:           #475569;
+    --color-slate-700:           #334155;
+    --color-slate-800:           #1e293b;
+    --color-slate-900:           #0f172a;
+
+    /* Extended green scale (used in review styles) */
+    --color-green-100:           #dcfce7;
+    --color-green-200:           #bbf7d0;
+    --color-green-400:           #4ade80;
+    --color-green-700:           #15803d;
+
+    /* Extended red scale (used in review styles) */
+    --color-red-100:             #fee2e2;
+    --color-red-200:             #fecaca;
+    --color-red-300:             #fca5a5;
+    --color-red-400:             #f87171;
+    --color-red-700:             #b91c1c;
+
+    /* Legacy --status-* with -bg variants (used by older request-status badges
+       that pre-date --color-status-* in tokens.html). Values intentionally
+       differ from --color-status-* — these were calibrated for specific
+       light-tint backgrounds in admin / portal lists. */
+    --status-pending:            #f59e0b;
+    --status-pending-bg:         #fef3c7;
+    --status-pending-oso:        #3b82f6;
+    --status-pending-oso-bg:     #dbeafe;
+    --status-approved:           #10b981;
+    --status-approved-bg:        #d1fae5;
+    --status-needs-info:         #ef4444;
+    --status-needs-info-bg:      #fee2e2;
+    --status-completed:          #6b7280;
+    --status-completed-bg:       #f3f4f6;
+    --status-cancelled:          #9ca3af;
+    --status-cancelled-bg:       #f3f4f6;
+    --status-denied:             #991b1b;
+    --status-denied-bg:          #fecaca;
+
+    /* Font alias (--font-primary was the legacy name; --font-sans is canonical) */
+    --font-primary:              var(--font-sans);
+  }
+</style>

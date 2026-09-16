@@ -1,0 +1,381 @@
+<!--
+  ================================================================
+  Travel Per Diem Storage Service (IndexedDB)
+  ================================================================
+
+  Simple approach:
+  - Server sends countries/territories + cities + rates
+  - Client stores in IndexedDB
+  - Simple API: getCountries(), getCities(country), getRates(country, city, date)
+
+  Data sources:
+  - DOS: Foreign countries (synced monthly)
+  - DoD: US OCONUS territories - Alaska, Hawaii, etc. (synced daily)
+-->
+
+<script>
+window.TravelPerDiem = (function() {
+  'use strict';
+
+  const DB_NAME = 'TravelPerDiemDB';
+  const DB_VERSION = 4;
+  const STORE_NAME = 'perdiemData';
+
+  let db = null;
+  let initPromise = null;
+
+  // Cached data
+  let dosData = null;
+  let dodData = null;
+
+  // Prevent duplicate requests
+  let dosLoadPromise = null;
+  let dodLoadPromise = null;
+
+  // Map state abbreviations to territory names (for DoD OCONUS)
+  const STATE_TO_TERRITORY = {
+    'AK': 'Alaska',
+    'HI': 'Hawaii',
+    'GU': 'Guam',
+    'PR': 'Puerto Rico',
+    'VI': 'Virgin Islands',
+    'AS': 'American Samoa',
+    'MP': 'Northern Mariana Islands'
+  };
+
+  // ==========================================================================
+  // DATABASE
+  // ==========================================================================
+
+  function initDB() {
+    if (db) return Promise.resolve(db);
+    if (initPromise) return initPromise;
+
+    initPromise = new Promise((resolve, reject) => {
+      if (!window.indexedDB) {
+        reject(new Error('IndexedDB not supported'));
+        return;
+      }
+
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        db = request.result;
+        resolve(db);
+      };
+      request.onupgradeneeded = (event) => {
+        const database = event.target.result;
+        if (database.objectStoreNames.contains(STORE_NAME)) {
+          database.deleteObjectStore(STORE_NAME);
+        }
+        database.createObjectStore(STORE_NAME, { keyPath: 'source' });
+      };
+    });
+
+    return initPromise;
+  }
+
+  async function saveData(source, data) {
+    await initDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORE_NAME], 'readwrite');
+      const req = tx.objectStore(STORE_NAME).put({
+        source,
+        data,
+        savedAt: new Date().toISOString()
+      });
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function getData(source) {
+    await initDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORE_NAME], 'readonly');
+      const req = tx.objectStore(STORE_NAME).get(source);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  // ==========================================================================
+  // DOS (Foreign) Data
+  // ==========================================================================
+
+  async function loadDOS() {
+    if (dosLoadPromise) return dosLoadPromise;
+
+    dosLoadPromise = (async () => {
+      try {
+        const result = await new Promise((resolve, reject) => {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject)
+            .getAllForeignPerDiemData();
+        });
+
+        if (!result || !result.success) {
+          throw new Error(result?.error || 'Failed to load DOS data');
+        }
+
+        dosData = {
+          version: result.version,
+          countries: result.countries,
+          localities: result.localities,
+          rates: result.rates
+        };
+
+        await saveData('dos', dosData);
+        return dosData;
+
+      } finally {
+        dosLoadPromise = null;
+      }
+    })();
+
+    return dosLoadPromise;
+  }
+
+  async function getDOS() {
+    if (dosData) return dosData;
+
+    const stored = await getData('dos');
+    if (stored?.data) {
+      dosData = stored.data;
+      return dosData;
+    }
+
+    return loadDOS();
+  }
+
+  // ==========================================================================
+  // DoD (OCONUS) Data
+  // ==========================================================================
+
+  async function loadDoD() {
+    if (dodLoadPromise) return dodLoadPromise;
+
+    dodLoadPromise = (async () => {
+      try {
+        const result = await new Promise((resolve, reject) => {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject)
+            .getAllDoDPerDiemData();
+        });
+
+        if (!result || !result.success) {
+          throw new Error(result?.error || 'Failed to load DoD data');
+        }
+
+        dodData = {
+          version: result.version,
+          territories: result.territories,
+          localities: result.localities,
+          rates: result.rates
+        };
+
+        await saveData('dod', dodData);
+        return dodData;
+
+      } finally {
+        dodLoadPromise = null;
+      }
+    })();
+
+    return dodLoadPromise;
+  }
+
+  async function getDoD() {
+    if (dodData) return dodData;
+
+    const stored = await getData('dod');
+    if (stored?.data) {
+      dodData = stored.data;
+      return dodData;
+    }
+
+    return loadDoD();
+  }
+
+  // ==========================================================================
+  // Public API - DOS (Foreign Countries)
+  // ==========================================================================
+
+  async function getDOSCountries() {
+    const data = await getDOS();
+    return data.countries || [];
+  }
+
+  async function getDOSCities(country) {
+    const data = await getDOS();
+    return data.localities?.[country] || [];
+  }
+
+  async function getDOSRates(country, city, travelDate) {
+    const data = await getDOS();
+    const cityRates = data.rates?.[country]?.[city];
+
+    if (!cityRates?.length) {
+      return { success: false, error: 'No rates found' };
+    }
+
+    const rate = findSeasonalRate(cityRates, travelDate);
+    return {
+      success: true,
+      country,
+      city,
+      lodging: rate.lodging,
+      mie: rate.mie,
+      perDiem: rate.lodging + rate.mie
+    };
+  }
+
+  // ==========================================================================
+  // Public API - DoD (OCONUS Territories)
+  // ==========================================================================
+
+  async function getDoDTerritories() {
+    const data = await getDoD();
+    return data.territories || [];
+  }
+
+  async function getDoDCities(territoryOrAbbr) {
+    const data = await getDoD();
+    // Handle both abbreviation ('AK') and full name ('Alaska')
+    const territory = STATE_TO_TERRITORY[territoryOrAbbr] || territoryOrAbbr;
+    return data.localities?.[territory] || [];
+  }
+
+  async function getDoDRates(territoryOrAbbr, city, travelDate) {
+    const data = await getDoD();
+    // Handle both abbreviation ('AK') and full name ('Alaska')
+    const territory = STATE_TO_TERRITORY[territoryOrAbbr] || territoryOrAbbr;
+    const cityRates = data.rates?.[territory]?.[city];
+
+    if (!cityRates?.length) {
+      return { success: false, error: 'No rates found' };
+    }
+
+    const rate = findSeasonalRate(cityRates, travelDate);
+    return {
+      success: true,
+      territory,  // Full name (e.g., 'Alaska')
+      city,
+      lodging: rate.lodging,
+      mie: rate.mie,
+      perDiem: rate.lodging + rate.mie
+    };
+  }
+
+  /**
+   * Check if a state abbreviation is OCONUS (DoD territory)
+   */
+  function isOCONUS(stateAbbr) {
+    return STATE_TO_TERRITORY.hasOwnProperty(stateAbbr);
+  }
+
+  // ==========================================================================
+  // Seasonal Rate Logic
+  // ==========================================================================
+
+  function findSeasonalRate(rates, travelDate) {
+    if (rates.length === 1) return rates[0];
+
+    const date = travelDate ? new Date(travelDate) : new Date();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+
+    for (const rate of rates) {
+      if (isDateInSeason(month, day, rate.seasonStart, rate.seasonEnd)) {
+        return rate;
+      }
+    }
+
+    return rates[0]; // Default to first if no match
+  }
+
+  function isDateInSeason(month, day, seasonStart, seasonEnd) {
+    const start = parseMMDD(seasonStart);
+    const end = parseMMDD(seasonEnd);
+    if (!start || !end) return false;
+
+    const dateNum = month * 100 + day;
+    const startNum = start.month * 100 + start.day;
+    const endNum = end.month * 100 + end.day;
+
+    if (startNum <= endNum) {
+      return dateNum >= startNum && dateNum <= endNum;
+    } else {
+      // Season crosses year boundary (e.g., Nov-Feb)
+      return dateNum >= startNum || dateNum <= endNum;
+    }
+  }
+
+  function parseMMDD(val) {
+    if (!val) return null;
+    const match = String(val).match(/(\d{1,2})\/(\d{1,2})/);
+    return match ? { month: parseInt(match[1]), day: parseInt(match[2]) } : null;
+  }
+
+  // ==========================================================================
+  // Utilities
+  // ==========================================================================
+
+  /**
+   * Preload both DOS and DoD data
+   * Call on page init so everything is ready for instant lookups
+   */
+  async function preloadAll() {
+    try {
+      await Promise.all([getDOS(), getDoD()]);
+    } catch (error) {
+      console.error('TravelPerDiem: Preload error:', error);
+    }
+  }
+
+  async function clearAll() {
+    await initDB();
+    const tx = db.transaction([STORE_NAME], 'readwrite');
+    await tx.objectStore(STORE_NAME).clear();
+    dosData = null;
+    dodData = null;
+  }
+
+  async function getStatus() {
+    const dos = await getData('dos');
+    const dod = await getData('dod');
+    return {
+      dos: dos ? { savedAt: dos.savedAt, countries: dos.data?.countries?.length || 0 } : null,
+      dod: dod ? { savedAt: dod.savedAt, territories: dod.data?.territories?.length || 0 } : null
+    };
+  }
+
+  // ==========================================================================
+  // Exports
+  // ==========================================================================
+
+  return {
+    init: initDB,
+    preloadAll,
+
+    // DOS (Foreign)
+    getDOSCountries,
+    getDOSCities,
+    getDOSLocalities: getDOSCities,  // Alias
+    getDOSRates,
+
+    // DoD (OCONUS)
+    getDoDTerritories,
+    getDoDCities,
+    getDoDLocalities: getDoDCities,  // Alias
+    getDoDRates,
+    isOCONUS,
+
+    // Utils
+    clearAll,
+    getStatus
+  };
+})();
+</script>

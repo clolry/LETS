@@ -1,0 +1,608 @@
+<!--
+  ================================================================
+  Travel Date Service - Unified Date Handling
+  ================================================================
+
+  Provides unified date handling for travel requests:
+  - Date chip initialization with Flatpickr
+  - Duration calculations (nights, M&IE days)
+  - Date constraint enforcement
+  - Date formatting and validation
+
+  Used by both the form and review pages.
+-->
+
+<script>
+window.TravelDateService = (function() {
+  'use strict';
+
+  // ==========================================================================
+  // DATE CHIP INITIALIZATION
+  // ==========================================================================
+
+  /**
+   * Initialize a date chip with Flatpickr
+   *
+   * @param {HTMLElement} chipElement - The date chip container element
+   * @param {Object} options - Configuration options
+   * @param {string} options.dateFormat - Internal date format (default: 'Y-m-d')
+   * @param {string} options.displayFormat - Display format (default: 'M j, Y')
+   * @param {string} options.placeholder - Input placeholder
+   * @param {Date|string} options.minDate - Minimum selectable date
+   * @param {Date|string} options.maxDate - Maximum selectable date
+   * @param {Date|string} options.defaultDate - Default date value
+   * @param {Function} options.onChange - Callback when date changes
+   * @param {Function} options.onReady - Callback when picker is ready
+   * @param {Function} options.onOpen - Callback when picker opens
+   * @param {Function} options.onClose - Callback when picker closes
+   * @param {boolean} options.autoScroll - Auto-scroll to ensure calendar visibility (default: true)
+   * @returns {Object|null} Flatpickr instance
+   */
+  function initDateChip(chipElement, options = {}) {
+    if (!chipElement || !window.flatpickr) return null;
+
+    const {
+      dateFormat = 'Y-m-d',
+      displayFormat = 'M j, Y',
+      placeholder = 'Select date',
+      minDate = null,
+      maxDate = null,
+      defaultDate = null,
+      onChange = null,
+      onReady = null,
+      onOpen = null,
+      onClose = null,
+      autoScroll = true
+    } = options;
+
+    // Configure Flatpickr
+    const config = {
+      dateFormat: dateFormat,
+      altInput: true,
+      altFormat: displayFormat,
+      allowInput: true,
+      wrap: true,
+      minDate: minDate,
+      maxDate: maxDate,
+      defaultDate: defaultDate,
+
+      onChange: function(selectedDates, dateStr, instance) {
+        // Update chip filled state
+        chipElement.classList.toggle('date-chip--filled', !!dateStr);
+
+        // Call custom onChange
+        if (onChange) {
+          onChange(selectedDates, dateStr, instance);
+        }
+      },
+
+      onOpen: function(selectedDates, dateStr, instance) {
+        // Auto-scroll to ensure calendar is visible
+        if (autoScroll) {
+          ensureFlatpickrVisible(chipElement);
+        }
+
+        // Call custom onOpen
+        if (onOpen) {
+          onOpen(selectedDates, dateStr, instance);
+        }
+      },
+
+      onClose: function(selectedDates, dateStr, instance) {
+        // Call custom onClose
+        if (onClose) {
+          onClose(selectedDates, dateStr, instance);
+        }
+      },
+
+      onReady: function(selectedDates, dateStr, instance) {
+        // Set initial filled state
+        if (dateStr) {
+          chipElement.classList.add('date-chip--filled');
+        }
+
+        // Set placeholder on alt input
+        if (instance.altInput && placeholder) {
+          instance.altInput.placeholder = placeholder;
+        }
+
+        // Call custom onReady
+        if (onReady) {
+          onReady(selectedDates, dateStr, instance);
+        }
+      }
+    };
+
+    return flatpickr(chipElement, config);
+  }
+
+  /**
+   * Ensure flatpickr calendar is visible in viewport when opened
+   * Call this in the flatpickr onOpen callback to auto-scroll if needed
+   *
+   * @param {Element} inputElement - The input/chip element that triggered the calendar
+   * @param {Object} options - Optional configuration
+   * @param {number} options.calendarHeight - Approximate calendar height (default: 305)
+   * @param {number} options.padding - Extra breathing room (default: 20)
+   */
+  function ensureFlatpickrVisible(inputElement, options = {}) {
+    if (!inputElement) return;
+
+    const calendarHeight = options.calendarHeight || 305;
+    const padding = options.padding || 20;
+    const rect = inputElement.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+
+    // Calculate space needed: input bottom + calendar height + padding
+    const spaceNeeded = rect.bottom + calendarHeight + padding;
+
+    // If calendar would be clipped, scroll to make room
+    if (spaceNeeded > viewportHeight) {
+      const scrollAmount = spaceNeeded - viewportHeight;
+      const currentScroll = window.pageYOffset;
+
+      window.scrollTo({
+        top: currentScroll + scrollAmount,
+        behavior: 'smooth'
+      });
+    }
+  }
+
+  /**
+   * Create a date chip HTML structure
+   *
+   * @param {Object} options
+   * @param {string} options.id - Unique ID for the chip
+   * @param {string} options.placeholder - Input placeholder
+   * @param {string} options.value - Initial date value
+   * @param {boolean} options.compact - Use compact styling (default: true)
+   * @returns {string} HTML string
+   */
+  function createDateChipHTML(options = {}) {
+    const {
+      id,
+      placeholder = 'Select date',
+      value = '',
+      compact = true
+    } = options;
+
+    const filledClass = value ? 'date-chip--filled' : '';
+    const compactClass = compact ? 'date-chip--compact' : '';
+
+    return `
+      <div class="date-chip ${compactClass} ${filledClass}" id="${id}Chip" data-toggle>
+        <i aria-hidden="true" class="fas fa-calendar-alt date-chip__icon" data-toggle></i>
+        <input type="text" class="date-chip__input" id="${id}"
+               placeholder="${placeholder}" value="${value}" data-input>
+      </div>
+    `;
+  }
+
+  // ==========================================================================
+  // DURATION CALCULATIONS
+  // ==========================================================================
+
+  /**
+   * Calculate number of nights between two dates
+   * (For lodging calculations)
+   *
+   * @param {Date|string} startDate
+   * @param {Date|string} endDate
+   * @returns {number} Number of nights (minimum 0)
+   */
+  function calculateNights(startDate, endDate) {
+    if (!startDate || !endDate) return 0;
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    // Reset time to avoid timezone issues
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+
+    const diffTime = end - start;
+    const MS_PER_DAY = TravelUtils?.TRAVEL_CONFIG?.MS_PER_DAY || (1000 * 60 * 60 * 24);
+    const diffDays = Math.round(diffTime / MS_PER_DAY);
+
+    return Math.max(0, diffDays);
+  }
+
+  /**
+   * Calculate number of M&IE days between two dates
+   * (For per diem calculations - inclusive of both start and end)
+   *
+   * @param {Date|string} startDate
+   * @param {Date|string} endDate
+   * @returns {number} Number of days (minimum 1 if valid dates)
+   */
+  function calculateMieDays(startDate, endDate) {
+    const nights = calculateNights(startDate, endDate);
+    return nights > 0 ? nights + 1 : (startDate && endDate ? 1 : 0);
+  }
+
+  /**
+   * Calculate M&IE total with 75% first/last day rule
+   *
+   * @param {number} days - Number of M&IE days
+   * @param {number} dailyRate - M&IE daily rate
+   * @returns {Object} { total, breakdown }
+   */
+  function calculateMieWithReduction(days, dailyRate) {
+    if (!days || !dailyRate) {
+      return { total: 0, breakdown: [] };
+    }
+
+    const reducedRate = dailyRate * 0.75;
+    const breakdown = [];
+    let total = 0;
+
+    for (let i = 0; i < days; i++) {
+      const isFirstDay = i === 0;
+      const isLastDay = i === days - 1;
+      const isPartialDay = isFirstDay || isLastDay;
+
+      // Single day trip or first/last day gets 75%
+      const rate = (days === 1 || isPartialDay) ? reducedRate : dailyRate;
+
+      breakdown.push({
+        day: i + 1,
+        rate: rate,
+        percentage: isPartialDay ? 75 : 100,
+        isPartialDay: isPartialDay
+      });
+
+      total += rate;
+    }
+
+    return { total, breakdown, dailyRate, reducedRate };
+  }
+
+  /**
+   * Calculate total duration of a trip across multiple legs
+   *
+   * @param {Array} legs - Array of leg objects with startDate and endDate
+   * @returns {Object} { totalDays, totalNights, dateRange }
+   */
+  function calculateTripDuration(legs) {
+    if (!legs || legs.length === 0) {
+      return { totalDays: 0, totalNights: 0, dateRange: null };
+    }
+
+    // Find earliest start and latest end
+    let earliestStart = null;
+    let latestEnd = null;
+
+    legs.forEach(leg => {
+      if (leg.startDate) {
+        const start = new Date(leg.startDate);
+        if (!earliestStart || start < earliestStart) {
+          earliestStart = start;
+        }
+      }
+      if (leg.endDate) {
+        const end = new Date(leg.endDate);
+        if (!latestEnd || end > latestEnd) {
+          latestEnd = end;
+        }
+      }
+    });
+
+    if (!earliestStart || !latestEnd) {
+      return { totalDays: 0, totalNights: 0, dateRange: null };
+    }
+
+    const totalNights = calculateNights(earliestStart, latestEnd);
+    const totalDays = totalNights + 1;
+
+    return {
+      totalDays,
+      totalNights,
+      dateRange: {
+        start: earliestStart,
+        end: latestEnd
+      }
+    };
+  }
+
+  // ==========================================================================
+  // DATE CONSTRAINTS
+  // ==========================================================================
+
+  /**
+   * Enforce sequential date constraints on legs
+   * Each leg's start date must be >= previous leg's end date
+   *
+   * @param {Array} legs - Array of leg objects with startDate and endDate
+   * @param {Object} datePickers - Map of Flatpickr instances by leg ID
+   */
+  function enforceLegDateConstraints(legs, datePickers) {
+    if (!legs || legs.length === 0 || !datePickers) return;
+
+    for (let i = 0; i < legs.length; i++) {
+      const leg = legs[i];
+      const legId = leg.id || leg.legId;
+
+      const startPicker = datePickers[`leg_start_${legId}`] || datePickers[`start_${i}`];
+      const endPicker = datePickers[`leg_end_${legId}`] || datePickers[`end_${i}`];
+
+      if (startPicker && i > 0) {
+        // Set minDate based on previous leg's end date
+        const prevLeg = legs[i - 1];
+        if (prevLeg.endDate) {
+          startPicker.set('minDate', prevLeg.endDate);
+        }
+      }
+
+      if (endPicker && leg.startDate) {
+        // End date must be >= start date
+        endPicker.set('minDate', leg.startDate);
+      }
+    }
+  }
+
+  /**
+   * Validate that leg dates are in proper sequence
+   *
+   * @param {Array} legs - Array of leg objects with startDate and endDate
+   * @returns {Object} { valid, errors }
+   */
+  function validateLegDateSequence(legs) {
+    const errors = [];
+
+    if (!legs || legs.length === 0) {
+      return { valid: true, errors };
+    }
+
+    for (let i = 0; i < legs.length; i++) {
+      const leg = legs[i];
+      const legNum = i + 1;
+
+      // Check start and end dates exist
+      if (!leg.startDate) {
+        errors.push({ leg: legNum, error: 'Start date is required' });
+      }
+      if (!leg.endDate) {
+        errors.push({ leg: legNum, error: 'End date is required' });
+      }
+
+      // Check end >= start
+      if (leg.startDate && leg.endDate) {
+        const start = new Date(leg.startDate);
+        const end = new Date(leg.endDate);
+        if (end < start) {
+          errors.push({ leg: legNum, error: 'End date must be on or after start date' });
+        }
+      }
+
+      // Check sequence with previous leg
+      if (i > 0 && leg.startDate) {
+        const prevLeg = legs[i - 1];
+        if (prevLeg.endDate) {
+          const prevEnd = new Date(prevLeg.endDate);
+          const currStart = new Date(leg.startDate);
+          if (currStart < prevEnd) {
+            errors.push({
+              leg: legNum,
+              error: `Start date must be on or after Leg ${legNum - 1} end date`
+            });
+          }
+        }
+      }
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
+
+  // ==========================================================================
+  // DATE FORMATTING
+  // ==========================================================================
+
+  /**
+   * Format date for display (e.g., "Jan 15, 2025")
+   *
+   * @param {Date|string} date
+   * @param {string} format - 'short', 'medium', 'long' (default: 'medium')
+   * @returns {string}
+   */
+  function formatDate(date, format = 'medium') {
+    if (!date) return '';
+
+    const d = parseDate(date);
+    if (!d) return '';
+
+    const options = {
+      short: { month: 'numeric', day: 'numeric' },
+      shortMonth: { month: 'short', day: 'numeric' },
+      medium: { month: 'short', day: 'numeric', year: 'numeric' },
+      long: { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }
+    };
+
+    return d.toLocaleDateString('en-US', options[format] || options.medium);
+  }
+
+  /**
+   * Format date range (e.g., "Jan 15 - Jan 20, 2025")
+   *
+   * @param {Date|string} startDate
+   * @param {Date|string} endDate
+   * @returns {string}
+   */
+  function formatDateRange(startDate, endDate) {
+    if (!startDate || !endDate) return 'Dates not set';
+
+    const start = parseDate(startDate);
+    const end = parseDate(endDate);
+
+    if (!start || !end) return 'Invalid dates';
+
+    const sameYear = start.getFullYear() === end.getFullYear();
+    const sameMonth = sameYear && start.getMonth() === end.getMonth();
+
+    if (sameMonth) {
+      // "Jan 15 - 20, 2025"
+      return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.getDate()}, ${end.getFullYear()}`;
+    } else if (sameYear) {
+      // "Jan 15 - Feb 20, 2025"
+      return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${end.getFullYear()}`;
+    } else {
+      // "Dec 28, 2024 - Jan 3, 2025"
+      return `${formatDate(start, 'medium')} - ${formatDate(end, 'medium')}`;
+    }
+  }
+
+  /**
+   * Format date range for compact display (hides current year)
+   * Best for list/dashboard views where space is limited
+   * Examples: "Jan 20-25" (same month, current year)
+   *           "Jan 20 - Feb 5" (different months, current year)
+   *           "Jan 20-25, 2025" (same month, different year)
+   *
+   * @param {Date|string} startDate
+   * @param {Date|string} endDate
+   * @returns {string}
+   */
+  function formatDateRangeCompact(startDate, endDate) {
+    if (!startDate && !endDate) return '';
+
+    const currentYear = new Date().getFullYear();
+
+    // Parse date string into a Date object
+    const parseDateLocal = (dateStr) => {
+      if (!dateStr) return null;
+      if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? null : dateStr;
+      // Handle both yyyy-mm-dd and ISO strings
+      const parts = String(dateStr).split('T')[0].split('-');
+      if (parts.length === 3) {
+        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      }
+      return new Date(dateStr);
+    };
+
+    // Format a single date
+    const formatSingle = (date, includeYear = false) => {
+      if (!date || isNaN(date.getTime())) return '';
+      const month = date.toLocaleDateString('en-US', { month: 'short' });
+      const day = date.getDate();
+      const year = date.getFullYear();
+      return includeYear && year !== currentYear ? `${month} ${day}, ${year}` : `${month} ${day}`;
+    };
+
+    const start = parseDateLocal(startDate);
+    const end = parseDateLocal(endDate);
+
+    if (!start && !end) return '';
+    if (!start) return formatSingle(end, true);
+    if (!end) return formatSingle(start, true);
+
+    // Both dates exist - check if same month/year for condensed format
+    const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+    const needsYear = start.getFullYear() !== currentYear || end.getFullYear() !== currentYear;
+
+    if (sameMonth) {
+      // Same month: "Jan 20-25" or "Jan 20-25, 2025"
+      const month = start.toLocaleDateString('en-US', { month: 'short' });
+      const yearSuffix = needsYear ? `, ${start.getFullYear()}` : '';
+      return `${month} ${start.getDate()}-${end.getDate()}${yearSuffix}`;
+    } else {
+      // Different months: "Jan 20 - Feb 5" or with year if needed
+      return `${formatSingle(start, needsYear)} - ${formatSingle(end, needsYear)}`;
+    }
+  }
+
+  /**
+   * Parse a date string to Date object
+   * Handles common formats: YYYY-MM-DD, MM/DD/YYYY, etc.
+   *
+   * @param {string} dateStr
+   * @returns {Date|null}
+   */
+  function parseDate(dateStr) {
+    if (!dateStr) return null;
+
+    // If already a Date, return it
+    if (dateStr instanceof Date) {
+      return isNaN(dateStr.getTime()) ? null : dateStr;
+    }
+
+    // Try ISO format first (YYYY-MM-DD)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const d = new Date(dateStr + 'T00:00:00');
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    // Try standard Date parsing
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  /**
+   * Convert date to ISO format (YYYY-MM-DD)
+   *
+   * @param {Date|string} date
+   * @returns {string}
+   */
+  function toISODateString(date) {
+    const d = parseDate(date);
+    if (!d) return '';
+
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+  }
+
+  // ==========================================================================
+  // FISCAL YEAR HELPERS
+  // ==========================================================================
+
+  /**
+   * Get fiscal year for a date
+   * Federal fiscal year runs Oct 1 - Sep 30
+   *
+   * @param {Date|string} date
+   * @returns {number} Fiscal year
+   */
+  function getFiscalYear(date) {
+    const d = parseDate(date);
+    if (!d) return new Date().getFullYear();
+
+    const month = d.getMonth(); // 0-indexed
+    const year = d.getFullYear();
+
+    // Oct (9), Nov (10), Dec (11) are in next fiscal year
+    return month >= 9 ? year + 1 : year;
+  }
+
+  // ==========================================================================
+  // EXPORTS
+  // ==========================================================================
+
+  return {
+    // Date chip
+    initDateChip,
+    createDateChipHTML,
+    ensureFlatpickrVisible,
+
+    // Duration calculations
+    calculateNights,
+    calculateMieDays,
+    calculateMieWithReduction,
+    calculateTripDuration,
+
+    // Constraints
+    enforceLegDateConstraints,
+    validateLegDateSequence,
+
+    // Formatting
+    formatDate,
+    formatDateRange,
+    formatDateRangeCompact,
+    parseDate,
+    toISODateString,
+
+    // Fiscal year
+    getFiscalYear
+  };
+})();
+</script>

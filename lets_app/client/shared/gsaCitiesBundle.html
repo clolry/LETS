@@ -1,0 +1,10 @@
+<!--
+  Inline GSA per-diem city lists. Populated server-side at template eval
+  from CacheService (kept warm by the daily warmGSACitiesCache trigger).
+  Lets travelLocationService skip the google.script.run roundtrip when
+  the user picks a CONUS state. Missing states fall back to the existing
+  on-demand load.
+-->
+<script>
+  window.__GSA_CITIES_BUNDLE__ = <?!= JSON.stringify(getInlineGSACitiesBundle()) ?>;
+</script>

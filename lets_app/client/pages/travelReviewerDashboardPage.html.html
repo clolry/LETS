@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TRIP - Travel Insights</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Font Awesome -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+  <!-- Flatpickr for custom date range -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+
+  <!-- Base + Admin styles (shared) -->
+  <?!= include('client/styles/tokens'); ?>
+  <?!= include('client/styles/travelBaseStyles'); ?>
+  <?!= include('client/styles/travelAdminStyles'); ?>
+
+  <!-- HC staff directory (IndexedDB-cached, auto-inits) -->
+  <?!= include('client/shared/hcDataCenterService'); ?>
+
+  <!-- Shared client helpers: escapeHtml/escapeAttr + serverCall Promise wrapper -->
+  <?!= include('client/shared/escapeHtml'); ?>
+  <?!= include('client/shared/serverCall'); ?>
+
+  <!-- Reviewer-specific tweaks -->
+  <style>
+  </style>
+</head>
+
+<body class="admin-body">
+  <!-- Skip Link for Accessibility -->
+  <a href="#adminMain" class="skip-link">Skip to main content</a>
+
+  <!-- Navigation Loader -->
+  <?!= include('client/components/navLoader'); ?>
+
+  <div class="admin-layout" id="adminLayout">
+    <!-- Sidebar -->
+    <aside class="admin-sidebar" id="adminSidebar">
+      <div class="admin-sidebar__brand">
+        <div class="admin-sidebar__brand-icon" id="sidebarLogo"></div>
+        <span class="admin-sidebar__brand-text aas-brand-header__logo" style="font-size: 1rem;">TRIP</span>
+      </div>
+      <nav class="admin-nav">
+        <button class="admin-nav__item admin-nav__item--active" data-view="dashboard">
+          <i aria-hidden="true" class="fas fa-gauge-high"></i>
+          <span>Dashboard</span>
+        </button>
+        <button class="admin-nav__item" data-view="requests">
+          <i aria-hidden="true" class="fas fa-list-check"></i>
+          <span>Requests</span>
+          <span class="admin-nav__badge" id="navPendingCount"></span>
+        </button>
+      </nav>
+      <div class="admin-sidebar__footer">
+        <div class="admin-sidebar__user">
+          <div class="admin-sidebar__user-icon"><i aria-hidden="true" class="fas fa-user-tie"></i></div>
+          <span class="admin-sidebar__user-name"><?= userName ?></span>
+        </div>
+        <a href="#" onclick="window.TravelReviewerDash.navigateTo('travel'); return false;" class="admin-sidebar__back" title="Back to Portal">
+          <i aria-hidden="true" class="fas fa-arrow-left"></i>
+          <span>Back to Portal</span>
+        </a>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="admin-main" id="adminMain">
+
+      <!-- ========== DASHBOARD VIEW ========== -->
+      <div class="admin-view" id="dashboardView">
+        <!-- Slim command bar — title + role pill + period toggle inline so
+             a single control governs every metric on the page (KPI strip
+             + charts) from one place. Mirrors the admin dashboard layout. -->
+        <div class="admin-view-header">
+          <h2>
+            <i aria-hidden="true" class="fas fa-gauge-high"></i>
+            <span id="reviewerHeaderLabel">Dashboard</span>
+          </h2>
+
+          <!-- Action ribbon chips inline in the header (matches admin). -->
+          <div class="action-ribbon" id="actionRibbon">
+            <button type="button" class="action-ribbon__chip" data-section="reviews" id="ribbonChipReviews">
+              <i aria-hidden="true" class="fas fa-inbox"></i>
+              <span class="action-ribbon__count" id="ribbonReviewsCount">0</span>
+              <span class="action-ribbon__label">Reviews</span>
+              <span class="action-ribbon__urgent hidden" id="ribbonReviewsUrgent">
+                <i aria-hidden="true" class="fas fa-bolt"></i><span id="ribbonReviewsUrgentCount">0</span>
+              </span>
+            </button>
+            <button type="button" class="action-ribbon__chip" data-section="stalled" id="ribbonChipStalled">
+              <i aria-hidden="true" class="fas fa-clock-rotate-left"></i>
+              <span class="action-ribbon__count" id="ribbonStalledCount">0</span>
+              <span class="action-ribbon__label">Stalled</span>
+            </button>
+            <button type="button" class="action-ribbon__chip action-ribbon__chip--denied hidden" data-section="denied" id="ribbonChipDenied">
+              <i aria-hidden="true" class="fas fa-circle-xmark"></i>
+              <span class="action-ribbon__count" id="ribbonDeniedCount">0</span>
+              <span class="action-ribbon__label" id="ribbonDeniedLabel">Denied</span>
+            </button>
+          </div>
+
+          <div class="admin-view-header__actions">
+            <div class="period-toggle" id="periodToggle">
+              <button class="period-toggle__btn period-toggle__btn--active" data-period="30d">30 Days</button>
+              <button class="period-toggle__btn" data-period="quarter">FY Quarter</button>
+              <button class="period-toggle__btn" data-period="fy">Fiscal Year</button>
+              <button class="period-toggle__btn" data-period="custom" id="customPeriodBtn">Custom</button>
+            </div>
+            <!-- Hidden flatpickr handle. Picker drops from the Custom button. -->
+            <input type="text" id="customDateRange" class="period-toggle__hidden-anchor" tabindex="-1" aria-hidden="true">
+          </div>
+        </div>
+
+        <div class="admin-view-body">
+
+        <!-- Action Center detail content (ribbon moved into header above) -->
+        <div id="actionCenterContent">
+
+          <!-- Collapsible detail panel: holds the two-card layout. Stays in
+               the DOM (not display:none) so skeleton rendering still works;
+               visibility is toggled via .is-collapsed class. -->
+          <div class="action-detail mb-4 is-collapsed" id="actionDetail">
+            <div class="row g-4">
+              <!-- Your Reviews -->
+              <div class="col-lg-6">
+                <div class="admin-card admin-card--info">
+                  <div class="admin-card__header">
+                    <h3 class="admin-card__title"><i aria-hidden="true" class="fas fa-inbox"></i> Your Reviews</h3>
+                    <a href="#" class="btn btn-sm btn-link" id="viewAllReviews" style="font-size:0.72rem;">View All</a>
+                  </div>
+                  <div class="admin-card__body" id="yourReviewsList" style="padding:0;">
+                    <div class="skeleton-action-item"><div class="skeleton skeleton-name"></div><div class="skeleton skeleton-badge"></div><div class="skeleton skeleton-amount"></div></div>
+                    <div class="skeleton-action-item"><div class="skeleton skeleton-name"></div><div class="skeleton skeleton-badge"></div><div class="skeleton skeleton-amount"></div></div>
+                  </div>
+                </div>
+              </div>
+              <!-- Stalled -->
+              <div class="col-lg-6">
+                <div class="admin-card admin-card--stalled">
+                  <div class="admin-card__header">
+                    <h3 class="admin-card__title"><i aria-hidden="true" class="fas fa-clock-rotate-left"></i> Stalled Requests</h3>
+                  </div>
+                  <div class="admin-card__body" id="stalledRequestsList" style="padding:0;">
+                    <div class="skeleton-action-item"><div class="skeleton skeleton-name"></div><div class="skeleton skeleton-badge"></div><div class="skeleton skeleton-amount"></div></div>
+                    <div class="skeleton-action-item"><div class="skeleton skeleton-name"></div><div class="skeleton skeleton-badge"></div><div class="skeleton skeleton-amount"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Hidden legacy alert — state still owned by
+               _renderDeniedCancelledAlert (text + click-to-Denied link),
+               but the chip in the ribbon is what's now visible. -->
+          <div class="hidden" id="deniedCancelledAlert">
+            <span id="deniedCancelledText"></span>
+            <a href="#" id="viewDeniedLink"></a>
+          </div>
+
+          <!-- Pulse Strip — period KPIs + funding split (period-aware)
+               above the dashed divider, live pipeline below. Same
+               structure as the admin dashboard. -->
+          <section class="pulse-strip mb-4" id="pulseStrip">
+
+            <!-- Period KPIs (4 cards — matches admin) -->
+            <div class="pulse-strip__row pulse-strip__row--metrics">
+              <div class="skeleton-stat-cards" id="statCardsSkeleton">
+                <div class="skeleton-stat-card"><div class="skeleton skeleton-label"></div><div class="skeleton skeleton-value"></div></div>
+                <div class="skeleton-stat-card"><div class="skeleton skeleton-label"></div><div class="skeleton skeleton-value"></div></div>
+                <div class="skeleton-stat-card"><div class="skeleton skeleton-label"></div><div class="skeleton skeleton-value"></div></div>
+                <div class="skeleton-stat-card"><div class="skeleton skeleton-label"></div><div class="skeleton skeleton-value"></div></div>
+              </div>
+              <div class="stat-cards" id="statCards"></div>
+            </div>
+
+            <!-- Funding Source split (period-filtered, glance metric) -->
+            <div class="pulse-strip__row pulse-strip__row--funding" id="pulseFundingRow">
+              <!-- Populated dynamically by _renderFundingSplitInPulse -->
+            </div>
+
+            <!-- Live Pipeline -->
+            <div class="pulse-strip__row pulse-strip__row--pipeline">
+              <div class="pulse-strip__live-tag" aria-hidden="true">Live</div>
+              <div class="pipeline-row" id="pipelineRow">
+                <div class="skeleton-pipeline" id="pipelineSkeleton">
+                  <div class="skeleton-pipeline-card"><div class="skeleton skeleton-count"></div><div class="skeleton skeleton-label"></div></div>
+                  <div class="skeleton-pipeline-card"><div class="skeleton skeleton-count"></div><div class="skeleton skeleton-label"></div></div>
+                  <div class="skeleton-pipeline-card"><div class="skeleton skeleton-count"></div><div class="skeleton skeleton-label"></div></div>
+                  <div class="skeleton-pipeline-card"><div class="skeleton skeleton-count"></div><div class="skeleton skeleton-label"></div></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Charts -->
+          <div id="metricsSection">
+            <div class="chart-grid mb-4" id="chartsRow"></div>
+          </div>
+        </div>
+        </div><!-- /.admin-view-body -->
+      </div>
+
+      <!-- ========== REQUESTS VIEW ========== -->
+      <div class="admin-view admin-view--scroll-body hidden" id="requestsView">
+        <!-- Header carries title + status pills + search inline so the
+             whole filtering surface pins to the top of the scroll area
+             via the sticky page header. Group + date range stay in the
+             body filter row below. Mirrors the admin dashboard. -->
+        <div class="admin-view-header admin-view-header--requests">
+          <h2><i aria-hidden="true" class="fas fa-list-check"></i> Requests you manage</h2>
+
+          <!-- Status pills, grouped: in-flight on the left, decided
+               (denied/cancelled) on the right with a soft divider. -->
+          <div class="filter-pills filter-pills--grouped" id="statusFilterPills">
+            <!-- Populated dynamically -->
+          </div>
+
+          <div class="admin-view-header__actions">
+            <div class="search-input search-input--header">
+              <i aria-hidden="true" class="fas fa-search"></i>
+              <input type="text" id="filterSearch" class="form-control form-control-sm" placeholder="ID, trip name, submitter, reviewer...">
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-view-body">
+
+        <div class="admin-table-wrap">
+          <!-- Secondary filters: Group (scope-aware) + Date Range, each
+               with a clear (X) when populated. Search moved to the
+               sticky header above. Row count at the right end. -->
+          <div class="admin-table-filters">
+            <div class="filter-group">
+              <label id="filterScopeLabel">Group</label>
+              <div class="filter-input-wrap" id="filterScopeWrap">
+                <select id="filterScope" class="form-select form-select-sm"></select>
+                <button type="button" class="filter-input-wrap__clear" id="filterScopeClear" title="Clear group filter" aria-label="Clear group filter">
+                  <i aria-hidden="true" class="fas fa-xmark"></i>
+                </button>
+              </div>
+            </div>
+            <div class="filter-group">
+              <label>Date Range</label>
+              <div class="filter-input-wrap" id="filterDateRangeWrap">
+                <input type="text" id="filterDateRange" class="form-control form-control-sm" placeholder="Select dates...">
+                <button type="button" class="filter-input-wrap__clear" id="filterDateRangeClear" title="Clear date range" aria-label="Clear date range">
+                  <i aria-hidden="true" class="fas fa-xmark"></i>
+                </button>
+              </div>
+            </div>
+            <div class="admin-table-filters__count" id="requestsRowCount" aria-live="polite">
+              <!-- Populated by _updateRequestsCount -->
+            </div>
+          </div>
+
+          <!-- Loading -->
+          <div class="admin-loading hidden" id="requestsLoading">
+            <div class="spinner"></div>
+            <span>Loading requests...</span>
+          </div>
+
+          <!-- Table -->
+          <div class="admin-table-container" id="requestsTableContainer">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th class="sortable" data-sort="requestId">ID</th>
+                  <th class="sortable" data-sort="tripName">Trip Name</th>
+                  <th class="sortable" data-sort="submitterName">Submitter</th>
+                  <th class="sortable" data-sort="status">Status</th>
+                  <th class="sortable" data-sort="buCode" id="thScope">BU</th>
+                  <th class="sortable" data-sort="grandTotal">Amount</th>
+                  <th class="sortable" data-sort="submittedAt">Submitted</th>
+                  <th title="Days since the request last moved (entered or was acted on at this stage)">Days at Stage</th>
+                  <th>Reviewer</th>
+                </tr>
+              </thead>
+              <tbody id="requestsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ========== TRIPS INVOLVING YOUR STAFF ==========
+             Awareness-only section. Shows requests submitted by other
+             BUs/sectors that have one of your staff as a traveler.
+             Read-only — click to view, no review actions. Hidden when
+             empty. Header section + list both rendered by the
+             controller (_renderTripsInvolvingStaff). -->
+        <div class="trips-involving hidden" id="tripsInvolvingSection">
+          <h3 class="trips-involving__title">
+            <i aria-hidden="true" class="fas fa-people-arrows"></i>
+            <span>Trips involving your staff</span>
+            <span class="trips-involving__count" id="tripsInvolvingCount"></span>
+            <span class="trips-involving__sub">Submitted elsewhere · Awareness only</span>
+          </h3>
+          <div class="trips-involving__list" id="tripsInvolvingList"></div>
+        </div>
+
+        </div><!-- /.admin-view-body -->
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ========== SLIDE-IN DETAIL PANEL ========== -->
+  <div class="slidein-backdrop" id="slideinBackdrop"></div>
+  <div class="slidein-panel" id="slideinPanel">
+    <div class="slidein__header">
+      <div class="slidein__header-info">
+        <div class="slidein__request-id" id="slideinRequestId"></div>
+        <div class="slidein__trip-name" id="slideinTripName"></div>
+        <div class="slidein__submitter" id="slideinSubmitter"></div>
+      </div>
+      <button class="slidein__close" id="slideinClose" title="Close" aria-label="Close panel"><i class="fas fa-times" aria-hidden="true"></i></button>
+    </div>
+    <div class="slidein__body" id="slideinBody">
+      <div class="admin-loading" id="slideinLoading">
+        <div class="spinner"></div>
+        <span>Loading request...</span>
+      </div>
+      <div class="hidden" id="slideinContent"></div>
+    </div>
+    <div class="slidein__footer" id="slideinFooter">
+      <div class="slidein__footer-actions">
+        <button class="btn btn-primary btn-sm" id="slideinOpenReview">
+          <i aria-hidden="true" class="fas fa-external-link-alt me-1"></i>Open Full Review
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Server-injected context for the controller -->
+  <script>
+    window.REVIEWER_CTX = {
+      userEmail: <?!= JSON.stringify(userEmail) ?>,
+      userName: <?!= JSON.stringify(userName) ?>,
+      scriptUrl: <?!= JSON.stringify(scriptUrl) ?>,
+      role: <?!= JSON.stringify(reviewerRole) ?>,
+      label: <?!= JSON.stringify(reviewerLabel) ?>,
+      scopeType: <?!= JSON.stringify(scopeType) ?>,
+      scopeCodes: <?!= scopeCodes ?>,
+      scopeNames: <?!= scopeNames ?>,
+      viewAsActive: <?!= JSON.stringify(viewAsActive) ?>,
+      viewAsLabel: <?!= JSON.stringify(viewAsLabel) ?>,
+      viewAsParams: <?!= viewAsParams ?>
+    };
+  </script>
+
+  <!-- Vendor JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+  <!-- Reviewer Dashboard Controller -->
+  <?!= include('client/controllers/admin/travelReviewerDashboardController'); ?>
+</body>
+</html>

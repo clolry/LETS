@@ -1,0 +1,3304 @@
+<!-- client/controllers/form/travelRequestTravelers.html -->
+<!-- Travelers Module: Compact leg-based cost table design -->
+<script>
+(function() {
+  'use strict';
+
+  const Controller = window.TravelRequest.Controller;
+
+  // ==========================================================================
+  // TRAVELERS MODULE
+  // Extends Controller with traveler management functionality
+  // ==========================================================================
+
+  /**
+   * Initialize travelers module
+   */
+  Controller._initTravelers = function() {
+    const self = this;
+
+    // Bind add traveler buttons
+    if (this._elements.btnAddTraveler) {
+      this._elements.btnAddTraveler.addEventListener('click', () => self._handleAddTraveler());
+    }
+    if (this._elements.emptyStateAddTraveler) {
+      this._elements.emptyStateAddTraveler.addEventListener('click', () => self._handleAddTraveler());
+    }
+
+    // Update empty state visibility
+    this._updateTravelersEmptyState();
+  };
+
+  // ==========================================================================
+  // TRAVELER MANAGEMENT
+  // ==========================================================================
+
+  /**
+   * Validate a traveler has completed required fields
+   * Returns { valid: boolean, missing: string[] }
+   */
+  Controller._validateTraveler = function(traveler) {
+    const missing = [];
+
+    if (!traveler.employeeName && !traveler.employeeId) {
+      missing.push('employee');
+    }
+    if (!traveler.isClientPaid) {
+      missing.push('funding');
+    }
+    if (!traveler.roleJustification) {
+      missing.push('justification');
+    }
+
+    // Transport validation: check based on mode (skip if local-travel-only)
+    const transportMode = traveler.transportMode || '';
+    const isMileageMode = transportMode === 'private' || transportMode === 'gov';
+
+    if (isMileageMode) {
+      // Mileage modes require miles to be entered (0 is not valid for mileage)
+      if (!traveler.milesToDeparture && !traveler.milesFromArrival) {
+        missing.push('transport');
+      }
+    } else {
+      // Cost-based modes (air, rail, rental): $0 is valid, undefined/null is not
+      if (traveler.ticketCost === undefined || traveler.ticketCost === null || traveler.ticketCost === '') {
+        missing.push('transport');
+      }
+    }
+
+    return {
+      valid: missing.length === 0,
+      missing: missing
+    };
+  };
+
+  /**
+   * Validate all existing travelers before adding a new one
+   * Returns the first incomplete traveler or null if all valid
+   */
+  Controller._validateAllTravelers = function() {
+    const state = window.TravelRequest.State;
+    const travelers = state.getTravelers();
+
+    for (const traveler of travelers) {
+      const result = this._validateTraveler(traveler);
+      if (!result.valid) {
+        return { traveler, missing: result.missing };
+      }
+    }
+    return null;
+  };
+
+  /**
+   * Collapse all traveler cards
+   */
+  Controller._collapseAllTravelers = function() {
+    const state = window.TravelRequest.State;
+    const travelers = state.getTravelers();
+
+    travelers.forEach(traveler => {
+      if (traveler.isExpanded) {
+        state.updateTraveler(traveler.id, 'isExpanded', false);
+        const body = document.getElementById(`tcBody_${traveler.id}`);
+        const card = this._elements.travelersContainer?.querySelector(`[data-traveler-id="${traveler.id}"]`);
+        if (body) body.classList.add('hidden');
+        if (card) {
+          const toggleIcon = card.querySelector('.tc__toggle i');
+          if (toggleIcon) toggleIcon.className = 'fas fa-chevron-right';
+        }
+        // Update and show summary when collapsing
+        this._updateTravelerSummary(traveler.id);
+        this._setTravelerSummaryVisible(traveler.id, true);
+      }
+    });
+  };
+
+  /**
+   * Highlight incomplete fields on a traveler card
+   */
+  Controller._highlightIncompleteFields = function(travelerId, missingFields) {
+    const card = this._elements.travelersContainer?.querySelector(`[data-traveler-id="${travelerId}"]`);
+    if (!card) return;
+
+    // Remove any existing highlights
+    card.querySelectorAll('.tc__field--error').forEach(el => el.classList.remove('tc__field--error'));
+
+    // Add error class to missing fields
+    missingFields.forEach(field => {
+      let targetEl;
+      switch(field) {
+        case 'employee':
+          targetEl = document.getElementById(`tcEmployee_${travelerId}`)?.closest('.tc__field');
+          break;
+        case 'funding':
+          targetEl = card.querySelector('.tc__funding');
+          break;
+        case 'justification':
+          targetEl = card.querySelector('.tc__justification');
+          break;
+        case 'transport':
+          targetEl = card.querySelector('.tc__transport-inputs');
+          break;
+      }
+      if (targetEl) targetEl.classList.add('tc__field--error');
+    });
+
+    // Remove highlights after a few seconds
+    setTimeout(() => {
+      card.querySelectorAll('.tc__field--error').forEach(el => el.classList.remove('tc__field--error'));
+    }, 3000);
+  };
+
+  Controller._handleAddTraveler = function() {
+    const state = window.TravelRequest.State;
+
+    // Validate existing travelers first
+    const incomplete = this._validateAllTravelers();
+    if (incomplete) {
+      // Expand the incomplete traveler and highlight missing fields
+      const { traveler, missing } = incomplete;
+      if (!traveler.isExpanded) {
+        this._toggleTravelerExpanded(traveler.id);
+      }
+      this._highlightIncompleteFields(traveler.id, missing);
+      return; // Don't add new traveler
+    }
+
+    // Collapse all existing travelers
+    this._collapseAllTravelers();
+
+    // Add new traveler
+    const traveler = state.addTraveler();
+    this._renderTravelerCard(traveler);
+    this._updateTravelersEmptyState();
+    this._updateTravelersTotal();
+
+    // Scroll to the new card
+    const newCard = this._elements.travelersContainer?.querySelector(`[data-traveler-id="${traveler.id}"]`);
+    if (newCard) {
+      newCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  };
+
+  Controller._applyEmployeeData = function(travelerId, employeeData) {
+    const state = window.TravelRequest.State;
+    state.updateTraveler(travelerId, 'employeeId', employeeData.employeeId || '');
+    state.updateTraveler(travelerId, 'employeeName', employeeData.employeeName || '');
+    state.updateTraveler(travelerId, 'email', employeeData.email || '');
+    state.updateTraveler(travelerId, 'orgCode', employeeData.orgCode || '');
+    state.updateTraveler(travelerId, 'businessUnit', employeeData.bu || '');
+    state.updateTraveler(travelerId, 'lcat', employeeData.lcat || '');
+    state.updateTraveler(travelerId, 'ddName', employeeData.ddName || '');
+    state.updateTraveler(travelerId, 'ddEmail', employeeData.ddEmail || '');
+    state.updateTraveler(travelerId, 'dutyLocation', employeeData.dutyLocation || '');
+
+    // Duty station for local travel calculation (address from location codes sheet)
+    state.updateTraveler(travelerId, 'dutyStationAddress', employeeData.dutyStationAddress || '');
+    state.updateTraveler(travelerId, 'dutyStationCity', employeeData.dutyStationCity || '');
+    state.updateTraveler(travelerId, 'dutyStationState', employeeData.dutyStationState || '');
+    state.updateTraveler(travelerId, 'dutyLocationCode', employeeData.locationCode || '');
+
+    // Update the employee info display fields
+    this._updateEmployeeInfoDisplay(travelerId, employeeData);
+
+    // Check local travel status for all legs
+    this._checkLocalTravelForTraveler(travelerId);
+  };
+
+  Controller._updateEmployeeInfoDisplay = function(travelerId, employeeData) {
+    const lcatInput = document.getElementById(`tcLcat_${travelerId}`);
+    const dutyLocEl = document.getElementById(`tcDutyLoc_${travelerId}`);
+    const buEl = document.getElementById(`tcBU_${travelerId}`);
+
+    if (lcatInput) lcatInput.value = employeeData.lcat || '';
+    if (dutyLocEl) dutyLocEl.textContent = employeeData.dutyLocation || '-';
+    if (buEl) buEl.textContent = employeeData.bu || '-';
+  };
+
+  Controller._removeTraveler = function(travelerId) {
+    const state = window.TravelRequest.State;
+    if (state.removeTraveler(travelerId)) {
+      const card = this._elements.travelersContainer.querySelector(`[data-traveler-id="${travelerId}"]`);
+      if (card) card.remove();
+      this._cleanupTravelerAutocomplete(travelerId);
+      this._cleanupTravelerDatePickers(travelerId);
+      this._updateTravelersEmptyState();
+      this._updateTravelersTotal();
+    }
+  };
+
+  Controller._cleanupTravelerAutocomplete = function(travelerId) {
+    const key = `traveler_name_${travelerId}`;
+    if (this._autocompleteInstances[key]) {
+      this._autocompleteInstances[key].destroy();
+      delete this._autocompleteInstances[key];
+    }
+  };
+
+  Controller._cleanupTravelerDatePickers = function(travelerId) {
+    // Clean up all date pickers for this traveler's legs
+    const keysToDelete = Object.keys(this._datePickers).filter(key => key.includes(`_${travelerId}_`));
+    keysToDelete.forEach(key => {
+      if (this._datePickers[key] && this._datePickers[key].destroy) {
+        this._datePickers[key].destroy();
+      }
+      delete this._datePickers[key];
+    });
+  };
+
+  Controller._updateTravelersEmptyState = function() {
+    const state = window.TravelRequest.State;
+    const hasTravelers = state.getTravelerCount() > 0;
+    if (this._elements.travelersEmptyState) {
+      this._elements.travelersEmptyState.classList.toggle('hidden', hasTravelers);
+    }
+    if (this._elements.btnAddTraveler) {
+      this._elements.btnAddTraveler.classList.toggle('hidden', !hasTravelers);
+    }
+    if (this._elements.travelersTotal) {
+      // Hide entire bar until at least one traveler reaches costs stage (after funding + justification)
+      const showTotalBar = hasTravelers && this._anyTravelerAtCostsStage();
+      this._elements.travelersTotal.classList.toggle('hidden', !showTotalBar);
+    }
+  };
+
+  /**
+   * Refresh all traveler cards (called when returning to Travelers step)
+   * Re-renders cards to reflect any changes in legs
+   */
+  Controller._refreshTravelerCards = function() {
+    const state = window.TravelRequest.State;
+    const travelers = state.getTravelers();
+
+    if (travelers.length === 0) return;
+
+    // Clear existing cards and re-render
+    if (this._elements.travelersContainer) {
+      // Remove existing traveler cards (class is 'tc', not 'traveler-card')
+      const existingCards = this._elements.travelersContainer.querySelectorAll('.tc[data-traveler-id]');
+      existingCards.forEach(card => {
+        const travelerId = card.dataset.travelerId;
+        this._cleanupTravelerAutocomplete(travelerId);
+        card.remove();
+      });
+
+      // Re-render all travelers
+      travelers.forEach(traveler => {
+        this._renderTravelerCard(traveler);
+      });
+
+      // Update totals and bar visibility based on disclosure stage
+      this._updateTravelersTotal();
+      if (this._elements.travelersTotal) {
+        this._elements.travelersTotal.classList.toggle('hidden', !this._anyTravelerAtCostsStage());
+      }
+    }
+  };
+
+  Controller._updateTravelersTotal = function() {
+    const state = window.TravelRequest.State;
+    const travelers = state.getTravelers();
+    const count = travelers.length;
+
+    // Sum category totals from state (already calculated by _recalculateTravelerCosts)
+    let transportTotal = 0;
+    let lodgingTotal = 0;
+    let mieTotal = 0;
+    let localTotal = 0;
+    let otherTotal = 0;
+
+    travelers.forEach(function(traveler) {
+      transportTotal += traveler.transportationTotal || 0;
+      lodgingTotal += traveler.lodgingTotal || 0;
+      mieTotal += traveler.mieTotal || 0;
+      localTotal += traveler.localTravelTotal || 0;
+      otherTotal += traveler.otherTotal || 0;
+    });
+
+    const grandTotal = transportTotal + lodgingTotal + mieTotal + localTotal + otherTotal;
+
+    if (this._elements.travelersTotal) {
+      const countEl = this._elements.travelersTotal.querySelector('.travelers-total__count');
+      const transportEl = document.getElementById('travelersTotalTransport');
+      const lodgingEl = document.getElementById('travelersTotalLodging');
+      const mieEl = document.getElementById('travelersTotalMie');
+      const localEl = document.getElementById('travelersTotalLocal');
+      const otherEl = document.getElementById('travelersTotalOther');
+      const valueEl = this._elements.travelersTotal.querySelector('.travelers-total__value');
+
+      if (countEl) countEl.textContent = `${count} traveler${count !== 1 ? 's' : ''}`;
+
+      // Update values and show/hide parent span based on value > 0
+      if (transportEl) {
+        transportEl.textContent = state.formatCurrency(transportTotal);
+        transportEl.parentElement.classList.toggle('hidden', transportTotal <= 0);
+      }
+      if (lodgingEl) {
+        lodgingEl.textContent = state.formatCurrency(lodgingTotal);
+        lodgingEl.parentElement.classList.toggle('hidden', lodgingTotal <= 0);
+      }
+      if (mieEl) {
+        mieEl.textContent = state.formatCurrency(mieTotal);
+        mieEl.parentElement.classList.toggle('hidden', mieTotal <= 0);
+      }
+      if (localEl) {
+        localEl.textContent = state.formatCurrency(localTotal);
+        localEl.parentElement.classList.toggle('hidden', localTotal <= 0);
+      }
+      if (otherEl) {
+        otherEl.textContent = state.formatCurrency(otherTotal);
+        otherEl.parentElement.classList.toggle('hidden', otherTotal <= 0);
+      }
+      if (valueEl) valueEl.textContent = state.formatCurrency(grandTotal);
+    }
+  };
+
+  /**
+   * Check if any traveler has reached the costs disclosure stage
+   */
+  Controller._anyTravelerAtCostsStage = function() {
+    if (!this._elements.travelersContainer) return false;
+    const cards = this._elements.travelersContainer.querySelectorAll('.tc[data-traveler-id]');
+    for (const card of cards) {
+      const stage = parseInt(card.dataset.disclosureStage) || 1;
+      if (stage >= 4) return true;
+    }
+    return false;
+  };
+
+  // ==========================================================================
+  // TRAVELER CARD RENDERING - Compact Table Design
+  // ==========================================================================
+
+  Controller._renderTravelerCard = function(traveler) {
+    const state = window.TravelRequest.State;
+    const legs = state.getLegs();
+    // Get mileage rate based on transport mode (private or gov vehicle)
+    const transportMode = traveler.transportMode || '';
+    const mileageRate = window.TravelRequest.getMileageRate(transportMode === 'gov' ? 'gov' : 'private');
+
+    // Determine initial disclosure stage based on existing data
+    const disclosureStage = this._getDisclosureStage(traveler);
+
+    const cardHtml = `
+      <div class="tc" data-traveler-id="${traveler.id}" data-disclosure-stage="${disclosureStage}">
+        <!-- Header -->
+        <div class="tc__header">
+          <div class="tc__info">
+            <i aria-hidden="true" class="fas fa-user tc__icon"></i>
+            <span class="tc__name" id="tcName_${traveler.id}">${traveler.employeeName || 'New Traveler'}</span>
+            <span class="tc__role-bu" id="tcRoleBu_${traveler.id}"></span>
+            <span class="tc__summary" id="tcSummary_${traveler.id}"></span>
+          </div>
+          <div class="tc__actions">
+            <span class="tc__total" id="tcTotal_${traveler.id}">$0.00</span>
+            <button type="button" class="tc__toggle" onclick="TravelRequest.Controller._toggleTravelerExpanded('${traveler.id}')" title="Toggle">
+              <i aria-hidden="true" class="fas fa-chevron-down"></i>
+            </button>
+            <button type="button" class="tc__remove" onclick="TravelRequest.Controller._removeTraveler('${traveler.id}')" title="Remove">
+              <i aria-hidden="true" class="fas fa-times"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Body -->
+        <div class="tc__body" id="tcBody_${traveler.id}">
+          <!-- Employee & Classification Section -->
+          <div class="tc__stage tc__stage--employee">
+            <div class="tc__details">
+              <!-- Left Column: Employee Info (2x2 grid) -->
+              <div class="tc__details-left">
+                <div class="tc__details-grid">
+                  <div class="tc__field tc__field--name">
+                    <label>Employee</label>
+                    <input type="text" class="form-control form-control-sm traveler-name-input"
+                           id="tcEmployee_${traveler.id}" placeholder="Search..." autocomplete="off"
+                           value="${traveler.employeeName || ''}">
+                  </div>
+                  <!-- Role field (revealed after employee selected) -->
+                  <div class="tc__field tc__field--lcat tc__reveal" id="tcRevealRole_${traveler.id}">
+                    <label>Role</label>
+                    <input type="text" class="form-control form-control-sm" id="tcLcat_${traveler.id}"
+                           placeholder="PM, COR..." value="${traveler.lcat || ''}">
+                  </div>
+                  <!-- Duty Location (revealed after employee selected) -->
+                  <div class="tc__field tc__field--info tc__reveal" id="tcRevealDuty_${traveler.id}">
+                    <label>Duty Location</label>
+                    <span class="tc__info-value" id="tcDutyLoc_${traveler.id}">${traveler.dutyLocation || '-'}</span>
+                  </div>
+                  <!-- BU (revealed after employee selected) -->
+                  <div class="tc__field tc__field--info tc__reveal" id="tcRevealBU_${traveler.id}">
+                    <label>BU</label>
+                    <span class="tc__info-value" id="tcBU_${traveler.id}">${traveler.businessUnit || '-'}</span>
+                  </div>
+                </div>
+              </div>
+              <!-- Right Column: Funding & Justification (revealed after employee selected) -->
+              <div class="tc__details-right tc__reveal">
+                <div class="tc__funding">
+                  <label class="tc__field-label">Funding</label>
+                  <div class="tc__toggle-group">
+                    <label class="tc__toggle ${traveler.isClientPaid === 'client' ? 'tc__toggle--active' : ''}">
+                      <input type="radio" name="tcFunding_${traveler.id}" value="client"
+                             ${traveler.isClientPaid === 'client' ? 'checked' : ''}>
+                      <span>Client-Paid</span>
+                    </label>
+                    <label class="tc__toggle ${traveler.isClientPaid === 'overhead' ? 'tc__toggle--active' : ''}">
+                      <input type="radio" name="tcFunding_${traveler.id}" value="overhead"
+                             ${traveler.isClientPaid === 'overhead' ? 'checked' : ''}>
+                      <span>Overhead</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="tc__justification">
+                  <label class="tc__field-label">Role Justification</label>
+                  <textarea class="form-control form-control-sm focus-expand" id="tcRoleJustification_${traveler.id}"
+                            data-rows-min="1" data-rows-focus="3" data-rows-filled="2"
+                            placeholder="Why is this traveler required?">${traveler.roleJustification || ''}</textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          ${this._renderInternationalSection(traveler)}
+
+          <!-- Stage 3: Transportation Section (revealed after funding & justification) -->
+          <div class="tc__stage tc__stage--transport tc__transport" id="tcStageTransport_${traveler.id}">
+            <label class="tc__transport-label">Primary Travel Method</label>
+            <div class="tc__transport-row">
+              <div class="tc__transport-cards" id="tcTransportCards_${traveler.id}">
+                <button type="button" class="tc__transport-card ${traveler.transportMode === 'air' ? 'tc__transport-card--selected' : ''}"
+                        data-mode="air" data-traveler-id="${traveler.id}">
+                  <i aria-hidden="true" class="fas fa-plane"></i>
+                  <span>Air</span>
+                </button>
+                <button type="button" class="tc__transport-card ${traveler.transportMode === 'rail' ? 'tc__transport-card--selected' : ''}"
+                        data-mode="rail" data-traveler-id="${traveler.id}">
+                  <i aria-hidden="true" class="fas fa-train"></i>
+                  <span>Rail</span>
+                </button>
+                <button type="button" class="tc__transport-card ${traveler.transportMode === 'rental' ? 'tc__transport-card--selected' : ''}"
+                        data-mode="rental" data-traveler-id="${traveler.id}">
+                  <i aria-hidden="true" class="fas fa-car"></i>
+                  <span>Rental</span>
+                </button>
+                <button type="button" class="tc__transport-card ${traveler.transportMode === 'private' ? 'tc__transport-card--selected' : ''}"
+                        data-mode="private" data-traveler-id="${traveler.id}">
+                  <i aria-hidden="true" class="fas fa-car-side"></i>
+                  <span>POV</span>
+                </button>
+                <button type="button" class="tc__transport-card tc__transport-card--gov ${traveler.transportMode === 'gov' ? 'tc__transport-card--selected' : ''}"
+                        data-mode="gov" data-traveler-id="${traveler.id}">
+                  <i aria-hidden="true" class="fas fa-car-side"></i>
+                  <span class="tc__transport-card-badge">GOV</span>
+                </button>
+              </div>
+              <div class="tc__transport-inputs">
+              <!-- Cost field (for Air, Rail, Rental) -->
+              <div class="tc__transport-cost ${(traveler.transportMode === 'private' || traveler.transportMode === 'gov') ? 'tc__transport-cost--hidden' : ''}"
+                   id="tcTransportCostWrap_${traveler.id}">
+                <label class="tc__transport-input-label">Estimated Cost</label>
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text">$</span>
+                  <input type="number" class="form-control tc__transport-amount" id="tcTransportCost_${traveler.id}"
+                         value="${traveler.ticketCost > 0 ? traveler.ticketCost : ''}" min="0" step="0.01" placeholder="0.00"
+                         data-traveler-id="${traveler.id}">
+                </div>
+              </div>
+              <!-- Mileage fields (for Private/Gov Vehicle) -->
+              <div class="tc__transport-mileage ${(traveler.transportMode === 'private' || traveler.transportMode === 'gov') ? '' : 'tc__transport-mileage--hidden'}"
+                   id="tcTransportMileWrap_${traveler.id}">
+                <label class="tc__transport-input-label">Total Miles (round trip)</label>
+                <div class="tc__transport-mileage-row">
+                  <div class="input-group input-group-sm">
+                    <input type="number" class="form-control tc__transport-miles" id="tcTransportMiles_${traveler.id}"
+                           value="${((traveler.milesToDeparture || 0) + (traveler.milesFromArrival || 0)) > 0 ? (traveler.milesToDeparture || 0) + (traveler.milesFromArrival || 0) : ''}" min="0" step="1" placeholder="0"
+                           data-traveler-id="${traveler.id}">
+                    <span class="input-group-text">mi</span>
+                  </div>
+                  <span class="tc__transport-calc" id="tcTransportCalc_${traveler.id}">
+                    × $${mileageRate.toFixed(3)} = $${(((traveler.milesToDeparture || 0) + (traveler.milesFromArrival || 0)) * mileageRate).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+              </div>
+
+              <!-- Rental Car Section (hidden if primary mode is Rental) -->
+              <div class="tc__rental-car ${traveler.transportMode === 'rental' ? 'tc__rental-car--hidden' : ''}" id="tcRentalCarSection_${traveler.id}">
+                <label class="tc__transport-input-label">Rental Car?</label>
+                <div class="tc__rental-car-row">
+                  <div class="tc__toggle-group" id="tcRentalCarToggle_${traveler.id}">
+                    <label class="tc__toggle ${traveler.needsRentalCar === true ? 'tc__toggle--active' : ''}">
+                      <input type="radio" name="tcRentalCar_${traveler.id}" value="yes"
+                             ${traveler.needsRentalCar === true ? 'checked' : ''}>
+                      <span>Yes</span>
+                    </label>
+                    <label class="tc__toggle ${traveler.needsRentalCar !== true ? 'tc__toggle--active' : ''}">
+                      <input type="radio" name="tcRentalCar_${traveler.id}" value="no"
+                             ${traveler.needsRentalCar !== true ? 'checked' : ''}>
+                      <span>No</span>
+                    </label>
+                  </div>
+                  <div class="tc__rental-car-cost ${traveler.needsRentalCar === true ? '' : 'tc__rental-car-cost--hidden'}" id="tcRentalCarCostWrap_${traveler.id}">
+                    <div class="input-group input-group-sm">
+                      <span class="input-group-text">$</span>
+                      <input type="number" class="form-control tc__rental-car-amount" id="tcRentalCarCost_${traveler.id}"
+                             value="${traveler.rentalCarCost > 0 ? traveler.rentalCarCost : ''}" min="0" step="0.01" placeholder="0.00"
+                             data-traveler-id="${traveler.id}">
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="tc__transport-total">
+                Total: <strong id="tcTransportTotal_${traveler.id}">$${(traveler.transportationTotal || 0).toFixed(2)}</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Stage 4: Per Diem & Totals (revealed after transport selection) -->
+          <div class="tc__stage tc__stage--costs" id="tcStageCosts_${traveler.id}">
+            <!-- Per Diem Section -->
+            <div class="tc__perdiem">
+              <div class="tc__perdiem-header">
+                <span class="tc__perdiem-title"><i aria-hidden="true" class="fas fa-calculator"></i> Per Diem Estimate</span>
+              </div>
+              <div class="tc__perdiem-body" id="tcPerDiemBody_${traveler.id}">
+                ${this._renderPerDiemRows(traveler, legs)}
+              </div>
+            </div>
+
+            <!-- Grand Total Bar -->
+            <div class="tc__grand">
+              <div class="tc__grand-breakdown">
+                <span>Transport: <strong id="tcGrandTransport_${traveler.id}">$0.00</strong></span>
+                <span>Lodging: <strong id="tcGrandLodging_${traveler.id}">$0.00</strong></span>
+                <span>M&IE: <strong id="tcGrandMie_${traveler.id}">$0.00</strong></span>
+                <span>Local: <strong id="tcGrandLocal_${traveler.id}">$0.00</strong></span>
+                <span>+15%: <strong id="tcGrandOther_${traveler.id}">$0.00</strong></span>
+              </div>
+              <div class="tc__grand-total">
+                <span>TOTAL</span>
+                <strong id="tcGrandTotal_${traveler.id}">$0.00</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    if (this._elements.travelersEmptyState) {
+      this._elements.travelersEmptyState.insertAdjacentHTML('beforebegin', cardHtml);
+    } else {
+      this._elements.travelersContainer.insertAdjacentHTML('beforeend', cardHtml);
+    }
+
+    this._initTravelerInputs(traveler);
+  };
+
+  /**
+   * Render per diem rows for each leg
+   */
+  Controller._renderPerDiemRows = function(traveler, legs) {
+    if (!legs.length) {
+      return '<div class="tc__perdiem-empty">Add destinations in Itinerary to see per diem costs</div>';
+    }
+
+    // If THIS traveler's local-travel check is in flight, show a loader
+    // instead of potentially-wrong per-diem rows. The check resolves async
+    // (server geocoding ~200-500ms); rendering the standard per-diem UI
+    // immediately would briefly show a non-local-travel section even for a
+    // trip that's actually within 50 mi. _checkLocalTravelForTraveler's
+    // .finally() calls _refreshPerDiemSection once this traveler's check
+    // settles, replacing the loader with the real rows.
+    //
+    // Per-traveler gating (not global) so a slow check on traveler A doesn't
+    // block the render of traveler B's per-diem rows after B's check
+    // already finished.
+    if (Controller._pendingLocalTravelTravelerIds &&
+        Controller._pendingLocalTravelTravelerIds.has(traveler.id)) {
+      return `
+        <div class="tc__perdiem-loading" style="padding: 16px; text-align: center; color: var(--color-text-secondary); font-size: 0.875rem;">
+          <i class="fas fa-spinner fa-spin" aria-hidden="true" style="margin-right: 8px;"></i>
+          <span>Calculating trip distances...</span>
+        </div>
+      `;
+    }
+
+    // Separate legs into regular (per diem) and local travel
+    const regularLegs = [];
+    const localLegs = [];
+
+    legs.forEach(leg => {
+      const legCost = traveler.legCosts[leg.id] || {};
+      if (legCost.isLocalTravel) {
+        localLegs.push(leg);
+      } else {
+        regularLegs.push(leg);
+      }
+    });
+
+    let html = '';
+
+    // Render regular per diem legs first
+    html += regularLegs.map((leg) => {
+      const legCost = traveler.legCosts[leg.id] || {};
+
+      const location = this._formatLegLocationShort(leg);
+      const isAttending = traveler.attendingLegs.includes(leg.id);
+
+      // Get dates - default from leg itinerary
+      const lodgingStart = legCost.lodgingStartDate || leg.startDate || '';
+      const lodgingEnd = legCost.lodgingEndDate || leg.endDate || '';
+      const mieStart = legCost.mieStartDate || leg.startDate || '';
+      const mieEnd = legCost.mieEndDate || leg.endDate || '';
+
+      // Check if lodging dates differ from itinerary (user needs to confirm)
+      const lodgingDatesMatch = lodgingStart === leg.startDate && lodgingEnd === leg.endDate;
+      const showLodgingNotice = isAttending && leg.startDate && !legCost.lodgingDatesConfirmed;
+
+      return `
+        <div class="tc__perdiem-leg ${isAttending ? '' : 'tc__perdiem-leg--inactive'}" data-leg-id="${leg.id}">
+          <div class="tc__perdiem-leg-header">
+            <label class="tc__perdiem-attend">
+              <input type="checkbox" class="tc__attend-check" id="tcAttend_${traveler.id}_${leg.id}"
+                     ${isAttending ? 'checked' : ''} data-traveler-id="${traveler.id}" data-leg-id="${leg.id}">
+              <span class="tc__perdiem-location">${location}</span>
+            </label>
+            <span class="tc__perdiem-leg-total" id="tcLegSubtotal_${traveler.id}_${leg.id}">$${(legCost.legSubtotal || 0).toFixed(2)}</span>
+          </div>
+          <div class="tc__perdiem-rows">
+            <!-- Lodging Row -->
+            <div class="tc__perdiem-row">
+              <span class="tc__perdiem-label"><i aria-hidden="true" class="fas fa-bed"></i> Lodging</span>
+              <span class="tc__date-warning-slot" id="tcDateWarningSlot_${traveler.id}_${leg.id}">
+                ${showLodgingNotice ? `
+                <span class="tc__date-warning" id="tcDateWarning_${traveler.id}_${leg.id}"
+                      data-tooltip="Dates auto-filled from itinerary. Adjust if lodging dates differ from travel dates.">
+                  <i aria-hidden="true" class="fas fa-exclamation-triangle"></i>
+                </span>
+                ` : ''}
+              </span>
+              <div class="tc__perdiem-dates">
+                <div class="date-chip date-chip--compact tc__perdiem-chip ${lodgingStart ? 'date-chip--filled' : ''} ${showLodgingNotice ? 'tc__perdiem-chip--warning' : ''}"
+                     id="tcLodgingStartChip_${traveler.id}_${leg.id}">
+                  <i aria-hidden="true" class="fas fa-calendar-alt date-chip__icon"></i>
+                  <input type="text" class="date-chip__input tc__lodging-start" data-input
+                         id="tcLodgingStart_${traveler.id}_${leg.id}" placeholder="Start" value="${lodgingStart}"
+                         data-traveler-id="${traveler.id}" data-leg-id="${leg.id}">
+                </div>
+                <span class="tc__date-arrow">→</span>
+                <div class="date-chip date-chip--compact tc__perdiem-chip ${lodgingEnd ? 'date-chip--filled' : ''} ${showLodgingNotice ? 'tc__perdiem-chip--warning' : ''}"
+                     id="tcLodgingEndChip_${traveler.id}_${leg.id}">
+                  <i aria-hidden="true" class="fas fa-calendar-alt date-chip__icon"></i>
+                  <input type="text" class="date-chip__input tc__lodging-end" data-input
+                         id="tcLodgingEnd_${traveler.id}_${leg.id}" placeholder="End" value="${lodgingEnd}"
+                         data-traveler-id="${traveler.id}" data-leg-id="${leg.id}">
+                </div>
+              </div>
+              <span class="tc__perdiem-calc ${legCost.lodgingOverride ? 'tc__perdiem-calc--hidden' : ''}" id="tcLodgingCalc_${traveler.id}_${leg.id}">
+                ${this._formatLodgingCalc(legCost)}
+              </span>
+              <span class="tc__perdiem-amount ${legCost.lodgingOverride && (legCost.lodgingOverrideAmount || 0) === 0 ? 'tc__perdiem-amount--na' : legCost.lodgingOverride ? 'tc__perdiem-amount--override' : ''}"
+                    id="tcLodging_${traveler.id}_${leg.id}">${legCost.lodgingOverride && (legCost.lodgingOverrideAmount || 0) === 0 ? 'N/A' : '$' + (legCost.lodgingTotal || 0).toFixed(2)}</span>
+              <button type="button" class="tc__na-btn ${legCost.lodgingOverride && (legCost.lodgingOverrideAmount || 0) === 0 ? 'tc__na-btn--active' : ''}"
+                      id="tcLodgingNaBtn_${traveler.id}_${leg.id}"
+                      onclick="TravelRequest.Controller._toggleNaOverride('${traveler.id}', '${leg.id}', 'lodging')"
+                      title="${legCost.lodgingOverride && (legCost.lodgingOverrideAmount || 0) === 0 ? 'Remove N/A (restore per diem)' : 'Mark as N/A ($0)'}"
+                      aria-pressed="${legCost.lodgingOverride && (legCost.lodgingOverrideAmount || 0) === 0 ? 'true' : 'false'}">N/A</button>
+              <button type="button" class="tc__override-btn ${legCost.lodgingOverride && legCost.lodgingOverrideAmount > 0 ? 'tc__override-btn--active' : ''} ${legCost.lodgingOverride && (legCost.lodgingOverrideAmount || 0) === 0 ? 'tc__override-btn--disabled' : ''}"
+                      id="tcLodgingOverrideBtn_${traveler.id}_${leg.id}"
+                      onclick="TravelRequest.Controller._toggleOverridePanel('${traveler.id}', '${leg.id}', 'lodging')"
+                      ${legCost.lodgingOverride && (legCost.lodgingOverrideAmount || 0) === 0 ? 'disabled' : ''}
+                      title="Override amount">
+                <i aria-hidden="true" class="fas fa-edit"></i>
+              </button>
+            </div>
+            <!-- Lodging Override Panel -->
+            <div class="tc__override-panel ${legCost.lodgingOverride && legCost.lodgingOverrideAmount > 0 ? '' : 'hidden'}" id="tcLodgingOverridePanel_${traveler.id}_${leg.id}">
+              <div class="tc__override-content">
+                <div class="tc__override-field">
+                  <label>Override:</label>
+                  <div class="input-group input-group-sm">
+                    <span class="input-group-text">$</span>
+                    <input type="number" class="form-control" id="tcLodgingOverrideAmount_${traveler.id}_${leg.id}"
+                           value="${legCost.lodgingOverrideAmount || ''}"
+                           placeholder="${(legCost.lodgingTotal || 0).toFixed(2)}"
+                           data-traveler-id="${traveler.id}" data-leg-id="${leg.id}" data-type="lodging">
+                  </div>
+                </div>
+                <div class="tc__override-field tc__override-field--reason">
+                  <label>Reason:</label>
+                  <input type="text" class="form-control form-control-sm" id="tcLodgingOverrideReason_${traveler.id}_${leg.id}"
+                         value="${legCost.lodgingOverrideReason || ''}"
+                         placeholder="e.g., Conference hotel rate"
+                         data-traveler-id="${traveler.id}" data-leg-id="${leg.id}" data-type="lodging">
+                </div>
+                <button type="button" class="tc__override-clear"
+                        onclick="TravelRequest.Controller._clearOverride('${traveler.id}', '${leg.id}', 'lodging')"
+                        title="Clear override">
+                  <i aria-hidden="true" class="fas fa-times"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- M&IE Row -->
+            <div class="tc__perdiem-row">
+              <span class="tc__perdiem-label"><i aria-hidden="true" class="fas fa-utensils"></i> M&IE</span>
+              <span class="tc__date-warning-slot"></span>
+              <div class="tc__perdiem-dates">
+                <div class="date-chip date-chip--compact tc__perdiem-chip ${mieStart ? 'date-chip--filled' : ''}"
+                     id="tcMieStartChip_${traveler.id}_${leg.id}">
+                  <i aria-hidden="true" class="fas fa-calendar-alt date-chip__icon"></i>
+                  <input type="text" class="date-chip__input tc__mie-start" data-input
+                         id="tcMieStart_${traveler.id}_${leg.id}" placeholder="Start" value="${mieStart}"
+                         data-traveler-id="${traveler.id}" data-leg-id="${leg.id}">
+                </div>
+                <span class="tc__date-arrow">→</span>
+                <div class="date-chip date-chip--compact tc__perdiem-chip ${mieEnd ? 'date-chip--filled' : ''}"
+                     id="tcMieEndChip_${traveler.id}_${leg.id}">
+                  <i aria-hidden="true" class="fas fa-calendar-alt date-chip__icon"></i>
+                  <input type="text" class="date-chip__input tc__mie-end" data-input
+                         id="tcMieEnd_${traveler.id}_${leg.id}" placeholder="End" value="${mieEnd}"
+                         data-traveler-id="${traveler.id}" data-leg-id="${leg.id}">
+                </div>
+              </div>
+              <span class="tc__perdiem-calc ${legCost.mieOverride ? 'tc__perdiem-calc--hidden' : ''}" id="tcMieCalc_${traveler.id}_${leg.id}">
+                ${this._formatMieCalc(legCost.mieDays || 0, legCost.mieRate || 0)}
+              </span>
+              <span class="tc__perdiem-amount ${legCost.mieOverride && (legCost.mieOverrideAmount || 0) === 0 ? 'tc__perdiem-amount--na' : legCost.mieOverride ? 'tc__perdiem-amount--override' : ''}"
+                    id="tcMie_${traveler.id}_${leg.id}">${legCost.mieOverride && (legCost.mieOverrideAmount || 0) === 0 ? 'N/A' : '$' + (legCost.mieTotal || 0).toFixed(2)}</span>
+              <button type="button" class="tc__na-btn ${legCost.mieOverride && (legCost.mieOverrideAmount || 0) === 0 ? 'tc__na-btn--active' : ''}"
+                      id="tcMieNaBtn_${traveler.id}_${leg.id}"
+                      onclick="TravelRequest.Controller._toggleNaOverride('${traveler.id}', '${leg.id}', 'mie')"
+                      title="${legCost.mieOverride && (legCost.mieOverrideAmount || 0) === 0 ? 'Remove N/A (restore per diem)' : 'Mark as N/A ($0)'}"
+                      aria-pressed="${legCost.mieOverride && (legCost.mieOverrideAmount || 0) === 0 ? 'true' : 'false'}">N/A</button>
+              <button type="button" class="tc__override-btn ${legCost.mieOverride && legCost.mieOverrideAmount > 0 ? 'tc__override-btn--active' : ''} ${legCost.mieOverride && (legCost.mieOverrideAmount || 0) === 0 ? 'tc__override-btn--disabled' : ''}"
+                      id="tcMieOverrideBtn_${traveler.id}_${leg.id}"
+                      onclick="TravelRequest.Controller._toggleOverridePanel('${traveler.id}', '${leg.id}', 'mie')"
+                      ${legCost.mieOverride && (legCost.mieOverrideAmount || 0) === 0 ? 'disabled' : ''}
+                      title="Override amount">
+                <i aria-hidden="true" class="fas fa-edit"></i>
+              </button>
+            </div>
+            <!-- M&IE Override Panel -->
+            <div class="tc__override-panel hidden" id="tcMieOverridePanel_${traveler.id}_${leg.id}">
+              <div class="tc__override-content">
+                <div class="tc__override-field">
+                  <label>Override:</label>
+                  <div class="input-group input-group-sm">
+                    <span class="input-group-text">$</span>
+                    <input type="number" class="form-control" id="tcMieOverrideAmount_${traveler.id}_${leg.id}"
+                           value="${legCost.mieOverrideAmount || ''}"
+                           placeholder="${(legCost.mieTotal || 0).toFixed(2)}"
+                           data-traveler-id="${traveler.id}" data-leg-id="${leg.id}" data-type="mie">
+                  </div>
+                </div>
+                <div class="tc__override-field tc__override-field--reason">
+                  <label>Reason:</label>
+                  <input type="text" class="form-control form-control-sm" id="tcMieOverrideReason_${traveler.id}_${leg.id}"
+                         value="${legCost.mieOverrideReason || ''}"
+                         placeholder="e.g., Meals provided"
+                         data-traveler-id="${traveler.id}" data-leg-id="${leg.id}" data-type="mie">
+                </div>
+                <button type="button" class="tc__override-clear"
+                        onclick="TravelRequest.Controller._clearOverride('${traveler.id}', '${leg.id}', 'mie')"
+                        title="Clear override">
+                  <i aria-hidden="true" class="fas fa-times"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Render local travel section (commute info + local legs) grouped together
+    if (localLegs.length > 0) {
+      // Add commute info section first
+      html += this._renderLocalTravelCommuteInfo(traveler);
+
+      // Then render all local travel legs
+      html += localLegs.map((leg) => {
+        const legCost = traveler.legCosts[leg.id] || {};
+        return this._renderLocalTravelLegRow(traveler, leg, legCost);
+      }).join('');
+    }
+
+    return html;
+  };
+
+  /**
+   * Dismiss lodging dates warning (called when user changes dates)
+   */
+  Controller._dismissLodgingWarning = function(travelerId, legId) {
+    const state = window.TravelRequest.State;
+    state.updateTravelerLegCost(travelerId, legId, 'lodgingDatesConfirmed', true);
+
+    // Remove warning icon
+    const warningIcon = document.getElementById(`tcDateWarning_${travelerId}_${legId}`);
+    if (warningIcon) warningIcon.remove();
+
+    // Remove warning class from date chip wrappers
+    const startChip = document.getElementById(`tcLodgingStartChip_${travelerId}_${legId}`);
+    const endChip = document.getElementById(`tcLodgingEndChip_${travelerId}_${legId}`);
+
+    if (startChip) {
+      startChip.classList.remove('tc__perdiem-chip--warning');
+    }
+    if (endChip) {
+      endChip.classList.remove('tc__perdiem-chip--warning');
+    }
+  };
+
+  Controller._formatLegLocationShort = function(leg) {
+    // Use shared escapeHtml to prevent XSS from user-provided city/state/country
+    const escape = TravelUtils?.escapeHtml || (s => s);
+    if (leg.city && leg.state) return `${escape(leg.city)}, ${escape(leg.state)}`;
+    if (leg.city && leg.country && leg.country !== 'United States') return `${escape(leg.city)}, ${escape(leg.country)}`;
+    if (leg.city) return escape(leg.city);
+    return `Stop ${leg.legNumber}`;
+  };
+
+  /**
+   * Format lodging calculation - shows breakdown when rates vary by month
+   */
+  Controller._formatLodgingCalc = function(legCost) {
+    const nights = legCost.lodgingNights || 0;
+    const rate = legCost.lodgingRate || 0;
+
+    if (nights === 0) {
+      return '0 nights';
+    }
+
+    // If rates varied and we have a breakdown, show grouped format
+    if (legCost.lodgingRatesVaried && legCost.lodgingBreakdown && legCost.lodgingBreakdown.length > 0) {
+      // Group nights by rate
+      const rateGroups = {};
+      legCost.lodgingBreakdown.forEach(night => {
+        const r = night.rate || 0;
+        rateGroups[r] = (rateGroups[r] || 0) + 1;
+      });
+
+      // Sort by rate (ascending) and format
+      const parts = Object.entries(rateGroups)
+        .sort((a, b) => parseFloat(a[0]) - parseFloat(b[0]))
+        .map(([r, count]) => `${count} night${count > 1 ? 's' : ''} @ $${parseFloat(r).toFixed(0)}`);
+
+      return parts.join(' + ');
+    }
+
+    // Simple format when rates don't vary
+    return `${nights} nights × $${rate.toFixed(2)}`;
+  };
+
+  /**
+   * Format M&IE calculation with 75% first/last day breakdown
+   */
+  Controller._formatMieCalc = function(days, rate) {
+    if (days === 0) {
+      return '0 days';
+    } else if (days === 1) {
+      return `1d @ 75% · $${rate}/day`;
+    } else if (days === 2) {
+      return `2d @ 75% · $${rate}/day`;
+    } else {
+      const middleDays = days - 2;
+      return `2d @ 75% + ${middleDays}d @ 100% · $${rate}/day`;
+    }
+  };
+
+  // ==========================================================================
+  // LOCAL TRAVEL FUNCTIONS
+  // ==========================================================================
+
+  /**
+   * Render commute info section for local travel
+   * Shown once per traveler when they have any local travel legs
+   */
+  Controller._renderLocalTravelCommuteInfo = function(traveler) {
+    return `
+      <div class="tc__local-commute" id="tcLocalCommute_${traveler.id}">
+        <div class="tc__local-commute-header">
+          <i aria-hidden="true" class="fas fa-car"></i> Commute Information
+          <span class="tc__local-commute-hint">Used to calculate reimbursable mileage</span>
+        </div>
+        <div class="tc__local-commute-body">
+          <label class="tc__local-telework">
+            <input type="checkbox" id="tcTelework_${traveler.id}" ${traveler.isFullTimeTelework ? 'checked' : ''}>
+            <span>Full-time telework (home is official worksite)</span>
+          </label>
+          <div class="tc__local-commute-fields ${traveler.isFullTimeTelework ? 'hidden' : ''}" id="tcCommuteFields_${traveler.id}">
+            <div class="tc__local-field">
+              <label>Normal round-trip commute</label>
+              <div class="input-group input-group-sm">
+                <input type="number" class="form-control" id="tcCommuteDistance_${traveler.id}"
+                       value="${traveler.normalCommuteDistance || ''}" placeholder="0" min="0" step="1">
+                <span class="input-group-text">miles</span>
+              </div>
+            </div>
+            <div class="tc__local-field">
+              <label>Normal daily parking</label>
+              <div class="input-group input-group-sm">
+                <span class="input-group-text">$</span>
+                <input type="number" class="form-control" id="tcCommuteParking_${traveler.id}"
+                       value="${traveler.normalCommuteParking || ''}" placeholder="0" min="0" step="0.01">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  };
+
+  /**
+   * Render local travel expense row for a single leg
+   */
+  Controller._renderLocalTravelLegRow = function(traveler, leg, legCost) {
+    const location = this._formatLegLocationShort(leg);
+    const isAttending = traveler.attendingLegs.includes(leg.id);
+    const privateRate = window.TravelRequest.MILEAGE_RATES.private;
+    const govRate = window.TravelRequest.MILEAGE_RATES.gov;
+
+    return `
+      <div class="tc__local-leg ${isAttending ? '' : 'tc__local-leg--inactive'}" data-leg-id="${leg.id}">
+        <div class="tc__local-leg-header">
+          <label class="tc__local-attend">
+            <input type="checkbox" class="tc__attend-check" id="tcAttend_${traveler.id}_${leg.id}"
+                   ${isAttending ? 'checked' : ''} data-traveler-id="${traveler.id}" data-leg-id="${leg.id}">
+            <span class="tc__local-location">${location}</span>
+            <span class="tc__local-badge">Local Travel</span>
+          </label>
+          <span class="tc__local-leg-total" id="tcLegSubtotal_${traveler.id}_${leg.id}">
+            $${(legCost.localTravelTotal || 0).toFixed(2)}
+          </span>
+        </div>
+        <div class="tc__local-rows">
+          <!-- Mileage Row -->
+          <div class="tc__local-row">
+            <span class="tc__local-label"><i aria-hidden="true" class="fas fa-road"></i> Miles Driven</span>
+            <div class="tc__local-input-wrap">
+              <div class="input-group input-group-sm">
+                <input type="number" class="form-control tc__local-miles" id="tcLocalMiles_${traveler.id}_${leg.id}"
+                       value="${legCost.localMilesDriven || ''}" placeholder="0" min="0" step="1"
+                       data-traveler-id="${traveler.id}" data-leg-id="${leg.id}">
+                <span class="input-group-text">mi</span>
+              </div>
+            </div>
+            <span class="tc__local-calc" id="tcLocalMileageCalc_${traveler.id}_${leg.id}">
+              Reimbursable: 0 mi × $${privateRate.toFixed(3)}
+            </span>
+            <span class="tc__local-amount" id="tcLocalMileageAmt_${traveler.id}_${leg.id}">$0.00</span>
+          </div>
+
+          <!-- Gov Vehicle Available -->
+          <div class="tc__local-row tc__local-row--checkbox">
+            <label class="tc__local-gov-vehicle">
+              <input type="checkbox" id="tcGovVehicle_${traveler.id}_${leg.id}"
+                     ${legCost.wasGovVehicleAvailable ? 'checked' : ''}
+                     data-traveler-id="${traveler.id}" data-leg-id="${leg.id}">
+              <span>Government vehicle was available (reduced rate: $${govRate.toFixed(3)}/mi)</span>
+            </label>
+          </div>
+
+          <!-- Parking Row -->
+          <div class="tc__local-row">
+            <span class="tc__local-label"><i aria-hidden="true" class="fas fa-parking"></i> Parking</span>
+            <div class="tc__local-input-wrap">
+              <div class="input-group input-group-sm">
+                <span class="input-group-text">$</span>
+                <input type="number" class="form-control tc__local-parking" id="tcLocalParking_${traveler.id}_${leg.id}"
+                       value="${legCost.localParking || ''}" placeholder="0" min="0" step="0.01"
+                       data-traveler-id="${traveler.id}" data-leg-id="${leg.id}">
+              </div>
+            </div>
+            <span class="tc__local-calc" id="tcLocalParkingCalc_${traveler.id}_${leg.id}">
+              Excess over commute
+            </span>
+            <span class="tc__local-amount" id="tcLocalParkingAmt_${traveler.id}_${leg.id}">$0.00</span>
+          </div>
+
+          <!-- Tolls Row -->
+          <div class="tc__local-row">
+            <span class="tc__local-label"><i aria-hidden="true" class="fas fa-money-bill-wave"></i> Tolls</span>
+            <div class="tc__local-input-wrap">
+              <div class="input-group input-group-sm">
+                <span class="input-group-text">$</span>
+                <input type="number" class="form-control tc__local-tolls" id="tcLocalTolls_${traveler.id}_${leg.id}"
+                       value="${legCost.localTolls || ''}" placeholder="0" min="0" step="0.01"
+                       data-traveler-id="${traveler.id}" data-leg-id="${leg.id}">
+              </div>
+            </div>
+            <span class="tc__local-calc">Fully reimbursable</span>
+            <span class="tc__local-amount" id="tcLocalTollsAmt_${traveler.id}_${leg.id}">
+              $${(legCost.localTolls || 0).toFixed(2)}
+            </span>
+          </div>
+        </div>
+
+        <!-- Local Travel Policy Note -->
+        <div class="tc__local-note">
+          <i aria-hidden="true" class="fas fa-info-circle"></i>
+          <span>Per GSA OAS 5770.1B: No per diem (lodging/meals) for local travel. Only excess mileage, parking, and tolls are reimbursable.</span>
+        </div>
+      </div>
+    `;
+  };
+
+  /**
+   * Check if traveler has any local travel legs
+   */
+  Controller._hasLocalTravelLegs = function(traveler) {
+    if (!traveler.legCosts) return false;
+    return Object.values(traveler.legCosts).some(lc => lc.isLocalTravel);
+  };
+
+  /**
+   * LOCAL TRAVEL RADIUS (miles) - GSA OAS 5770.1B default
+   */
+  Controller.LOCAL_TRAVEL_RADIUS = 50;
+
+  /**
+   * Cache for distance calculations to avoid repeated server calls
+   * Key: "originCity,originState|destCity,destState" -> distance in miles
+   */
+  Controller._distanceCache = {};
+
+  /**
+   * In-flight tracking for local-travel checks. Two parallel structures:
+   *
+   *   _pendingLocalTravelChecks  — Array of all in-flight promises. Submit
+   *     awaits Promise.all of this so a fast user can't outrun the server
+   *     geocoding and submit with isLocalTravel=false (stale default).
+   *
+   *   _pendingLocalTravelTravelerIds  — Set of traveler IDs whose checks
+   *     are in flight. _renderPerDiemRows consults this PER TRAVELER to
+   *     decide whether to render a "Calculating trip distances..." loader
+   *     instead of the per-diem rows. Using a per-traveler set instead of
+   *     the global array prevents one traveler's pending check from
+   *     blocking the per-diem render of an OTHER traveler whose check
+   *     already finished.
+   *
+   * Background — REQ-2026-0166 (Springfield VA → Tysons VA, ~15 mi):
+   *   _checkLocalTravelForTraveler is async (await server geocoding +
+   *   distance calc, ~200-500ms). Before this tracking + submit-time wait,
+   *   a user fast enough to click Submit before the geocoding resolved
+   *   would submit with isLocalTravel still at its default false value.
+   *   The state update from the geocoding would land moments later — too
+   *   late, the request was already sent.
+   *
+   * Tracking pattern: every call to _checkLocalTravelForTraveler pushes
+   * its promise onto the array AND adds the travelerId to the set; the
+   * .finally() hook removes the entry from both when the promise settles.
+   */
+  Controller._pendingLocalTravelChecks = [];
+  Controller._pendingLocalTravelTravelerIds = new Set();
+
+  /**
+   * Check and update local travel status for all legs for a traveler
+   * Called when employee is selected and duty station is known
+   * Uses async geocoding to calculate distances
+   * @param {string} travelerId - The traveler ID
+   * @returns {Promise<void>} Resolves when every leg has been checked and
+   *   the UI refresh + transport-visibility + disclosure-progress hooks
+   *   have run. The returned promise is also tracked in
+   *   _pendingLocalTravelChecks so submit can wait on it.
+   */
+  Controller._checkLocalTravelForTraveler = function(travelerId) {
+    var self = this;
+
+    // Mark this traveler as having a pending check BEFORE starting the async
+    // work, so any synchronous render of the per-diem section (e.g. user
+    // navigates to costs while we're computing) shows the loader.
+    Controller._pendingLocalTravelTravelerIds.add(travelerId);
+
+    var promise = (async function() {
+      const state = window.TravelRequest.State;
+      const traveler = state.getTraveler(travelerId);
+      if (!traveler) return;
+
+      // Need duty station info
+      if (!traveler.dutyStationCity || !traveler.dutyStationState) {
+        return;
+      }
+
+      const legs = state.getLegs() || [];
+
+      // Check each leg (async)
+      for (const leg of legs) {
+        if (!leg.city || !leg.state) {
+          continue;
+        }
+        const isLocal = await self._isLegLocalTravel(traveler, leg);
+        state.updateTravelerLegCost(travelerId, leg.id, 'isLocalTravel', isLocal);
+      }
+    })();
+
+    // Track in-flight state. Both structures are cleaned up in the same
+    // .finally() so the per-diem refresh runs only AFTER the per-traveler
+    // pending flag is cleared — otherwise _renderPerDiemRows would still see
+    // this traveler in the pending set and re-render the loader on top of
+    // the loader we just had.
+    Controller._pendingLocalTravelChecks.push(promise);
+    promise.finally(function() {
+      // Remove from global array
+      const idx = Controller._pendingLocalTravelChecks.indexOf(promise);
+      if (idx >= 0) Controller._pendingLocalTravelChecks.splice(idx, 1);
+      // Clear per-traveler pending flag
+      Controller._pendingLocalTravelTravelerIds.delete(travelerId);
+
+      // Refresh the per-diem section now that pending state is clean —
+      // _renderPerDiemRows will produce the real rows (either local-travel
+      // or standard per-diem) instead of the loader. This runs
+      // unconditionally so non-local-travel trips also clear the loader.
+      self._refreshPerDiemSection(travelerId);
+
+      // Update transport section visibility (hide if all legs are local)
+      self._updateTransportSectionVisibility(travelerId);
+
+      // Re-check disclosure progress now that local travel status is known —
+      // skip the transport stage if all legs are local.
+      self._checkDisclosureProgress(travelerId);
+    });
+
+    return promise;
+  };
+
+  /**
+   * Re-run the local-travel check for every traveler. Call after a leg's
+   * city or state finalizes — `_checkLocalTravelForTraveler` only runs on
+   * employee selection, so without this hook a leg that was edited later
+   * keeps `isLocalTravel=false` even when it should be true.
+   */
+  Controller._recheckLocalTravelForAllTravelers = function() {
+    const state = window.TravelRequest.State;
+    const travelers = (state.getTravelers && state.getTravelers()) || [];
+    travelers.forEach(t => {
+      if (t && t.id) this._checkLocalTravelForTraveler(t.id);
+    });
+  };
+
+  /**
+   * Check if a specific leg is local travel for a traveler
+   * Uses server-side geocoding to calculate distance
+   * @param {Object} traveler - The traveler object
+   * @param {Object} leg - The leg object
+   * @returns {Promise<boolean>} True if the leg is within local travel radius
+   */
+  Controller._isLegLocalTravel = async function(traveler, leg) {
+    // Need duty station info to calculate distance
+    if (!traveler.dutyStationCity || !traveler.dutyStationState) {
+      return false;
+    }
+
+    // Need destination info
+    if (!leg.city || !leg.state) {
+      return false;
+    }
+
+    // Quick check: same city/state is definitely local
+    if (traveler.dutyStationCity.toLowerCase() === leg.city.toLowerCase() &&
+        traveler.dutyStationState.toLowerCase() === leg.state.toLowerCase()) {
+      return true;
+    }
+
+    // Calculate distance using server geocoding
+    const distance = await this._calculateDistanceBetweenLocations(
+      traveler.dutyStationAddress || '',
+      traveler.dutyStationCity,
+      traveler.dutyStationState,
+      leg.city,
+      leg.state
+    );
+
+    // If distance calculation fails, assume not local travel
+    if (distance === null) {
+      return false;
+    }
+
+    return distance < this.LOCAL_TRAVEL_RADIUS;
+  };
+
+  /**
+   * Calculate "as the crow flies" distance between two locations
+   * Uses server-side geocoding with caching
+   * @param {string} originAddress - Origin street address (optional)
+   * @param {string} originCity - Origin city
+   * @param {string} originState - Origin state
+   * @param {string} destCity - Destination city
+   * @param {string} destState - Destination state
+   * @returns {Promise<number|null>} Distance in miles, or null if calculation fails
+   */
+  Controller._calculateDistanceBetweenLocations = async function(originAddress, originCity, originState, destCity, destState) {
+    // Check cache first
+    const cacheKey = `${originCity},${originState}|${destCity},${destState}`;
+    if (this._distanceCache[cacheKey] !== undefined) {
+      return this._distanceCache[cacheKey];
+    }
+
+    // Call server for geocoding and distance calculation
+    return new Promise((resolve) => {
+      google.script.run
+        .withSuccessHandler((result) => {
+          if (result.success) {
+            const distance = result.distanceMiles;
+            this._distanceCache[cacheKey] = distance;
+            resolve(distance);
+          } else {
+            this._distanceCache[cacheKey] = null;
+            resolve(null);
+          }
+        })
+        .withFailureHandler(() => {
+          this._distanceCache[cacheKey] = null;
+          resolve(null);
+        })
+        .calculateTravelDistance(
+          { address: originAddress, city: originCity, state: originState },
+          { address: '', city: destCity, state: destState }
+        );
+    });
+  };
+
+  /**
+   * Check if all attending legs are local travel
+   * @param {Object} traveler - The traveler object
+   * @returns {boolean} True if ALL attending legs are local travel
+   */
+  Controller._allLegsAreLocalTravel = function(traveler) {
+    if (!traveler.attendingLegs || traveler.attendingLegs.length === 0) {
+      return false;
+    }
+    if (!traveler.legCosts) return false;
+    return traveler.attendingLegs.every(legId => {
+      const legCost = traveler.legCosts[legId];
+      return legCost && legCost.isLocalTravel;
+    });
+  };
+
+  /**
+   * Update transport section visibility based on local travel status
+   * Hide transport method selection if ALL attending legs are local travel
+   * @param {string} travelerId - The traveler ID
+   */
+  Controller._updateTransportSectionVisibility = function(travelerId) {
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+    if (!traveler) return;
+
+    const transportSection = document.getElementById(`tcStageTransport_${travelerId}`);
+    if (!transportSection) return;
+
+    const allLocal = this._allLegsAreLocalTravel(traveler);
+
+    if (allLocal) {
+      // Hide transport section - local travel uses POV by default
+      transportSection.classList.add('hidden');
+      // Clear transport-related costs since they don't apply
+      state.updateTraveler(travelerId, 'transportMode', '');
+      state.updateTraveler(travelerId, 'ticketCost', 0);
+      state.updateTraveler(travelerId, 'transportationTotal', 0);
+    } else {
+      // Show transport section - needed for TDY legs
+      transportSection.classList.remove('hidden');
+      // Restore default transport mode if not set
+      if (!traveler.transportMode) {
+        state.updateTraveler(travelerId, 'transportMode', 'air');
+      }
+    }
+
+    // Update cost display
+    this._updateTravelerCostDisplay(travelerId);
+  };
+
+  /**
+   * Refresh the per diem section for a traveler
+   * Called when local travel status changes
+   */
+  Controller._refreshPerDiemSection = function(travelerId) {
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+    const legs = state.getLegs() || [];
+
+    const perDiemBody = document.getElementById(`tcPerDiemBody_${travelerId}`);
+    if (!perDiemBody) return;
+
+    // Re-render the per diem rows (includes local travel sections)
+    perDiemBody.innerHTML = this._renderPerDiemRows(traveler, legs);
+
+    // Re-initialize inputs (per diem date pickers and local travel inputs)
+    this._initTravelerLegDatePickers(travelerId);
+    this._initLocalTravelInputs(travelerId);
+
+    // Re-bind leg attendance events
+    this._bindLegAttendanceEvents(travelerId);
+
+    // Fetch per diem for non-local legs
+    this._fetchAllLegPerDiem(travelerId);
+
+    // Update transport section visibility (hide if all legs are local)
+    this._updateTransportSectionVisibility(travelerId);
+  };
+
+  /**
+   * Initialize local travel input event handlers
+   */
+  Controller._initLocalTravelInputs = function(travelerId) {
+    const self = this;
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+
+    if (!this._hasLocalTravelLegs(traveler)) return;
+
+    // Telework checkbox
+    const teleworkCheckbox = document.getElementById(`tcTelework_${travelerId}`);
+    if (teleworkCheckbox) {
+      teleworkCheckbox.addEventListener('change', function() {
+        state.updateTraveler(travelerId, 'isFullTimeTelework', this.checked);
+
+        // Hide/show commute fields
+        const commuteFields = document.getElementById(`tcCommuteFields_${travelerId}`);
+        if (commuteFields) {
+          commuteFields.classList.toggle('hidden', this.checked);
+        }
+
+        // Recalculate all local travel legs
+        self._updateAllLocalTravelCalcs(travelerId);
+      });
+    }
+
+    // Commute distance input
+    const commuteDistanceInput = document.getElementById(`tcCommuteDistance_${travelerId}`);
+    if (commuteDistanceInput) {
+      commuteDistanceInput.addEventListener('input', function() {
+        state.updateTraveler(travelerId, 'normalCommuteDistance', parseFloat(this.value) || 0);
+        self._updateAllLocalTravelCalcs(travelerId);
+      });
+    }
+
+    // Commute parking input
+    const commuteParkingInput = document.getElementById(`tcCommuteParking_${travelerId}`);
+    if (commuteParkingInput) {
+      commuteParkingInput.addEventListener('input', function() {
+        state.updateTraveler(travelerId, 'normalCommuteParking', parseFloat(this.value) || 0);
+        self._updateAllLocalTravelCalcs(travelerId);
+      });
+    }
+
+    // Initialize per-leg local travel inputs
+    const legs = state.getLegs() || [];
+    legs.forEach(leg => {
+      const legCost = traveler.legCosts[leg.id];
+      if (legCost && legCost.isLocalTravel) {
+        this._initLocalTravelLegInputs(travelerId, leg.id);
+      }
+    });
+
+    // Calculate initial values for restored drafts
+    this._updateAllLocalTravelCalcs(travelerId);
+  };
+
+  /**
+   * Initialize local travel inputs for a specific leg
+   */
+  Controller._initLocalTravelLegInputs = function(travelerId, legId) {
+    const self = this;
+    const state = window.TravelRequest.State;
+
+    // Miles driven input
+    const milesInput = document.getElementById(`tcLocalMiles_${travelerId}_${legId}`);
+    if (milesInput) {
+      milesInput.addEventListener('input', function() {
+        state.updateTravelerLegCost(travelerId, legId, 'localMilesDriven', parseFloat(this.value) || 0);
+        self._updateLocalTravelCalc(travelerId, legId);
+      });
+    }
+
+    // Gov vehicle available checkbox
+    const govVehicleCheckbox = document.getElementById(`tcGovVehicle_${travelerId}_${legId}`);
+    if (govVehicleCheckbox) {
+      govVehicleCheckbox.addEventListener('change', function() {
+        state.updateTravelerLegCost(travelerId, legId, 'wasGovVehicleAvailable', this.checked);
+        self._updateLocalTravelCalc(travelerId, legId);
+      });
+    }
+
+    // Parking input
+    const parkingInput = document.getElementById(`tcLocalParking_${travelerId}_${legId}`);
+    if (parkingInput) {
+      parkingInput.addEventListener('input', function() {
+        state.updateTravelerLegCost(travelerId, legId, 'localParking', parseFloat(this.value) || 0);
+        self._updateLocalTravelCalc(travelerId, legId);
+      });
+    }
+
+    // Tolls input
+    const tollsInput = document.getElementById(`tcLocalTolls_${travelerId}_${legId}`);
+    if (tollsInput) {
+      tollsInput.addEventListener('input', function() {
+        state.updateTravelerLegCost(travelerId, legId, 'localTolls', parseFloat(this.value) || 0);
+        self._updateLocalTravelCalc(travelerId, legId);
+      });
+    }
+  };
+
+  /**
+   * Update local travel calculation for a single leg
+   */
+  Controller._updateLocalTravelCalc = function(travelerId, legId) {
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+    const legCost = traveler.legCosts[legId];
+
+    if (!legCost || !legCost.isLocalTravel) return;
+
+    // Calculate reimbursement using state helper
+    const calc = state._calculateLocalTravelReimbursement(traveler, legCost);
+
+    // Update display elements
+    const mileageCalcEl = document.getElementById(`tcLocalMileageCalc_${travelerId}_${legId}`);
+    const mileageAmtEl = document.getElementById(`tcLocalMileageAmt_${travelerId}_${legId}`);
+    const parkingCalcEl = document.getElementById(`tcLocalParkingCalc_${travelerId}_${legId}`);
+    const parkingAmtEl = document.getElementById(`tcLocalParkingAmt_${travelerId}_${legId}`);
+    const tollsAmtEl = document.getElementById(`tcLocalTollsAmt_${travelerId}_${legId}`);
+    const legTotalEl = document.getElementById(`tcLegSubtotal_${travelerId}_${legId}`);
+
+    if (mileageCalcEl) {
+      mileageCalcEl.textContent = `Reimbursable: ${calc.reimbursableMiles} mi × $${calc.mileageRate.toFixed(3)}`;
+    }
+    if (mileageAmtEl) {
+      mileageAmtEl.textContent = `$${calc.mileageReimbursement.toFixed(2)}`;
+    }
+    if (parkingCalcEl) {
+      const commuteParking = traveler.isFullTimeTelework ? 0 : (traveler.normalCommuteParking || 0);
+      parkingCalcEl.textContent = `Excess over $${commuteParking.toFixed(2)} commute`;
+    }
+    if (parkingAmtEl) {
+      parkingAmtEl.textContent = `$${calc.excessParking.toFixed(2)}`;
+    }
+    if (tollsAmtEl) {
+      tollsAmtEl.textContent = `$${calc.tollsReimbursement.toFixed(2)}`;
+    }
+    if (legTotalEl) {
+      legTotalEl.textContent = `$${calc.total.toFixed(2)}`;
+    }
+
+    // Update state with calculated total
+    state.updateTravelerLegCost(travelerId, legId, 'localTravelTotal', calc.total);
+
+    // Update overall traveler totals
+    this._updateTravelerCostDisplay(travelerId);
+    this._updateTravelersTotal();
+  };
+
+  /**
+   * Update all local travel calculations for a traveler
+   * Called when commute info changes
+   */
+  Controller._updateAllLocalTravelCalcs = function(travelerId) {
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+    const legs = state.getLegs() || [];
+
+    legs.forEach(leg => {
+      const legCost = traveler.legCosts[leg.id];
+      if (legCost && legCost.isLocalTravel) {
+        this._updateLocalTravelCalc(travelerId, leg.id);
+      }
+    });
+  };
+
+  // ==========================================================================
+  // OVERRIDE PANEL FUNCTIONS
+  // ==========================================================================
+
+  /**
+   * Toggle override panel visibility with slide animation
+   */
+  Controller._toggleOverridePanel = function(travelerId, legId, type) {
+    const panelId = type === 'lodging'
+      ? `tcLodgingOverridePanel_${travelerId}_${legId}`
+      : `tcMieOverridePanel_${travelerId}_${legId}`;
+    const panel = document.getElementById(panelId);
+    if (!panel) return;
+
+    const isHidden = panel.classList.contains('hidden');
+
+    if (isHidden) {
+      // Show panel with slide animation
+      panel.classList.remove('hidden');
+      panel.style.maxHeight = '0';
+      panel.style.overflow = 'hidden';
+      requestAnimationFrame(() => {
+        panel.style.transition = 'max-height 0.25s ease-out';
+        panel.style.maxHeight = panel.scrollHeight + 'px';
+      });
+
+      // Initialize override input listeners
+      this._initOverrideInputs(travelerId, legId, type);
+    } else {
+      // Hide panel with slide animation
+      panel.style.transition = 'max-height 0.2s ease-in';
+      panel.style.maxHeight = '0';
+      setTimeout(() => {
+        panel.classList.add('hidden');
+      }, 200);
+    }
+  };
+
+  /**
+   * Initialize override input listeners - just updates display as you type
+   */
+  Controller._initOverrideInputs = function(travelerId, legId, type) {
+    const self = this;
+    const prefix = type === 'lodging' ? 'tcLodging' : 'tcMie';
+    const amountInput = document.getElementById(`${prefix}OverrideAmount_${travelerId}_${legId}`);
+
+    if (!amountInput || amountInput._overrideInitialized) return;
+    amountInput._overrideInitialized = true;
+
+    const amountId = type === 'lodging'
+      ? `tcLodging_${travelerId}_${legId}`
+      : `tcMie_${travelerId}_${legId}`;
+    const calcId = type === 'lodging'
+      ? `tcLodgingCalc_${travelerId}_${legId}`
+      : `tcMieCalc_${travelerId}_${legId}`;
+
+    // Update state and all totals in real-time as user types
+    amountInput.addEventListener('input', function() {
+      const state = window.TravelRequest.State;
+      const amount = parseFloat(this.value) || 0;
+      const amountEl = document.getElementById(amountId);
+      const calcEl = document.getElementById(calcId);
+
+      // Update visual state of the amount display
+      if (amountEl) {
+        if (amount > 0) {
+          amountEl.textContent = `$${amount.toFixed(2)}`;
+          amountEl.classList.add('tc__perdiem-amount--override');
+        } else {
+          amountEl.classList.remove('tc__perdiem-amount--override');
+        }
+      }
+      if (calcEl) {
+        calcEl.classList.toggle('tc__perdiem-calc--hidden', amount > 0);
+      }
+
+      // Update state in real-time
+      const traveler = state.getTraveler(travelerId);
+      const legCost = traveler?.legCosts?.[legId];
+      if (!legCost) return;
+
+      // Update override values on legCost
+      if (type === 'lodging') {
+        legCost.lodgingOverrideAmount = amount;
+        legCost.lodgingOverride = amount > 0;
+        legCost.lodgingTotal = amount > 0 ? amount : (legCost.lodgingCalculated || 0);
+      } else {
+        legCost.mieOverrideAmount = amount;
+        legCost.mieOverride = amount > 0;
+        legCost.mieTotal = amount > 0 ? amount : (legCost.mieCalculated || 0);
+      }
+
+      // Update leg subtotal
+      legCost.legSubtotal = (legCost.lodgingTotal || 0) + (legCost.mieTotal || 0);
+
+      // Recalculate and update all totals
+      state._recalculateTravelerCosts(traveler, 'override');
+      self._updateLegCostDisplay(travelerId, legId);
+      self._updateTravelerCostDisplay(travelerId);
+      self._updateTravelersTotal();
+    });
+
+    // Save reason on blur of amount input
+    amountInput.addEventListener('blur', function() {
+      const state = window.TravelRequest.State;
+      const reasonInput = document.getElementById(`${prefix}OverrideReason_${travelerId}_${legId}`);
+      const reason = reasonInput?.value?.trim() || '';
+
+      const traveler = state.getTraveler(travelerId);
+      const legCost = traveler?.legCosts?.[legId];
+      if (!legCost) return;
+
+      // Save the reason field
+      if (type === 'lodging') {
+        legCost.lodgingOverrideReason = reason;
+      } else {
+        legCost.mieOverrideReason = reason;
+      }
+    });
+
+    // Also save reason on blur of reason input itself
+    const reasonInput = document.getElementById(`${prefix}OverrideReason_${travelerId}_${legId}`);
+    if (reasonInput) {
+      reasonInput.addEventListener('blur', function() {
+        const state = window.TravelRequest.State;
+        const reason = this.value?.trim() || '';
+
+        const traveler = state.getTraveler(travelerId);
+        const legCost = traveler?.legCosts?.[legId];
+        if (!legCost) return;
+
+        // Save the reason field
+        if (type === 'lodging') {
+          legCost.lodgingOverrideReason = reason;
+        } else {
+          legCost.mieOverrideReason = reason;
+        }
+      });
+    }
+  };
+
+  /**
+   * Clear override and restore calculated value
+   */
+  Controller._clearOverride = function(travelerId, legId, type) {
+    const state = window.TravelRequest.State;
+    const prefix = type === 'lodging' ? 'tcLodging' : 'tcMie';
+
+    // Clear inputs
+    const amountInput = document.getElementById(`${prefix}OverrideAmount_${travelerId}_${legId}`);
+    const reasonInput = document.getElementById(`${prefix}OverrideReason_${travelerId}_${legId}`);
+    if (amountInput) amountInput.value = '';
+    if (reasonInput) reasonInput.value = '';
+
+    // Get the leg cost object to update directly
+    const traveler = state.getTraveler(travelerId);
+    const legCost = traveler?.legCosts?.[legId];
+    if (!legCost) return;
+
+    // Clear override and restore calculated value
+    if (type === 'lodging') {
+      legCost.lodgingOverride = false;
+      legCost.lodgingOverrideAmount = 0;
+      legCost.lodgingOverrideReason = '';
+      legCost.lodgingTotal = legCost.lodgingCalculated || 0;
+    } else {
+      legCost.mieOverride = false;
+      legCost.mieOverrideAmount = 0;
+      legCost.mieOverrideReason = '';
+      legCost.mieTotal = legCost.mieCalculated || 0;
+    }
+
+    // Update leg subtotal
+    legCost.legSubtotal = (legCost.lodgingTotal || 0) + (legCost.mieTotal || 0);
+
+    // Force recalculation of traveler totals
+    state._recalculateTravelerCosts(traveler, 'clearOverride');
+
+    // Reset display classes
+    const amountId = type === 'lodging' ? `tcLodging_${travelerId}_${legId}` : `tcMie_${travelerId}_${legId}`;
+    const calcId = type === 'lodging' ? `tcLodgingCalc_${travelerId}_${legId}` : `tcMieCalc_${travelerId}_${legId}`;
+    const amountEl = document.getElementById(amountId);
+    const calcEl = document.getElementById(calcId);
+
+    if (amountEl) amountEl.classList.remove('tc__perdiem-amount--override');
+    if (calcEl) calcEl.classList.remove('tc__perdiem-calc--hidden');
+
+    // Reset N/A button state in case it was active
+    this._updateNaToggleButton(travelerId, legId, type, false);
+
+    // Update all displays
+    this._updateLegCostDisplay(travelerId, legId);
+    this._updateTravelerCostDisplay(travelerId);
+    this._updateTravelersTotal();
+
+    // Close panel
+    this._toggleOverridePanel(travelerId, legId, type);
+  };
+
+  /**
+   * Returns true if a per-diem type is in the N/A (intentionally-zeroed) state.
+   * Detection: override enabled AND amount is exactly 0.
+   */
+  Controller._isNaOverride = function(legCost, type) {
+    if (type === 'lodging') {
+      return legCost.lodgingOverride === true && (legCost.lodgingOverrideAmount || 0) === 0;
+    }
+    return legCost.mieOverride === true && (legCost.mieOverrideAmount || 0) === 0;
+  };
+
+  /**
+   * Toggle the N/A state for lodging or M&IE on a specific leg.
+   * N/A = override:true, amount:0, reason:'N/A'
+   * Toggling OFF restores the calculated per diem value.
+   */
+  Controller._toggleNaOverride = function(travelerId, legId, type) {
+    var self = this;
+    var state = window.TravelRequest.State;
+    var traveler = state.getTraveler(travelerId);
+    var legCost = traveler?.legCosts?.[legId];
+    if (!legCost) return;
+
+    var isCurrentlyNa = self._isNaOverride(legCost, type);
+
+    if (isCurrentlyNa) {
+      // Turn OFF — restore to calculated value
+      if (type === 'lodging') {
+        legCost.lodgingOverride = false;
+        legCost.lodgingOverrideAmount = 0;
+        legCost.lodgingOverrideReason = '';
+        legCost.lodgingTotal = legCost.lodgingCalculated || 0;
+      } else {
+        legCost.mieOverride = false;
+        legCost.mieOverrideAmount = 0;
+        legCost.mieOverrideReason = '';
+        legCost.mieTotal = legCost.mieCalculated || 0;
+      }
+    } else {
+      // Turn ON — close any open override panel first
+      var prefix = type === 'lodging' ? 'tcLodging' : 'tcMie';
+      var panel = document.getElementById(prefix + 'OverridePanel_' + travelerId + '_' + legId);
+      if (panel && !panel.classList.contains('hidden')) {
+        self._toggleOverridePanel(travelerId, legId, type);
+      }
+      // Clear override input values
+      var amountInput = document.getElementById(prefix + 'OverrideAmount_' + travelerId + '_' + legId);
+      var reasonInput = document.getElementById(prefix + 'OverrideReason_' + travelerId + '_' + legId);
+      if (amountInput) amountInput.value = '';
+      if (reasonInput) reasonInput.value = '';
+
+      if (type === 'lodging') {
+        legCost.lodgingOverride = true;
+        legCost.lodgingOverrideAmount = 0;
+        legCost.lodgingOverrideReason = 'N/A';
+        legCost.lodgingTotal = 0;
+      } else {
+        legCost.mieOverride = true;
+        legCost.mieOverrideAmount = 0;
+        legCost.mieOverrideReason = 'N/A';
+        legCost.mieTotal = 0;
+      }
+    }
+
+    // Recalculate
+    legCost.legSubtotal = (legCost.lodgingTotal || 0) + (legCost.mieTotal || 0);
+    state._recalculateTravelerCosts(traveler, 'naOverride');
+
+    // Update DOM
+    self._updateNaToggleButton(travelerId, legId, type, !isCurrentlyNa);
+    self._updateLegCostDisplay(travelerId, legId);
+    self._updateTravelerCostDisplay(travelerId);
+    self._updateTravelersTotal();
+  };
+
+  /**
+   * Sync the visual state of the N/A toggle button and row dimming.
+   */
+  Controller._updateNaToggleButton = function(travelerId, legId, type, isNaActive) {
+    var prefix = type === 'lodging' ? 'tcLodging' : 'tcMie';
+    var btn = document.getElementById(prefix + 'NaBtn_' + travelerId + '_' + legId);
+    if (btn) {
+      btn.classList.toggle('tc__na-btn--active', isNaActive);
+      btn.title = isNaActive ? 'Remove N/A (restore per diem)' : 'Mark as N/A ($0)';
+      btn.setAttribute('aria-pressed', isNaActive ? 'true' : 'false');
+    }
+
+    // Disable/enable override pencil button
+    var overrideBtn = document.getElementById(prefix + 'OverrideBtn_' + travelerId + '_' + legId);
+    if (overrideBtn) {
+      overrideBtn.disabled = isNaActive;
+      overrideBtn.classList.toggle('tc__override-btn--disabled', isNaActive);
+    }
+
+    // Update amount display
+    var amountEl = document.getElementById((type === 'lodging' ? 'tcLodging_' : 'tcMie_') + travelerId + '_' + legId);
+    if (amountEl) {
+      if (isNaActive) {
+        amountEl.textContent = 'N/A';
+        amountEl.classList.add('tc__perdiem-amount--na');
+        amountEl.classList.remove('tc__perdiem-amount--override');
+      } else {
+        amountEl.classList.remove('tc__perdiem-amount--na');
+      }
+    }
+
+    // Hide/show calc formula
+    var calcEl = document.getElementById(prefix + 'Calc_' + travelerId + '_' + legId);
+    if (calcEl) {
+      calcEl.classList.toggle('tc__perdiem-calc--hidden', isNaActive);
+    }
+  };
+
+  /**
+   * Render just the inner content of the international section (without the wrapper div)
+   */
+  Controller._renderInternationalSectionContent = function(traveler) {
+    return `
+      <div class="tc__intl-header">
+        <i aria-hidden="true" class="fas fa-globe-americas"></i> International Travel
+      </div>
+      <div class="tc__intl-grid">
+        <label class="tc__check">
+          <input type="checkbox" id="tcHasPassport_${traveler.id}" ${traveler.hasValidPassport ? 'checked' : ''}>
+          <span>Valid passport (not expiring within 6 months)</span>
+        </label>
+        <label class="tc__check">
+          <input type="checkbox" id="tcHasClearance_${traveler.id}" ${traveler.hasSecurityClearance ? 'checked' : ''}>
+          <span>Security clearance holder</span>
+        </label>
+        <label class="tc__check">
+          <input type="checkbox" id="tcIsSpeaking_${traveler.id}" ${traveler.isSpeaking ? 'checked' : ''}>
+          <span>Speaking/presenting at event</span>
+        </label>
+        <label class="tc__check">
+          <input type="checkbox" id="tcPressOpen_${traveler.id}" ${traveler.eventOpenToPress ? 'checked' : ''}>
+          <span>Event open to press/media</span>
+        </label>
+      </div>
+      <div class="tc__nfs">
+        <label class="tc__check tc__check--highlight">
+          <input type="checkbox" id="tcReceivingNFS_${traveler.id}" ${traveler.receivingNFS ? 'checked' : ''}>
+          <span>Receiving non-federal source (NFS) funding or gifts</span>
+        </label>
+        <div class="tc__nfs-action ${traveler.receivingNFS ? '' : 'hidden'}" id="tcNfsAction_${traveler.id}">
+          <div class="tc__nfs-row ${traveler.nfsFileId ? 'hidden' : ''}">
+            <button type="button" class="tc__nfs-download" id="tcNfsDownload_${traveler.id}"
+                    onclick="TravelRequest.Controller._createNFSWorksheetCopy('${traveler.id}')">
+              <i aria-hidden="true" class="fas fa-file-pdf"></i> Get NFS Worksheet
+            </button>
+            <div class="tc__nfs-upload">
+              <input type="file" id="tcNfsFile_${traveler.id}" accept=".pdf,.doc,.docx" style="display:none;"
+                     onchange="TravelRequest.Controller._handleNFSUpload('${traveler.id}', this)">
+              <button type="button" class="tc__nfs-upload-btn" onclick="document.getElementById('tcNfsFile_${traveler.id}').click()">
+                <i aria-hidden="true" class="fas fa-upload"></i> Upload Completed Form
+              </button>
+            </div>
+          </div>
+          <div class="tc__nfs-uploaded ${traveler.nfsFileId ? '' : 'hidden'}" id="tcNfsUploaded_${traveler.id}">
+            <i aria-hidden="true" class="fas fa-check-circle"></i>
+            <a href="#" id="tcNfsFileName_${traveler.id}" class="tc__nfs-file-link" onclick="TravelRequest.Controller._viewNFSFile('${traveler.id}'); return false;">${traveler.nfsFileName || 'Worksheet uploaded'}</a>
+            <button type="button" class="tc__nfs-remove" onclick="TravelRequest.Controller._removeNFSFile('${traveler.id}')" title="Remove">
+              <i aria-hidden="true" class="fas fa-times"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  };
+
+  /**
+   * Render international travel section (shown only if traveler attends international legs)
+   * Reveals with Stage 2 (after employee selected) via tc__reveal class
+   */
+  Controller._renderInternationalSection = function(traveler) {
+    const state = window.TravelRequest.State;
+    const hasIntl = state.travelerHasInternationalLeg(traveler.id);
+
+    if (!hasIntl) {
+      return `<div class="tc__intl tc__reveal hidden" id="tcIntlSection_${traveler.id}"></div>`;
+    }
+
+    return `
+      <div class="tc__intl tc__reveal" id="tcIntlSection_${traveler.id}">
+        ${this._renderInternationalSectionContent(traveler)}
+      </div>
+    `;
+  };
+
+  /**
+   * Handle NFS file upload (from traveler card)
+   */
+  Controller._handleNFSUpload = function(travelerId, input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const state = window.TravelRequest.State;
+    const draftId = state.getField('draftId') || window.TravelRequest.Controller._currentDraftId;
+    const uploadedDiv = document.getElementById(`tcNfsUploaded_${travelerId}`);
+    const fileNameLink = document.getElementById(`tcNfsFileName_${travelerId}`);
+    const nfsRow = document.querySelector(`#tcNfsAction_${travelerId} .tc__nfs-row`);
+    const uploadBtn = input.parentElement.querySelector('.tc__nfs-upload-btn');
+
+    // Show loading state
+    if (uploadBtn) {
+      uploadBtn.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i> Uploading...';
+      uploadBtn.disabled = true;
+    }
+
+    // Read file as base64
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const base64Data = e.target.result.split(',')[1];
+
+      // Use the file service proxy for uploads
+      google.script.run
+        .withSuccessHandler(function(result) {
+          // Always reset button state
+          if (uploadBtn) {
+            uploadBtn.innerHTML = '<i aria-hidden="true" class="fas fa-upload"></i> Upload Completed Form';
+            uploadBtn.disabled = false;
+          }
+
+          if (result.success) {
+            // Update state
+            state.updateTraveler(travelerId, 'nfsFileId', result.fileId);
+            state.updateTraveler(travelerId, 'nfsFileName', file.name);
+            state.updateTraveler(travelerId, 'nfsWorksheetSubmitted', true);
+
+            // Update UI - hide buttons, show uploaded file
+            if (fileNameLink) fileNameLink.textContent = file.name;
+            if (nfsRow) nfsRow.classList.add('hidden');
+            if (uploadedDiv) uploadedDiv.classList.remove('hidden');
+          } else {
+            alert('Upload failed: ' + (result.error || 'Unknown error'));
+          }
+          input.value = '';
+        })
+        .withFailureHandler(function(error) {
+          alert('Upload failed: ' + error.message);
+          if (uploadBtn) {
+            uploadBtn.innerHTML = '<i aria-hidden="true" class="fas fa-upload"></i> Upload Completed Form';
+            uploadBtn.disabled = false;
+          }
+          input.value = '';
+        })
+        .uploadNFSDraftFile({
+          name: file.name,
+          type: file.type,
+          data: base64Data,
+          draftId: draftId,
+          travelerId: travelerId
+        });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  /**
+   * View uploaded NFS file
+   */
+  Controller._viewNFSFile = function(travelerId) {
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+    if (traveler && traveler.nfsFileId) {
+      const viewUrl = 'https://drive.google.com/file/d/' + traveler.nfsFileId + '/view';
+      window.open(viewUrl, '_blank');
+    }
+  };
+
+  /**
+   * Remove uploaded NFS file
+   */
+  Controller._removeNFSFile = function(travelerId) {
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+    const fileId = traveler?.nfsFileId;
+    const uploadedDiv = document.getElementById(`tcNfsUploaded_${travelerId}`);
+    const nfsRow = document.querySelector(`#tcNfsAction_${travelerId} .tc__nfs-row`);
+
+    // Update state and UI immediately
+    state.updateTraveler(travelerId, 'nfsFileId', null);
+    state.updateTraveler(travelerId, 'nfsFileName', null);
+    state.updateTraveler(travelerId, 'nfsWorksheetSubmitted', false);
+
+    if (uploadedDiv) uploadedDiv.classList.add('hidden');
+    if (nfsRow) nfsRow.classList.remove('hidden');
+
+    // Delete from Drive in background
+    if (fileId) {
+      google.script.run
+        .withFailureHandler(function(error) {
+          console.warn('Failed to delete NFS file from Drive:', error);
+        })
+        .deleteTravelDraftFile(fileId);
+    }
+  };
+
+  // ==========================================================================
+  // NFS WORKSHEET DOWNLOAD
+  // ==========================================================================
+
+  /**
+   * Download NFS worksheet directly (no modal)
+   */
+  Controller._createNFSWorksheetCopy = function(travelerId) {
+    const self = this;
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+    const travelerName = traveler?.employeeName || 'Traveler';
+
+    // Get the download button to show loading state
+    const downloadBtn = document.getElementById(`tcNfsDownload_${travelerId}`);
+    if (downloadBtn) {
+      downloadBtn.disabled = true;
+      downloadBtn.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i> Downloading...';
+    }
+
+    // Build filename
+    const sanitizedName = travelerName.replace(/[^a-zA-Z0-9\s]/g, '').trim().replace(/\s+/g, '_');
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const fileName = `NFS_Worksheet_${sanitizedName}_${timestamp}.pdf`;
+
+    // Fetch PDF from server and download
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          // Convert base64 to blob for download
+          const byteCharacters = atob(result.data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: result.mimeType || 'application/pdf' });
+
+          // Create download link
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(blobUrl);
+
+          // Show toast with instructions
+          self._showToast('Downloaded! Fill it out in Chrome or Adobe, then upload.', 'success');
+        } else {
+          self._showToast('Download failed: ' + (result.error || 'Unknown error'), 'danger');
+        }
+
+        // Reset button
+        if (downloadBtn) {
+          downloadBtn.disabled = false;
+          downloadBtn.innerHTML = '<i aria-hidden="true" class="fas fa-file-pdf"></i> Get NFS Worksheet';
+        }
+      })
+      .withFailureHandler(function(error) {
+        self._showToast('Download failed: ' + error.message, 'danger');
+        if (downloadBtn) {
+          downloadBtn.disabled = false;
+          downloadBtn.innerHTML = '<i aria-hidden="true" class="fas fa-file-pdf"></i> Get NFS Worksheet';
+        }
+      })
+      .getNFSWorksheetTemplate();
+  };
+
+  // ==========================================================================
+  // INPUT INITIALIZATION
+  // ==========================================================================
+
+  Controller._initTravelerInputs = function(traveler) {
+    const self = this;
+    const travelerId = traveler.id;
+
+    // Employee autocomplete
+    this._initEmployeeAutocomplete(travelerId);
+
+    // LCAT input (editable field) - also updates header Role-BU display
+    const lcatInput = document.getElementById(`tcLcat_${travelerId}`);
+    if (lcatInput) {
+      lcatInput.addEventListener('input', function() {
+        window.TravelRequest.State.updateTraveler(travelerId, 'lcat', this.value);
+        // Update Role-BU in header (get BU from current traveler state)
+        const traveler = window.TravelRequest.State.getTraveler(travelerId);
+        self._updateTravelerRoleBu(travelerId, { bu: traveler?.businessUnit || '' });
+      });
+    }
+
+    // Funding type radio buttons
+    const fundingRadios = document.querySelectorAll(`input[name="tcFunding_${travelerId}"]`);
+    fundingRadios.forEach(radio => {
+      radio.addEventListener('change', function() {
+        window.TravelRequest.State.updateTraveler(travelerId, 'isClientPaid', this.value);
+        // Update visual active state
+        fundingRadios.forEach(r => {
+          r.closest('.tc__toggle').classList.toggle('tc__toggle--active', r.checked);
+        });
+        // Check disclosure progress
+        self._checkDisclosureProgress(travelerId);
+      });
+    });
+
+    // Role justification textarea with focus-expand
+    const roleJustification = document.getElementById(`tcRoleJustification_${travelerId}`);
+    if (roleJustification) {
+      roleJustification.addEventListener('input', function() {
+        window.TravelRequest.State.updateTraveler(travelerId, 'roleJustification', this.value);
+        // Check disclosure progress (debounced via blur for better UX)
+      });
+      roleJustification.addEventListener('blur', function() {
+        self._checkDisclosureProgress(travelerId);
+      });
+      // Initialize focus-expand behavior
+      this._initFocusExpandSingle(roleJustification);
+    }
+
+    // International travel fields
+    this._initInternationalFields(travelerId);
+
+    // Transport mode cards - toggles between cost and mileage fields
+    const transportCardsContainer = document.getElementById(`tcTransportCards_${travelerId}`);
+    if (transportCardsContainer) {
+      transportCardsContainer.addEventListener('click', function(e) {
+        const card = e.target.closest('.tc__transport-card');
+        if (!card) return;
+
+        const mode = card.dataset.mode;
+        window.TravelRequest.State.updateTraveler(travelerId, 'transportMode', mode);
+
+        // Update selected state on cards
+        transportCardsContainer.querySelectorAll('.tc__transport-card').forEach(c => {
+          c.classList.remove('tc__transport-card--selected');
+        });
+        card.classList.add('tc__transport-card--selected');
+
+        const costWrap = document.getElementById(`tcTransportCostWrap_${travelerId}`);
+        const mileWrap = document.getElementById(`tcTransportMileWrap_${travelerId}`);
+        const rentalCarSection = document.getElementById(`tcRentalCarSection_${travelerId}`);
+
+        // Show mileage fields for private/gov vehicle, cost field for others
+        const showMileage = mode === 'private' || mode === 'gov';
+
+        if (costWrap) {
+          costWrap.classList.toggle('tc__transport-cost--hidden', showMileage);
+        }
+        if (mileWrap) {
+          mileWrap.classList.toggle('tc__transport-mileage--hidden', !showMileage);
+        }
+
+        // Hide rental car section if primary mode is 'rental' (already renting as main transport)
+        if (rentalCarSection) {
+          rentalCarSection.classList.toggle('tc__rental-car--hidden', mode === 'rental');
+          // If switching to rental, clear the rental car fields
+          if (mode === 'rental') {
+            window.TravelRequest.State.updateTraveler(travelerId, 'needsRentalCar', false);
+            window.TravelRequest.State.updateTraveler(travelerId, 'rentalCarCost', 0);
+          }
+          // Sync cost input visibility with current toggle state
+          const rentalCarCostWrap = document.getElementById(`tcRentalCarCostWrap_${travelerId}`);
+          if (rentalCarCostWrap) {
+            const traveler = window.TravelRequest.State.getTraveler(travelerId);
+            const needsRental = traveler && traveler.needsRentalCar === true;
+            rentalCarCostWrap.classList.toggle('tc__rental-car-cost--hidden', !needsRental);
+          }
+        }
+
+        // Recalculate and update display
+        self._updateTransportCalc(travelerId);
+        self._updateTravelerCostDisplay(travelerId);
+        self._updateTravelersTotal();
+        // Note: Don't reveal costs section here - wait until they enter a value
+      });
+    }
+
+    // Transport cost input (for Air, Rail, Rental)
+    const transportCostInput = document.getElementById(`tcTransportCost_${travelerId}`);
+    if (transportCostInput) {
+      transportCostInput.addEventListener('input', function() {
+        window.TravelRequest.State.updateTraveler(travelerId, 'ticketCost', parseFloat(this.value) || 0);
+        self._updateTransportCalc(travelerId);
+        self._updateTravelerCostDisplay(travelerId);
+        self._updateTravelersTotal();
+        // Reveal costs section after entering a value
+        self._checkDisclosureProgress(travelerId);
+      });
+    }
+
+    // Transport miles input (for Private/Gov Vehicle)
+    const transportMilesInput = document.getElementById(`tcTransportMiles_${travelerId}`);
+    if (transportMilesInput) {
+      transportMilesInput.addEventListener('input', function() {
+        const totalMiles = parseInt(this.value) || 0;
+        // Store as combined mileage (to and from)
+        window.TravelRequest.State.updateTraveler(travelerId, 'milesToDeparture', totalMiles);
+        window.TravelRequest.State.updateTraveler(travelerId, 'milesFromArrival', 0);
+        self._updateTransportCalc(travelerId);
+        self._updateTravelerCostDisplay(travelerId);
+        self._updateTravelersTotal();
+        // Reveal costs section after entering a value
+        self._checkDisclosureProgress(travelerId);
+      });
+    }
+
+    // Rental car toggle (Yes/No radio buttons)
+    const rentalCarRadios = document.querySelectorAll(`input[name="tcRentalCar_${travelerId}"]`);
+    rentalCarRadios.forEach(radio => {
+      radio.addEventListener('change', function() {
+        const needsRental = this.value === 'yes';
+        window.TravelRequest.State.updateTraveler(travelerId, 'needsRentalCar', needsRental);
+
+        // Update visual active state
+        rentalCarRadios.forEach(r => {
+          r.closest('.tc__toggle').classList.toggle('tc__toggle--active', r.checked);
+        });
+
+        // Show/hide cost input
+        const costWrap = document.getElementById(`tcRentalCarCostWrap_${travelerId}`);
+        if (costWrap) {
+          costWrap.classList.toggle('tc__rental-car-cost--hidden', !needsRental);
+        }
+
+        // Clear cost if selecting No
+        if (!needsRental) {
+          window.TravelRequest.State.updateTraveler(travelerId, 'rentalCarCost', 0);
+          const costInput = document.getElementById(`tcRentalCarCost_${travelerId}`);
+          if (costInput) costInput.value = '';
+        }
+
+        // Recalculate and update display
+        self._updateTransportCalc(travelerId);
+        self._updateTravelerCostDisplay(travelerId);
+        self._updateTravelersTotal();
+      });
+    });
+
+    // Rental car cost input
+    const rentalCarCostInput = document.getElementById(`tcRentalCarCost_${travelerId}`);
+    if (rentalCarCostInput) {
+      rentalCarCostInput.addEventListener('input', function() {
+        window.TravelRequest.State.updateTraveler(travelerId, 'rentalCarCost', parseFloat(this.value) || 0);
+        self._updateTransportCalc(travelerId);
+        self._updateTravelerCostDisplay(travelerId);
+        self._updateTravelersTotal();
+      });
+    }
+
+    // Leg attendance checkboxes
+    this._bindLegAttendanceEvents(travelerId);
+
+    // Traveler leg date pickers
+    this._initTravelerLegDatePickers(travelerId);
+
+    // Fetch per diem for all attending legs
+    this._fetchAllLegPerDiem(travelerId);
+
+    // Local travel inputs (if any legs are local)
+    this._initLocalTravelInputs(travelerId);
+
+    // For restored travelers (from draft), reveal appropriate stages and update transport visibility
+    const disclosureStage = this._getDisclosureStage(traveler);
+    if (disclosureStage >= 3) {
+      this._revealStage(travelerId, 'transport');
+    }
+    if (disclosureStage >= 4) {
+      this._revealStage(travelerId, 'costs');
+    }
+
+    // Update transport section visibility (hide for local travel only)
+    this._updateTransportSectionVisibility(travelerId);
+
+    // Update cost displays for restored data
+    this._updateTransportCalc(travelerId);
+    this._updateTravelerCostDisplay(travelerId);
+
+    // Hide summary for new travelers (they start expanded)
+    this._setTravelerSummaryVisible(travelerId, false);
+  };
+
+  /**
+   * Update transport calculation and display
+   * Handles both cost-based (air/rail/rental) and mileage-based (private/gov) transport
+   */
+  Controller._updateTransportCalc = function(travelerId) {
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+    const transportMode = traveler.transportMode || '';
+
+    let primaryTransport = 0;
+
+    if (transportMode === 'private' || transportMode === 'gov') {
+      // Mileage-based calculation
+      const rate = window.TravelRequest.getMileageRate(transportMode);
+      const totalMiles = (traveler.milesToDeparture || 0) + (traveler.milesFromArrival || 0);
+      primaryTransport = totalMiles * rate;
+
+      // Update mileage calculation display
+      const calcEl = document.getElementById(`tcTransportCalc_${travelerId}`);
+      if (calcEl) {
+        calcEl.textContent = `× $${rate.toFixed(3)} = $${primaryTransport.toFixed(2)}`;
+      }
+
+      // Store mileage cost (clear ticket cost)
+      state.updateTraveler(travelerId, 'mileageCost', primaryTransport);
+      state.updateTraveler(travelerId, 'ticketCost', 0);
+    } else {
+      // Cost-based (air, rail, rental)
+      primaryTransport = traveler.ticketCost || 0;
+
+      // Clear mileage cost
+      state.updateTraveler(travelerId, 'mileageCost', 0);
+      state.updateTraveler(travelerId, 'milesToDeparture', 0);
+      state.updateTraveler(travelerId, 'milesFromArrival', 0);
+    }
+
+    // Add rental car cost if applicable (not shown when primary mode is 'rental')
+    const rentalCarCost = (traveler.needsRentalCar && transportMode !== 'rental') ? (traveler.rentalCarCost || 0) : 0;
+    const transportTotal = primaryTransport + rentalCarCost;
+
+    // Update transport total display
+    const totalEl = document.getElementById(`tcTransportTotal_${travelerId}`);
+    if (totalEl) {
+      totalEl.textContent = `$${transportTotal.toFixed(2)}`;
+    }
+
+    // Update transportation total in state
+    state.updateTraveler(travelerId, 'transportationTotal', transportTotal);
+  };
+
+  Controller._initEmployeeAutocomplete = function(travelerId) {
+    const self = this;
+    const nameInput = document.getElementById(`tcEmployee_${travelerId}`);
+    if (!nameInput) return;
+
+    // If staffing data isn't loaded yet, wait for it
+    if (!this._staffingData || this._staffingData.length === 0) {
+      nameInput.placeholder = 'Loading...';
+      // Retry after a short delay
+      setTimeout(function() {
+        if (self._staffingData && self._staffingData.length > 0) {
+          self._setupEmployeeAutocomplete(travelerId, nameInput);
+        } else {
+          // Try again
+          setTimeout(function() {
+            self._setupEmployeeAutocomplete(travelerId, nameInput);
+          }, 1000);
+        }
+      }, 500);
+      return;
+    }
+
+    this._setupEmployeeAutocomplete(travelerId, nameInput);
+  };
+
+  Controller._setupEmployeeAutocomplete = function(travelerId, nameInput) {
+    const self = this;
+
+    if (!this._staffingData || this._staffingData.length === 0) {
+      nameInput.placeholder = 'Type name...';
+      return;
+    }
+
+    nameInput.placeholder = 'Search...';
+
+    // Clean up existing instance if any
+    if (this._autocompleteInstances[`traveler_name_${travelerId}`]) {
+      this._autocompleteInstances[`traveler_name_${travelerId}`].destroy();
+    }
+
+    const employeeList = this._staffingData.map(emp => ({
+      label: `${emp.employeeName} (${emp.orgCode || 'N/A'})`,
+      value: emp.employeeName,
+      data: emp
+    }));
+
+    const awInstance = new Awesomplete(nameInput, {
+      list: employeeList,
+      minChars: 2,
+      autoFirst: true,
+      maxItems: 10,
+      filter: (text, input) => text.label.toLowerCase().includes(input.toLowerCase()),
+      item: (text, input) => Awesomplete.ITEM(text.label, input),
+      replace: function(text) { this.input.value = text.value; }
+    });
+
+    this._autocompleteInstances[`traveler_name_${travelerId}`] = awInstance;
+
+    nameInput.addEventListener('awesomplete-selectcomplete', function(ev) {
+      // Awesomplete doesn't preserve custom data property, so look up by value
+      const selectedName = ev.text.value;
+      const employeeData = self._staffingData.find(emp => emp.employeeName === selectedName);
+
+      if (employeeData) {
+        self._applyEmployeeData(travelerId, employeeData);
+        self._updateTravelerHeaderDisplay(travelerId, employeeData);
+      }
+    });
+
+    this._floatAwesomplete(awInstance, { minWidth: 220 });
+  };
+
+  Controller._updateTravelerHeaderDisplay = function(travelerId, employeeData) {
+    const nameEl = document.getElementById(`tcName_${travelerId}`);
+    const roleBuEl = document.getElementById(`tcRoleBu_${travelerId}`);
+    if (nameEl) nameEl.textContent = employeeData.employeeName || 'New Traveler';
+
+    // Update Role - BU display
+    this._updateTravelerRoleBu(travelerId, employeeData);
+
+    // Check if we can advance disclosure stage
+    this._checkDisclosureProgress(travelerId);
+  };
+
+  /**
+   * Update the Role - BU display in the header
+   */
+  Controller._updateTravelerRoleBu = function(travelerId, employeeData) {
+    const roleBuEl = document.getElementById(`tcRoleBu_${travelerId}`);
+    if (!roleBuEl) return;
+
+    const lcatInput = document.getElementById(`tcLcat_${travelerId}`);
+    const role = lcatInput ? lcatInput.value.trim() : '';
+    const bu = employeeData ? employeeData.bu : '';
+
+    const parts = [];
+    if (role) parts.push(role);
+    if (bu) parts.push(bu);
+
+    roleBuEl.textContent = parts.length > 0 ? `(${parts.join(' - ')})` : '';
+  };
+
+  /**
+   * Initialize international travel field event handlers
+   */
+  Controller._initInternationalFields = function(travelerId) {
+    const state = window.TravelRequest.State;
+
+    // Only bind if international section exists and is visible
+    const intlSection = document.getElementById(`tcIntlSection_${travelerId}`);
+    if (!intlSection || intlSection.classList.contains('hidden')) return;
+
+    // Passport checkbox
+    const passportCheck = document.getElementById(`tcHasPassport_${travelerId}`);
+    if (passportCheck) {
+      passportCheck.addEventListener('change', function() {
+        state.updateTraveler(travelerId, 'hasValidPassport', this.checked);
+      });
+    }
+
+    // Security clearance checkbox
+    const clearanceCheck = document.getElementById(`tcHasClearance_${travelerId}`);
+    if (clearanceCheck) {
+      clearanceCheck.addEventListener('change', function() {
+        state.updateTraveler(travelerId, 'hasSecurityClearance', this.checked);
+      });
+    }
+
+    // Speaking checkbox
+    const speakingCheck = document.getElementById(`tcIsSpeaking_${travelerId}`);
+    if (speakingCheck) {
+      speakingCheck.addEventListener('change', function() {
+        state.updateTraveler(travelerId, 'isSpeaking', this.checked);
+      });
+    }
+
+    // Press/media checkbox
+    const pressCheck = document.getElementById(`tcPressOpen_${travelerId}`);
+    if (pressCheck) {
+      pressCheck.addEventListener('change', function() {
+        state.updateTraveler(travelerId, 'eventOpenToPress', this.checked);
+      });
+    }
+
+    // NFS checkbox (toggles NFS action area)
+    const nfsCheck = document.getElementById(`tcReceivingNFS_${travelerId}`);
+    const nfsAction = document.getElementById(`tcNfsAction_${travelerId}`);
+    if (nfsCheck) {
+      nfsCheck.addEventListener('change', function() {
+        state.updateTraveler(travelerId, 'receivingNFS', this.checked);
+        if (nfsAction) {
+          nfsAction.classList.toggle('hidden', !this.checked);
+        }
+      });
+    }
+
+  };
+
+  // ==========================================================================
+  // LEG ATTENDANCE & DATES
+  // ==========================================================================
+
+  Controller._bindLegAttendanceEvents = function(travelerId) {
+    const self = this;
+    const perDiemBody = document.getElementById(`tcPerDiemBody_${travelerId}`);
+    if (!perDiemBody) return;
+
+    perDiemBody.addEventListener('change', function(e) {
+      if (e.target.classList.contains('tc__attend-check')) {
+        self._handleLegAttendanceChange(travelerId);
+      }
+    });
+  };
+
+  Controller._handleLegAttendanceChange = function(travelerId) {
+    const state = window.TravelRequest.State;
+    const perDiemBody = document.getElementById(`tcPerDiemBody_${travelerId}`);
+    if (!perDiemBody) return;
+
+    const checked = perDiemBody.querySelectorAll('.tc__attend-check:checked');
+    const attendingLegIds = Array.from(checked).map(cb => cb.dataset.legId);
+
+    state.updateTravelerLegs(travelerId, attendingLegIds);
+
+    // Update row styling for per diem legs
+    perDiemBody.querySelectorAll('.tc__perdiem-leg').forEach(row => {
+      const legId = row.dataset.legId;
+      row.classList.toggle('tc__perdiem-leg--inactive', !attendingLegIds.includes(legId));
+    });
+
+    // Update row styling for local travel legs
+    perDiemBody.querySelectorAll('.tc__local-leg').forEach(row => {
+      const legId = row.dataset.legId;
+      row.classList.toggle('tc__local-leg--inactive', !attendingLegIds.includes(legId));
+    });
+
+    // Update international section visibility based on selected legs
+    this._updateInternationalSectionVisibility(travelerId);
+
+    // Update transport section visibility (hide if all attending legs are local)
+    this._updateTransportSectionVisibility(travelerId);
+
+    this._updateTravelerCostDisplay(travelerId);
+    this._updateTravelersTotal();
+  };
+
+  /**
+   * Update international section visibility based on selected legs
+   * Shows section if traveler has any international legs selected, hides otherwise
+   */
+  Controller._updateInternationalSectionVisibility = function(travelerId) {
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+    const hasInternationalLeg = state.travelerHasInternationalLeg(travelerId);
+    const intlSection = document.getElementById(`tcIntlSection_${travelerId}`);
+
+    if (!intlSection) return;
+
+    if (hasInternationalLeg) {
+      // Show section - check if it needs to be populated
+      if (intlSection.classList.contains('hidden') || intlSection.innerHTML.trim() === '') {
+        // Re-render the section content
+        const newHtml = this._renderInternationalSectionContent(traveler);
+        intlSection.innerHTML = newHtml;
+        intlSection.classList.remove('hidden');
+        // Re-initialize event handlers
+        this._initInternationalFields(travelerId);
+      }
+    } else {
+      // Hide section and clear state
+      intlSection.classList.add('hidden');
+      // Optionally clear international-related state when hiding
+      state.updateTraveler(travelerId, 'hasValidPassport', null);
+      state.updateTraveler(travelerId, 'hasSecurityClearance', null);
+      state.updateTraveler(travelerId, 'isSpeaking', null);
+      state.updateTraveler(travelerId, 'eventOpenToPress', null);
+      state.updateTraveler(travelerId, 'receivingNFS', null);
+    }
+  };
+
+  Controller._initTravelerLegDatePickers = function(travelerId) {
+    const self = this;
+    const state = window.TravelRequest.State;
+    const legs = state.getLegs();
+
+    legs.forEach(leg => {
+      // Lodging date pickers
+      const lodgingStart = document.getElementById(`tcLodgingStart_${travelerId}_${leg.id}`);
+      const lodgingEnd = document.getElementById(`tcLodgingEnd_${travelerId}_${leg.id}`);
+
+      if (lodgingStart) {
+        const lodgingStartChip = document.getElementById(`tcLodgingStartChip_${travelerId}_${leg.id}`);
+        const fp = flatpickr(lodgingStart, {
+          dateFormat: 'Y-m-d',
+          altInput: true,
+          altFormat: 'M j',
+          allowInput: true,
+          onReady: function(dates, dateStr, instance) {
+            // Style the altInput to match date-chip
+            if (instance.altInput) {
+              instance.altInput.classList.add('date-chip__input');
+            }
+          },
+          onChange: function(dates, dateStr) {
+            // Toggle filled state on chip wrapper
+            if (lodgingStartChip) {
+              lodgingStartChip.classList.toggle('date-chip--filled', !!dateStr);
+            }
+            state.updateTravelerLegCost(travelerId, leg.id, 'lodgingStartDate', dateStr);
+            state.updateTravelerLegCost(travelerId, leg.id, 'lodgingUsesItineraryDates', false);
+            self._dismissLodgingWarning(travelerId, leg.id);
+            self._recalcLegPerDiem(travelerId, leg.id);
+          }
+        });
+        this._datePickers[`tc_lodging_start_${travelerId}_${leg.id}`] = fp;
+      }
+
+      if (lodgingEnd) {
+        const lodgingEndChip = document.getElementById(`tcLodgingEndChip_${travelerId}_${leg.id}`);
+        const fp = flatpickr(lodgingEnd, {
+          dateFormat: 'Y-m-d',
+          altInput: true,
+          altFormat: 'M j',
+          allowInput: true,
+          onReady: function(dates, dateStr, instance) {
+            // Style the altInput to match date-chip
+            if (instance.altInput) {
+              instance.altInput.classList.add('date-chip__input');
+            }
+          },
+          onChange: function(dates, dateStr) {
+            // Toggle filled state on chip wrapper
+            if (lodgingEndChip) {
+              lodgingEndChip.classList.toggle('date-chip--filled', !!dateStr);
+            }
+            state.updateTravelerLegCost(travelerId, leg.id, 'lodgingEndDate', dateStr);
+            state.updateTravelerLegCost(travelerId, leg.id, 'lodgingUsesItineraryDates', false);
+            self._dismissLodgingWarning(travelerId, leg.id);
+            self._recalcLegPerDiem(travelerId, leg.id);
+          }
+        });
+        this._datePickers[`tc_lodging_end_${travelerId}_${leg.id}`] = fp;
+      }
+
+      // M&IE date pickers
+      const mieStart = document.getElementById(`tcMieStart_${travelerId}_${leg.id}`);
+      const mieEnd = document.getElementById(`tcMieEnd_${travelerId}_${leg.id}`);
+
+      if (mieStart) {
+        const mieStartChip = document.getElementById(`tcMieStartChip_${travelerId}_${leg.id}`);
+        const fp = flatpickr(mieStart, {
+          dateFormat: 'Y-m-d',
+          altInput: true,
+          altFormat: 'M j',
+          allowInput: true,
+          onReady: function(dates, dateStr, instance) {
+            // Style the altInput to match date-chip
+            if (instance.altInput) {
+              instance.altInput.classList.add('date-chip__input');
+            }
+          },
+          onChange: function(dates, dateStr) {
+            // Toggle filled state on chip wrapper
+            if (mieStartChip) {
+              mieStartChip.classList.toggle('date-chip--filled', !!dateStr);
+            }
+            state.updateTravelerLegCost(travelerId, leg.id, 'mieStartDate', dateStr);
+            state.updateTravelerLegCost(travelerId, leg.id, 'mieUsesItineraryDates', false);
+            self._recalcLegPerDiem(travelerId, leg.id);
+          }
+        });
+        this._datePickers[`tc_mie_start_${travelerId}_${leg.id}`] = fp;
+      }
+
+      if (mieEnd) {
+        const mieEndChip = document.getElementById(`tcMieEndChip_${travelerId}_${leg.id}`);
+        const fp = flatpickr(mieEnd, {
+          dateFormat: 'Y-m-d',
+          altInput: true,
+          altFormat: 'M j',
+          allowInput: true,
+          onReady: function(dates, dateStr, instance) {
+            // Style the altInput to match date-chip
+            if (instance.altInput) {
+              instance.altInput.classList.add('date-chip__input');
+            }
+          },
+          onChange: function(dates, dateStr) {
+            // Toggle filled state on chip wrapper
+            if (mieEndChip) {
+              mieEndChip.classList.toggle('date-chip--filled', !!dateStr);
+            }
+            state.updateTravelerLegCost(travelerId, leg.id, 'mieEndDate', dateStr);
+            state.updateTravelerLegCost(travelerId, leg.id, 'mieUsesItineraryDates', false);
+            self._recalcLegPerDiem(travelerId, leg.id);
+          }
+        });
+        this._datePickers[`tc_mie_end_${travelerId}_${leg.id}`] = fp;
+      }
+    });
+  };
+
+  /**
+   * Recalculate per diem for a leg based on current date inputs
+   * Updates the UI immediately using existing rates, then fetches new rates if needed
+   */
+  Controller._recalcLegPerDiem = function(travelerId, legId) {
+    const state = window.TravelRequest.State;
+    const leg = state.getLeg(legId);
+    const traveler = state.getTraveler(travelerId);
+    const legCost = traveler?.legCosts[legId] || {};
+
+    if (!leg) return;
+
+    // Get lodging dates (nights)
+    const lodgingStart = legCost.lodgingStartDate || leg.startDate;
+    const lodgingEnd = legCost.lodgingEndDate || leg.endDate;
+
+    // Get M&IE dates (days)
+    const mieStart = legCost.mieStartDate || leg.startDate;
+    const mieEnd = legCost.mieEndDate || leg.endDate;
+
+    // Calculate nights and days
+    const msPerDay = 24 * 60 * 60 * 1000;
+
+    let lodgingNights = 0;
+    if (lodgingStart && lodgingEnd) {
+      const start = new Date(lodgingStart);
+      const end = new Date(lodgingEnd);
+      lodgingNights = Math.max(0, Math.round((end - start) / msPerDay));
+    }
+
+    let mieDays = 0;
+    if (mieStart && mieEnd) {
+      const start = new Date(mieStart);
+      const end = new Date(mieEnd);
+      mieDays = Math.max(0, Math.round((end - start) / msPerDay) + 1);
+    }
+
+    // Get existing rates (if we have them)
+    const lodgingRate = legCost.lodgingRate || 0;
+    const mieRate = legCost.mieRate || 0;
+
+    // Determine if this is a GSA location (CONUS US)
+    // GSA rates vary by month, so we must re-fetch when dates change
+    const isUS = !leg.country || leg.country === 'United States' || leg.country === 'USA';
+    const isOCONUS = isUS && TravelUtils?.isOCONUS?.(leg.state);
+    const isGSA = isUS && !isOCONUS;
+
+    // For GSA: Always re-fetch to get accurate day-by-day calculation with monthly rate variations
+    // For DOS/DoD: Simple rate × nights is fine (rates are seasonal, not monthly)
+    if (isGSA && leg.city && lodgingStart && lodgingEnd) {
+      // Update nights/days in state first (for display)
+      state.updateTravelerLegCost(travelerId, legId, 'lodgingNights', lodgingNights);
+      state.updateTravelerLegCost(travelerId, legId, 'mieDays', mieDays);
+
+      // Fetch fresh rates from GSA API (will calculate day-by-day totals)
+      this._fetchLegPerDiem(travelerId, legId);
+      return;
+    }
+
+    // For DOS/DoD: Use simple rate × nights calculation
+    const lodgingCalculated = lodgingRate * lodgingNights;
+
+    // M&IE: 75% first and last day, 100% middle days (via TravelDateService)
+    const mieResult = TravelDateService.calculateMieWithReduction(mieDays, mieRate);
+    const mieCalculated = mieResult.total;
+
+    // Update state - the state's updateTravelerLegCost handles override logic
+    state.updateTravelerLegCost(travelerId, legId, 'lodgingNights', lodgingNights);
+    state.updateTravelerLegCost(travelerId, legId, 'mieDays', mieDays);
+    state.updateTravelerLegCost(travelerId, legId, 'lodgingCalculated', lodgingCalculated);
+    state.updateTravelerLegCost(travelerId, legId, 'mieCalculated', mieCalculated);
+
+    // Update the UI immediately
+    this._updateLegCostDisplay(travelerId, legId);
+    this._updateTravelerCostDisplay(travelerId);
+    this._updateTravelersTotal();
+
+    // If we don't have rates yet, fetch them (for DOS/DoD)
+    if (lodgingRate === 0 && mieRate === 0 && leg.city) {
+      this._fetchLegPerDiem(travelerId, legId);
+    }
+  };
+
+  // ==========================================================================
+  // PER DIEM FETCHING
+  // ==========================================================================
+
+  Controller._fetchAllLegPerDiem = function(travelerId) {
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+
+    traveler.attendingLegs.forEach(legId => {
+      const legCost = traveler.legCosts[legId];
+
+      // Skip local travel legs - no per diem for local travel
+      if (legCost && legCost.isLocalTravel) {
+        return;
+      }
+
+      // If we already have rates cached, just update the display without fetching
+      if (legCost && (legCost.lodgingRate > 0 || legCost.mieRate > 0)) {
+        this._updateLegCostDisplay(travelerId, legId);
+      } else {
+        // No rates yet - fetch them
+        this._fetchLegPerDiem(travelerId, legId);
+      }
+    });
+
+    // Update traveler totals display (uses cached state values)
+    this._updateTravelerCostDisplay(travelerId);
+  };
+
+  Controller._fetchLegPerDiem = async function(travelerId, legId) {
+    const self = this;
+    const state = window.TravelRequest.State;
+    const leg = state.getLeg(legId);
+    const traveler = state.getTraveler(travelerId);
+    const legCost = traveler?.legCosts[legId] || {};
+
+    if (!leg || !leg.city) {
+      console.warn('[PerDiem] Skipping fetch - missing leg data:', { legId, hasLeg: !!leg, city: leg?.city });
+      return;
+    }
+
+    // Skip local travel legs - no per diem for local travel
+    if (legCost.isLocalTravel) {
+      return;
+    }
+
+    // Get SEPARATE dates for lodging and M&IE
+    const lodgingStart = legCost.lodgingStartDate || leg.startDate;
+    const lodgingEnd = legCost.lodgingEndDate || leg.endDate;
+    const mieStart = legCost.mieStartDate || leg.startDate;
+    const mieEnd = legCost.mieEndDate || leg.endDate;
+
+    if (!lodgingStart || !lodgingEnd) {
+      console.warn('[PerDiem] Skipping fetch - missing dates:', { legId, lodgingStart, lodgingEnd, legStartDate: leg.startDate, legEndDate: leg.endDate });
+      return;
+    }
+
+    console.log('[PerDiem] Fetching rates for:', { travelerId, legId, city: leg.city, state: leg.state, country: leg.country, lodgingStart, lodgingEnd, mieStart, mieEnd });
+
+    try {
+      // Fetch rates using LODGING dates (to get the rate lookup)
+      const rateResult = await TravelCostService.getPerDiemRates({
+        country: leg.country,
+        state: leg.state,
+        city: leg.city,
+        startDate: lodgingStart,
+        endDate: lodgingEnd
+      });
+
+      if (!rateResult || !rateResult.success) {
+        console.error('[PerDiem] Fetch failed:', rateResult?.error, rateResult);
+        return;
+      }
+
+      console.log('[PerDiem] Rates received:', { legId, lodgingRate: rateResult.lodgingRate, mieRate: rateResult.mieRate, lodgingTotal: rateResult.lodgingTotal });
+
+      // Calculate M&IE SEPARATELY using M&IE dates (not lodging dates)
+      const msPerDay = 24 * 60 * 60 * 1000;
+      let mieDays = 0;
+      if (mieStart && mieEnd) {
+        const start = new Date(mieStart);
+        const end = new Date(mieEnd);
+        mieDays = Math.max(0, Math.round((end - start) / msPerDay) + 1);
+      }
+
+      // Calculate M&IE with 75% first/last day reduction
+      const mieRate = rateResult.mieRate || 0;
+      const mieResult = TravelDateService.calculateMieWithReduction(mieDays, mieRate);
+
+      // Update lodging from server (uses lodging dates)
+      // Update M&IE calculated locally (uses M&IE dates)
+      state.updateTravelerLegPerDiem(travelerId, legId, {
+        lodging: {
+          rate: rateResult.lodgingRate || 0,
+          averageRate: rateResult.lodgingRate || 0,
+          nights: rateResult.nights || 0,
+          total: rateResult.lodgingTotal || 0,
+          breakdown: rateResult.breakdown,
+          ratesVaried: rateResult.ratesVaried || false
+        },
+        mie: {
+          dailyRate: mieRate,
+          rate: mieRate,
+          days: mieDays,
+          total: mieResult.total
+        }
+      });
+
+      // Update the display
+      self._updateLegCostDisplay(travelerId, legId);
+      self._updateTravelerCostDisplay(travelerId);
+
+    } catch (error) {
+      console.error('[PerDiem] Fetch error:', error);
+    }
+  };
+
+  // ==========================================================================
+  // COST DISPLAY UPDATES
+  // ==========================================================================
+
+  Controller._updateLegCostDisplay = function(travelerId, legId) {
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+    const legCost = traveler?.legCosts[legId];
+    if (!legCost) return;
+
+    // Update lodging calculation display
+    var isLodgingNa = this._isNaOverride(legCost, 'lodging');
+    const lodgingCalcEl = document.getElementById(`tcLodgingCalc_${travelerId}_${legId}`);
+    if (lodgingCalcEl) {
+      lodgingCalcEl.textContent = this._formatLodgingCalc(legCost);
+      lodgingCalcEl.classList.toggle('tc__perdiem-calc--hidden', legCost.lodgingOverride || isLodgingNa);
+    }
+
+    // Update lodging total
+    const lodgingEl = document.getElementById(`tcLodging_${travelerId}_${legId}`);
+    if (lodgingEl) {
+      if (isLodgingNa) {
+        lodgingEl.textContent = 'N/A';
+        lodgingEl.classList.add('tc__perdiem-amount--na');
+        lodgingEl.classList.remove('tc__perdiem-amount--override');
+      } else {
+        lodgingEl.textContent = `$${(legCost.lodgingTotal || 0).toFixed(2)}`;
+        lodgingEl.classList.remove('tc__perdiem-amount--na');
+        lodgingEl.classList.toggle('tc__perdiem-amount--override', legCost.lodgingOverride);
+      }
+    }
+
+    // Update M&IE calculation display with 75% first/last day breakdown
+    var isMieNa = this._isNaOverride(legCost, 'mie');
+    const mieCalcEl = document.getElementById(`tcMieCalc_${travelerId}_${legId}`);
+    if (mieCalcEl) {
+      mieCalcEl.textContent = this._formatMieCalc(legCost.mieDays || 0, legCost.mieRate || 0);
+      mieCalcEl.classList.toggle('tc__perdiem-calc--hidden', legCost.mieOverride || isMieNa);
+    }
+
+    // Update M&IE total
+    const mieEl = document.getElementById(`tcMie_${travelerId}_${legId}`);
+    if (mieEl) {
+      if (isMieNa) {
+        mieEl.textContent = 'N/A';
+        mieEl.classList.add('tc__perdiem-amount--na');
+        mieEl.classList.remove('tc__perdiem-amount--override');
+      } else {
+        mieEl.textContent = `$${(legCost.mieTotal || 0).toFixed(2)}`;
+        mieEl.classList.remove('tc__perdiem-amount--na');
+        mieEl.classList.toggle('tc__perdiem-amount--override', legCost.mieOverride);
+      }
+    }
+
+    // Update leg subtotal
+    const subtotalEl = document.getElementById(`tcLegSubtotal_${travelerId}_${legId}`);
+    if (subtotalEl) subtotalEl.textContent = `$${(legCost.legSubtotal || 0).toFixed(2)}`;
+  };
+
+  Controller._updateTravelerCostDisplay = function(travelerId) {
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+    if (!traveler) return;
+
+    // Force recalculation (sets traveler.subtotal, localTravelTotal, etc.)
+    state._recalculateTravelerCosts(traveler, 'display');
+
+    // Transport total
+    const transportTotalEl = document.getElementById(`tcTransportTotal_${travelerId}`);
+    if (transportTotalEl) transportTotalEl.textContent = `$${(traveler.transportationTotal || 0).toFixed(2)}`;
+
+    // Grand breakdown - show/hide based on whether values are > 0
+    const gtTransport = document.getElementById(`tcGrandTransport_${travelerId}`);
+    const gtLodging = document.getElementById(`tcGrandLodging_${travelerId}`);
+    const gtMie = document.getElementById(`tcGrandMie_${travelerId}`);
+    const gtLocal = document.getElementById(`tcGrandLocal_${travelerId}`);
+    const gtOther = document.getElementById(`tcGrandOther_${travelerId}`);
+    const gtTotal = document.getElementById(`tcGrandTotal_${travelerId}`);
+
+    const transportVal = traveler.transportationTotal || 0;
+    const lodgingVal = traveler.lodgingTotal || 0;
+    const mieVal = traveler.mieTotal || 0;
+    const localVal = traveler.localTravelTotal || 0;
+    const otherVal = traveler.otherTotal || 0;
+
+    // Update values and show/hide parent span based on value
+    if (gtTransport) {
+      gtTransport.textContent = `$${transportVal.toFixed(2)}`;
+      gtTransport.parentElement.classList.toggle('hidden', transportVal <= 0);
+    }
+    if (gtLodging) {
+      gtLodging.textContent = `$${lodgingVal.toFixed(2)}`;
+      gtLodging.parentElement.classList.toggle('hidden', lodgingVal <= 0);
+    }
+    if (gtMie) {
+      gtMie.textContent = `$${mieVal.toFixed(2)}`;
+      gtMie.parentElement.classList.toggle('hidden', mieVal <= 0);
+    }
+    if (gtLocal) {
+      gtLocal.textContent = `$${localVal.toFixed(2)}`;
+      gtLocal.parentElement.classList.toggle('hidden', localVal <= 0);
+    }
+    if (gtOther) {
+      gtOther.textContent = `$${otherVal.toFixed(2)}`;
+      gtOther.parentElement.classList.toggle('hidden', otherVal <= 0);
+    }
+
+    // traveler.subtotal already includes localTravelTotal from state calculation
+    if (gtTotal) gtTotal.textContent = `$${(traveler.subtotal || 0).toFixed(2)}`;
+
+    // Header total
+    const headerTotal = document.getElementById(`tcTotal_${travelerId}`);
+    if (headerTotal) headerTotal.textContent = `$${(traveler.subtotal || 0).toFixed(2)}`;
+
+    // Update summary
+    this._updateTravelerSummary(travelerId);
+  };
+
+  /**
+   * Update the collapsed summary line (transport mode + destinations + costs)
+   * Properly separates local vs non-local travel destinations
+   */
+  Controller._updateTravelerSummary = function(travelerId) {
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+    const summaryEl = document.getElementById(`tcSummary_${travelerId}`);
+    if (!summaryEl || !traveler) return;
+
+    const legs = state.getLegs();
+    const attendingLegs = traveler.attendingLegs || [];
+    const legCosts = traveler.legCosts || {};
+
+    // Separate local vs non-local destinations
+    const localDestinations = [];
+    const nonLocalDestinations = [];
+
+    legs.filter(leg => attendingLegs.includes(leg.id)).forEach(leg => {
+      const dest = leg.city || leg.state;
+      if (!dest) return;
+
+      const isLocal = legCosts[leg.id]?.isLocalTravel || false;
+      if (isLocal) {
+        localDestinations.push(dest);
+      } else {
+        nonLocalDestinations.push(dest);
+      }
+    });
+
+    // Build transport mode label
+    const transportLabels = {
+      'air': 'Air',
+      'rail': 'Rail',
+      'rental': 'Rental',
+      'private': 'POV',
+      'gov': 'GOV'
+    };
+    const transportMode = traveler.transportMode || '';
+    const transportLabel = transportLabels[transportMode] || '';
+
+    // Build summary parts
+    const summaryParts = [];
+
+    // Non-local destinations with transport mode
+    if (nonLocalDestinations.length > 0) {
+      const displayDests = nonLocalDestinations.slice(0, 2);
+      if (nonLocalDestinations.length > 2) {
+        displayDests.push(`+${nonLocalDestinations.length - 2}`);
+      }
+      summaryParts.push(`${transportLabel} · ${displayDests.join(', ')}`);
+    }
+
+    // Local destinations
+    if (localDestinations.length > 0) {
+      const displayDests = localDestinations.slice(0, 2);
+      if (localDestinations.length > 2) {
+        displayDests.push(`+${localDestinations.length - 2}`);
+      }
+      summaryParts.push(`Local · ${displayDests.join(', ')}`);
+    }
+
+    // Cost breakdown (compact format) - use state values
+    const costParts = [];
+    const transportCost = traveler.transportationTotal || 0;
+    const lodgingTotal = traveler.lodgingTotal || 0;
+    const mieTotal = traveler.mieTotal || 0;
+    const localTravelTotal = traveler.localTravelTotal || 0;
+
+    // Show costs for both local and non-local
+    if (transportCost > 0) {
+      costParts.push(`$${Math.round(transportCost)} trans`);
+    }
+    if (lodgingTotal > 0) {
+      costParts.push(`$${Math.round(lodgingTotal)} lodging`);
+    }
+    if (mieTotal > 0) {
+      costParts.push(`$${Math.round(mieTotal)} M&IE`);
+    }
+    if (localTravelTotal > 0) {
+      costParts.push(`$${Math.round(localTravelTotal)} local`);
+    }
+
+    // Combine parts with separator
+    let summary = summaryParts.join(' | ');
+    if (costParts.length > 0) {
+      summary += ' | ' + costParts.join(' · ');
+    }
+
+    summaryEl.textContent = summary || 'No destinations';
+  };
+
+  // ==========================================================================
+  // PROGRESSIVE DISCLOSURE
+  // ==========================================================================
+
+  /**
+   * Determine disclosure stage based on traveler data
+   * Stage 1: Initial - employee + funding + justification visible
+   * Stage 2: Employee selected - show details row (Role, Duty Loc, BU)
+   * Stage 3: Employee + funding + justification filled - show transport
+   * Stage 4: Transport interacted - show per diem & totals
+   */
+  Controller._getDisclosureStage = function(traveler) {
+    const hasEmployee = traveler.employeeName || traveler.employeeId;
+    const hasFunding = !!traveler.isClientPaid;
+    const hasJustification = !!traveler.roleJustification;
+    const hasTransportData = traveler.ticketCost > 0 || traveler.milesToDeparture > 0 || traveler.milesFromArrival > 0;
+
+    // Check if all legs are local travel (no transport section needed)
+    const allLegsLocal = this._allLegsAreLocalTravel ? this._allLegsAreLocalTravel(traveler) : false;
+
+    // Stage 4: Has transport data OR all legs are local (costs section visible)
+    if (hasEmployee && hasFunding && hasJustification && (hasTransportData || allLegsLocal)) {
+      return 4;
+    }
+
+    // Stage 3: Has employee + funding + justification (transport visible)
+    if (hasEmployee && hasFunding && hasJustification) {
+      return 3;
+    }
+
+    // Stage 2: Has employee selected (details visible)
+    if (hasEmployee) {
+      return 2;
+    }
+
+    // Stage 1: Initial state
+    return 1;
+  };
+
+  /**
+   * Update disclosure stage for a traveler card
+   * Reveals sections based on completed data
+   */
+  Controller._updateDisclosureStage = function(travelerId) {
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+    if (!traveler) return;
+
+    const card = this._elements.travelersContainer?.querySelector(`[data-traveler-id="${travelerId}"]`);
+    if (!card) return;
+
+    const newStage = this._getDisclosureStage(traveler);
+    const currentStage = parseInt(card.dataset.disclosureStage) || 1;
+
+    // Only advance stages, don't go backwards (user can still edit previous sections)
+    if (newStage <= currentStage) return;
+
+    card.dataset.disclosureStage = newStage;
+
+    // Animate newly revealed sections
+    if (newStage >= 2) {
+      this._revealStage(travelerId, 'details');
+    }
+    if (newStage >= 3) {
+      this._revealStage(travelerId, 'transport');
+    }
+    if (newStage >= 4) {
+      this._revealStage(travelerId, 'costs');
+    }
+  };
+
+  /**
+   * Reveal a disclosure stage with animation
+   * Stage 2 uses reveal fields (Role, Duty Loc, BU) via CSS data-attribute
+   * Stages 3-4 use stage wrapper divs
+   */
+  Controller._revealStage = function(travelerId, stageName) {
+    // Stage 2 (details) is handled via CSS data-disclosure-stage attribute
+    // which automatically shows .tc__reveal fields
+    if (stageName === 'details') return;
+
+    // Stages 3-4 use wrapper divs
+    const stageEl = document.getElementById(`tcStage${stageName.charAt(0).toUpperCase() + stageName.slice(1)}_${travelerId}`);
+    if (!stageEl || stageEl.classList.contains('tc__stage--revealed')) return;
+
+    // Add revealed class for CSS transition
+    stageEl.classList.add('tc__stage--revealed');
+
+    // Show the travelers total bar when costs stage is revealed
+    if (stageName === 'costs' && this._elements.travelersTotal) {
+      this._elements.travelersTotal.classList.remove('hidden');
+    }
+  };
+
+  /**
+   * Check disclosure requirements and advance if ready
+   * Called after field changes to potentially reveal next section
+   *
+   * Progressive disclosure flow:
+   * - Stage 1: Employee + Funding + Justification (always visible)
+   * - Stage 2: Details (Role, Duty Loc, BU) - after employee selected
+   * - Stage 3: Transport - after employee + funding + justification filled
+   *            (skipped if all legs are local travel)
+   * - Stage 4: Costs - after entering transport cost/mileage, OR immediately
+   *            after Stage 2 if all legs are local travel
+   */
+  Controller._checkDisclosureProgress = function(travelerId) {
+    const state = window.TravelRequest.State;
+    const traveler = state.getTraveler(travelerId);
+    if (!traveler) return;
+
+    const card = this._elements.travelersContainer?.querySelector(`[data-traveler-id="${travelerId}"]`);
+    if (!card) return;
+
+    const currentStage = parseInt(card.dataset.disclosureStage) || 1;
+    const hasEmployee = traveler.employeeName || traveler.employeeId;
+    const hasFunding = !!traveler.isClientPaid;
+    const hasJustification = !!traveler.roleJustification;
+    const hasTransportValue = (traveler.ticketCost > 0) || (traveler.milesToDeparture > 0) || (traveler.milesFromArrival > 0);
+
+    // Check if all legs are local travel (transport section hidden)
+    const allLegsLocal = this._allLegsAreLocalTravel ? this._allLegsAreLocalTravel(traveler) : false;
+
+    // Stage 2: Details row (after employee selected)
+    if (currentStage < 2 && hasEmployee) {
+      card.dataset.disclosureStage = 2;
+      this._revealStage(travelerId, 'details');
+    }
+
+    // Stage 3: Transport (after employee + funding + justification)
+    // Skip this stage if all legs are local travel
+    if (currentStage < 3 && hasEmployee && hasFunding && hasJustification) {
+      if (allLegsLocal) {
+        // Skip transport stage, go directly to costs
+        card.dataset.disclosureStage = 4;
+        this._revealStage(travelerId, 'costs');
+      } else {
+        card.dataset.disclosureStage = 3;
+        this._revealStage(travelerId, 'transport');
+      }
+    }
+
+    // Stage 4: Costs (after entering a transport cost or mileage value)
+    // Or if we're at stage 3 and all legs become local travel
+    if (currentStage < 4 && currentStage >= 3) {
+      if (hasTransportValue || allLegsLocal) {
+        card.dataset.disclosureStage = 4;
+        this._revealStage(travelerId, 'costs');
+      }
+    }
+  };
+
+  // ==========================================================================
+  // EXPAND/COLLAPSE
+  // ==========================================================================
+
+  Controller._toggleTravelerExpanded = function(travelerId) {
+    const state = window.TravelRequest.State;
+    state.toggleTravelerExpanded(travelerId);
+
+    const traveler = state.getTraveler(travelerId);
+    const body = document.getElementById(`tcBody_${travelerId}`);
+    const card = this._elements.travelersContainer?.querySelector(`[data-traveler-id="${travelerId}"]`);
+
+    if (body && card) {
+      const toggleIcon = card.querySelector('.tc__toggle i');
+      if (traveler.isExpanded) {
+        body.classList.remove('hidden');
+        if (toggleIcon) toggleIcon.className = 'fas fa-chevron-down';
+        // Hide summary when expanded - details are visible in the body
+        this._setTravelerSummaryVisible(travelerId, false);
+      } else {
+        body.classList.add('hidden');
+        if (toggleIcon) toggleIcon.className = 'fas fa-chevron-right';
+        // Show summary when collapsed
+        this._updateTravelerSummary(travelerId);
+        this._setTravelerSummaryVisible(travelerId, true);
+      }
+    }
+  };
+
+  /**
+   * Show or hide traveler summary elements in the header
+   */
+  Controller._setTravelerSummaryVisible = function(travelerId, visible) {
+    const summaryEl = document.getElementById(`tcSummary_${travelerId}`);
+    const totalEl = document.getElementById(`tcTotal_${travelerId}`);
+
+    if (summaryEl) summaryEl.classList.toggle('hidden', !visible);
+    if (totalEl) totalEl.classList.toggle('hidden', !visible);
+  };
+
+})();
+</script>

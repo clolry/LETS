@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LETS - Travel Budget & Discretionary Tracker</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Font Awesome -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+  <!-- Shared Base Styles -->
+  <?!= include('client/styles/tokens'); ?>
+  <?!= include('client/styles/travelBaseStyles'); ?>
+  <?!= include('client/styles/travelPortalStyles'); ?>
+
+  <style>
+    .kpi-stat-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 1.25rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      transition: box-shadow 0.2s;
+    }
+    .kpi-stat-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    .kpi-stat-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+    }
+    .kpi-stat-value {
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: #0f172a;
+      margin: 0.25rem 0;
+    }
+    .kpi-stat-sub {
+      font-size: 0.8125rem;
+      color: #64748b;
+    }
+    .badge-tier1 {
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fde68a;
+    }
+    .badge-tier2 {
+      background: #e0e7ff;
+      color: #3730a3;
+      border: 1px solid #c7d2fe;
+    }
+  </style>
+</head>
+
+<body class="travel-portal-body">
+  <!-- Fixed Branded Header -->
+  <header class="travel-header">
+    <div class="travel-header__left">
+      <div id="headerLogo"></div>
+      <h1 class="aas-brand-header">
+        <span class="aas-brand-header__logo">LETS</span>
+        <span class="aas-brand-header__sep"></span>
+        <span class="aas-brand-header__section">Travel Budget &amp; Executive Tracker</span>
+      </h1>
+    </div>
+    <div class="travel-header__right">
+      <a href="#" onclick="window.location.href='?mode=travel'; return false;" class="travel-header__role-link">
+        <i aria-hidden="true" class="fas fa-arrow-left"></i>
+        <span>Return to Portal</span>
+      </a>
+      <a href="#" onclick="window.location.href='?mode=form'; return false;" class="travel-header__role-link">
+        <i aria-hidden="true" class="fas fa-plus"></i>
+        <span>New Travel Request</span>
+      </a>
+      <span class="travel-header__user">
+        <i aria-hidden="true" class="fas fa-user-circle me-1"></i>
+        <?= userName ?>
+      </span>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="container-fluid px-4 py-4" style="max-width: 1400px; margin: 0 auto;">
+
+    <!-- Top Action Bar -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <div>
+        <h2 class="h4 fw-bold mb-1" style="color: #0f172a;">FY27 Travel Financial Governance</h2>
+        <p class="text-muted small mb-0">Active discretionary balance tracking across DACs, set-asides, and Go.gov obligations</p>
+      </div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-primary" onclick="syncFASTrackerNow()">
+          <i class="fas fa-sync-alt me-1"></i> Sync FAS Tracker Sheet
+        </button>
+        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#modalBudgetAdjustment">
+          <i class="fas fa-plus-circle me-1"></i> Log Budget Adjustment
+        </button>
+      </div>
+    </div>
+
+    <!-- Executive KPI Grid -->
+    <div class="row g-3 mb-4">
+      <div class="col-md-6 col-lg-2">
+        <div class="kpi-stat-card">
+          <div class="kpi-stat-label">Baseline Budget</div>
+          <div class="kpi-stat-value">$997,000</div>
+          <div class="kpi-stat-sub">FO ($4k) + 3 DACs ($993k)</div>
+        </div>
+      </div>
+
+      <div class="col-md-6 col-lg-2">
+        <div class="kpi-stat-card">
+          <div class="kpi-stat-label">Set-Asides</div>
+          <div class="kpi-stat-value text-warning">$108,500</div>
+          <div class="kpi-stat-sub">LC, COE &amp; FO Gap</div>
+        </div>
+      </div>
+
+      <div class="col-md-6 col-lg-3">
+        <div class="kpi-stat-card">
+          <div class="kpi-stat-label">Committed (Pending Estimates)</div>
+          <div class="kpi-stat-value text-info">$13,800</div>
+          <div class="kpi-stat-sub">Active in approval pipeline</div>
+        </div>
+      </div>
+
+      <div class="col-md-6 col-lg-2">
+        <div class="kpi-stat-card">
+          <div class="kpi-stat-label">Posted Actuals</div>
+          <div class="kpi-stat-value text-purple" style="color: #7c3aed;">$9,300</div>
+          <div class="kpi-stat-sub">Liquidated post-travel</div>
+        </div>
+      </div>
+
+      <div class="col-md-12 col-lg-3">
+        <div class="kpi-stat-card" style="background: #f0fdf4; border-color: #bbf7d0;">
+          <div class="kpi-stat-label" style="color: #15803d;">Net Discretionary Available</div>
+          <div class="kpi-stat-value text-success">$865,400</div>
+          <div class="kpi-stat-sub" style="color: #166534;">Uncommitted across all DACs</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Division / DAC Breakdown Table -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <h3 class="h6 mb-0 fw-bold">DAC Discretionary Balances &amp; Proportional Shares</h3>
+        <span class="badge bg-light text-secondary border">Core Formula: Starting + Adjustments - SetAsides - Estimates - Actuals</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size: 0.875rem;">
+          <thead class="table-light">
+            <tr>
+              <th>Office / DAC</th>
+              <th>Baseline ($)</th>
+              <th>Proportional Share</th>
+              <th>Set-Asides Deducted</th>
+              <th>Discretionary Base</th>
+              <th>Pending Estimates</th>
+              <th>Posted Actuals</th>
+              <th>Net Available Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="fw-bold">Front Office / AC</td>
+              <td>$4,000</td>
+              <td><span class="badge bg-light text-dark border">0.0%</span></td>
+              <td>$0</td>
+              <td>$4,000</td>
+              <td>$0</td>
+              <td>$0</td>
+              <td class="fw-bold text-success">$4,000</td>
+            </tr>
+            <tr>
+              <td class="fw-bold">OMD DAC</td>
+              <td>$152,000</td>
+              <td><span class="badge bg-primary">15.3%</span></td>
+              <td>$15,060 <small class="text-muted">($12k LC + $3,060 Gap)</small></td>
+              <td>$136,940</td>
+              <td>$3,200</td>
+              <td>$0</td>
+              <td class="fw-bold text-success">$133,740</td>
+            </tr>
+            <tr>
+              <td class="fw-bold">IDV DAC</td>
+              <td>$659,000</td>
+              <td><span class="badge bg-primary">66.4%</span></td>
+              <td>$25,280 <small class="text-muted">($12k LC + $13,280 Gap)</small></td>
+              <td>$633,720</td>
+              <td>$4,500</td>
+              <td>$0</td>
+              <td class="fw-bold text-success">$629,220</td>
+            </tr>
+            <tr>
+              <td class="fw-bold">CM DAC</td>
+              <td>$182,000</td>
+              <td><span class="badge bg-primary">18.3%</span></td>
+              <td>$68,160 <small class="text-muted">($12k LC + $52.5k COE + $3,660 Gap)</small></td>
+              <td>$113,840</td>
+              <td>$6,100</td>
+              <td>$5,850</td>
+              <td class="fw-bold text-success">$101,890</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Two-Column Governance Section: Set-Asides & FAS Delegation Tracker Sync -->
+    <div class="row g-4">
+      <!-- Left: Set-Asides Structure -->
+      <div class="col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-header bg-white py-3">
+            <h3 class="h6 mb-0 fw-bold">Official Travel Set-Asides</h3>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0" style="font-size: 0.8125rem;">
+              <thead class="table-light">
+                <tr>
+                  <th>Set-Aside Title</th>
+                  <th>Type</th>
+                  <th>Target</th>
+                  <th>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="fw-semibold">DAC LC Travel (OMD, IDV, CM)</td>
+                  <td><span class="badge bg-info text-dark">Self-Funded</span></td>
+                  <td>$12k each DAC</td>
+                  <td>$36,000</td>
+                </tr>
+                <tr>
+                  <td class="fw-semibold">COE Program</td>
+                  <td><span class="badge bg-info text-dark">Self-Funded</span></td>
+                  <td>CM DAC Only</td>
+                  <td>$52,500</td>
+                </tr>
+                <tr>
+                  <td class="fw-semibold">Front Office LC Travel Gap</td>
+                  <td><span class="badge bg-purple text-white" style="background:#6366f1;">Enterprise Shared</span></td>
+                  <td>OMD: 15.3% | IDV: 66.4% | CM: 18.3%</td>
+                  <td>$20,000</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: FAS Delegation Sync & Approvers -->
+      <div class="col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+            <h3 class="h6 mb-0 fw-bold">EO 14222 FAS Travel Exception Tracker Status</h3>
+            <span class="badge bg-success">Automated Poller Active</span>
+          </div>
+          <div class="card-body">
+            <p class="small text-muted mb-3">
+              Requests flagged with <strong>Tier 1 Purposes</strong> (Foreign travel, HAE, Non-GSA Conferences, IMM &gt; $10k, Speaking roles) automatically synchronize to the official FAS Travel Exception Tracker Google Sheet for FAS Chief of Staff approval.
+            </p>
+            <div class="p-3 bg-light rounded mb-3" style="font-size: 0.8125rem;">
+              <div class="d-flex justify-content-between mb-2">
+                <span>FAS Exception Tracker Connected:</span>
+                <span class="fw-bold text-success"><i class="fas fa-check-circle me-1"></i> Active</span>
+              </div>
+              <div class="d-flex justify-content-between mb-2">
+                <span>Pending FAS CoS Approval in Sheet:</span>
+                <span class="fw-bold text-primary">2 requests</span>
+              </div>
+              <div class="d-flex justify-content-between">
+                <span>Last Poller Execution:</span>
+                <span class="text-muted">Today at 12:15 PM</span>
+              </div>
+            </div>
+
+            <h4 class="h6 fw-bold mb-2">Configured DAC Approvers</h4>
+            <ul class="list-group list-group-flush small">
+              <li class="list-group-item px-0 py-2 d-flex justify-content-between">
+                <span><strong>OMD DAC:</strong> OMD Director (Alt: OMD Deputy)</span>
+                <span class="text-muted">omd.director@gsa.gov</span>
+              </li>
+              <li class="list-group-item px-0 py-2 d-flex justify-content-between">
+                <span><strong>IDV DAC:</strong> IDV Director (Alt: IDV Deputy)</span>
+                <span class="text-muted">idv.director@gsa.gov</span>
+              </li>
+              <li class="list-group-item px-0 py-2 d-flex justify-content-between">
+                <span><strong>CM DAC:</strong> CM Director (Alt: CM Deputy)</span>
+                <span class="text-muted">cm.director@gsa.gov</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    function syncFASTrackerNow() {
+      alert('Scanning FAS Travel Exception Tracker Google Sheet... Sync complete.');
+    }
+  </script>
+</body>
+</html>

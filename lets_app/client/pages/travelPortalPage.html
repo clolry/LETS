@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Travel Request Portal</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+
+  <!-- Bootstrap CSS (form elements) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Font Awesome -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+  <!-- Shared Base Styles -->
+  <?!= include('client/styles/tokens'); ?>
+  <?!= include('client/styles/travelBaseStyles'); ?>
+
+  <!-- Portal Styles -->
+  <?!= include('client/styles/travelPortalStyles'); ?>
+</head>
+
+<body class="travel-portal-body">
+  <!-- Skip Link for Accessibility -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <!-- Welcome Loader Overlay -->
+  <div id="welcomeLoader" class="welcome-loader">
+    <div class="welcome-loader__content">
+      <?!= include('client/components/welcomeSvg'); ?>
+    </div>
+  </div>
+
+  <!-- Navigation Loader -->
+  <?!= include('client/components/navLoader'); ?>
+
+  <!-- Fixed Header -->
+  <header class="travel-header">
+    <div class="travel-header__left">
+      <button class="travel-header__menu-btn" id="sidebarToggle" aria-label="Toggle sidebar">
+        <i aria-hidden="true" class="fas fa-bars"></i>
+      </button>
+      <div id="headerLogo"></div>
+      <h1 class="aas-brand-header">
+        <span class="aas-brand-header__logo">LETS</span>
+      </h1>
+    </div>
+    <div class="travel-header__right">
+      <a href="#" onclick="window.TravelPortal.navigateTo('budget'); return false;" class="travel-header__role-link" id="budgetDashboardLink">
+        <i aria-hidden="true" class="fas fa-chart-pie"></i>
+        <span>Travel Budget &amp; Allocations</span>
+      </a>
+      <a href="#" onclick="window.TravelPortal.navigateTo('admin'); return false;" class="travel-header__role-link hidden" id="adminLink">
+        <i aria-hidden="true" class="fas fa-shield-halved"></i>
+        <span>Admin</span>
+      </a>
+      <a href="#" onclick="window.TravelPortal.navigateTo('reviewer-dashboard', { force: '1' }); return false;" class="travel-header__role-link hidden" id="reviewerDashboardLink">
+        <i aria-hidden="true" class="fas fa-clipboard-check"></i>
+        <span>Travel Insights</span>
+      </a>
+      <div class="help-dropdown">
+        <button class="travel-header__help-btn" onclick="TravelHelp.toggle(event)" title="Help">
+          <i aria-hidden="true" class="fas fa-question"></i>
+        </button>
+        <div class="help-dropdown__menu">
+          <button class="help-dropdown__item" onclick="TravelHelp.open()">
+            <div class="help-dropdown__item-icon help-dropdown__item-icon--guide"><i aria-hidden="true" class="fas fa-book-open"></i></div>
+            <div class="help-dropdown__item-text">
+              <div class="help-dropdown__item-title">Help Guide</div>
+              <div class="help-dropdown__item-desc">How to use the portal</div>
+            </div>
+          </button>
+          <div class="help-dropdown__divider"></div>
+          <button class="help-dropdown__item" onclick="TravelHelp.openSOP()">
+            <div class="help-dropdown__item-icon help-dropdown__item-icon--sop"><i aria-hidden="true" class="fas fa-file-contract"></i></div>
+            <div class="help-dropdown__item-text">
+              <div class="help-dropdown__item-title">Submission Guidelines</div>
+              <div class="help-dropdown__item-desc">Travel policies &amp; SOP</div>
+            </div>
+          </button>
+          <div class="help-dropdown__divider"></div>
+          <button class="help-dropdown__item" onclick="TravelFeedback.openBugReport()">
+            <div class="help-dropdown__item-icon" style="background:#fef2f2;color:#dc2626;"><i aria-hidden="true" class="fas fa-bug"></i></div>
+            <div class="help-dropdown__item-text">
+              <div class="help-dropdown__item-title">Report a Bug</div>
+              <div class="help-dropdown__item-desc">Something not working?</div>
+            </div>
+          </button>
+          <button class="help-dropdown__item" onclick="TravelFeedback.openFeatureRequest()">
+            <div class="help-dropdown__item-icon" style="background:#f0fdf4;color:#16a34a;"><i aria-hidden="true" class="fas fa-lightbulb"></i></div>
+            <div class="help-dropdown__item-text">
+              <div class="help-dropdown__item-title">Request a Feature</div>
+              <div class="help-dropdown__item-desc">Suggest an improvement</div>
+            </div>
+          </button>
+        </div>
+      </div>
+      <span class="travel-header__user">
+        <i aria-hidden="true" class="fas fa-user-circle me-1"></i>
+        <?= userName ?>
+      </span>
+    </div>
+  </header>
+
+  <!-- Sidebar Overlay (mobile) -->
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- Main Content - Two Column Layout -->
+  <main class="travel-main" id="main-content">
+    <div class="travel-portal-layout">
+
+      <!-- Left Sidebar -->
+      <aside class="portal-sidebar">
+        <!-- New Request Button -->
+        <button onclick="TravelPortal.navigateTo('form')" class="portal-sidebar__new-btn">
+          <i aria-hidden="true" class="fas fa-plus"></i>
+          <span>New Request</span>
+        </button>
+
+        <!-- Drafts Section -->
+        <div class="portal-sidebar__section">
+          <div class="portal-sidebar__header">
+            <span class="portal-sidebar__title">
+              <i aria-hidden="true" class="fas fa-file-alt"></i>
+              Drafts
+            </span>
+            <span class="portal-sidebar__count" id="draftsCount">0</span>
+          </div>
+          <div class="portal-sidebar__list" id="draftsList">
+            <!-- Drafts loaded dynamically -->
+          </div>
+          <div class="portal-sidebar__empty" id="draftsEmptyState">
+            <i aria-hidden="true" class="fas fa-file-circle-plus"></i>
+            <p>No saved drafts</p>
+            <span>Start a new request to create a draft</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Content Area -->
+      <div class="portal-content" id="portalContent">
+
+        <!-- Action Required Section -->
+        <section class="portal-section portal-section--action hidden" id="actionSection">
+          <div class="portal-section__header portal-section__header--action">
+            <h2><i aria-hidden="true" class="fas fa-exclamation-triangle"></i> Action Required</h2>
+            <span class="portal-section__count portal-section__count--action" id="actionCount">0</span>
+          </div>
+          <div class="portal-section__body" id="actionList">
+            <!-- Action items loaded dynamically -->
+          </div>
+        </section>
+
+        <!-- My Requests Section -->
+        <section class="portal-section" id="requestsSection">
+          <div class="portal-section__header">
+            <h2><i aria-hidden="true" class="fas fa-paper-plane"></i> My Requests</h2>
+            <span class="portal-section__count" id="requestsCount">0</span>
+          </div>
+          <!-- Status Filter -->
+          <div class="portal-section__filter" id="requestsFilter">
+            <button class="filter-chip filter-chip--active" data-filter="all">All <span class="filter-chip__count" data-count="all"></span></button>
+            <button class="filter-chip" data-filter="pending">
+              <i aria-hidden="true" class="fas fa-clock"></i> Pending <span class="filter-chip__count" data-count="pending"></span>
+            </button>
+            <button class="filter-chip" data-filter="approved">
+              <i aria-hidden="true" class="fas fa-check-circle"></i> Approved <span class="filter-chip__count" data-count="approved"></span>
+            </button>
+            <button class="filter-chip" data-filter="completed">
+              <i aria-hidden="true" class="fas fa-flag-checkered"></i> Completed <span class="filter-chip__count" data-count="completed"></span>
+            </button>
+          </div>
+          <!-- Loading State — single skeleton card, delay-shown.
+               Hidden by default; controller reveals after 200ms only if the
+               data hasn't arrived yet. Warm loads (~110ms) never trigger it. -->
+          <div class="portal-section__body hidden" id="requestsLoading">
+            <div class="skeleton-card">
+              <div class="skeleton skeleton-badge"></div>
+              <div class="skeleton-content">
+                <div class="skeleton skeleton-title"></div>
+                <div class="skeleton skeleton-meta"></div>
+              </div>
+              <div class="skeleton skeleton-btn"></div>
+            </div>
+          </div>
+          <div class="portal-section__body" id="requestsList">
+            <!-- Requests loaded dynamically -->
+          </div>
+          <!-- Empty State -->
+          <div class="portal-section__empty hidden" id="requestsEmptyState">
+            <i aria-hidden="true" class="fas fa-paper-plane"></i>
+            <div class="portal-section__empty-text">No travel requests yet</div>
+            <div class="portal-section__empty-subtext">Submit a new request to get started</div>
+          </div>
+        </section>
+
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Funding Correction Modal -->
+  <div class="modal fade" id="fundingCorrectionModal" tabindex="-1" aria-labelledby="fundingCorrectionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content correction-modal">
+        <!-- Header -->
+        <div class="correction-modal__header">
+          <div class="correction-modal__header-icon">
+            <i aria-hidden="true" class="fas fa-flag"></i>
+          </div>
+          <div class="correction-modal__header-text">
+            <span class="correction-modal__title">Funding Correction Required</span>
+            <span class="correction-modal__subtitle" id="correctionTripName">Trip Name</span>
+          </div>
+          <button type="button" class="correction-modal__close" data-bs-dismiss="modal" aria-label="Close">
+            <i aria-hidden="true" class="fas fa-times"></i>
+          </button>
+        </div>
+
+        <div class="correction-modal__body">
+          <!-- Loading View -->
+          <div id="fundingCorrectionLoading" class="correction-modal__state">
+            <svg class="correction-modal__plane" viewBox="0 -960 960 960" role="img" aria-label="Loading">
+              <g class="correction-plane-rig">
+                <path class="correction-trail ct1" d="M 480 -480 L 80 -80" />
+                <path class="correction-trail ct2" d="M 420 -560 L 140 -280" />
+                <path class="correction-trail ct3" d="M 560 -420 L 280 -140" />
+                <path class="correction-plane-body"
+                  d="M771-354l-99-247-97 98 20 97-34 34-68-121-121-68 34-34 98 20 97-97-247-99 45-42 297 47 98-99q7-7 16-10.5t19-3.5q10 0 19 3.5t17 11.5q8 7 11.5 16t3.5 18q0 10-4 19t-12 17l-98 98 47 297-42 45Z"/>
+              </g>
+            </svg>
+            <span>Loading<span class="correction-dots"><span>.</span><span>.</span><span>.</span></span></span>
+          </div>
+
+          <!-- Form View -->
+          <div id="fundingCorrectionForm" class="hidden">
+            <!-- DD Notes Section -->
+            <div class="correction-modal__notes-section">
+              <div class="correction-modal__notes-header">
+                <i aria-hidden="true" class="fas fa-comment-alt"></i>
+                <span>Division Director Notes</span>
+              </div>
+              <div class="correction-modal__notes-content" id="correctionDdNotes">
+                Notes will appear here
+              </div>
+              <div class="correction-modal__notes-reporter">
+                <i aria-hidden="true" class="fas fa-user-tie"></i>
+                <span id="correctionDdReporter">DD Name</span>
+              </div>
+            </div>
+
+            <!-- Travelers Section -->
+            <div class="correction-modal__travelers-section">
+              <div class="correction-modal__travelers-header">
+                <i aria-hidden="true" class="fas fa-users"></i>
+                <span>Flagged Travelers</span>
+                <span class="correction-modal__travelers-hint">Select the correct funding type for each traveler</span>
+              </div>
+              <div class="correction-modal__travelers-list" id="correctionTravelerList">
+                <!-- Travelers populated dynamically -->
+              </div>
+            </div>
+
+            <!-- Submit Button -->
+            <button type="button" class="correction-modal__submit" id="fundingCorrectionSubmitBtn"
+                    onclick="TravelPortal.Controller._submitFundingCorrection()">
+              <i aria-hidden="true" class="fas fa-paper-plane me-1"></i>
+              Submit & Resubmit for DD Confirmation
+            </button>
+          </div>
+
+          <!-- Success View -->
+          <div id="fundingCorrectionSuccess" class="correction-modal__state correction-modal__state--success hidden">
+            <div class="correction-modal__success-icon">
+              <i aria-hidden="true" class="fas fa-check"></i>
+            </div>
+            <span class="correction-modal__success-title">Corrections Submitted</span>
+            <span class="correction-modal__success-message">The request has been sent back to the Division Director(s) for confirmation.</span>
+          </div>
+
+          <!-- Error View -->
+          <div id="fundingCorrectionError" class="correction-modal__state correction-modal__state--error hidden">
+            <i aria-hidden="true" class="fas fa-exclamation-circle"></i>
+            <span id="fundingCorrectionErrorMessage">Error</span>
+            <button type="button" class="correction-modal__close-btn" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- AAS Logo Component -->
+  <?!= include('client/components/aasLogo'); ?>
+
+  <!-- Draft Storage (IndexedDB) -->
+  <?!= include('client/controllers/form/travelRequestDraftStorage'); ?>
+
+  <!-- Shared Services -->
+  <?!= include('client/shared/escapeHtml'); ?>
+  <?!= include('client/shared/serverCall'); ?>
+  <?!= include('client/shared/travelUtils'); ?>
+  <?!= include('client/shared/travelDateService'); ?>
+
+  <!-- Portal Controller -->
+  <?!= include('client/controllers/portal/travelPortalController'); ?>
+
+  <!-- Document Viewer -->
+  <?!= include('client/components/documentViewer'); ?>
+
+  <!-- Help Modal -->
+  <?!= include('client/shared/travelHelpModal'); ?>
+
+  <!-- Feedback System -->
+  <?!= include('client/shared/travelFeedbackModal'); ?>
+
+  <!-- Initialize -->
+  <script>
+    document.addEventListener('DOMContentLoaded', async function() {
+      // Welcome loader - only show on first visit this session
+      const welcomeLoader = document.getElementById('welcomeLoader');
+      if (welcomeLoader) {
+        const hasSeenWelcome = sessionStorage.getItem('travelPortalWelcomeSeen');
+
+        if (hasSeenWelcome) {
+          // Already seen - hide immediately
+          welcomeLoader.classList.add('welcome-loader--removed');
+        } else {
+          // First visit - play animation, then hide
+          sessionStorage.setItem('travelPortalWelcomeSeen', 'true');
+          setTimeout(() => {
+            welcomeLoader.classList.add('welcome-loader--hidden');
+            setTimeout(() => {
+              welcomeLoader.classList.add('welcome-loader--removed');
+            }, 300);
+          }, 4700);
+        }
+      }
+
+      // Initialize AAS Logo in header
+      const logoContainer = document.getElementById('headerLogo');
+      if (logoContainer && window.AAS_LOGO) {
+        logoContainer.innerHTML = window.AAS_LOGO.getHTML(36, '', true);
+      }
+
+      // Initialize draft storage
+      if (window.TravelDraft) {
+        try {
+          await window.TravelDraft.init();
+        } catch (error) {
+          console.warn('TravelDraft storage unavailable:', error);
+        }
+      }
+
+      // Set the script URL for navigation
+      window._travelScriptUrl = '<?= scriptUrl ?>';
+      if (window.TravelPortal) {
+        window.TravelPortal._scriptUrl = '<?= scriptUrl ?>';
+      }
+
+      // Initialize portal controller
+      if (window.TravelPortal && window.TravelPortal.Controller) {
+        window.TravelPortal.Controller.init({
+          userEmail: '<?= userEmail ?>',
+          userName: '<?= userName ?>'
+        });
+      }
+
+      // Initialize feedback system + NPS prompt
+      if (window.TravelFeedback) {
+        TravelFeedback.init({
+          contextPage: 'portal',
+          userEmail: '<?= userEmail ?>',
+          userName: '<?= userName ?>'
+        });
+        TravelFeedback.initNps('portalContent');
+      }
+    });
+  </script>
+</body>
+</html>

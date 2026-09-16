@@ -1,0 +1,349 @@
+<!--
+  ================================================================
+  HC Data Center Service — TRIP Edition (Staffing Only)
+  ================================================================
+
+  Slim client-side data layer for the TRIP standalone app.
+  Loads the enriched staffing list from the server, caches in IndexedDB,
+  and provides O(1) lookups + supervisor chain walking.
+
+  USAGE:
+    await HCDataCenter.init();
+
+    HCDataCenter.getAll()              // every position (staffed + vacant)
+    HCDataCenter.getStaffed()          // occupancyStatus !== VACANT
+    HCDataCenter.getVacancies()        // occupancyStatus === VACANT
+    HCDataCenter.getPosition('12345')  // by position number
+    HCDataCenter.getEmployee('67890')  // by employee ID
+    HCDataCenter.getByEmail('a@b.com') // by email address
+    HCDataCenter.search('smith')       // search by name
+
+    HCDataCenter.findSupervisorAtGrade(positionNumber, '15')
+    HCDataCenter.walkSupervisorChain(positionNumber, predicate)
+
+    HCDataCenter.refresh()             // force fresh server fetch
+    HCDataCenter.isLoaded()            // check if data is available
+    HCDataCenter.getStats()            // { total, staffed, vacant, lastSynced }
+-->
+
+<script>
+window.HCDataCenter = (function() {
+  'use strict';
+
+  // ---------------------------------------------------------------------------
+  // IndexedDB config
+  // ---------------------------------------------------------------------------
+  var DB_NAME = 'HCDataCenterDB';
+  var DB_VERSION = 1;
+  var STORE_NAME = 'datasets';
+  var DATASET_KEY = 'enrichedStaffing';
+  var STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+  // ---------------------------------------------------------------------------
+  // Internal state
+  // ---------------------------------------------------------------------------
+  var _db = null;
+  var _data = [];
+  var _positionIndex = {};
+  var _employeeIndex = {};
+  var _emailIndex = {};
+  var _loaded = false;
+  var _loading = null;
+
+  // ---------------------------------------------------------------------------
+  // IndexedDB helpers
+  // ---------------------------------------------------------------------------
+
+  function _openDB() {
+    if (_db) return Promise.resolve(_db);
+    return new Promise(function(resolve, reject) {
+      if (!window.indexedDB) { reject(new Error('IndexedDB not supported')); return; }
+      var request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onerror = function() { reject(request.error); };
+      request.onsuccess = function() { _db = request.result; resolve(_db); };
+      request.onupgradeneeded = function(event) {
+        var database = event.target.result;
+        if (!database.objectStoreNames.contains(STORE_NAME)) {
+          database.createObjectStore(STORE_NAME, { keyPath: 'key' });
+        }
+      };
+    });
+  }
+
+  function _cacheGet(key) {
+    return _openDB().then(function(db) {
+      return new Promise(function(resolve, reject) {
+        var tx = db.transaction([STORE_NAME], 'readonly');
+        var store = tx.objectStore(STORE_NAME);
+        var request = store.get(key);
+        request.onsuccess = function() { resolve(request.result || null); };
+        request.onerror = function() { reject(request.error); };
+      });
+    });
+  }
+
+  function _cachePut(key, data) {
+    return _openDB().then(function(db) {
+      return new Promise(function(resolve, reject) {
+        var tx = db.transaction([STORE_NAME], 'readwrite');
+        var store = tx.objectStore(STORE_NAME);
+        var request = store.put({ key: key, data: data, lastSynced: new Date().toISOString() });
+        request.onsuccess = function() { resolve(); };
+        request.onerror = function() { reject(request.error); };
+      });
+    });
+  }
+
+  function _isCacheStale(record) {
+    if (!record || !record.lastSynced) return true;
+    return (Date.now() - new Date(record.lastSynced).getTime()) > STALE_THRESHOLD_MS;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Index builders
+  // ---------------------------------------------------------------------------
+
+  function _buildIndexes(positions) {
+    _positionIndex = {};
+    _employeeIndex = {};
+    _emailIndex = {};
+
+    for (var i = 0; i < positions.length; i++) {
+      var pos = positions[i];
+      if (pos.positionNumber) _positionIndex[pos.positionNumber] = pos;
+      if (pos.employeeId) _employeeIndex[pos.employeeId] = pos;
+      if (pos.emailAddress) _emailIndex[pos.emailAddress.toLowerCase()] = pos;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Server fetch
+  // ---------------------------------------------------------------------------
+
+  function _fetchFromServer() {
+    return new Promise(function(resolve, reject) {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success && result.data) {
+            resolve(result.data);
+          } else {
+            reject(new Error((result && result.error) || 'Failed to load HC data'));
+          }
+        })
+        .withFailureHandler(reject)
+        .getHCStaffingBundle();
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Initialization
+  // ---------------------------------------------------------------------------
+
+  function init(forceRefresh) {
+    if (_loaded && !forceRefresh) return Promise.resolve();
+    if (_loading && !forceRefresh) return _loading;
+
+    _loading = _loadStaffing(forceRefresh).then(function() {
+      _loaded = true;
+      _loading = null;
+    }).catch(function(err) {
+      _loading = null;
+      throw err;
+    });
+
+    return _loading;
+  }
+
+  function _loadStaffing(forceRefresh) {
+    if (!forceRefresh) {
+      return _cacheGet(DATASET_KEY).then(function(cached) {
+        if (cached && cached.data && !_isCacheStale(cached)) {
+          console.log('HCDataCenter: Loaded ' + cached.data.length + ' positions from cache');
+          _data = cached.data;
+          _buildIndexes(_data);
+          return;
+        }
+        return _fetchAndCache();
+      }).catch(function(err) {
+        console.warn('HCDataCenter: Cache read failed, fetching from server:', err.message);
+        return _fetchAndCache();
+      });
+    }
+    return _fetchAndCache();
+  }
+
+  function _fetchAndCache() {
+    return _fetchFromServer().then(function(data) {
+      console.log('HCDataCenter: Loaded ' + data.length + ' positions from server');
+      _data = data;
+      _buildIndexes(_data);
+      _cachePut(DATASET_KEY, data).catch(function(err) {
+        console.warn('HCDataCenter: Failed to save to IndexedDB:', err.message);
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Staffing queries
+  // ---------------------------------------------------------------------------
+
+  function getAll() { return _data.slice(); }
+
+  function getStaffed() {
+    return _data.filter(function(p) { return p.occupancyStatus !== 'VACANT'; });
+  }
+
+  function getVacancies() {
+    return _data.filter(function(p) { return p.occupancyStatus === 'VACANT'; });
+  }
+
+  function getPosition(positionNumber) {
+    return _positionIndex[String(positionNumber).trim()] || null;
+  }
+
+  function getEmployee(employeeId) {
+    return _employeeIndex[String(employeeId).trim()] || null;
+  }
+
+  function getByEmail(email) {
+    if (!email) return null;
+    return _emailIndex[email.toLowerCase().trim()] || null;
+  }
+
+  function getByOrg(orgCode) {
+    var code = String(orgCode).trim();
+    return _data.filter(function(p) { return p.orgCode === code; });
+  }
+
+  function getByBU(bu) {
+    var target = String(bu).trim();
+    return _data.filter(function(p) {
+      return p.org && p.org.businessUnit === target;
+    });
+  }
+
+  function search(query) {
+    if (!query || query.length < 2) return [];
+    var q = query.toLowerCase();
+    return _data.filter(function(p) {
+      return (p.employeeName && p.employeeName.toLowerCase().indexOf(q) !== -1) ||
+             (p.emailAddress && p.emailAddress.toLowerCase().indexOf(q) !== -1);
+    }).slice(0, 25);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Autocomplete helpers (backward compat)
+  // ---------------------------------------------------------------------------
+
+  function getAutocompleteList() {
+    return _data
+      .filter(function(p) { return p.employeeName && p.occupancyStatus !== 'VACANT'; })
+      .map(function(p) {
+        return { label: p.employeeName + ' (' + (p.orgCode || '') + ')', value: p.employeeId };
+      });
+  }
+
+  function getDetailsMap() {
+    var map = {};
+    for (var id in _employeeIndex) {
+      map[id] = _employeeIndex[id];
+    }
+    return map;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Supervisor chain helpers
+  // ---------------------------------------------------------------------------
+
+  function walkSupervisorChain(positionNumber, predicate, maxDepth) {
+    maxDepth = maxDepth || 15;
+    var current = _positionIndex[String(positionNumber).trim()];
+    if (!current) return null;
+
+    var visited = {};
+    var depth = 0;
+    var nextPN = current.reportsToPositionNumber;
+
+    while (nextPN && depth < maxDepth) {
+      if (visited[nextPN]) return null;
+      visited[nextPN] = true;
+
+      var supervisor = _positionIndex[nextPN];
+      if (!supervisor) return null;
+
+      if (predicate(supervisor)) return supervisor;
+
+      nextPN = supervisor.reportsToPositionNumber;
+      depth++;
+    }
+
+    return null;
+  }
+
+  function findSupervisorAtGrade(positionNumber, grade) {
+    var targetGrade = String(grade || '15').trim();
+    return walkSupervisorChain(positionNumber, function(sup) {
+      return String(sup.grade).trim() === targetGrade && sup.occupancyStatus !== 'VACANT';
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cache management
+  // ---------------------------------------------------------------------------
+
+  function refresh() {
+    _loaded = false;
+    return init(true);
+  }
+
+  function isLoaded() { return _loaded; }
+
+  function getStats() {
+    var staffed = 0, vacant = 0;
+    for (var i = 0; i < _data.length; i++) {
+      if (_data[i].occupancyStatus === 'VACANT') vacant++;
+      else staffed++;
+    }
+    return { total: _data.length, staffed: staffed, vacant: vacant };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
+  return {
+    init: init,
+    refresh: refresh,
+    isLoaded: isLoaded,
+    getStats: getStats,
+
+    // Staffing queries
+    getAll: getAll,
+    getStaffed: getStaffed,
+    getVacancies: getVacancies,
+    getPosition: getPosition,
+    getEmployee: getEmployee,
+    getByEmail: getByEmail,
+    getByOrg: getByOrg,
+    getByBU: getByBU,
+    search: search,
+
+    // Autocomplete
+    getAutocompleteList: getAutocompleteList,
+    getDetailsMap: getDetailsMap,
+
+    // Supervisor chain
+    walkSupervisorChain: walkSupervisorChain,
+    findSupervisorAtGrade: findSupervisorAtGrade
+  };
+
+})();
+
+// Auto-init on page load
+if (window.HCDataCenter) {
+  window.HCDataCenter.init().then(function() {
+    console.log('HCDataCenter: auto-initialized (' + (window.HCDataCenter.isLoaded() ? window.HCDataCenter.getStats().total + ' positions' : 'no data') + ')');
+  }).catch(function(err) {
+    console.warn('HCDataCenter: auto-init failed', err);
+  });
+}
+</script>

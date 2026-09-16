@@ -1,0 +1,525 @@
+<!-- client/components/documentViewer.html -->
+<!-- Shared Document Viewer Modal - Opens Drive files in preview mode -->
+<style>
+/* Utility class for visibility toggling */
+.hidden { display: none !important; }
+
+.doc-viewer-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 10000;
+  animation: fadeIn 0.2s ease;
+}
+
+.doc-viewer-modal.active {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.doc-viewer-container {
+  background: white;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 1200px;
+  height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.doc-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 8px 8px 0 0;
+}
+
+.doc-viewer-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1e293b;
+  flex: 1;
+  min-width: 0;
+}
+
+.doc-viewer-title i {
+  color: #004f87;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.doc-viewer-filename {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-viewer-close {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 0.35rem;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  font-size: 1.25rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.doc-viewer-close:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.doc-viewer-body {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #f1f5f9;
+}
+
+.doc-viewer-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: white;
+}
+
+.doc-viewer-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #64748b;
+}
+
+.doc-viewer-loading i {
+  font-size: 2rem;
+  color: #004f87;
+  margin-bottom: 0.5rem;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.doc-viewer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 0 0 8px 8px;
+  font-size: 0.75rem;
+}
+
+.doc-viewer-meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  color: #64748b;
+}
+
+.doc-viewer-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.doc-viewer-meta-item i {
+  font-size: 0.7rem;
+}
+
+.doc-viewer-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.doc-viewer-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-decoration: none;
+  border: 1px solid #cbd5e1;
+  background: white;
+  color: #475569;
+}
+
+.doc-viewer-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+}
+
+.doc-viewer-btn i {
+  font-size: 0.7rem;
+}
+
+.doc-viewer-btn--primary {
+  background: #004f87;
+  color: white;
+  border-color: #004f87;
+}
+
+.doc-viewer-btn--primary:hover {
+  background: #003a66;
+  border-color: #003a66;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .doc-viewer-container {
+    height: 100vh;
+    max-width: 100%;
+    border-radius: 0;
+  }
+
+  .doc-viewer-header,
+  .doc-viewer-footer {
+    border-radius: 0;
+  }
+
+  .doc-viewer-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .doc-viewer-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .doc-viewer-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+</style>
+
+<!-- Modal HTML -->
+<div id="documentViewerModal" class="doc-viewer-modal" role="dialog" aria-modal="true" aria-labelledby="docViewerFilename" aria-hidden="true">
+  <div class="doc-viewer-container">
+    <div class="doc-viewer-header">
+      <div class="doc-viewer-title">
+        <i class="fas fa-file" id="docViewerIcon" aria-hidden="true"></i>
+        <span class="doc-viewer-filename" id="docViewerFilename">Document</span>
+      </div>
+      <button class="doc-viewer-close" onclick="TravelDocumentViewer.close()" aria-label="Close document viewer">
+        <i aria-hidden="true" class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <div class="doc-viewer-body">
+      <div class="doc-viewer-loading" id="docViewerLoading">
+        <div><i aria-hidden="true" class="fas fa-circle-notch"></i></div>
+        <div>Loading document...</div>
+      </div>
+      <iframe id="docViewerIframe" class="doc-viewer-iframe hidden"></iframe>
+    </div>
+
+    <div class="doc-viewer-footer">
+      <div class="doc-viewer-meta">
+        <div class="doc-viewer-meta-item" id="docViewerCategory">
+          <i aria-hidden="true" class="fas fa-tag"></i>
+          <span></span>
+        </div>
+        <div class="doc-viewer-meta-item" id="docViewerUploadInfo">
+          <i aria-hidden="true" class="fas fa-clock"></i>
+          <span></span>
+        </div>
+      </div>
+      <div class="doc-viewer-actions">
+        <a id="docViewerDownloadBtn" class="doc-viewer-btn" target="_blank">
+          <i aria-hidden="true" class="fas fa-download"></i>
+          Download
+        </a>
+        <a id="docViewerDriveBtn" class="doc-viewer-btn doc-viewer-btn--primary" target="_blank">
+          <i aria-hidden="true" class="fab fa-google-drive"></i>
+          Open in Drive
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // Create namespace
+  window.TravelDocumentViewer = {
+    _currentDoc: null,
+
+    /**
+     * Open a document in the viewer
+     * @param {Object} doc - Document object
+     * @param {string} doc.fileId - Google Drive file ID
+     * @param {string} doc.fileName - File name
+     * @param {string} doc.fileUrl - Direct link to file
+     * @param {string} doc.mimeType - File MIME type
+     * @param {string} doc.category - Category (e.g., "supporting_doc", "nfs_worksheet")
+     * @param {string} doc.uploadedBy - Uploader email
+     * @param {string} doc.uploadedAt - Upload timestamp
+     */
+    open(doc) {
+      if (!doc || !doc.fileId) {
+        console.error('TravelDocumentViewer: Invalid document object', doc);
+        return;
+      }
+
+      this._currentDoc = doc;
+
+      // Set filename
+      document.getElementById('docViewerFilename').textContent = doc.fileName || 'Document';
+
+      // Set icon based on file type
+      const iconEl = document.getElementById('docViewerIcon');
+      if (doc.mimeType && doc.mimeType.includes('pdf')) {
+        iconEl.className = 'fas fa-file-pdf';
+      } else if (doc.mimeType && doc.mimeType.includes('image')) {
+        iconEl.className = 'fas fa-file-image';
+      } else {
+        iconEl.className = 'fas fa-file';
+      }
+
+      // Set category
+      const categoryEl = document.getElementById('docViewerCategory');
+      const categoryMap = {
+        'supporting_doc': 'Supporting Document',
+        'nfs_worksheet': 'NFS Worksheet',
+        'other': 'Other'
+      };
+      const categoryText = categoryMap[doc.category] || doc.category || 'Document';
+      categoryEl.querySelector('span').textContent = categoryText;
+
+      // Set upload info
+      const uploadInfoEl = document.getElementById('docViewerUploadInfo');
+      let uploadText = '';
+      if (doc.uploadedAt) {
+        uploadText = 'Uploaded ' + this._formatDate(doc.uploadedAt);
+        if (doc.uploadedBy) {
+          uploadText += ' by ' + this._formatEmail(doc.uploadedBy);
+        }
+      } else if (doc.uploadedBy) {
+        uploadText = 'Uploaded by ' + this._formatEmail(doc.uploadedBy);
+      } else {
+        uploadText = 'Document';
+      }
+      uploadInfoEl.querySelector('span').textContent = uploadText;
+
+      // Set download button
+      const downloadBtn = document.getElementById('docViewerDownloadBtn');
+      downloadBtn.href = 'https://drive.google.com/uc?export=download&id=' + doc.fileId;
+
+      // Set Drive button
+      const driveBtn = document.getElementById('docViewerDriveBtn');
+      driveBtn.href = doc.fileUrl || ('https://drive.google.com/file/d/' + doc.fileId + '/view');
+
+      // Show modal
+      const modal = document.getElementById('documentViewerModal');
+      modal.classList.add('active');
+      modal.setAttribute('aria-hidden', 'false');
+
+      // Load iframe
+      this._loadIframe(doc.fileId);
+
+      // Prevent body scroll
+      document.body.style.overflow = 'hidden';
+    },
+
+    /**
+     * Close the viewer
+     */
+    close() {
+      const modal = document.getElementById('documentViewerModal');
+      modal.classList.remove('active');
+      modal.setAttribute('aria-hidden', 'true');
+
+      // Clear iframe
+      const iframe = document.getElementById('docViewerIframe');
+      iframe.src = 'about:blank';
+      iframe.classList.add('hidden');
+
+      // Show loading again
+      document.getElementById('docViewerLoading').classList.remove('hidden');
+
+      // Restore body scroll
+      document.body.style.overflow = '';
+
+      this._currentDoc = null;
+    },
+
+    /**
+     * Load iframe with Drive preview
+     * @param {string} fileId - Drive file ID
+     */
+    _loadIframe(fileId) {
+      const iframe = document.getElementById('docViewerIframe');
+      const loading = document.getElementById('docViewerLoading');
+      const self = this;
+
+      loading.classList.remove('hidden');
+      iframe.classList.add('hidden');
+
+      // Listen for CSP violations (common with Drive embeds requiring auth)
+      const cspHandler = (e) => {
+        if (e.blockedURI && (e.blockedURI.includes('accounts.google.com') || e.blockedURI.includes('drive.google.com'))) {
+          console.warn('CSP blocked Drive preview - user may need to authenticate');
+          self._showAuthError(fileId);
+          document.removeEventListener('securitypolicyviolation', cspHandler);
+        }
+      };
+      document.addEventListener('securitypolicyviolation', cspHandler);
+
+      // Try to load the preview
+      try {
+        // Clear any previous src
+        iframe.src = 'about:blank';
+
+        // Set the Drive preview URL after a brief delay to avoid sync issues
+        setTimeout(function() {
+          iframe.src = 'https://drive.google.com/file/d/' + fileId + '/preview';
+        }, 100);
+
+        // Set timeout in case iframe never loads
+        const loadTimeout = setTimeout(() => {
+          document.removeEventListener('securitypolicyviolation', cspHandler);
+          if (!loading.classList.contains('hidden')) {
+            self._showPreviewError(fileId);
+          }
+        }, 10000); // 10 second timeout
+
+        // Handle iframe load
+        iframe.onload = () => {
+          clearTimeout(loadTimeout);
+          document.removeEventListener('securitypolicyviolation', cspHandler);
+          setTimeout(() => {
+            loading.classList.add('hidden');
+            iframe.classList.remove('hidden');
+          }, 300);
+        };
+
+        // Handle iframe error
+        iframe.onerror = () => {
+          clearTimeout(loadTimeout);
+          document.removeEventListener('securitypolicyviolation', cspHandler);
+          self._showPreviewError(fileId);
+        };
+      } catch (error) {
+        console.error('Error loading document preview:', error);
+        document.removeEventListener('securitypolicyviolation', cspHandler);
+        this._showPreviewError(fileId);
+      }
+    },
+
+    _showAuthError(fileId) {
+      const loading = document.getElementById('docViewerLoading');
+      loading.innerHTML =
+        '<div><i aria-hidden="true" class="fas fa-sign-in-alt" style="color: #004f87; font-size: 2rem;"></i></div>' +
+        '<div style="margin-top: 0.5rem; font-weight: 500;">Sign-in required</div>' +
+        '<div style="font-size: 0.8rem; color: #64748b; margin-top: 0.25rem;">Please open this document in Google Drive to view it.</div>' +
+        '<div style="margin-top: 1rem;">' +
+          '<a href="https://drive.google.com/file/d/' + fileId + '/view" target="_blank" ' +
+            'style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; ' +
+            'background: #004f87; color: white; border-radius: 6px; text-decoration: none; font-size: 0.875rem;">' +
+            '<i aria-hidden="true" class="fab fa-google-drive"></i> Open in Google Drive' +
+          '</a>' +
+        '</div>';
+    },
+
+    _showPreviewError(fileId) {
+      const loading = document.getElementById('docViewerLoading');
+      loading.innerHTML =
+        '<div><i aria-hidden="true" class="fas fa-exclamation-triangle" style="color: #f59e0b; font-size: 2rem;"></i></div>' +
+        '<div style="margin-top: 0.5rem; font-weight: 500;">Unable to preview document</div>' +
+        '<div style="font-size: 0.8rem; color: #64748b; margin-top: 0.25rem;">The preview could not be loaded.</div>' +
+        '<div style="margin-top: 1rem;">' +
+          '<a href="https://drive.google.com/file/d/' + fileId + '/view" target="_blank" ' +
+            'style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; ' +
+            'background: #004f87; color: white; border-radius: 6px; text-decoration: none; font-size: 0.875rem;">' +
+            '<i aria-hidden="true" class="fab fa-google-drive"></i> Open in Google Drive' +
+          '</a>' +
+        '</div>';
+    },
+
+    /**
+     * Format date for display
+     */
+    _formatDate(dateStr) {
+      if (!dateStr) return '';
+      try {
+        const date = new Date(dateStr);
+        return date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        });
+      } catch (e) {
+        return dateStr;
+      }
+    },
+
+    /**
+     * Format email for display (shorten if needed)
+     */
+    _formatEmail(email) {
+      if (!email) return '';
+      if (email.length > 25) {
+        return email.substring(0, 22) + '...';
+      }
+      return email;
+    }
+  };
+
+  // Close on escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && window.TravelDocumentViewer._currentDoc) {
+      window.TravelDocumentViewer.close();
+    }
+  });
+
+  // Close on backdrop click
+  document.getElementById('documentViewerModal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'documentViewerModal') {
+      window.TravelDocumentViewer.close();
+    }
+  });
+
+})();
+</script>

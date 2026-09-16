@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Review Travel Request</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+
+  <!-- Bootstrap & Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+  <!-- Flatpickr (date picker) -->
+  <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
+
+  <!-- Awesomplete (autocomplete) -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/awesomplete/1.1.5/awesomplete.min.css" rel="stylesheet">
+
+  <!-- Shared Base Styles -->
+  <?!= include('client/styles/tokens'); ?>
+  <?!= include('client/styles/travelBaseStyles'); ?>
+
+  <!-- Page Styles -->
+  <?!= include('client/styles/travelPortalStyles'); ?>
+  <?!= include('client/styles/travelReviewStyles'); ?>
+</head>
+<body class="travel-review-body">
+  <!-- Skip Link for Accessibility -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <!-- ========================================================================
+       FIXED HEADER
+       ======================================================================== -->
+  <header class="portal-header">
+    <div class="portal-header__left">
+      <div class="portal-header__logo" id="headerLogo"></div>
+      <h1 class="aas-brand-header">
+        <span class="aas-brand-header__logo">TRIP</span>
+        <span class="aas-brand-header__sep"></span>
+        <span class="aas-brand-header__section">Review</span>
+      </h1>
+    </div>
+    <div class="portal-header__right">
+      <div class="help-dropdown">
+        <button class="travel-header__help-btn" onclick="TravelHelp.toggle(event)" title="Help">
+          <i aria-hidden="true" class="fas fa-question"></i>
+        </button>
+        <div class="help-dropdown__menu">
+          <button class="help-dropdown__item" onclick="TravelHelp.open()">
+            <div class="help-dropdown__item-icon help-dropdown__item-icon--guide"><i aria-hidden="true" class="fas fa-book-open"></i></div>
+            <div class="help-dropdown__item-text">
+              <div class="help-dropdown__item-title">Help Guide</div>
+              <div class="help-dropdown__item-desc">How to use the portal</div>
+            </div>
+          </button>
+          <div class="help-dropdown__divider"></div>
+          <button class="help-dropdown__item" onclick="TravelHelp.openSOP()">
+            <div class="help-dropdown__item-icon help-dropdown__item-icon--sop"><i aria-hidden="true" class="fas fa-file-contract"></i></div>
+            <div class="help-dropdown__item-text">
+              <div class="help-dropdown__item-title">Submission Guidelines</div>
+              <div class="help-dropdown__item-desc">Travel policies &amp; SOP</div>
+            </div>
+          </button>
+          <div class="help-dropdown__divider"></div>
+          <button class="help-dropdown__item" onclick="TravelFeedback.openBugReport()">
+            <div class="help-dropdown__item-icon" style="background:#fef2f2;color:#dc2626;"><i aria-hidden="true" class="fas fa-bug"></i></div>
+            <div class="help-dropdown__item-text">
+              <div class="help-dropdown__item-title">Report a Bug</div>
+              <div class="help-dropdown__item-desc">Something not working?</div>
+            </div>
+          </button>
+          <button class="help-dropdown__item" onclick="TravelFeedback.openFeatureRequest()">
+            <div class="help-dropdown__item-icon" style="background:#f0fdf4;color:#16a34a;"><i aria-hidden="true" class="fas fa-lightbulb"></i></div>
+            <div class="help-dropdown__item-text">
+              <div class="help-dropdown__item-title">Request a Feature</div>
+              <div class="help-dropdown__item-desc">Suggest an improvement</div>
+            </div>
+          </button>
+        </div>
+      </div>
+      <div class="portal-header__user">
+        <i aria-hidden="true" class="fas fa-user-circle"></i>
+        <span><?= userName ?></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================================
+       REQUEST INFO BAR - Key metadata at a glance
+       ======================================================================== -->
+  <div class="review-info-bar hidden" id="reviewInfoBar">
+    <a href="#" class="review-info-bar__back" onclick="TravelReview.navigateBack(); return false;">
+      <i aria-hidden="true" class="fas fa-arrow-left"></i>
+      <span>Portal</span>
+    </a>
+    <div class="review-info-bar__center">
+      <div class="review-info-bar__title" id="eventName">Loading...</div>
+      <div class="review-info-bar__meta">
+        <span class="review-info-bar__id" id="reviewRequestId"></span>
+        <span class="review-info-bar__dates" id="eventDates">
+          <i aria-hidden="true" class="fas fa-calendar-alt"></i>
+          <span></span>
+        </span>
+        <span class="review-info-bar__location-type" id="locationType">
+          <i aria-hidden="true" class="fas fa-map-marker-alt"></i>
+          <span></span>
+        </span>
+        <span class="review-info-bar__status" id="reviewStatus"></span>
+      </div>
+    </div>
+    <div class="review-info-bar__right">
+      <span class="review-info-bar__total-label">Grand Total</span>
+      <span class="review-info-bar__total-amount" id="reviewGrandTotal">$0.00</span>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MAIN CONTENT AREA
+       ======================================================================== -->
+  <main class="review-main" id="main-content">
+
+    <!-- =====================================================================
+         LOADING STATE
+         ===================================================================== -->
+    <div class="review-loading" id="reviewLoading">
+      <div class="plane-loader">
+        <div class="plane-loader__plane">
+          <svg viewBox="0 -960 960 960" role="img" aria-label="Loading">
+            <g class="plane-loader__rig">
+              <path class="plane-loader__trail plane-loader__trail--1" d="M 480 -480 L 80 -80" />
+              <path class="plane-loader__trail plane-loader__trail--2" d="M 420 -560 L 140 -280" />
+              <path class="plane-loader__trail plane-loader__trail--3" d="M 560 -420 L 280 -140" />
+              <path class="plane-loader__body"
+                d="M771-354l-99-247-97 98 20 97-34 34-68-121-121-68 34-34 98 20 97-97-247-99 45-42 297 47 98-99q7-7 16-10.5t19-3.5q10 0 19 3.5t17 11.5q8 7 11.5 16t3.5 18q0 10-4 19t-12 17l-98 98 47 297-42 45Z"/>
+            </g>
+          </svg>
+        </div>
+        <p class="plane-loader__text">Loading request details<span class="plane-loader__dots"><span>.</span><span>.</span><span>.</span></span></p>
+      </div>
+    </div>
+
+    <!-- =====================================================================
+         ERROR STATE
+         ===================================================================== -->
+    <div class="review-error hidden" id="reviewError">
+      <i aria-hidden="true" class="fas fa-exclamation-triangle"></i>
+      <h2>Unable to Load Request</h2>
+      <p id="reviewErrorMessage">An error occurred while loading the request.</p>
+      <button class="btn btn-primary" onclick="TravelReview.navigateBack()">
+        <i aria-hidden="true" class="fas fa-arrow-left"></i>
+        Return to Portal
+      </button>
+    </div>
+
+    <!-- =====================================================================
+         REVIEW CONTENT - Main sections
+         ===================================================================== -->
+    <div class="review-content hidden" id="reviewContent">
+
+      <!-- Feedback Banner (shown in submitter mode for NEEDS_INFO status) -->
+      <div id="feedbackBannerContainer" class="hidden"></div>
+
+      <!-- ===================================================================
+           SECTION 1: Trip Overview & Justification
+           =================================================================== -->
+      <section class="review-section" id="sectionTripOverview" data-section="1">
+        <div class="review-section__header">
+          <div class="review-section__header-content">
+            <h2>
+              <i aria-hidden="true" class="fas fa-info-circle"></i>
+              Trip Overview & Justification
+            </h2>
+          </div>
+        </div>
+
+        <div class="review-section__body">
+          <!-- Quick metrics overview -->
+          <div class="review-quick-stats" id="quickStats">
+            <!-- Populated: travelers, destinations, days, total cost -->
+          </div>
+
+          <!-- BLUF & Purpose - Editable wrapper -->
+          <div id="overviewFieldsContainer">
+            <!-- Populated dynamically by controller with edit/view mode -->
+          </div>
+
+          <!-- Trip metadata grid -->
+          <div class="review-detail-grid" id="tripDetailsGrid">
+            <!-- Populated: Event name, location type, dates, travel types, etc. -->
+          </div>
+
+          <!-- Request-level attachments -->
+          <div class="review-documents hidden" id="requestDocuments">
+            <label class="review-field-label">
+              <i aria-hidden="true" class="fas fa-paperclip"></i>
+              Supporting Documents
+            </label>
+            <div class="review-documents-list" id="requestDocumentsList">
+              <!-- Populated: Document cards for request-level attachments -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Section feedback -->
+        <div class="review-comment-box">
+          <label>
+            <i aria-hidden="true" class="fas fa-comment-dots"></i>
+            Feedback on Trip Justification
+          </label>
+          <textarea
+            id="commentTripOverview"
+            class="review-comment-textarea"
+            placeholder="Is the trip purpose clear and justified? Does it align with agency priorities?"
+            rows="2"
+          ></textarea>
+          <div class="review-comment-hint">
+            Optional: Provide feedback if justification needs clarification or strengthening
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           SECTION 2: Itinerary & Destinations
+           =================================================================== -->
+      <section class="review-section" id="sectionItinerary" data-section="2">
+        <div class="review-section__header">
+          <div class="review-section__header-content">
+            <h2>
+              <i aria-hidden="true" class="fas fa-route"></i>
+              Travel Itinerary
+            </h2>
+          </div>
+          <div class="review-section__header-actions">
+            <!-- Edit button injected dynamically -->
+          </div>
+        </div>
+
+        <div class="review-section__body" id="itineraryContent">
+          <!-- Populated: Leg cards with dates and locations -->
+        </div>
+
+        <!-- Section feedback -->
+        <div class="review-comment-box">
+          <label>
+            <i aria-hidden="true" class="fas fa-comment-dots"></i>
+            Feedback on Itinerary
+          </label>
+          <textarea
+            id="commentItinerary"
+            class="review-comment-textarea"
+            placeholder="Are the dates and locations appropriate? Any concerns about the travel schedule?"
+            rows="2"
+          ></textarea>
+          <div class="review-comment-hint">
+            Optional: Note any issues with dates, locations, or travel logistics
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           SECTION 3: Travelers & Role Justifications
+           =================================================================== -->
+      <section class="review-section" id="sectionTravelers" data-section="3">
+        <div class="review-section__header">
+          <div class="review-section__header-content">
+            <h2>
+              <i aria-hidden="true" class="fas fa-users"></i>
+              Travelers & Role Justifications
+            </h2>
+          </div>
+          <div class="review-section__header-actions">
+            <button class="review-section__expand-toggle hidden" id="travelerExpandToggle" onclick="TravelReview.Controller.toggleAllTravelers()">
+              <i aria-hidden="true" class="fas fa-expand-alt"></i>
+              <span>Expand All</span>
+            </button>
+            <span class="review-section__header-meta" id="travelerCount">
+              <!-- Populated: "X travelers" -->
+            </span>
+          </div>
+        </div>
+
+        <div class="review-section__body" id="travelersContent">
+          <!-- Populated: Traveler accordion cards -->
+        </div>
+
+        <!-- Section feedback -->
+        <div class="review-comment-box">
+          <label>
+            <i aria-hidden="true" class="fas fa-comment-dots"></i>
+            Feedback on Traveler Selection
+          </label>
+          <textarea
+            id="commentTravelers"
+            class="review-comment-textarea"
+            placeholder="Is each traveler's participation justified? Are the right people attending?"
+            rows="2"
+          ></textarea>
+          <div class="review-comment-hint">
+            Optional: Question traveler necessity or request additional role justification
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           SECTION 4: Cost Breakdown & Budget
+           =================================================================== -->
+      <section class="review-section" id="sectionCosts" data-section="4">
+        <div class="review-section__header">
+          <div class="review-section__header-content">
+            <h2>
+              <i aria-hidden="true" class="fas fa-calculator"></i>
+              Cost Breakdown & Budget
+            </h2>
+          </div>
+          <div class="review-section__header-actions">
+            <!-- Edit button injected dynamically -->
+          </div>
+        </div>
+
+        <div class="review-section__body">
+          <div id="costsContent">
+            <!-- Populated: Collapsible cost tables with shared and traveler costs -->
+          </div>
+        </div>
+
+        <!-- Section feedback -->
+        <div class="review-comment-box">
+          <label>
+            <i aria-hidden="true" class="fas fa-comment-dots"></i>
+            Feedback on Costs & Budget
+          </label>
+          <textarea
+            id="commentCosts"
+            class="review-comment-textarea"
+            placeholder="Are the costs reasonable? Do overrides have sufficient justification?"
+            rows="2"
+          ></textarea>
+          <div class="review-comment-hint">
+            Optional: Flag unreasonable costs or question override justifications
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           SECTION 5: Approval History (Collapsible)
+           =================================================================== -->
+      <section class="review-section review-section--collapsible" id="sectionHistory" data-section="5">
+        <div class="review-section__header review-section__header--clickable"
+             role="button"
+             tabindex="0"
+             onclick="TravelReview.toggleHistory()"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();TravelReview.toggleHistory();}">
+          <div class="review-section__header-content">
+            <h2>
+              <i aria-hidden="true" class="fas fa-history"></i>
+              Approval History
+              <span class="review-section__count" id="approvalHistoryCount"></span>
+            </h2>
+          </div>
+          <i aria-hidden="true" class="fas fa-chevron-down review-section__toggle-icon" id="historyToggleIcon"></i>
+        </div>
+
+        <div class="review-section__body hidden" id="historyContent">
+          <!-- Populated: Timeline of approval actions, comments, and status changes -->
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           SECTION 6: Edit History (Collapsible)
+           =================================================================== -->
+      <section class="review-section review-section--collapsible" id="sectionEditHistory" data-section="6">
+        <div class="review-section__header review-section__header--clickable"
+             role="button"
+             tabindex="0"
+             onclick="TravelReview.toggleEditHistory()"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();TravelReview.toggleEditHistory();}">
+          <div class="review-section__header-content">
+            <h2>
+              <i aria-hidden="true" class="fas fa-pen-to-square"></i>
+              Edit History
+              <span class="review-section__count" id="editHistoryCount"></span>
+            </h2>
+          </div>
+          <i aria-hidden="true" class="fas fa-chevron-down review-section__toggle-icon" id="editHistoryToggleIcon"></i>
+        </div>
+
+        <div class="review-section__body hidden" id="editHistoryContent">
+          <!-- Populated: Timeline of edits made by submitter -->
+        </div>
+      </section>
+
+    </div>
+    <!-- End review-content -->
+
+    <!-- =====================================================================
+         FIXED SIDEBAR - Reviewer actions and comments
+         ===================================================================== -->
+    <aside class="review-sidebar hidden" id="reviewSidebar" aria-label="Review Actions">
+
+      <!-- Submitter information -->
+      <div class="review-sidebar__section">
+        <h3 class="review-sidebar__heading">
+          <i aria-hidden="true" class="fas fa-user"></i>
+          Submitted By
+        </h3>
+        <div class="review-sidebar__submitter">
+          <div class="review-sidebar__submitter-name" id="submitterName">
+            <!-- Populated: Submitter name -->
+          </div>
+          <div class="review-sidebar__submitter-email" id="submitterEmail">
+            <!-- Populated: Submitter email -->
+          </div>
+          <div class="review-sidebar__submitter-date" id="submittedDate">
+            <!-- Populated: Submitted date with icon -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Section feedback summary -->
+      <div class="review-sidebar__section">
+        <h3 class="review-sidebar__heading">
+          <i aria-hidden="true" class="fas fa-comments"></i>
+          Your Feedback
+        </h3>
+        <div class="review-sidebar__feedback-summary">
+          <div class="review-sidebar__feedback-count" id="feedbackCount">
+            <span class="review-sidebar__feedback-number">0</span>
+            <span class="review-sidebar__feedback-label">section comments</span>
+          </div>
+          <div class="review-sidebar__feedback-list" id="feedbackList">
+            <!-- Populated: List of sections with comments -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Review decision with split button (REVIEWER MODE) -->
+      <div class="review-sidebar__section review-sidebar__section--actions" id="reviewerActionsSection">
+        <h3 class="review-sidebar__heading">
+          <i aria-hidden="true" class="fas fa-gavel"></i>
+          Review Decision
+        </h3>
+        <div class="review-sidebar__split-button-container">
+          <button
+            class="review-sidebar__split-btn review-sidebar__split-btn--approve"
+            onclick="TravelReview.Controller.showApproveModal()"
+            id="approveMainBtn">
+            <i aria-hidden="true" class="fas fa-check"></i>
+            <span>Approve</span>
+          </button>
+          <button
+            class="review-sidebar__split-btn review-sidebar__split-btn--dropdown"
+            onclick="TravelReview.Controller.toggleActionDropdown()"
+            id="actionDropdownBtn">
+            <i aria-hidden="true" class="fas fa-chevron-down"></i>
+          </button>
+        </div>
+        <div class="review-sidebar__action-dropdown hidden" id="actionDropdown">
+          <button
+            class="review-sidebar__action-option review-sidebar__action-option--warning"
+            onclick="TravelReview.Controller.showRequestInfoModal()">
+            <i aria-hidden="true" class="fas fa-question-circle"></i>
+            <span>Request More Information</span>
+          </button>
+          <button
+            class="review-sidebar__action-option review-sidebar__action-option--danger"
+            onclick="TravelReview.Controller.showDenyModal()">
+            <i aria-hidden="true" class="fas fa-times-circle"></i>
+            <span>Deny Request</span>
+          </button>
+          <button
+            class="review-sidebar__action-option review-sidebar__action-option--danger"
+            onclick="TravelReview.Controller.showCancelModal()">
+            <i aria-hidden="true" class="fas fa-ban"></i>
+            <span>Cancel Request</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Submitter actions (SUBMITTER MODE) - hidden by default -->
+      <div class="review-sidebar__section review-sidebar__section--submitter-actions hidden" id="submitterActionsSection">
+        <h3 class="review-sidebar__heading">
+          <i aria-hidden="true" class="fas fa-edit"></i>
+          Your Action
+        </h3>
+        <div class="review-sidebar__split-button-container">
+          <button
+            class="review-sidebar__split-btn review-sidebar__split-btn--warning"
+            onclick="TravelReview.Controller.openResubmitModal()"
+            id="resubmitBtn">
+            <i aria-hidden="true" class="fas fa-paper-plane"></i>
+            <span>Update & Resubmit</span>
+          </button>
+          <button
+            class="review-sidebar__split-btn review-sidebar__split-btn--dropdown review-sidebar__split-btn--warning-dropdown"
+            onclick="TravelReview.Controller.toggleSubmitterDropdown()"
+            id="submitterDropdownBtn">
+            <i aria-hidden="true" class="fas fa-chevron-down"></i>
+          </button>
+        </div>
+        <div class="review-sidebar__action-dropdown hidden" id="submitterDropdown">
+          <button
+            class="review-sidebar__action-option review-sidebar__action-option--danger"
+            onclick="TravelReview.Controller.showCancelModal()">
+            <i aria-hidden="true" class="fas fa-ban"></i>
+            <span>Cancel Request</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+  </main>
+  <!-- End review-main -->
+
+  <!-- ========================================================================
+       MODALS
+       ======================================================================== -->
+
+  <!-- Document Viewer Modal -->
+  <?!= include('client/components/documentViewer'); ?>
+
+  <!-- Approve Modal -->
+  <div class="modal fade" id="approveModal" tabindex="-1" aria-labelledby="approveModalTitle" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content">
+        <!-- Form State -->
+        <div id="approveFormState">
+          <div class="modal-header">
+            <h5 class="modal-title" id="approveModalTitle">
+              <i aria-hidden="true" class="fas fa-check-circle text-success"></i>
+              Approve Request
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-2 small">Approve this travel request?</p>
+            <div class="mb-0">
+              <label for="approveComment" class="form-label small mb-1">
+                <i aria-hidden="true" class="fas fa-comment"></i>
+                Comment <span class="text-muted">(optional)</span>
+              </label>
+              <textarea
+                id="approveComment"
+                class="form-control form-control-sm"
+                placeholder="Optional feedback..."
+                rows="2"
+              ></textarea>
+            </div>
+            <div id="approveError" class="alert alert-danger alert-sm py-2 mt-2 mb-0 hidden"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
+              <i aria-hidden="true" class="fas fa-times"></i>
+              Cancel
+            </button>
+            <button type="button" class="btn btn-sm btn-success" onclick="TravelReview.Controller.executeApprove()" id="approveSubmitBtn">
+              <i aria-hidden="true" class="fas fa-check"></i>
+              Approve
+            </button>
+          </div>
+        </div>
+        <!-- Loading State -->
+        <div id="approveLoadingState" class="hidden">
+          <div class="modal-body text-center py-5">
+            <div class="plane-loader plane-loader--md">
+              <i aria-hidden="true" class="fas fa-plane"></i>
+            </div>
+            <p class="mt-3 mb-0 text-muted">Submitting approval...</p>
+          </div>
+        </div>
+        <!-- Success State -->
+        <div id="approveSuccessState" class="hidden">
+          <div class="modal-body text-center py-4">
+            <div class="text-success mb-3">
+              <i aria-hidden="true" class="fas fa-check-circle" style="font-size: 3rem;"></i>
+            </div>
+            <h5 class="mb-2">Request Approved</h5>
+            <p class="text-muted small mb-0" id="approveSuccessMessage">The request has been approved and moved to the next stage.</p>
+            <div id="approveFeedbackSlot"></div>
+          </div>
+          <div class="modal-footer justify-content-center">
+            <button type="button" class="btn btn-sm btn-primary" onclick="TravelReview.navigateBack()">
+              <i aria-hidden="true" class="fas fa-arrow-left"></i>
+              Return to Portal
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Request More Information Modal -->
+  <div class="modal fade" id="requestInfoModal" tabindex="-1" aria-labelledby="requestInfoModalTitle" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content">
+        <!-- Form State -->
+        <div id="requestInfoFormState">
+          <div class="modal-header">
+            <h5 class="modal-title" id="requestInfoModalTitle">
+              <i aria-hidden="true" class="fas fa-question-circle text-warning"></i>
+              Request Info
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <!-- Compact Summary -->
+            <div class="bg-light border rounded p-2 mb-2" id="requestInfoSectionSummary">
+              <div class="d-flex align-items-center justify-content-between small">
+                <span><i aria-hidden="true" class="fas fa-comments text-primary"></i> Section comments:</span>
+                <strong id="requestInfoCommentCount" class="text-primary">0</strong>
+              </div>
+              <div id="requestInfoCommentList" class="mt-1 small text-muted">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+            <div id="requestInfoValidation" class="alert alert-danger alert-sm py-2 mb-2 hidden">
+              <i aria-hidden="true" class="fas fa-exclamation-triangle"></i>
+              <small>Add at least one section comment or overall message.</small>
+            </div>
+            <div class="mb-0">
+              <label for="requestInfoComment" class="form-label small mb-1">
+                <i aria-hidden="true" class="fas fa-comment"></i>
+                Overall Message <span class="text-muted">(optional)</span>
+              </label>
+              <textarea
+                id="requestInfoComment"
+                class="form-control form-control-sm"
+                placeholder="Additional context..."
+                rows="2"
+              ></textarea>
+            </div>
+            <div id="requestInfoError" class="alert alert-danger alert-sm py-2 mt-2 mb-0 hidden"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
+              <i aria-hidden="true" class="fas fa-times"></i>
+              Cancel
+            </button>
+            <button type="button" class="btn btn-sm btn-warning" onclick="TravelReview.Controller.executeRequestInfo()" id="requestInfoSubmitBtn">
+              <i aria-hidden="true" class="fas fa-paper-plane"></i>
+              Send
+            </button>
+          </div>
+        </div>
+        <!-- Loading State -->
+        <div id="requestInfoLoadingState" class="hidden">
+          <div class="modal-body text-center py-5">
+            <div class="plane-loader plane-loader--md">
+              <i aria-hidden="true" class="fas fa-plane"></i>
+            </div>
+            <p class="mt-3 mb-0 text-muted">Sending request...</p>
+          </div>
+        </div>
+        <!-- Success State -->
+        <div id="requestInfoSuccessState" class="hidden">
+          <div class="modal-body text-center py-4">
+            <div class="text-warning mb-3">
+              <i aria-hidden="true" class="fas fa-paper-plane" style="font-size: 3rem;"></i>
+            </div>
+            <h5 class="mb-2">Request Sent</h5>
+            <p class="text-muted small mb-0" id="requestInfoSuccessMessage">The submitter has been notified to provide more information.</p>
+            <div id="requestInfoFeedbackSlot"></div>
+          </div>
+          <div class="modal-footer justify-content-center">
+            <button type="button" class="btn btn-sm btn-primary" onclick="TravelReview.navigateBack()">
+              <i aria-hidden="true" class="fas fa-arrow-left"></i>
+              Return to Portal
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Deny Modal -->
+  <div class="modal fade" id="denyModal" tabindex="-1" aria-labelledby="denyModalTitle" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content">
+        <!-- Form State -->
+        <div id="denyFormState">
+          <div class="modal-header">
+            <h5 class="modal-title" id="denyModalTitle">
+              <i aria-hidden="true" class="fas fa-times-circle text-danger"></i>
+              Deny Request
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-2 small">Provide a reason for denying this request.</p>
+            <div class="mb-2">
+              <label for="denyReason" class="form-label small mb-1">
+                <i aria-hidden="true" class="fas fa-exclamation-circle"></i>
+                Reason <span class="text-danger">(required)</span>
+              </label>
+              <textarea
+                id="denyReason"
+                class="form-control form-control-sm"
+                placeholder="Explain why this cannot be approved..."
+                rows="3"
+                required
+              ></textarea>
+            </div>
+            <div id="denyValidation" class="alert alert-danger alert-sm py-2 mb-0 hidden">
+              <i aria-hidden="true" class="fas fa-exclamation-triangle"></i>
+              <small>Reason is required.</small>
+            </div>
+            <div id="denyError" class="alert alert-danger alert-sm py-2 mt-2 mb-0 hidden"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
+              <i aria-hidden="true" class="fas fa-times"></i>
+              Cancel
+            </button>
+            <button type="button" class="btn btn-sm btn-danger" onclick="TravelReview.Controller.executeDeny()" id="denySubmitBtn">
+              <i aria-hidden="true" class="fas fa-ban"></i>
+              Deny
+            </button>
+          </div>
+        </div>
+        <!-- Loading State -->
+        <div id="denyLoadingState" class="hidden">
+          <div class="modal-body text-center py-5">
+            <div class="plane-loader plane-loader--md">
+              <i aria-hidden="true" class="fas fa-plane"></i>
+            </div>
+            <p class="mt-3 mb-0 text-muted">Processing denial...</p>
+          </div>
+        </div>
+        <!-- Success State -->
+        <div id="denySuccessState" class="hidden">
+          <div class="modal-body text-center py-4">
+            <div class="text-danger mb-3">
+              <i aria-hidden="true" class="fas fa-times-circle" style="font-size: 3rem;"></i>
+            </div>
+            <h5 class="mb-2">Request Denied</h5>
+            <p class="text-muted small mb-0" id="denySuccessMessage">The submitter has been notified of the denial.</p>
+            <div id="denyFeedbackSlot"></div>
+          </div>
+          <div class="modal-footer justify-content-center">
+            <button type="button" class="btn btn-sm btn-primary" onclick="TravelReview.navigateBack()">
+              <i aria-hidden="true" class="fas fa-arrow-left"></i>
+              Return to Portal
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cancel Modal -->
+  <div class="modal fade" id="cancelModal" tabindex="-1" aria-labelledby="cancelModalTitle" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content">
+        <!-- Form State -->
+        <div id="cancelFormState">
+          <div class="modal-header">
+            <h5 class="modal-title" id="cancelModalTitle">
+              <i aria-hidden="true" class="fas fa-ban text-danger"></i>
+              Cancel Request
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-2 small">This will permanently cancel the request. This action cannot be undone.</p>
+            <div class="mb-2">
+              <label for="cancelReason" class="form-label small mb-1">
+                <i aria-hidden="true" class="fas fa-exclamation-circle"></i>
+                Reason <span class="text-danger">(required)</span>
+              </label>
+              <textarea
+                id="cancelReason"
+                class="form-control form-control-sm"
+                placeholder="Explain why this request is being cancelled..."
+                rows="3"
+                required
+              ></textarea>
+            </div>
+            <div id="cancelValidation" class="alert alert-danger alert-sm py-2 mb-0 hidden">
+              <i aria-hidden="true" class="fas fa-exclamation-triangle"></i>
+              <small>Reason is required.</small>
+            </div>
+            <div id="cancelError" class="alert alert-danger alert-sm py-2 mt-2 mb-0 hidden"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
+              <i aria-hidden="true" class="fas fa-times"></i>
+              Close
+            </button>
+            <button type="button" class="btn btn-sm btn-danger" onclick="TravelReview.Controller.executeCancel()" id="cancelSubmitBtn">
+              <i aria-hidden="true" class="fas fa-ban"></i>
+              Cancel Request
+            </button>
+          </div>
+        </div>
+        <!-- Loading State -->
+        <div id="cancelLoadingState" class="hidden">
+          <div class="modal-body text-center py-5">
+            <div class="plane-loader plane-loader--md">
+              <i aria-hidden="true" class="fas fa-plane"></i>
+            </div>
+            <p class="mt-3 mb-0 text-muted">Cancelling request...</p>
+          </div>
+        </div>
+        <!-- Success State -->
+        <div id="cancelSuccessState" class="hidden">
+          <div class="modal-body text-center py-4">
+            <div class="text-danger mb-3">
+              <i aria-hidden="true" class="fas fa-ban" style="font-size: 3rem;"></i>
+            </div>
+            <h5 class="mb-2">Request Cancelled</h5>
+            <p class="text-muted small mb-0" id="cancelSuccessMessage">The request has been cancelled and the submitter has been notified.</p>
+          </div>
+          <div class="modal-footer justify-content-center">
+            <button type="button" class="btn btn-sm btn-primary" onclick="TravelReview.navigateBack()">
+              <i aria-hidden="true" class="fas fa-arrow-left"></i>
+              Return to Portal
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resubmit Modal (Submitter Mode) -->
+  <div class="modal fade" id="resubmitModal" tabindex="-1" aria-labelledby="resubmitModalTitle" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content">
+        <!-- Form State -->
+        <div id="resubmitFormState">
+          <div class="modal-header">
+            <h5 class="modal-title" id="resubmitModalTitle">
+              <i aria-hidden="true" class="fas fa-paper-plane text-warning"></i>
+              Update & Resubmit
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-2 small">Add a note explaining what you've updated. The reviewer will see this in their feedback banner.</p>
+            <div class="mb-2">
+              <label for="resubmitComment" class="form-label small mb-1">
+                <i aria-hidden="true" class="fas fa-comment"></i>
+                Update Notes <span class="text-muted">(optional)</span>
+              </label>
+              <textarea
+                id="resubmitComment"
+                class="form-control form-control-sm"
+                placeholder="Describe what changes you made..."
+                rows="3"
+              ></textarea>
+            </div>
+            <div id="resubmitError" class="alert alert-danger alert-sm py-2 mt-2 mb-0 hidden"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
+              <i aria-hidden="true" class="fas fa-times"></i>
+              Close
+            </button>
+            <button type="button" class="btn btn-sm btn-warning" onclick="TravelReview.Controller.executeResubmit()" id="resubmitSubmitBtn">
+              <i aria-hidden="true" class="fas fa-paper-plane"></i>
+              Resubmit
+            </button>
+          </div>
+        </div>
+        <!-- Loading State -->
+        <div id="resubmitLoadingState" class="hidden">
+          <div class="modal-body text-center py-5">
+            <div class="plane-loader plane-loader--md">
+              <i aria-hidden="true" class="fas fa-plane"></i>
+            </div>
+            <p class="mt-3 mb-0 text-muted">Resubmitting request...</p>
+          </div>
+        </div>
+        <!-- Success State -->
+        <div id="resubmitSuccessState" class="hidden">
+          <div class="modal-body text-center py-4">
+            <div class="text-success mb-3">
+              <i aria-hidden="true" class="fas fa-check-circle" style="font-size: 3rem;"></i>
+            </div>
+            <h5 class="mb-2">Request Resubmitted</h5>
+            <p class="text-muted small mb-0" id="resubmitSuccessMessage">Your request has been resubmitted for review.</p>
+            <div id="resubmitFeedbackSlot"></div>
+          </div>
+          <div class="modal-footer justify-content-center">
+            <button type="button" class="btn btn-sm btn-primary" onclick="TravelReview.navigateBack()">
+              <i aria-hidden="true" class="fas fa-arrow-left"></i>
+              Return to My Requests
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Purpose Focus Modal -->
+  <div class="modal fade" id="purposeFocusModal" tabindex="-1" aria-labelledby="purposeFocusTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="purposeFocusTitle">
+            <i aria-hidden="true" class="fas fa-align-left"></i>
+            Purpose & Justification
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="purpose-focus-content" id="purposeFocusContent">
+            <!-- Populated with full text -->
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">
+            <i aria-hidden="true" class="fas fa-times"></i>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Remove Traveler Confirmation Modal -->
+  <div class="modal fade" id="removeTravelerModal" tabindex="-1" aria-labelledby="removeTravelerModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="removeTravelerModalTitle">
+            <i aria-hidden="true" class="fas fa-user-minus text-warning"></i>
+            Remove Traveler
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-0">Remove <strong id="removeTravelerName"></strong> from this trip?</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
+            Cancel
+          </button>
+          <button type="button" class="btn btn-sm btn-warning" id="confirmRemoveTravelerBtn">
+            <i aria-hidden="true" class="fas fa-user-minus"></i>
+            Remove
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loaders -->
+  <?!= include('client/components/planeLoader'); ?>
+  <?!= include('client/components/navLoader'); ?>
+
+  <!-- ========================================================================
+       SCRIPTS
+       ======================================================================== -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/awesomplete/1.1.5/awesomplete.min.js"></script>
+  <?!= include('client/components/aasLogo'); ?>
+
+  <!-- Shared Travel Services -->
+  <?!= include('client/components/flatpickrConfig'); ?>
+  <?!= include('client/shared/escapeHtml'); ?>
+  <?!= include('client/shared/serverCall'); ?>
+  <?!= include('client/shared/travelUtils'); ?>
+  <?!= include('client/shared/travelPerDiem'); ?>
+  <?!= include('client/shared/gsaCitiesBundle'); ?>
+  <?!= include('client/shared/travelLocationService'); ?>
+  <?!= include('client/shared/travelDateService'); ?>
+  <?!= include('client/shared/travelCostService'); ?>
+
+  <?!= include('client/controllers/review/travelReviewController'); ?>
+
+  <!-- Help Modal -->
+  <?!= include('client/shared/travelHelpModal'); ?>
+
+  <!-- Feedback System -->
+  <?!= include('client/shared/travelFeedbackModal'); ?>
+
+  <script>
+    // Initialize on DOM ready
+    document.addEventListener('DOMContentLoaded', function() {
+      // Inject AAS logo
+      const logoContainer = document.getElementById('headerLogo');
+      if (logoContainer && window.AAS_LOGO) {
+        logoContainer.innerHTML = window.AAS_LOGO.getHTML(32, '', true);
+      }
+
+      // Set script URL for navLoader synchronous navigation
+      window._travelScriptUrl = '<?= scriptUrl ?>';
+
+      // Initialize feedback system
+      if (window.TravelFeedback) {
+        TravelFeedback.init({
+          contextPage: 'review',
+          userEmail: '<?= userEmail ?>',
+          userName: '<?= userName ?>'
+        });
+      }
+
+      // Initialize review controller
+      if (window.TravelReview && window.TravelReview.Controller) {
+        window.TravelReview.Controller.init({
+          requestId: '<?= requestId ?>',
+          userEmail: '<?= userEmail ?>',
+          userName: '<?= userName ?>',
+          scriptUrl: '<?= scriptUrl ?>',
+          mode: '<?= viewMode ?>'
+        });
+      }
+
+      // Add smooth scroll behavior for section links
+      document.querySelectorAll('a[href^="#section"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+          e.preventDefault();
+          const target = document.querySelector(this.getAttribute('href'));
+          if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,1849 @@
+<!-- client/shared/travelHelpModal.html -->
+<!-- Self-contained help modal: styles + HTML + controller -->
+
+<style>
+/* ============================================================================
+   HELP MODAL - Overlay & Panel
+   ============================================================================ */
+.help-modal-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 9990;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.help-modal-backdrop.active {
+  display: block;
+  opacity: 1;
+}
+
+.help-modal {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 960px;
+  height: 680px;
+  max-width: 92vw;
+  max-height: 88vh;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+  z-index: 9991;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.help-modal.active {
+  display: flex;
+  flex-direction: column;
+  opacity: 1;
+}
+
+/* ---- Header ---- */
+.help-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--color-slate-200);
+  flex-shrink: 0;
+}
+.help-modal__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-slate-800);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.help-modal__title i {
+  color: var(--color-primary);
+  font-size: 16px;
+}
+.help-modal__close {
+  background: none;
+  border: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-slate-400);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.help-modal__close:hover {
+  background: var(--color-slate-100);
+  color: var(--color-slate-700);
+}
+
+/* ---- Body (nav + content) ---- */
+.help-modal__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---- Navigation Sidebar ---- */
+.help-nav {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-slate-200);
+  background: var(--color-slate-50);
+  overflow-y: auto;
+  padding: 12px 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.help-nav::-webkit-scrollbar {
+  display: none;
+}
+.help-nav__group-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-slate-400);
+  padding: 12px 16px 4px;
+  margin: 0;
+}
+.help-nav__group-label:first-child {
+  padding-top: 4px;
+}
+.help-nav__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 16px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 12.5px;
+  font-weight: 450;
+  color: var(--color-slate-600);
+  cursor: pointer;
+  transition: all 0.12s;
+  line-height: 1.3;
+}
+.help-nav__item i {
+  width: 16px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--color-slate-400);
+  flex-shrink: 0;
+}
+.help-nav__item:hover {
+  background: var(--color-slate-150);
+  color: var(--color-slate-800);
+}
+.help-nav__item--active {
+  background: var(--color-primary) !important;
+  color: #fff !important;
+  font-weight: 550;
+}
+.help-nav__item--active i {
+  color: rgba(255,255,255,0.85) !important;
+}
+.help-nav__admin-only {
+  display: none;
+}
+.help-modal--admin .help-nav__admin-only {
+  display: block;
+}
+
+/* ---- Content Area ---- */
+.help-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 32px;
+  min-width: 0;
+}
+.help-section {
+  display: none;
+}
+.help-section.active {
+  display: block;
+}
+.help-section h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-slate-800);
+  margin: 0 0 12px;
+}
+.help-section h3 {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--color-slate-700);
+  margin: 20px 0 8px;
+}
+.help-section p {
+  font-size: 13px;
+  color: var(--color-slate-600);
+  line-height: 1.65;
+  margin: 0 0 10px;
+}
+.help-section ul, .help-section ol {
+  font-size: 13px;
+  color: var(--color-slate-600);
+  line-height: 1.65;
+  padding-left: 20px;
+  margin: 0 0 12px;
+}
+.help-section li {
+  margin-bottom: 4px;
+}
+.help-section strong {
+  color: var(--color-slate-700);
+  font-weight: 600;
+}
+.help-section code {
+  background: var(--color-slate-100);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--color-primary);
+}
+
+/* ---- Tip Callout ---- */
+.help-tip {
+  background: #eff6ff;
+  border-left: 3px solid var(--color-primary);
+  border-radius: 0 6px 6px 0;
+  padding: 10px 14px;
+  margin: 12px 0;
+  font-size: 12.5px;
+  color: var(--color-slate-700);
+  line-height: 1.6;
+}
+.help-tip strong {
+  color: var(--color-primary);
+}
+
+/* ---- Status Reference Table ---- */
+.help-status-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 12px 0 16px;
+  font-size: 12.5px;
+}
+.help-status-table th {
+  background: var(--color-slate-100);
+  padding: 7px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-slate-700);
+  border-bottom: 1px solid var(--color-slate-200);
+}
+.help-status-table th:first-child { border-radius: 6px 0 0 0; }
+.help-status-table th:last-child { border-radius: 0 6px 0 0; }
+.help-status-table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--color-slate-100);
+  color: var(--color-slate-600);
+}
+.help-status-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---- Approval Flow Diagram ---- */
+.help-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 16px 0;
+  padding: 16px;
+  background: var(--color-slate-50);
+  border-radius: 8px;
+  border: 1px solid var(--color-slate-200);
+}
+.help-flow__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 550;
+  border: 2px solid var(--color-primary);
+  color: var(--color-primary);
+  background: #fff;
+  white-space: nowrap;
+}
+.help-flow__step--optional {
+  border-style: dashed;
+  opacity: 0.8;
+}
+.help-flow__step--start {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+.help-flow__step--end {
+  background: var(--color-success);
+  color: #fff;
+  border-color: var(--color-success);
+}
+.help-flow__arrow {
+  color: var(--color-slate-300);
+  font-size: 14px;
+  margin: 0 2px;
+}
+
+/* ---- Annotated UI Recreations ---- */
+.help-ui-mockup {
+  position: relative;
+  border: 1px solid var(--color-slate-200);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+  background: var(--color-slate-50);
+  pointer-events: none;
+  user-select: none;
+}
+.help-callout {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  pointer-events: none;
+}
+.help-callout-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+}
+.help-callout-list li {
+  padding: 4px 0 4px 32px;
+  position: relative;
+  font-size: 13px;
+  color: var(--color-slate-600);
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+.help-callout-list li::before {
+  content: attr(data-num);
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* -- Mockup inner elements (muted palette) -- */
+.help-ui-mockup__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 14px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  border: none;
+}
+.help-ui-mockup__btn--primary {
+  background: var(--color-primary);
+  color: #fff;
+}
+.help-ui-mockup__btn--secondary {
+  background: var(--color-slate-200);
+  color: var(--color-slate-600);
+}
+.help-ui-mockup__btn--ghost {
+  background: none;
+  color: var(--color-primary);
+  border: 1px solid var(--color-slate-200);
+}
+.help-ui-mockup__btn-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  align-items: center;
+}
+.help-ui-mockup__label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-slate-500);
+  margin-bottom: 3px;
+}
+.help-ui-mockup__label .req {
+  color: var(--color-warning);
+}
+.help-ui-mockup__input {
+  width: 100%;
+  height: 28px;
+  background: var(--color-slate-100);
+  border: 1px solid var(--color-slate-200);
+  border-radius: 4px;
+}
+.help-ui-mockup__field {
+  margin-bottom: 10px;
+}
+
+/* -- Accordion stepper mockup -- */
+.help-ui-stepper {
+  display: flex;
+  flex-direction: column;
+}
+.help-ui-stepper__step {
+  display: flex;
+  gap: 10px;
+  position: relative;
+}
+.help-ui-stepper__indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 24px;
+}
+.help-ui-stepper__circle {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-slate-200);
+  color: var(--color-slate-500);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  z-index: 1;
+}
+.help-ui-stepper__circle--active {
+  background: var(--color-primary);
+  color: #fff;
+}
+.help-ui-stepper__circle--done {
+  background: var(--color-success);
+  color: #fff;
+  font-size: 9px;
+}
+.help-ui-stepper__connector {
+  width: 2px;
+  flex: 1;
+  background: var(--color-slate-200);
+  min-height: 8px;
+}
+.help-ui-stepper__content {
+  flex: 1;
+  padding-bottom: 6px;
+  min-width: 0;
+}
+.help-ui-stepper__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-slate-600);
+}
+.help-ui-stepper__header--active {
+  color: var(--color-slate-800);
+}
+.help-ui-stepper__optional {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--color-slate-400);
+  background: var(--color-slate-100);
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+.help-ui-stepper__chevron {
+  margin-left: auto;
+  color: var(--color-slate-300);
+  font-size: 10px;
+}
+.help-ui-stepper__body {
+  background: #fff;
+  border: 1px solid var(--color-slate-200);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-top: 4px;
+}
+
+/* -- Review mockup -- */
+.help-ui-review {
+  display: flex;
+  gap: 14px;
+}
+.help-ui-review__main {
+  flex: 1;
+  background: #fff;
+  border: 1px solid var(--color-slate-200);
+  border-radius: 6px;
+  padding: 12px;
+}
+.help-ui-review__sidebar {
+  width: 200px;
+  background: #fff;
+  border: 1px solid var(--color-slate-200);
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.help-ui-review__submitted-by {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-slate-400);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.help-ui-review__name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-slate-700);
+  margin-top: 2px;
+}
+.help-ui-review__textarea {
+  width: 100%;
+  height: 48px;
+  background: var(--color-slate-100);
+  border: 1px solid var(--color-slate-200);
+  border-radius: 4px;
+  resize: none;
+}
+.help-ui-review__approve-group {
+  display: flex;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.help-ui-review__approve-btn {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--color-success);
+  color: #fff;
+  border: none;
+  text-align: center;
+}
+.help-ui-review__approve-arrow {
+  width: 28px;
+  background: #1e9e6e;
+  color: #fff;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-left: 1px solid rgba(255,255,255,0.2);
+}
+.help-ui-review__detail-bar {
+  height: 10px;
+  background: var(--color-slate-100);
+  border-radius: 3px;
+  margin-bottom: 8px;
+}
+.help-ui-review__detail-bar--short { width: 60%; }
+.help-ui-review__detail-bar--med { width: 80%; }
+
+/* -- Report builder mockup -- */
+.help-ui-report {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.help-ui-report__toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid var(--color-slate-200);
+  border-radius: 6px;
+}
+.help-ui-report__filter {
+  height: 26px;
+  width: 110px;
+  background: var(--color-slate-100);
+  border: 1px solid var(--color-slate-200);
+  border-radius: 4px;
+}
+.help-ui-report__export-btn {
+  margin-left: auto;
+  padding: 5px 12px;
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.help-ui-report__panels {
+  display: flex;
+  gap: 10px;
+}
+.help-ui-report__picker {
+  flex: 1;
+  background: #fff;
+  border: 1px solid var(--color-slate-200);
+  border-radius: 6px;
+  padding: 10px;
+}
+.help-ui-report__selected {
+  flex: 1;
+  background: #fff;
+  border: 1px solid var(--color-slate-200);
+  border-radius: 6px;
+  padding: 10px;
+}
+.help-ui-report__panel-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-slate-400);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+.help-ui-report__checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 11px;
+  color: var(--color-slate-600);
+}
+.help-ui-report__checkbox {
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid var(--color-slate-300);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.help-ui-report__checkbox--checked {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.help-ui-report__drag-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: var(--color-slate-50);
+  border: 1px solid var(--color-slate-200);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--color-slate-600);
+  margin-bottom: 4px;
+}
+.help-ui-report__drag-handle {
+  color: var(--color-slate-300);
+  font-size: 10px;
+}
+
+/* ---- Help Dropdown Menu ---- */
+.help-dropdown {
+  position: relative;
+  display: inline-block;
+}
+.help-dropdown__menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 260px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.04);
+  z-index: 9980;
+  padding: 6px;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.help-dropdown__menu.active {
+  display: block;
+}
+.help-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+  text-align: left;
+}
+.help-dropdown__item:hover {
+  background: var(--color-slate-100);
+}
+.help-dropdown__item-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.help-dropdown__item-icon--guide {
+  background: #eff6ff;
+  color: var(--color-primary);
+}
+.help-dropdown__item-icon--sop {
+  background: #fef3c7;
+  color: #b45309;
+}
+.help-dropdown__item-text {
+  flex: 1;
+  min-width: 0;
+}
+.help-dropdown__item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-slate-800);
+  line-height: 1.2;
+}
+.help-dropdown__item-desc {
+  font-size: 11px;
+  color: var(--color-slate-500);
+  line-height: 1.3;
+  margin-top: 1px;
+}
+.help-dropdown__divider {
+  height: 1px;
+  background: var(--color-slate-150);
+  margin: 4px 8px;
+}
+
+/* ---- Mobile ---- */
+@media (max-width: 640px) {
+  .help-modal {
+    width: 100vw;
+    height: 100vh;
+    max-width: 100vw;
+    max-height: 100vh;
+    border-radius: 0;
+    top: 0;
+    left: 0;
+    transform: none;
+  }
+  .help-nav {
+    width: 100%;
+    max-height: 140px;
+    border-right: none;
+    border-bottom: 1px solid var(--color-slate-200);
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    padding: 8px;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+  .help-nav__group-label {
+    display: none;
+  }
+  .help-nav__item {
+    padding: 6px 12px;
+    font-size: 11.5px;
+    flex-shrink: 0;
+    border-radius: 16px;
+  }
+  .help-nav__item--active {
+    border-radius: 16px;
+  }
+  .help-modal__body {
+    flex-direction: column;
+  }
+  .help-content {
+    padding: 16px;
+  }
+  .help-ui-mockup { padding: 10px; }
+  .help-ui-review { flex-direction: column; }
+  .help-ui-report__panels { flex-direction: column; }
+}
+
+/* ---- Portal Help Button ---- */
+.travel-header__help-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+.travel-header__help-btn:hover {
+  background: rgba(255,255,255,0.3);
+}
+
+/* ---- Admin Sidebar Help Button ---- */
+.admin-sidebar__help-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.6);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+}
+.admin-sidebar__help-btn:hover {
+  color: #fff;
+  background: rgba(255,255,255,0.08);
+}
+.admin-sidebar__help-btn i {
+  width: 20px;
+  text-align: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.admin-sidebar__help-btn span {
+  opacity: 0;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+.admin-sidebar:hover .admin-sidebar__help-btn span,
+.admin-sidebar.admin-sidebar--expanded .admin-sidebar__help-btn span {
+  opacity: 1;
+}
+</style>
+
+<!-- ============================================================================
+     HELP MODAL HTML
+     ============================================================================ -->
+<div class="help-modal-backdrop" id="helpBackdrop"></div>
+<div class="help-modal" id="helpModal" role="dialog" aria-label="Help Guide">
+
+  <!-- Header -->
+  <div class="help-modal__header">
+    <span class="help-modal__title">
+      <i aria-hidden="true" class="fas fa-book-open"></i>
+      Help Guide
+    </span>
+    <button class="help-modal__close" onclick="TravelHelp.close()" aria-label="Close help">
+      <i aria-hidden="true" class="fas fa-times"></i>
+    </button>
+  </div>
+
+  <!-- Body -->
+  <div class="help-modal__body">
+
+    <!-- Navigation Sidebar -->
+    <nav class="help-nav" id="helpNav">
+
+      <p class="help-nav__group-label">Portal Guide</p>
+
+      <button class="help-nav__item help-nav__item--active" data-section="getting-started">
+        <i aria-hidden="true" class="fas fa-rocket"></i> Getting Started
+      </button>
+      <button class="help-nav__item" data-section="submitting">
+        <i aria-hidden="true" class="fas fa-pen-to-square"></i> Submitting a Request
+      </button>
+      <button class="help-nav__item" data-section="approval-flow">
+        <i aria-hidden="true" class="fas fa-route"></i> The Approval Flow
+      </button>
+      <button class="help-nav__item" data-section="checking-status">
+        <i aria-hidden="true" class="fas fa-eye"></i> Checking Your Status
+      </button>
+      <button class="help-nav__item" data-section="changes-needed">
+        <i aria-hidden="true" class="fas fa-rotate-left"></i> When Changes Are Needed
+      </button>
+      <button class="help-nav__item" data-section="cancelling">
+        <i aria-hidden="true" class="fas fa-ban"></i> Cancelling a Request
+      </button>
+      <button class="help-nav__item" data-section="drafts">
+        <i aria-hidden="true" class="fas fa-file-lines"></i> Working with Drafts
+      </button>
+      <button class="help-nav__item" data-section="reviewing">
+        <i aria-hidden="true" class="fas fa-clipboard-check"></i> Reviewing Requests
+      </button>
+      <button class="help-nav__item" data-section="dd-confirmation">
+        <i aria-hidden="true" class="fas fa-user-check"></i> DD Confirmation
+      </button>
+
+      <div class="help-nav__admin-only">
+        <p class="help-nav__group-label">Admin Guide</p>
+
+        <button class="help-nav__item" data-section="fas-decisions">
+          <i aria-hidden="true" class="fas fa-stamp"></i> FAS Decisions
+        </button>
+        <button class="help-nav__item" data-section="admin-dashboard">
+          <i aria-hidden="true" class="fas fa-gauge-high"></i> Dashboard Overview
+        </button>
+        <button class="help-nav__item" data-section="admin-requests">
+          <i aria-hidden="true" class="fas fa-list-check"></i> Managing Requests
+        </button>
+        <button class="help-nav__item" data-section="admin-reviewers">
+          <i aria-hidden="true" class="fas fa-users-gear"></i> Managing Reviewers
+        </button>
+        <button class="help-nav__item" data-section="admin-reports">
+          <i aria-hidden="true" class="fas fa-chart-bar"></i> Report Builder
+        </button>
+      </div>
+    </nav>
+
+    <!-- Content Area -->
+    <div class="help-content" id="helpContent">
+
+      <!-- ============================================================
+           SECTION 1: Getting Started
+           ============================================================ -->
+      <div id="help-section-getting-started" class="help-section active">
+        <h2>Getting Started</h2>
+        <p>Welcome to <strong>AAS TRIP</strong> (Travel Request & Itinerary Portal). This is where you submit, track, and manage travel authorization requests.</p>
+
+        <h3>Portal Layout</h3>
+        <p>When you open the portal, you'll see three main areas:</p>
+
+        <!-- Portal Layout Mockup -->
+        <div class="help-ui-mockup" style="display:flex;gap:12px;min-height:260px;">
+          <!-- Sidebar -->
+          <div style="width:140px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;">
+            <div class="help-callout" style="top:8px;left:8px;">1</div>
+            <div style="background:var(--color-primary);color:#fff;padding:8px 10px;border-radius:6px;font-size:11px;font-weight:600;text-align:center;display:flex;align-items:center;gap:5px;justify-content:center;"><i aria-hidden="true" class="fas fa-plus" style="font-size:9px;"></i> New Request</div>
+            <div style="background:#fff;border:1px solid var(--color-slate-200);border-radius:6px;padding:8px;">
+              <div style="font-size:9px;font-weight:600;color:var(--color-slate-400);text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:4px;"><i aria-hidden="true" class="fas fa-file-alt" style="font-size:8px;"></i> Drafts</div>
+              <div style="font-size:10px;color:var(--color-slate-500);padding:4px 6px;background:var(--color-slate-50);border-radius:4px;margin-bottom:4px;">Q2 Conf. Trip...</div>
+              <div style="font-size:10px;color:var(--color-slate-500);padding:4px 6px;background:var(--color-slate-50);border-radius:4px;">Site Visit Draft...</div>
+            </div>
+          </div>
+          <!-- Main Content -->
+          <div style="flex:1;display:flex;flex-direction:column;gap:10px;">
+            <!-- Action Required -->
+            <div style="background:linear-gradient(180deg,#fffbeb 0%,#fff 100%);border:1px solid #f59e0b;border-radius:6px;overflow:hidden;position:relative;">
+              <div class="help-callout" style="top:4px;left:8px;">2</div>
+              <div style="background:#fef3c7;padding:8px 10px;border-bottom:1px solid #fde68a;font-size:11px;font-weight:600;color:#92400e;display:flex;align-items:center;gap:5px;"><i aria-hidden="true" class="fas fa-exclamation-triangle" style="color:#f59e0b;font-size:10px;"></i> Action Required <span style="background:#f59e0b;color:#fff;font-size:9px;padding:1px 6px;border-radius:8px;font-weight:600;margin-left:auto;">2</span></div>
+              <div style="padding:8px 10px;">
+              <!-- Review action card -->
+              <div style="display:flex;align-items:center;gap:8px;padding:7px 8px;background:var(--color-slate-50);border-radius:5px;margin-bottom:5px;">
+                <div style="width:26px;height:26px;border-radius:6px;background:#dbeafe;color:#3b82f6;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;"><i aria-hidden="true" class="fas fa-clipboard-check"></i></div>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:10.5px;font-weight:600;color:var(--color-slate-700);">Annual Planning Meeting</div>
+                  <div style="font-size:9.5px;color:var(--color-slate-400);">BU Review &bull; Submitted by: J. Smith</div>
+                </div>
+                <div style="font-size:9px;color:var(--color-slate-400);">2 days</div>
+                <div style="padding:3px 10px;background:var(--color-primary);color:#fff;font-size:9.5px;font-weight:600;border-radius:4px;">Review</div>
+              </div>
+              <!-- Needs Info action card -->
+              <div style="display:flex;align-items:center;gap:8px;padding:7px 8px;background:var(--color-slate-50);border-radius:5px;">
+                <div style="width:26px;height:26px;border-radius:6px;background:var(--status-needs-info-bg);color:var(--status-needs-info);display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;"><i aria-hidden="true" class="fas fa-exclamation-circle"></i></div>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:10.5px;font-weight:600;color:var(--color-slate-700);">Client Site Visit &mdash; Denver</div>
+                  <div style="font-size:9.5px;color:var(--color-slate-400);">Needs Info &bull; Missing travel dates</div>
+                </div>
+                <div style="font-size:9px;color:var(--status-needs-info);font-weight:600;">5 days</div>
+                <div style="padding:3px 10px;background:var(--status-pending);color:#fff;font-size:9.5px;font-weight:600;border-radius:4px;">Update</div>
+              </div>
+              </div>
+            </div>
+            <!-- My Requests -->
+            <div style="background:#fff;border:1px solid var(--color-slate-200);border-radius:6px;padding:10px;position:relative;">
+              <div class="help-callout" style="top:-8px;left:8px;">3</div>
+              <div style="font-size:11px;font-weight:600;color:var(--color-slate-700);margin-bottom:6px;display:flex;align-items:center;gap:5px;"><i aria-hidden="true" class="fas fa-paper-plane" style="font-size:10px;color:var(--color-primary);"></i> My Requests</div>
+              <div style="display:flex;gap:4px;margin-bottom:8px;">
+                <span style="padding:2px 8px;background:var(--color-primary);color:#fff;font-size:9px;border-radius:10px;font-weight:600;">All</span>
+                <span style="padding:2px 8px;background:var(--color-slate-100);color:var(--color-slate-500);font-size:9px;border-radius:10px;">Pending</span>
+                <span style="padding:2px 8px;background:var(--color-slate-100);color:var(--color-slate-500);font-size:9px;border-radius:10px;">Approved</span>
+                <span style="padding:2px 8px;background:var(--color-slate-100);color:var(--color-slate-500);font-size:9px;border-radius:10px;">Completed</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--color-slate-50);border-radius:5px;margin-bottom:4px;">
+                <span class="help-status-badge" style="background:var(--status-pending-bg);color:var(--status-pending);font-size:8.5px;padding:1px 7px;">BU Review</span>
+                <div style="flex:1;font-size:10.5px;font-weight:500;color:var(--color-slate-600);">Q3 Training &mdash; Chicago</div>
+                <div style="padding:3px 8px;border:1px solid var(--color-slate-200);color:var(--color-slate-500);font-size:9px;border-radius:4px;">View</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--color-slate-50);border-radius:5px;">
+                <span class="help-status-badge" style="background:var(--status-approved-bg);color:var(--status-approved);font-size:8.5px;padding:1px 7px;">Approved</span>
+                <div style="flex:1;font-size:10.5px;font-weight:500;color:var(--color-slate-600);">Team Offsite &mdash; Austin</div>
+                <div style="padding:3px 8px;border:1px solid var(--color-slate-200);color:var(--color-slate-500);font-size:9px;border-radius:4px;">View</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <ul class="help-callout-list">
+          <li data-num="1"><strong>Sidebar</strong> &mdash; Start a new request or resume a saved draft. Drafts are saved locally in your browser.</li>
+          <li data-num="2"><strong>Action Required</strong> &mdash; Items that need your attention right now. This includes requests you need to review, requests returned to you for more information, funding corrections, and DD confirmations. This section only appears when there's something for you to do.</li>
+          <li data-num="3"><strong>My Requests</strong> &mdash; Every request you've submitted. Use the filter chips to narrow by status. Click <strong>View</strong> to see full details and the approval timeline.</li>
+        </ul>
+
+        <div class="help-tip">
+          <strong>Tip:</strong> If you're a reviewer, requests awaiting your review will also appear in the <strong>Action Required</strong> section with a blue "Review" button.
+        </div>
+      </div>
+
+      <!-- ============================================================
+           SECTION 2: Submitting a Request
+           ============================================================ -->
+      <div id="help-section-submitting" class="help-section">
+        <h2>Submitting a Request</h2>
+        <p>The submission form walks you through six steps using an accordion layout. You can move between steps freely &mdash; nothing is locked until you hit <strong>Submit Request</strong>.</p>
+
+        <!-- Annotated UI Recreation: Accordion Stepper -->
+        <div class="help-ui-mockup" style="padding:14px 16px;">
+          <div class="help-ui-stepper">
+
+            <!-- Step 1 — completed -->
+            <div class="help-ui-stepper__step">
+              <div class="help-ui-stepper__indicator">
+                <div class="help-ui-stepper__circle help-ui-stepper__circle--done"><i aria-hidden="true" class="fas fa-check"></i></div>
+                <div class="help-ui-stepper__connector"></div>
+              </div>
+              <div class="help-ui-stepper__content">
+                <div class="help-ui-stepper__header">
+                  Trip Overview
+                  <div class="help-callout" style="position:static;margin-left:auto;">1</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 2 — active / expanded -->
+            <div class="help-ui-stepper__step">
+              <div class="help-ui-stepper__indicator">
+                <div class="help-ui-stepper__circle help-ui-stepper__circle--active">2</div>
+                <div class="help-ui-stepper__connector"></div>
+              </div>
+              <div class="help-ui-stepper__content">
+                <div class="help-ui-stepper__header help-ui-stepper__header--active">
+                  Itinerary
+                  <span class="help-ui-stepper__chevron"><i aria-hidden="true" class="fas fa-chevron-up"></i></span>
+                </div>
+                <div class="help-ui-stepper__body">
+                  <div class="help-callout" style="position:static;display:inline-flex;margin-bottom:6px;">2</div>
+                  <div class="help-ui-mockup__field">
+                    <div class="help-ui-mockup__label">Destination <span class="req">*</span></div>
+                    <div class="help-ui-mockup__input"></div>
+                  </div>
+                  <div style="display:flex;gap:6px;">
+                    <div style="flex:1;">
+                      <div class="help-ui-mockup__label">Depart <span class="req">*</span></div>
+                      <div class="help-ui-mockup__input"></div>
+                    </div>
+                    <div style="flex:1;">
+                      <div class="help-ui-mockup__label">Return <span class="req">*</span></div>
+                      <div class="help-ui-mockup__input"></div>
+                    </div>
+                  </div>
+                  <div class="help-ui-mockup__btn-row" style="justify-content:space-between;">
+                    <div style="display:flex;gap:6px;">
+                      <div class="help-ui-mockup__btn help-ui-mockup__btn--ghost"><i aria-hidden="true" class="fas fa-arrow-up" style="font-size:8px;margin-right:3px;"></i> Back</div>
+                      <div class="help-callout" style="position:static;">3</div>
+                      <div class="help-ui-mockup__btn help-ui-mockup__btn--ghost"><i aria-hidden="true" class="fas fa-save" style="font-size:8px;margin-right:3px;"></i> Save Draft</div>
+                    </div>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                      <div class="help-callout" style="position:static;">4</div>
+                      <div class="help-ui-mockup__btn help-ui-mockup__btn--primary">Continue <i aria-hidden="true" class="fas fa-arrow-down" style="font-size:8px;margin-left:3px;"></i></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 3 — upcoming -->
+            <div class="help-ui-stepper__step">
+              <div class="help-ui-stepper__indicator">
+                <div class="help-ui-stepper__circle">3</div>
+                <div class="help-ui-stepper__connector"></div>
+              </div>
+              <div class="help-ui-stepper__content">
+                <div class="help-ui-stepper__header">Travelers <span class="help-ui-stepper__chevron"><i aria-hidden="true" class="fas fa-chevron-down"></i></span></div>
+              </div>
+            </div>
+
+            <!-- Step 4 — upcoming -->
+            <div class="help-ui-stepper__step">
+              <div class="help-ui-stepper__indicator">
+                <div class="help-ui-stepper__circle">4</div>
+                <div class="help-ui-stepper__connector"></div>
+              </div>
+              <div class="help-ui-stepper__content">
+                <div class="help-ui-stepper__header">Travel Classification <span class="help-ui-stepper__chevron"><i aria-hidden="true" class="fas fa-chevron-down"></i></span></div>
+              </div>
+            </div>
+
+            <!-- Step 5 — upcoming (optional) -->
+            <div class="help-ui-stepper__step">
+              <div class="help-ui-stepper__indicator">
+                <div class="help-ui-stepper__circle">5</div>
+                <div class="help-ui-stepper__connector"></div>
+              </div>
+              <div class="help-ui-stepper__content">
+                <div class="help-ui-stepper__header">Shared Costs <span class="help-ui-stepper__optional">Optional</span> <span class="help-ui-stepper__chevron"><i aria-hidden="true" class="fas fa-chevron-down"></i></span></div>
+              </div>
+            </div>
+
+            <!-- Step 6 — upcoming -->
+            <div class="help-ui-stepper__step">
+              <div class="help-ui-stepper__indicator">
+                <div class="help-ui-stepper__circle">6</div>
+              </div>
+              <div class="help-ui-stepper__content">
+                <div class="help-ui-stepper__header">Review &amp; Submit <span class="help-ui-stepper__chevron"><i aria-hidden="true" class="fas fa-chevron-down"></i></span></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+        <ul class="help-callout-list">
+          <li data-num="1"><strong>Completed steps</strong> &mdash; Show a green checkmark. Click any step header to jump back and make edits.</li>
+          <li data-num="2"><strong>Active step</strong> &mdash; The expanded section where you fill in fields. Required fields are marked with an asterisk (*).</li>
+          <li data-num="3"><strong>Save Draft</strong> &mdash; Saves your progress locally. You can close the browser and resume later from the portal sidebar.</li>
+          <li data-num="4"><strong>Continue</strong> &mdash; Moves to the next step. You can also click any step header to jump around.</li>
+        </ul>
+
+        <h3>Step 1: Trip Overview</h3>
+        <p>Enter the event or meeting name, select a location type (Client Site, Conference, Contractor Site, TEB, or Other), and pick the event date range. Then provide a one-sentence <strong>BLUF</strong> (Bottom Line Up Front) and a <strong>Detailed Purpose &amp; Justification</strong> explaining why this travel is necessary.</p>
+
+        <h3>Step 2: Itinerary</h3>
+        <p>Build your trip itinerary by adding each destination stop in order. For each stop you'll enter:</p>
+        <ul>
+          <li><strong>Travel Start &amp; End Dates</strong> &mdash; The first day of travel to that destination through the last day. For multi-stop trips, the next destination's start date can be the same as the previous destination's end date.</li>
+          <li><strong>Country, State &amp; City</strong> &mdash; Start typing to search. City suggestions include locations with special per diem rates.</li>
+          <li><strong>Site Name</strong> &mdash; Only appears when the location type is <em>Client Site</em> or <em>Contractor Site</em> (set in Step 1). Enter the name of the specific site you're visiting.</li>
+        </ul>
+        <p>Click <strong>Add Another Stop</strong> for multi-city trips. The form builds a route summary as you go.</p>
+
+        <div class="help-tip">
+          <strong>Tip:</strong> If you select an international destination, a notice will appear letting you know that additional information will be collected in the Travelers step.
+        </div>
+
+        <h3>Step 3: Travelers</h3>
+        <p>Add each traveler on the trip. The form progressively reveals fields as you go:</p>
+        <ol>
+          <li><strong>Employee</strong> &mdash; Search by name using the typeahead. Once selected, the form pulls in their role, duty location, and BU automatically.</li>
+          <li><strong>Role Justification</strong> &mdash; Explain why this specific traveler needs to go on the trip.</li>
+          <li><strong>Funding</strong> &mdash; Select <strong>Overhead</strong> (agency-funded) or <strong>Client</strong> (client-paid).</li>
+          <li><strong>Primary Travel Method</strong> &mdash; Choose Air, Rail, Rental Car, POV (private vehicle), or GOV (government vehicle). Enter the estimated cost or total miles depending on the mode.</li>
+          <li><strong>Per Diem</strong> &mdash; Lodging and M&amp;IE costs are calculated automatically per destination based on GSA rates. You can override any amount if needed (e.g., conference hotel rate).</li>
+        </ol>
+
+        <h3 style="font-size:13px;color:var(--color-slate-600);margin-top:14px;">Local Travel</h3>
+        <p>If a destination is local (no overnight stay), there is no lodging or M&amp;IE. Instead, you'll enter <strong>commute information</strong> (normal round-trip miles and daily parking), then estimate <strong>miles driven</strong>, <strong>excess parking</strong>, and <strong>tolls</strong> for each local leg. Only costs above your normal commute are reimbursable.</p>
+
+        <h3 style="font-size:13px;color:var(--color-slate-600);margin-top:14px;">International Travel</h3>
+        <p>If the itinerary includes an international destination, an additional section appears for each traveler attending that leg. You'll be asked to confirm:</p>
+        <ul>
+          <li>Valid passport (not expiring within 6 months)</li>
+          <li>Security clearance status</li>
+          <li>Whether you're speaking or presenting</li>
+          <li>Whether the event is open to press/media</li>
+          <li>Whether receiving non-federal source (NFS) funding or gifts &mdash; if yes, you'll need to download and upload the NFS Worksheet</li>
+        </ul>
+
+        <p>A running total at the bottom of the step shows cost breakdowns (transport, lodging, M&amp;IE, local, 15% gross-up) across all travelers.</p>
+
+        <h3>Step 4: Travel Classification</h3>
+        <p>Two checkbox columns &mdash; select all that apply in each:</p>
+        <ul>
+          <li><strong>Type of Travel</strong> &mdash; Local, Internal, Customer Meeting, Vendor Meeting, International, Overseas Employee, Speaking Engagement, GSA Conference, Non-GSA Conference/Training.</li>
+          <li><strong>Mission-Critical Travel</strong> &mdash; SCIF activities, physical oversight, vehicle inspections, retail operations, industry engagement, or Technical Evaluation Boards.</li>
+        </ul>
+
+        <h3>Step 5: Shared Costs <span style="font-size:11px;font-weight:400;color:var(--color-slate-400);">(Optional)</span></h3>
+        <p>If there are costs shared across travelers, enter them in four categories: <strong>Facilities &amp; Space</strong>, <strong>Audio/Visual &amp; Tech</strong>, <strong>Logistics &amp; Operations</strong>, and <strong>Other</strong>. Each category has an amount field and an optional description.</p>
+
+        <h3>Step 6: Review &amp; Submit</h3>
+        <p>Upload any supporting documents (drag &amp; drop, browse files, or select from Google Drive &mdash; PDFs and images up to 10MB). Review all the information you've entered across every step. The form shows a grand total combining traveler costs and shared costs. When everything looks good, click <strong>Submit Request</strong>.</p>
+
+        <div class="help-tip">
+          <strong>Tip:</strong> You can save a draft at any time and come back later. See the <em>Working with Drafts</em> section for details.
+        </div>
+      </div>
+
+      <!-- ============================================================
+           SECTION 3: The Approval Flow
+           ============================================================ -->
+      <div id="help-section-approval-flow" class="help-section">
+        <h2>The Approval Flow</h2>
+        <p>Every travel request moves through a series of review stages. The exact path depends on whether the travel is overhead-funded or client-paid.</p>
+
+        <h3>Standard Flow</h3>
+        <div class="help-flow">
+          <span class="help-flow__step help-flow__step--start"><i aria-hidden="true" class="fas fa-paper-plane"></i> Submitted</span>
+          <span class="help-flow__arrow"><i aria-hidden="true" class="fas fa-chevron-right"></i></span>
+          <span class="help-flow__step">Sector Review</span>
+          <span class="help-flow__arrow"><i aria-hidden="true" class="fas fa-chevron-right"></i></span>
+          <span class="help-flow__step">BU Review</span>
+          <span class="help-flow__arrow"><i aria-hidden="true" class="fas fa-chevron-right"></i></span>
+          <span class="help-flow__step">AAS FO Review</span>
+          <span class="help-flow__arrow"><i aria-hidden="true" class="fas fa-chevron-right"></i></span>
+          <span class="help-flow__step help-flow__step--optional">FAS Review*</span>
+          <span class="help-flow__arrow"><i aria-hidden="true" class="fas fa-chevron-right"></i></span>
+          <span class="help-flow__step">Approved</span>
+          <span class="help-flow__arrow"><i aria-hidden="true" class="fas fa-chevron-right"></i></span>
+          <span class="help-flow__step">DD Confirm</span>
+          <span class="help-flow__arrow"><i aria-hidden="true" class="fas fa-chevron-right"></i></span>
+          <span class="help-flow__step help-flow__step--end"><i aria-hidden="true" class="fas fa-flag-checkered"></i> Complete</span>
+        </div>
+        <p style="font-size:11.5px;color:var(--color-slate-400);margin-top:-8px;">*FAS Review only applies to overhead-funded travel.</p>
+
+        <h3>What Happens at Each Stage</h3>
+        <ul>
+          <li><strong>Sector Review</strong> &mdash; Your sector leadership reviews the request and confirms it aligns with organizational priorities.</li>
+          <li><strong>BU Review</strong> &mdash; Your Business Unit reviewer checks budget availability and travel details.</li>
+          <li><strong>AAS FO Review</strong> &mdash; The AAS Front Office reviews and verifies the request.</li>
+          <li><strong>FAS Review</strong> &mdash; Only for overhead-funded travel. FAS leadership makes the final budget authorization.</li>
+          <li><strong>Approved</strong> &mdash; The request is authorized. You'll receive an email confirmation with booking instructions.</li>
+          <li><strong>DD Confirmation</strong> &mdash; Division Directors confirm the travelers on the approved trip and flag any funding concerns.</li>
+          <li><strong>Complete</strong> &mdash; All confirmations are done. The trip is fully authorized and recorded.</li>
+        </ul>
+
+        <h3>Overhead vs. Client-Paid Path</h3>
+        <p>If all travelers on the request are <strong>client-paid</strong>, the request skips FAS Review and moves directly from AAS FO Review to Approved status. If there's a mix of overhead and client-paid travelers, the request goes through FAS Review for the overhead portion.</p>
+
+        <div class="help-tip">
+          <strong>Tip:</strong> At any review stage, the reviewer may send the request back to you for more information. Check the <em>When Changes Are Needed</em> section for details on that process.
+        </div>
+      </div>
+
+      <!-- ============================================================
+           SECTION 4: Checking Your Status
+           ============================================================ -->
+      <div id="help-section-checking-status" class="help-section">
+        <h2>Checking Your Status</h2>
+        <p>The <strong>My Requests</strong> section on your portal shows every request you've submitted, along with its current status.</p>
+
+        <h3>Status Badges</h3>
+        <table class="help-status-table">
+          <thead>
+            <tr><th>Badge</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="help-status-badge" style="background:var(--status-pending-bg);color:var(--status-pending);">Sector Review</span></td>
+              <td>Awaiting sector leadership review</td>
+            </tr>
+            <tr>
+              <td><span class="help-status-badge" style="background:var(--status-pending-bg);color:var(--status-pending);">BU Review</span></td>
+              <td>Awaiting Business Unit review</td>
+            </tr>
+            <tr>
+              <td><span class="help-status-badge" style="background:var(--status-pending-oso-bg);color:var(--status-pending-oso);">AAS FO Review</span></td>
+              <td>Awaiting AAS Front Office review</td>
+            </tr>
+            <tr>
+              <td><span class="help-status-badge" style="background:var(--status-pending-oso-bg);color:var(--status-pending-oso);">FAS Review</span></td>
+              <td>Awaiting FAS leadership decision (overhead only)</td>
+            </tr>
+            <tr>
+              <td><span class="help-status-badge" style="background:var(--status-approved-bg);color:var(--status-approved);">Approved</span></td>
+              <td>Travel authorized &mdash; proceed with booking</td>
+            </tr>
+            <tr>
+              <td><span class="help-status-badge" style="background:var(--status-completed-bg);color:var(--status-completed);">Completed</span></td>
+              <td>Fully processed and confirmed</td>
+            </tr>
+            <tr>
+              <td><span class="help-status-badge" style="background:var(--status-needs-info-bg);color:var(--status-needs-info);">Needs Info</span></td>
+              <td>A reviewer needs more information from you</td>
+            </tr>
+            <tr>
+              <td><span class="help-status-badge" style="background:var(--status-denied-bg);color:var(--status-denied);">Denied</span></td>
+              <td>Request was denied</td>
+            </tr>
+            <tr>
+              <td><span class="help-status-badge" style="background:var(--status-cancelled-bg);color:var(--status-cancelled);">Cancelled</span></td>
+              <td>Request was cancelled by the submitter or an admin</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Filtering Requests</h3>
+        <p>Use the filter chips above your request list to narrow by status:</p>
+        <ul>
+          <li><strong>All</strong> &mdash; Shows every request.</li>
+          <li><strong>Pending</strong> &mdash; Requests still moving through the approval flow.</li>
+          <li><strong>Approved</strong> &mdash; Requests that have been approved but not yet completed.</li>
+          <li><strong>Completed</strong> &mdash; Fully processed requests.</li>
+        </ul>
+
+        <h3>Viewing Request Details</h3>
+        <p>Click <strong>View</strong> on any request card to open the review page. There you'll see all the trip details, the full approval timeline, and any feedback from reviewers.</p>
+      </div>
+
+      <!-- ============================================================
+           SECTION 5: When Changes Are Needed
+           ============================================================ -->
+      <div id="help-section-changes-needed" class="help-section">
+        <h2>When Changes Are Needed</h2>
+        <p>If a reviewer needs more information or finds an issue, they'll send the request back to you with a <strong>"Needs Info"</strong> status and a note explaining what's needed.</p>
+
+        <p>Here's what the action card looks like on your portal when a request is returned:</p>
+
+        <!-- Needs Info mockup -->
+        <div class="help-ui-mockup" style="max-width:480px;">
+          <div style="background:linear-gradient(180deg,#fffbeb 0%,#fff 100%);border:1px solid #f59e0b;border-radius:6px;overflow:hidden;">
+            <div style="background:#fef3c7;padding:6px 10px;border-bottom:1px solid #fde68a;font-size:10px;font-weight:600;color:#92400e;display:flex;align-items:center;gap:4px;"><i aria-hidden="true" class="fas fa-exclamation-triangle" style="color:#f59e0b;font-size:9px;"></i> Action Required</div>
+            <div style="padding:8px 10px;">
+              <div style="display:flex;align-items:center;gap:8px;padding:7px 8px;background:var(--color-slate-50);border-radius:5px;">
+                <div style="width:28px;height:28px;border-radius:6px;background:var(--status-needs-info-bg);color:var(--status-needs-info);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;"><i aria-hidden="true" class="fas fa-exclamation-circle"></i></div>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:11px;font-weight:600;color:var(--color-slate-700);">Q3 Training &mdash; Chicago</div>
+                  <div style="font-size:10px;color:var(--color-slate-400);">Needs Info &bull; Please clarify hotel arrangements</div>
+                </div>
+                <div style="font-size:9px;color:var(--status-needs-info);font-weight:600;">3 days</div>
+                <div style="padding:4px 12px;background:var(--status-pending);color:#fff;font-size:10px;font-weight:600;border-radius:4px;">Update</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <h3>How to Update &amp; Resubmit</h3>
+        <ol>
+          <li>Look for the request in your <strong>Action Required</strong> section &mdash; it will have the card shown above.</li>
+          <li>Click <strong>Update</strong> to open the request for editing.</li>
+          <li>Read the reviewer's feedback at the top of the form.</li>
+          <li>Make the requested changes to any step.</li>
+          <li>Click <strong>Update &amp; Resubmit</strong> to send it back into the approval flow.</li>
+        </ol>
+        <p>The request will return to the same review stage it was at when the reviewer sent it back.</p>
+
+        <h3>Funding Corrections</h3>
+        <p>If a Division Director flags a funding issue during DD Confirmation, you'll see a <strong>Funding Correction Required</strong> action item on your portal. Click it to open the correction form, update the funding type for the flagged travelers, and resubmit.</p>
+
+        <div class="help-tip">
+          <strong>Tip:</strong> You'll receive an email notification whenever a request is returned for changes. Check your inbox if you're not sure what needs updating.
+        </div>
+      </div>
+
+      <!-- ============================================================
+           SECTION 6: Cancelling a Request
+           ============================================================ -->
+      <div id="help-section-cancelling" class="help-section">
+        <h2>Cancelling a Request</h2>
+
+        <h3>Who Can Cancel</h3>
+        <ul>
+          <li><strong>You (the submitter)</strong> can cancel your own request at any time before it reaches "Completed" status.</li>
+          <li><strong>Reviewers</strong> can cancel a request from the review page.</li>
+          <li><strong>Admins</strong> can cancel any request from the Admin Console.</li>
+        </ul>
+
+        <h3>How to Cancel</h3>
+        <p>Click <strong>View</strong> on the request to open the review page. In the sidebar, click the dropdown arrow next to the action button and select <strong>Cancel Request</strong>. You'll need to provide a reason. Once confirmed, the request is permanently moved to "Cancelled" status and no further reviews occur.</p>
+
+        <!-- Cancel dropdown mockup -->
+        <div class="help-ui-mockup" style="max-width:220px;padding:10px;">
+          <div style="background:#fff;border:1px solid var(--color-slate-200);border-radius:6px;overflow:hidden;">
+            <div style="padding:6px 10px;font-size:10px;color:var(--color-slate-400);display:flex;align-items:center;gap:5px;border-bottom:1px solid var(--color-slate-100);"><i aria-hidden="true" class="fas fa-question-circle" style="color:#f59e0b;font-size:9px;"></i> Request More Information</div>
+            <div style="padding:6px 10px;font-size:10px;color:var(--color-slate-400);display:flex;align-items:center;gap:5px;border-bottom:1px solid var(--color-slate-100);"><i aria-hidden="true" class="fas fa-times-circle" style="color:var(--status-denied);font-size:9px;"></i> Deny Request</div>
+            <div style="padding:6px 10px;font-size:10px;color:var(--status-denied);font-weight:600;display:flex;align-items:center;gap:5px;"><i aria-hidden="true" class="fas fa-ban" style="font-size:9px;"></i> Cancel Request</div>
+          </div>
+        </div>
+
+        <h3>What Happens After</h3>
+        <p>Cancelled requests remain visible in your <strong>My Requests</strong> list with a "Cancelled" badge. They cannot be re-opened. If you still need the travel authorized, submit a new request.</p>
+      </div>
+
+      <!-- ============================================================
+           SECTION 7: Working with Drafts
+           ============================================================ -->
+      <div id="help-section-drafts" class="help-section">
+        <h2>Working with Drafts</h2>
+        <p>Drafts let you start a request and come back to it later without losing any data.</p>
+
+        <h3>Saving a Draft</h3>
+        <p>While filling out the request form, click <strong>Save Draft</strong> at any point. Your progress is saved locally in your browser. You'll see a confirmation message when the draft is saved.</p>
+
+        <h3>Resuming a Draft</h3>
+        <p>Saved drafts appear in the <strong>left sidebar</strong> of the portal. Click a draft to re-open the form exactly where you left off. All fields will be pre-filled with your saved data.</p>
+
+        <h3>Deleting a Draft</h3>
+        <p>Hover over a draft in the sidebar and click the trash icon to delete it. Drafts are also automatically removed when you successfully submit the request.</p>
+
+        <div class="help-tip">
+          <strong>Tip:</strong> Drafts are stored in your browser's local storage. If you switch to a different browser or clear your browser data, your drafts won't carry over.
+        </div>
+      </div>
+
+      <!-- ============================================================
+           SECTION 8: Reviewing Requests
+           ============================================================ -->
+      <div id="help-section-reviewing" class="help-section">
+        <h2>Reviewing Requests</h2>
+        <p>If you're assigned as a reviewer (Sector, BU, or AAS FO level), requests will appear in your <strong>Action Required</strong> section when they're ready for your review.</p>
+
+        <!-- Annotated UI Recreation: Review Page -->
+        <div class="help-ui-mockup">
+          <div class="help-ui-review">
+            <div class="help-ui-review__main">
+              <div class="help-callout" style="top:8px;left:8px;">1</div>
+              <div style="font-size:13px;font-weight:600;color:var(--color-slate-700);margin-bottom:10px;">Trip Details</div>
+              <div class="help-ui-review__detail-bar help-ui-review__detail-bar--med"></div>
+              <div class="help-ui-review__detail-bar help-ui-review__detail-bar--short"></div>
+              <div class="help-ui-review__detail-bar help-ui-review__detail-bar--med"></div>
+              <div class="help-ui-review__detail-bar help-ui-review__detail-bar--short"></div>
+              <div class="help-ui-review__detail-bar"></div>
+              <div class="help-ui-review__detail-bar help-ui-review__detail-bar--med"></div>
+            </div>
+            <div class="help-ui-review__sidebar">
+              <div>
+                <div class="help-ui-review__submitted-by">Submitted By</div>
+                <div class="help-ui-review__name">Jane Smith</div>
+              </div>
+              <div>
+                <div class="help-ui-review__submitted-by">Your Feedback</div>
+                <div class="help-callout" style="top:72px;right:8px;">2</div>
+                <div class="help-ui-review__textarea"></div>
+              </div>
+              <div style="position:relative;">
+                <div class="help-callout" style="top:0;left:-28px;">3</div>
+                <div class="help-callout" style="top:0;right:-8px;">4</div>
+                <div class="help-ui-review__approve-group">
+                  <div class="help-ui-review__approve-btn">Approve</div>
+                  <div class="help-ui-review__approve-arrow"><i aria-hidden="true" class="fas fa-caret-down"></i></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <ul class="help-callout-list">
+          <li data-num="1"><strong>Request details</strong> &mdash; The main area shows four sections: Trip Overview &amp; Justification, Travel Itinerary, Travelers &amp; Role Justifications, and Cost Breakdown &amp; Budget. Below those are collapsible Approval History and Edit History timelines.</li>
+          <li data-num="2"><strong>Section feedback</strong> &mdash; Each section has its own comment box at the bottom. The sidebar shows a count of how many sections you've commented on. These comments are sent to the submitter and visible to subsequent reviewers.</li>
+          <li data-num="3"><strong>Approve button</strong> &mdash; Approves the request and moves it to the next review stage. You can add an optional comment when approving.</li>
+          <li data-num="4"><strong>Dropdown arrow</strong> &mdash; Click to access <strong>Request More Information</strong>, <strong>Deny Request</strong>, or <strong>Cancel Request</strong>.</li>
+        </ul>
+
+        <h3>Leaving Feedback</h3>
+        <p>Each review section has a dedicated comment box at the bottom. Use these to leave targeted feedback &mdash; for example, a note about the justification in the Trip Overview section, or a question about costs in the Budget section. The sidebar tracks how many sections you've commented on.</p>
+
+        <div class="help-tip">
+          <strong>Tip:</strong> Section comments are included in the email notification to the submitter and are visible in the approval timeline to all subsequent reviewers.
+        </div>
+
+        <h3>Request More Information</h3>
+        <p>If something is unclear or missing, click the dropdown arrow and select <strong>Request More Information</strong>. Your section comments are bundled into the notification. You can also add an overall message. The request is sent back to the submitter with "Needs Info" status.</p>
+
+        <h3>Denying a Request</h3>
+        <p>Click the dropdown arrow and select <strong>Deny Request</strong>. You must provide a reason. The submitter will be notified by email.</p>
+
+        <h3>Cancelling from the Review Page</h3>
+        <p>Both reviewers and submitters can cancel a request from the review page. Click the dropdown arrow and select <strong>Cancel Request</strong>. You'll need to provide a reason. This permanently cancels the request.</p>
+      </div>
+
+      <!-- ============================================================
+           SECTION 9: DD Confirmation
+           ============================================================ -->
+      <div id="help-section-dd-confirmation" class="help-section">
+        <h2>DD Confirmation</h2>
+        <p>After a request is fully approved, Division Directors receive an email for each traveler in their division asking them to confirm the travel.</p>
+
+        <h3>What Division Directors Do</h3>
+        <ul>
+          <li>Review the traveler details and funding type in the email.</li>
+          <li><strong>Confirm</strong> the traveler to acknowledge they're authorized to travel.</li>
+          <li><strong>Flag funding issues</strong> if a traveler's funding type appears incorrect (e.g., marked as overhead but should be client-paid).</li>
+        </ul>
+
+        <h3>How It Works</h3>
+        <p>DD Confirmations arrive via email with a link to the confirmation page. Click the link to see the traveler's details and funding type, then confirm or flag the issue. All DDs for a request must confirm before it reaches "Completed" status.</p>
+
+        <h3>Flagging Issues</h3>
+        <p>If you flag a funding issue, the request is sent back to the submitter for a <strong>Funding Correction</strong>. Add a note explaining the issue so the submitter knows what to fix.</p>
+
+        <div class="help-tip">
+          <strong>Tip:</strong> Check your email for DD Confirmation requests. They include a direct link to the confirmation page &mdash; no need to navigate through the portal.
+        </div>
+      </div>
+
+      <!-- ============================================================
+           SECTION 10: FAS Decisions
+           ============================================================ -->
+      <div id="help-section-fas-decisions" class="help-section">
+        <h2>FAS Decisions</h2>
+        <p>FAS leadership makes the final budget authorization decision for <strong>overhead-funded travel</strong>. This step only applies to requests with at least one overhead-funded traveler.</p>
+
+        <h3>Approving from the Portal</h3>
+        <p>FAS decisions can be made directly from the portal. When a request reaches FAS Review, it appears in your <strong>Action Required</strong> section. Click <strong>FAS Decision</strong> to open this compact modal:</p>
+
+        <!-- FAS Decision mockup -->
+        <div class="help-ui-mockup" style="max-width:260px;margin:12px auto;">
+          <div style="background:#fff;border:1px solid var(--color-slate-200);border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+            <div style="padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--color-slate-100);">
+              <i aria-hidden="true" class="fas fa-stamp" style="color:var(--color-primary);font-size:13px;"></i>
+              <span style="font-size:12px;font-weight:600;color:var(--color-slate-700);">FAS Decision</span>
+            </div>
+            <div style="padding:14px;display:flex;gap:8px;">
+              <div style="flex:1;padding:8px;background:var(--color-success);color:#fff;border-radius:6px;text-align:center;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:4px;"><i aria-hidden="true" class="fas fa-check" style="font-size:9px;"></i> Approved</div>
+              <div style="flex:1;padding:8px;background:var(--color-slate-100);color:var(--color-slate-600);border-radius:6px;text-align:center;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:4px;border:1px solid var(--color-slate-200);"><i aria-hidden="true" class="fas fa-times" style="font-size:9px;"></i> Denied</div>
+            </div>
+          </div>
+        </div>
+
+        <p>If denying, you'll be asked to provide a reason. The decision is recorded and the request continues through the flow (or is denied).</p>
+
+        <div class="help-tip">
+          <strong>Tip:</strong> FAS can also review requests from the email notification link, which opens the full review page.
+        </div>
+      </div>
+
+      <!-- ============================================================
+           SECTION 12: Dashboard Overview (Admin)
+           ============================================================ -->
+      <div id="help-section-admin-dashboard" class="help-section">
+        <h2>Dashboard Overview</h2>
+        <p>The admin dashboard gives you a real-time picture of the entire travel request pipeline.</p>
+
+        <h3>Action Center</h3>
+        <p>The top section shows two cards:</p>
+        <ul>
+          <li><strong>Your Reviews</strong> &mdash; Requests currently assigned to you for review, with quick links to each one.</li>
+          <li><strong>Stalled Requests</strong> &mdash; Requests that have been sitting at a review stage for an unusually long time. Use this to follow up with reviewers.</li>
+        </ul>
+
+        <h3>Pipeline</h3>
+        <p>The pipeline bar shows how many requests are at each stage of the approval flow. Click any stage count to jump to a filtered view in the Requests tab.</p>
+
+        <h3>Stat Cards</h3>
+        <p>Four key metrics displayed prominently:</p>
+        <ul>
+          <li><strong>Avg. Approval Time</strong> &mdash; Average days from submission to final approval.</li>
+          <li><strong>Avg. Lead Time</strong> &mdash; Average days between submission and the event start date.</li>
+          <li><strong>Denied</strong> &mdash; Number of requests denied in the selected period.</li>
+          <li><strong>Cancelled</strong> &mdash; Number of requests cancelled in the selected period.</li>
+        </ul>
+
+        <h3>Charts</h3>
+        <p>Two visualizations help spot trends:</p>
+        <ul>
+          <li><strong>Approval Time by Stage</strong> &mdash; Bar chart showing average review time at each stage.</li>
+          <li><strong>Spend by BU</strong> &mdash; Bar chart showing estimated travel spend broken down by Business Unit.</li>
+        </ul>
+
+        <h3>Reviewer Performance Table</h3>
+        <p>At the bottom of the dashboard, a table shows each active reviewer with their average review time, number of reviews completed, and current pending count. Sector reviewers are collapsed by default &mdash; click to expand.</p>
+
+        <div class="help-tip">
+          <strong>Tip:</strong> Use the period selector at the top of the dashboard to change the reporting window (e.g., Last 30 Days, Last Quarter). Pending counts and volume trends are always shown as current totals regardless of the selected period.
+        </div>
+      </div>
+
+      <!-- ============================================================
+           SECTION 13: Managing Requests (Admin)
+           ============================================================ -->
+      <div id="help-section-admin-requests" class="help-section">
+        <h2>Managing Requests</h2>
+        <p>The Requests tab provides a full table of every travel request in the system with powerful filtering and sorting.</p>
+
+        <h3>Filtering &amp; Sorting</h3>
+        <ul>
+          <li><strong>Status filter</strong> &mdash; Filter by any status (Pending, Approved, Denied, etc.) or show all.</li>
+          <li><strong>BU filter</strong> &mdash; Narrow to requests from a specific Business Unit.</li>
+          <li><strong>Search</strong> &mdash; Type to search by submitter name, event name, or request ID.</li>
+          <li><strong>Column sorting</strong> &mdash; Click any column header to sort ascending/descending.</li>
+        </ul>
+
+        <h3>Slide-In Detail Panel</h3>
+        <p>Click any row to open a slide-in panel on the right side showing the full request details:</p>
+        <ul>
+          <li>Trip information and traveler list</li>
+          <li>Complete approval timeline with reviewer notes</li>
+          <li>Current status and stage</li>
+          <li><strong>View Full Review Page</strong> link to open the complete review page for deeper inspection</li>
+        </ul>
+
+        <h3>Admin Actions</h3>
+        <p>From the detail panel, admins can:</p>
+        <ul>
+          <li><strong>Override Status</strong> &mdash; Change a request's status (e.g., move a stuck request forward, or revert a status). Use sparingly and document your reason.</li>
+          <li><strong>Reassign Reviewer</strong> &mdash; Move a request to a different reviewer at the current stage.</li>
+          <li><strong>Cancel Request</strong> &mdash; Cancel any active request.</li>
+        </ul>
+
+        <div class="help-tip">
+          <strong>Tip:</strong> All admin actions are logged in the approval timeline, so there's always a record of what happened and who did it.
+        </div>
+      </div>
+
+      <!-- ============================================================
+           SECTION 14: Managing Reviewers (Admin)
+           ============================================================ -->
+      <div id="help-section-admin-reviewers" class="help-section">
+        <h2>Managing Reviewers</h2>
+        <p>The Reviewers tab has two sub-tabs: <strong>Reviewers</strong> (manages who reviews at each stage) and <strong>Admin Access</strong> (manages who can access the admin console).</p>
+
+        <h3>AAS FO Reviewers &amp; Delegation</h3>
+        <p>AAS Front Office reviewers are displayed as cards grouped by role. The <strong>Delegation toggle</strong> at the top lets you switch between the primary AAS FO reviewer and a delegate. When delegation is active, the delegate receives review assignments instead of the primary reviewer.</p>
+
+        <h3>BU Reviewers</h3>
+        <p>BU reviewers are listed below the AAS FO section. Each BU reviewer is assigned to a specific Business Unit.</p>
+        <ul>
+          <li><strong>Add</strong> &mdash; Click "Add BU Reviewer" to open the form. Search for an employee using the typeahead, select their BU, and save.</li>
+          <li><strong>Edit</strong> &mdash; Click the edit icon on a BU reviewer card. Change the assigned email, and the system will offer to reassign any pending requests.</li>
+          <li><strong>Delete</strong> &mdash; Click the delete icon. If the reviewer has pending requests, you'll be prompted to reassign them first.</li>
+        </ul>
+
+        <h3>Admin Access</h3>
+        <p>Switch to the <strong>Admin Access</strong> sub-tab to manage who has access to the admin console. Admins can view all requests, override statuses, manage reviewers, and run reports.</p>
+
+        <div class="help-tip">
+          <strong>Tip:</strong> Changes to BU reviewer assignments take effect immediately. New admins may need to refresh the page to see the admin console link on the portal.
+        </div>
+      </div>
+
+      <!-- ============================================================
+           SECTION 15: Report Builder (Admin)
+           ============================================================ -->
+      <div id="help-section-admin-reports" class="help-section">
+        <h2>Report Builder</h2>
+        <p>The Report Builder lets you create custom data exports from the travel request database. Select exactly the columns you need, apply filters, and export directly to Google Sheets.</p>
+
+        <!-- Annotated UI Recreation: Report Builder -->
+        <div class="help-ui-mockup">
+          <div class="help-ui-report">
+            <div class="help-ui-report__toolbar" style="position:relative;">
+              <div class="help-callout" style="top:-10px;left:8px;">3</div>
+              <div class="help-ui-report__filter"></div>
+              <div class="help-ui-report__filter" style="width:100px;"></div>
+              <div class="help-ui-report__filter" style="width:90px;"></div>
+              <div class="help-callout" style="top:-10px;right:8px;">4</div>
+              <div class="help-ui-report__export-btn"><i aria-hidden="true" class="fas fa-table"></i> Export to Sheets</div>
+            </div>
+            <div class="help-ui-report__panels">
+              <div class="help-ui-report__picker" style="position:relative;">
+                <div class="help-callout" style="top:-10px;left:8px;">1</div>
+                <div class="help-ui-report__panel-title">Available Columns</div>
+                <div class="help-ui-report__checkbox-row">
+                  <div class="help-ui-report__checkbox help-ui-report__checkbox--checked"></div> Request ID
+                </div>
+                <div class="help-ui-report__checkbox-row">
+                  <div class="help-ui-report__checkbox help-ui-report__checkbox--checked"></div> Submitter Name
+                </div>
+                <div class="help-ui-report__checkbox-row">
+                  <div class="help-ui-report__checkbox"></div> Event Name
+                </div>
+                <div class="help-ui-report__checkbox-row">
+                  <div class="help-ui-report__checkbox"></div> Destination
+                </div>
+                <div class="help-ui-report__checkbox-row">
+                  <div class="help-ui-report__checkbox"></div> Status
+                </div>
+              </div>
+              <div class="help-ui-report__selected" style="position:relative;">
+                <div class="help-callout" style="top:-10px;left:8px;">2</div>
+                <div class="help-ui-report__panel-title">Selected Columns</div>
+                <div class="help-ui-report__drag-row">
+                  <span class="help-ui-report__drag-handle"><i aria-hidden="true" class="fas fa-grip-vertical"></i></span> Request ID
+                </div>
+                <div class="help-ui-report__drag-row">
+                  <span class="help-ui-report__drag-handle"><i aria-hidden="true" class="fas fa-grip-vertical"></i></span> Submitter Name
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <ul class="help-callout-list">
+          <li data-num="1"><strong>Check columns to include</strong> &mdash; Browse available columns organized by category. Check the ones you want in your export.</li>
+          <li data-num="2"><strong>Drag to reorder</strong> &mdash; Selected columns appear in the right panel. Drag the handles to change the column order in your export.</li>
+          <li data-num="3"><strong>Filter your data</strong> &mdash; Use the toolbar filters to narrow by date range, status, or Business Unit. The live preview updates as you change filters.</li>
+          <li data-num="4"><strong>Export to Sheets</strong> &mdash; Click to generate a Google Sheet with your selected columns and filtered data. A link to the new sheet will appear when it's ready.</li>
+        </ul>
+
+        <h3>Live Preview</h3>
+        <p>Below the column panels, a live preview shows a sample of what your export will look like. This updates in real time as you add or remove columns and change filters.</p>
+
+        <div class="help-tip">
+          <strong>Tip:</strong> The exported Google Sheet is created in your Google Drive. You can share it with others or download it as Excel/CSV from the Sheets interface.
+        </div>
+      </div>
+
+    </div><!-- /help-content -->
+  </div><!-- /help-modal__body -->
+</div><!-- /help-modal -->
+
+
+<!-- ============================================================================
+     HELP MODAL CONTROLLER
+     ============================================================================ -->
+<script>
+(function() {
+  'use strict';
+
+  var TravelHelp = {
+    _modal: null,
+    _backdrop: null,
+    _nav: null,
+    _content: null,
+    _initialized: false,
+
+    /**
+     * Toggle the help dropdown menu (called by ? button)
+     */
+    toggle: function(e) {
+      if (e) e.stopPropagation();
+      var menus = document.querySelectorAll('.help-dropdown__menu');
+      for (var i = 0; i < menus.length; i++) {
+        if (menus[i].classList.contains('active')) {
+          menus[i].classList.remove('active');
+          return;
+        }
+      }
+      // Open the menu closest to the clicked button
+      var btn = e ? e.currentTarget : null;
+      var menu = btn ? btn.parentElement.querySelector('.help-dropdown__menu') : menus[0];
+      if (menu) menu.classList.add('active');
+    },
+
+    /**
+     * Close all dropdown menus
+     */
+    closeDropdown: function() {
+      var menus = document.querySelectorAll('.help-dropdown__menu');
+      for (var i = 0; i < menus.length; i++) {
+        menus[i].classList.remove('active');
+      }
+    },
+
+    /**
+     * Open the help guide modal
+     */
+    open: function() {
+      this.closeDropdown();
+      if (!this._initialized) this._init();
+
+      // Toggle admin sections
+      var isAdmin = window._travelUserIsAdmin === true;
+      if (isAdmin) {
+        this._modal.classList.add('help-modal--admin');
+      } else {
+        this._modal.classList.remove('help-modal--admin');
+      }
+
+      this._backdrop.classList.add('active');
+      this._modal.classList.add('active');
+
+      // Navigate to first section
+      this._navigate('getting-started');
+
+      document.addEventListener('keydown', this._onKeyDown);
+    },
+
+    /**
+     * Close the help guide modal
+     */
+    close: function() {
+      if (this._backdrop) this._backdrop.classList.remove('active');
+      if (this._modal) this._modal.classList.remove('active');
+      document.removeEventListener('keydown', this._onKeyDown);
+    },
+
+    /**
+     * Open the SOP in the document viewer
+     */
+    openSOP: function() {
+      this.closeDropdown();
+      window.open('https://docs.google.com/document/d/10-QK4ur6xRCFQJEiRhJa69y-VH6vdImxc23D53pTBMI/preview', '_blank');
+    },
+
+    _navigate: function(sectionId) {
+      if (!this._content) return;
+
+      var navItems = this._nav.querySelectorAll('.help-nav__item');
+      for (var i = 0; i < navItems.length; i++) {
+        var item = navItems[i];
+        if (item.getAttribute('data-section') === sectionId) {
+          item.classList.add('help-nav__item--active');
+        } else {
+          item.classList.remove('help-nav__item--active');
+        }
+      }
+
+      var sections = this._content.querySelectorAll('.help-section');
+      for (var j = 0; j < sections.length; j++) {
+        var section = sections[j];
+        if (section.id === 'help-section-' + sectionId) {
+          section.classList.add('active');
+        } else {
+          section.classList.remove('active');
+        }
+      }
+
+      this._content.scrollTop = 0;
+    },
+
+    _onKeyDown: function(e) {
+      if (e.key === 'Escape') {
+        TravelHelp.close();
+      }
+    },
+
+    _init: function() {
+      this._modal = document.getElementById('helpModal');
+      this._backdrop = document.getElementById('helpBackdrop');
+      this._nav = document.getElementById('helpNav');
+      this._content = document.getElementById('helpContent');
+
+      this._backdrop.addEventListener('click', function() {
+        TravelHelp.close();
+      });
+
+      this._nav.addEventListener('click', function(e) {
+        var btn = e.target.closest('.help-nav__item');
+        if (btn) {
+          var sectionId = btn.getAttribute('data-section');
+          if (sectionId) TravelHelp._navigate(sectionId);
+        }
+      });
+
+      this._initialized = true;
+    }
+  };
+
+  TravelHelp._onKeyDown = TravelHelp._onKeyDown.bind(TravelHelp);
+  window.TravelHelp = TravelHelp;
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.help-dropdown')) {
+      TravelHelp.closeDropdown();
+    }
+  });
+
+  // Close dropdown on Escape
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      TravelHelp.closeDropdown();
+    }
+  });
+})();
+</script>

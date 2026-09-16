@@ -1,0 +1,67 @@
+<!--
+  ================================================================
+  escapeHtml.html — Shared HTML/attribute escaping helpers
+  ================================================================
+
+  Exposes two top-level globals for use by all client controllers:
+
+    escapeHtml(text)  → escape user input for safe insertion into
+                        an element's textContent / innerHTML
+    escapeAttr(text)  → escape user input for safe insertion into
+                        an HTML attribute value (different rules
+                        than text content — also escapes & " ')
+
+  Replaces five per-controller `_escapeHtml` reimplementations and
+  the review controller's `_escapeAttr`. Adoption rolls per
+  controller as touched.
+
+  Behavior notes:
+  - escapeHtml(0)         → "0"      (not "")
+  - escapeHtml(null)      → ""
+  - escapeHtml(undefined) → ""
+  - escapeHtml(<Date>)    → coerces via String()
+  - escapeAttr correctly escapes "&" first so subsequent escapes
+    don't double-encode. (Some prior copies missed this.)
+-->
+
+<script>
+/**
+ * Escape user input for safe insertion as text content inside an HTML
+ * element. Uses the DOM textContent ↔ innerHTML roundtrip so escaping
+ * matches whatever the browser considers safe (no hand-rolled regex).
+ *
+ * Accepts any value; null/undefined return ''. Numbers, Dates, and
+ * other non-strings are coerced via String() so `escapeHtml(0)`
+ * returns "0" (a common bug in some controller-local copies).
+ *
+ * @param {*} text - Value to escape (any type)
+ * @returns {string} HTML-safe text
+ */
+function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  if (typeof text !== 'string') text = String(text);
+  var div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+/**
+ * Escape user input for safe insertion into an HTML attribute VALUE
+ * (e.g., <input value="…">, <button data-foo="…">). Attribute escaping
+ * has different rules than text-content escaping: ampersand must be
+ * escaped first so subsequent escapes don't double-encode, and both
+ * quote characters must be replaced.
+ *
+ * @param {*} text - Value to escape (any type)
+ * @returns {string} Attribute-safe text
+ */
+function escapeAttr(text) {
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+</script>
