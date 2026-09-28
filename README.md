@@ -82,3 +82,30 @@ node lets_app/test_fas_tracker_env.js  # environment gate / FAS tracker isolatio
 Both run automatically on every pull request via `.github/workflows/verify.yml`,
 which holds no credentials and therefore cannot deploy.
 
+## Contributing
+
+**All changes to `main` go through a pull request.** Pushing to `main` triggers
+a production deploy to the Apps Script project, so a direct push ships
+unreviewed code to production.
+
+```sh
+sh .githooks/install.sh          # run once per clone
+git switch -c your-branch-name
+# ...work, commit...
+git push -u origin your-branch-name
+gh pr create --base main
+```
+
+`.githooks/install.sh` points `core.hooksPath` at `.githooks/`, activating a
+`pre-push` hook that refuses direct pushes to `main`.
+
+> **The hook is a convenience, not a control.** It is client-side, applies only
+> to the clone where it is installed, and is bypassed by `git push --no-verify`.
+> It does not survive a fresh clone until you run the installer again.
+>
+> Enforced branch protection is unavailable here: the repository is private
+> under a personal free account, and GitHub gates branch protection on private
+> repos behind a paid plan. The durable fix is moving this repository into a GSA
+> organization. Tracked in issue #1 — until then, PR-only is a team convention
+> backed by a local guardrail.
+
