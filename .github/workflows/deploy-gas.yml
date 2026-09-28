@@ -1,12 +1,36 @@
+# Deploys lets_app/ to the PRODUCTION Google Apps Script project.
+#
+# WHY THERE IS NO `pull_request` TRIGGER:
+#   This workflow performs `clasp push --force` against the live production
+#   GAS project. Deploying on `pull_request` would push unreviewed, unmerged
+#   code straight to production — opening a PR would *be* the deploy, which
+#   defeats the review gate entirely (NIST SP 800-53 CM-3, CM-5; AGENTS.md
+#   §14.2 "no merging/deploying own work without human approval").
+#
+#   Pull requests are verified by `.github/workflows/verify.yml`, which runs
+#   the test suite with NO credentials and therefore cannot deploy. Code
+#   reaches production only after a human merges to `main`.
+#
+#   Do not add `pull_request` here. `verify.yml` has a guard step that fails
+#   the build if it reappears.
+
 name: Deploy to Google Apps Script
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
   push:
     branches:
       - main
   workflow_dispatch:
+
+# Least privilege: this job only needs to read the repo to push it to GAS.
+permissions:
+  contents: read
+
+# `clasp push --force` overwrites the target project. Serialize deploys so two
+# runs can never interleave and leave production in a mixed state.
+concurrency:
+  group: deploy-gas-production
+  cancel-in-progress: false
 
 jobs:
   deploy-to-gas:
@@ -20,10 +44,20 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
+          # NOTE: PROJECT_PLAN.md documents "Node.js 20+" while this pins 24.
+          # Left as-is here to avoid changing deploy-path behavior in a
+          # security fix; reconciliation is tracked as its own issue.
           node-version: '24'
 
       - name: Install Clasp
-        run: npm install -g @google/clasp
+        # Pinned exactly. An unpinned `npm install -g @google/clasp` resolves to
+        # whatever is latest at run time, putting an uncontrolled third-party
+        # version on the production deploy path (SR-3; AGENTS.md §5.2, §7.1).
+        # clasp 2.x and 3.x also differ in ~/.clasprc.json handling, so an
+        # unattended major bump could break auth. 3.4.1 is what an unpinned
+        # install resolved to at the time of this change, so pinning it is
+        # behavior-preserving.
+        run: npm install -g @google/clasp@3.4.1
 
       - name: Configure Clasp Authentication
         env:

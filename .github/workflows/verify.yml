@@ -1,0 +1,89 @@
+# Pull-request verification gate.
+#
+# This workflow replaces the deploy-on-pull_request behavior that was removed
+# from deploy-gas.yml. It runs the local test suites and safety guards and
+# DELIBERATELY USES NO CREDENTIALS — it has no access to CLASPRC_JSON and
+# therefore cannot deploy to any Google Apps Script project, including from
+# fork PRs.
+#
+# Controls: SA-11 (developer testing), CM-3 (change control), AC-6 (least
+# privilege). AGENTS.md §14.3 (verification transcript), §15.3 (one-command
+# verify), §12.3 (regression tests for fixed bugs).
+
+name: Verify
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+# Read-only. No credentials are referenced anywhere in this workflow.
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Tests and Safety Guards
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          # Pinned to the documented floor in PROJECT_PLAN.md ("Node.js 20+").
+          node-version: '20'
+
+      - name: Budget engine unit tests
+        run: node lets_app/test_budget_engine.js
+
+      - name: FAS tracker environment isolation tests
+        run: node lets_app/test_fas_tracker_env.js
+
+      # --- Regression guards -------------------------------------------------
+      # These encode the fixes in this change so they cannot silently regress
+      # later (AGENTS.md §12.3).
+
+      - name: 'Guard: deploy workflow must not trigger on pull_request'
+        run: |
+          echo "Checking that deploy-gas.yml has no pull_request trigger..."
+          if grep -qE '^[[:space:]]*pull_request[[:space:]]*:' .github/workflows/deploy-gas.yml; then
+            echo "::error file=.github/workflows/deploy-gas.yml::deploy-gas.yml has a 'pull_request' trigger. That deploys unreviewed code to the production GAS project. Remove it; PRs are verified by verify.yml instead."
+            exit 1
+          fi
+          echo "PASS - deploy workflow does not run on pull_request."
+
+      - name: 'Guard: this workflow must stay credential-free'
+        run: |
+          echo "Checking that verify.yml interpolates no repository credentials..."
+          # Matches a real GitHub Actions credential interpolation, not prose.
+          # (This comment deliberately avoids writing the pattern literally,
+          # so the guard does not match its own source.)
+          if grep -qE '\$\{\{[[:space:]]*secrets\.' .github/workflows/verify.yml; then
+            echo "::error file=.github/workflows/verify.yml::verify.yml interpolates a repository secret. It executes untrusted pull_request code and must never hold deploy credentials."
+            exit 1
+          fi
+          echo "PASS - verify workflow interpolates no credentials."
+
+      - name: 'Guard: no hardcoded spreadsheet IDs in application source'
+        run: |
+          echo "Checking that no spreadsheet/script ID is hardcoded in lets_app/server..."
+          # Spreadsheet and script IDs are environment configuration and must be
+          # read from Script Properties, never embedded in source (AGENTS.md
+          # §4.1 "never hardcode connection strings"; §12.1 config-from-code).
+          #
+          # Deliberately a generic length pattern rather than a list of real
+          # IDs, so this guard does not itself disclose any identifier. Google
+          # Sheets IDs are 44 chars and Apps Script IDs are 57; the 40-char
+          # floor catches both. `-a` is required because one source file trips
+          # grep's binary heuristic on high-byte UTF-8 characters.
+          if grep -raEn "['\"]1[A-Za-z0-9_-]{39,}['\"]" lets_app/server/; then
+            echo "::error::A spreadsheet or script ID literal appears in lets_app/server/. Move it to a Script Property and read it via 00_config."
+            exit 1
+          fi
+          echo "PASS - no hardcoded spreadsheet or script IDs in application source."

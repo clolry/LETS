@@ -2,6 +2,21 @@
  * FASTrackerSync.js
  * Integration Service for the official FAS Travel Exception Tracker Google Sheet.
  * Fulfills EO 14222 and the FAS Delegation of Travel-Approving Official Authority.
+ *
+ * ENVIRONMENT SAFETY
+ * ------------------
+ * The official FAS Travel Exception Tracker is owned by the FAS front office,
+ * not by this project. submitToFASTracker() appends rows containing traveler
+ * PII and pre-decisional justifications to it. Appending test data is an
+ * uncorrectable write to another organization's system of record.
+ *
+ * Which spreadsheet this service may touch is therefore decided entirely by the
+ * environment gate in 00_config/TripConfig.js (FAS_TRACKER_TARGET). This module
+ * never reads FAS_TRACKER_SPREADSHEET_ID directly, so a non-production project
+ * cannot reach the official sheet even if that property is set.
+ *
+ * Controls: SC-7 (boundary protection), AU-3 (audit content), SI-17 (fail-safe),
+ * MP-4/SC-28 (data at rest). AGENTS.md §4.1, §12.1, §14.5.
  */
 
 var FASTrackerSync = (function() {
@@ -10,20 +25,81 @@ var FASTrackerSync = (function() {
   var DEFAULT_TRACKER_TAB_NAME = 'FAS Travel Exceptions';
 
   /**
-   * Helper to open the external FAS Tracker Spreadsheet
+   * Resolves the environment-gated FAS tracker target.
+   *
+   * Reads the single resolved target from config rather than a raw property, so
+   * the production/development decision is made in exactly one place.
+   *
+   * @returns {Object} FAS_TRACKER_TARGET-shaped object
+   */
+  function _getTarget() {
+    if (typeof FAS_TRACKER_TARGET !== 'undefined' && FAS_TRACKER_TARGET) {
+      return FAS_TRACKER_TARGET;
+    }
+    // Config did not load. Fail closed rather than guessing a target.
+    return {
+      environment: 'unknown',
+      spreadsheetId: null,
+      propertyKey: 'FAS_TRACKER_SPREADSHEET_ID',
+      isProduction: false,
+      configured: false,
+      reason: 'FAS_TRACKER_TARGET is unavailable — 00_config/TripConfig.js did not load.'
+    };
+  }
+
+  /**
+   * Returns the current environment label for logging and audit messages.
+   * @returns {string}
+   */
+  function getEnvironment() {
+    return _getTarget().environment;
+  }
+
+  /**
+   * Reports whether this project has a usable, environment-appropriate tracker.
+   * Callers should check this before offering FAS submission in the UI.
+   *
+   * @returns {{configured: boolean, environment: string, isProduction: boolean, reason: string|null}}
+   */
+  function getTrackerStatus() {
+    var target = _getTarget();
+    return {
+      configured: target.configured,
+      environment: target.environment,
+      isProduction: target.isProduction,
+      reason: target.reason
+    };
+  }
+
+  /**
+   * Helper to open the environment-appropriate FAS Tracker Spreadsheet.
+   *
+   * Returns null — never the official sheet — when the current environment has
+   * no configured target. There is deliberately no fallback path.
+   *
+   * @returns {Sheet|null}
    */
   function _getFASTrackerSheet() {
-    var ssId = FAS_TRACKER_SPREADSHEET_ID;
-    if (!ssId) {
-      console.warn('FASTrackerSync: FAS_TRACKER_SPREADSHEET_ID property is not configured.');
+    var target = _getTarget();
+
+    if (!target.configured) {
+      console.warn('FASTrackerSync: no FAS Tracker target for environment "' +
+        target.environment + '". ' + (target.reason || ''));
       return null;
     }
+
     try {
-      var ss = SpreadsheetApp.openById(ssId);
+      var ss = SpreadsheetApp.openById(target.spreadsheetId);
       var sheet = ss.getSheetByName(DEFAULT_TRACKER_TAB_NAME) || ss.getSheets()[0];
+      // Audit which environment and which property selected this target (AU-3).
+      // The spreadsheet name is logged; the ID is not, to avoid copying an
+      // identifier for a sheet this project does not own into the log stream.
+      console.log('FASTrackerSync: resolved target via ' + target.propertyKey +
+        ' [env=' + target.environment + '] -> "' + ss.getName() + '" / tab "' + sheet.getName() + '"');
       return sheet;
     } catch (err) {
-      console.error('FASTrackerSync: Failed to open FAS Tracker spreadsheet: ' + err.message);
+      console.error('FASTrackerSync: failed to open FAS Tracker spreadsheet from ' +
+        target.propertyKey + ' [env=' + target.environment + ']: ' + err.message);
       return null;
     }
   }
@@ -48,15 +124,22 @@ var FASTrackerSync = (function() {
    * Submits a new row to the FAS Travel Exception Tracker Google Sheet.
    * Called when a request has a Tier 1 Purpose of Travel and has passed internal budget check.
    *
+   * In a non-production environment this writes to the configured test copy, and
+   * the returned message states which environment was used so the audit trail
+   * records where the row actually went.
+   *
    * @param {Object} request - The LETS request object
-   * @returns {Object} { success: boolean, fasRowId: number, message: string }
+   * @returns {Object} { success: boolean, fasRowId: number, environment: string, message: string }
    */
   function submitToFASTracker(request) {
+    var target = _getTarget();
     var sheet = _getFASTrackerSheet();
     if (!sheet) {
       return {
         success: false,
-        message: 'FAS Travel Tracker sheet is unavailable or not configured. Saved in LETS pending manual sync.'
+        environment: target.environment,
+        message: 'FAS Travel Tracker is unavailable for environment "' + target.environment +
+          '". Saved in LETS pending manual sync. ' + (target.reason || '')
       };
     }
 
@@ -82,18 +165,24 @@ var FASTrackerSync = (function() {
       sheet.appendRow(rowData);
       var lastRow = sheet.getLastRow();
 
-      console.log('FASTrackerSync: Appended Request ' + request.requestId + ' to FAS Tracker at row ' + lastRow);
+      console.log('FASTrackerSync: appended Request ' + request.requestId +
+        ' to FAS Tracker row ' + lastRow + ' [env=' + target.environment + ']');
 
       return {
         success: true,
         fasRowId: lastRow,
+        environment: target.environment,
         status: 'Pending FAS CoS Approval',
-        message: 'Successfully submitted to the FAS Travel Exception Tracker (Row ' + lastRow + ').'
+        message: target.isProduction
+          ? 'Successfully submitted to the FAS Travel Exception Tracker (Row ' + lastRow + ').'
+          : 'Submitted to the TEST FAS Travel Exception Tracker copy (Row ' + lastRow +
+            '). This did NOT reach the official FAS tracker — environment is "' + target.environment + '".'
       };
     } catch (err) {
-      console.error('FASTrackerSync.submitToFASTracker error: ' + err.message);
+      console.error('FASTrackerSync.submitToFASTracker error [env=' + target.environment + ']: ' + err.message);
       return {
         success: false,
+        environment: target.environment,
         message: 'Error submitting to FAS Tracker: ' + err.message
       };
     }
@@ -120,7 +209,8 @@ var FASTrackerSync = (function() {
       }
       return true;
     } catch (err) {
-      console.error('FASTrackerSync.updateFASTrackerRow error: ' + err.message);
+      console.error('FASTrackerSync.updateFASTrackerRow error [env=' +
+        getEnvironment() + ']: ' + err.message);
       return false;
     }
   }
@@ -162,11 +252,14 @@ var FASTrackerSync = (function() {
       }
     }
 
-    console.log('FASTrackerSync: Found ' + changes.length + ' decided requests in FAS Tracker.');
+    console.log('FASTrackerSync: found ' + changes.length +
+      ' decided requests in FAS Tracker [env=' + getEnvironment() + '].');
     return { syncedCount: changes.length, changes: changes };
   }
 
   return {
+    getEnvironment: getEnvironment,
+    getTrackerStatus: getTrackerStatus,
     isFASTrackerRequired: isFASTrackerRequired,
     submitToFASTracker: submitToFASTracker,
     updateFASTrackerRow: updateFASTrackerRow,
