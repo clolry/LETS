@@ -1,0 +1,91 @@
+#!/bin/sh
+#
+# pre-push hook: refuse direct pushes to main.
+#
+# WHY THIS EXISTS
+#   Pushing to main triggers .github/workflows/deploy-gas.yml, which runs
+#   `clasp push --force` against the PRODUCTION Apps Script project. A direct
+#   push therefore deploys to production with no review and no passing checks.
+#
+#   The proper control is GitHub branch protection. That is unavailable on this
+#   repository today: it is private under a personal free account, and branch
+#   protection on private repos requires a paid plan. Tracked in issue #1.
+#
+# WHAT THIS IS NOT
+#   This is NOT branch protection and must not be represented as one:
+#     - it is client-side, so it protects only the clone it is installed in
+#     - it is bypassed by `git push --no-verify`
+#     - it does nothing for other collaborators unless they install it too
+#     - it is not committed to the repository (.git/hooks is not versioned),
+#       so it does not survive a fresh clone
+#
+#   It is a guardrail against muscle memory, not an enforced control. The real
+#   fix is moving this repository into a GSA GitHub organization (issue #1).
+#
+# INSTALL (per clone)
+#   sh .githooks/install.sh
+#
+# Controls: CM-3 (change control), CM-5 (access restrictions for change).
+# AGENTS.md §14.2 (no deploying own work without approval).
+
+set -e
+
+PROTECTED_BRANCH='main'
+remote_name="$1"
+
+# stdin gives one line per ref being pushed:
+#   <local_ref> <local_sha> <remote_ref> <remote_sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+    # Skip blank lines defensively.
+    [ -z "$remote_ref" ] && continue
+
+    case "$remote_ref" in
+        "refs/heads/$PROTECTED_BRANCH")
+            ;;
+        *)
+            continue
+            ;;
+    esac
+
+    # A deletion push has an all-zero local sha.
+    case "$local_sha" in
+        *[!0]*)
+            action='update'
+            ;;
+        *)
+            action='DELETE'
+            ;;
+    esac
+
+    cat >&2 <<EOF
+
+  ------------------------------------------------------------------------
+  BLOCKED: direct push to '$PROTECTED_BRANCH' ($action) on remote '$remote_name'
+
+  Pushing to '$PROTECTED_BRANCH' deploys to the PRODUCTION Google Apps
+  Script project via .github/workflows/deploy-gas.yml. Production changes
+  must go through a reviewed pull request.
+
+  Instead:
+
+      git switch -c your-branch-name
+      git push -u origin your-branch-name
+      gh pr create --base $PROTECTED_BRANCH
+
+  If you genuinely need to bypass this (for example, restoring a broken
+  '$PROTECTED_BRANCH'), you can override it:
+
+      git push --no-verify ...
+
+  Bypassing is a deliberate, auditable act. Say why in the PR or the
+  incident record that follows.
+
+  This hook is a local convenience, not enforced branch protection.
+  See issue #1 for the real fix.
+  ------------------------------------------------------------------------
+
+EOF
+    exit 1
+done
+
+exit 0

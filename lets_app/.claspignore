@@ -1,5 +1,7 @@
 test_budget_engine.js
+test_fas_tracker_env.js
 preview.html
 node_modules/**
 .git/**
 *.log
+.clasp.sandbox.json
