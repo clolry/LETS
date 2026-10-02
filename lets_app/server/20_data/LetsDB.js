@@ -1,6 +1,28 @@
 /**
  * LETS - Logistics, Events, and Travel System
  * Google Sheets Database Layer & Persistence Service
+ *
+ * DUAL-ENVIRONMENT LOADING
+ * ------------------------
+ * Under Node (tests) this resolves config via require(). Under Apps Script
+ * there are no modules: every file is a classic script sharing one global
+ * scope, so config is read as a bare identifier.
+ *
+ * `LETS_CONFIG` is declared `const` in 00_config/BudgetConfig.js. Top-level
+ * `const`/`let` bind into the global *lexical* record and are deliberately
+ * NOT properties of the global object, so `root.LETS_CONFIG` is `undefined`
+ * while bare `LETS_CONFIG` resolves correctly. Reading it off `root` silently
+ * passed `undefined` into the factory and threw on first property access at
+ * file-load time, taking down every execution including doGet.
+ *
+ * Assigning `root.LetsDB` is still correct — assignment creates a real global
+ * property, which later files read as a bare identifier.
+ *
+ * Depends on 00_config/ loading first (alphabetical clasp push order). If that
+ * order ever breaks, bare `LETS_CONFIG` throws a ReferenceError naming the
+ * missing binding rather than failing silently (AGENTS.md §14.5).
+ *
+ * Regression coverage: lets_app/test_gas_module_load.js
  */
 
 (function (root, factory) {
@@ -8,7 +30,7 @@
     const config = require('../00_config/BudgetConfig.js');
     module.exports = factory(config);
   } else {
-    root.LetsDB = factory(root.LETS_CONFIG);
+    root.LetsDB = factory(LETS_CONFIG);
   }
 })(typeof self !== 'undefined' ? self : this, function (CONFIG) {
   'use strict';

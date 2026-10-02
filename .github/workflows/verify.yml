@@ -45,6 +45,15 @@ jobs:
       - name: FAS tracker environment isolation tests
         run: node lets_app/test_fas_tracker_env.js
 
+      # Loads the server tree the way Apps Script does — one shared global
+      # scope, no module system — and asserts the LETS modules are usable
+      # afterward. The other two suites reach the modules through require(),
+      # which takes a UMD branch that does not exist in Apps Script; both
+      # passed while the Apps Script branch was throwing at file load. This
+      # suite closes that blind spot and must run on every PR.
+      - name: Apps Script module load tests
+        run: node lets_app/test_gas_module_load.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -87,3 +96,23 @@ jobs:
             exit 1
           fi
           echo "PASS - no hardcoded spreadsheet or script IDs in application source."
+
+      - name: 'Guard: every test file is excluded from clasp push'
+        run: |
+          echo "Checking that each lets_app/test_*.js is listed in .claspignore..."
+          # clasp pushes .js files into one shared global scope where all
+          # top-level code executes on every run. A test file that reached the
+          # Apps Script project would call require('assert') at load time,
+          # throw, and abort every execution including doGet — the same class
+          # of outage this PR fixes (AGENTS.md §14.4 wiring, §12.3 regression).
+          missing=0
+          for testfile in lets_app/test_*.js; do
+            [ -e "$testfile" ] || continue
+            base=$(basename "$testfile")
+            if ! grep -qxF "$base" lets_app/.claspignore; then
+              echo "::error file=lets_app/.claspignore::$base is not listed in lets_app/.claspignore. Add it so clasp never pushes it to the Apps Script project."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "PASS - all test files are excluded from clasp push."
