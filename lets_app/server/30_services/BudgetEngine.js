@@ -1,6 +1,20 @@
 /**
  * LETS - Logistics, Events, and Travel System
  * Core Financial Management & Budget Calculation Engine
+ *
+ * DUAL-ENVIRONMENT LOADING
+ * ------------------------
+ * Under Apps Script, config is read as a bare identifier rather than off the
+ * global object: `LETS_CONFIG` is a top-level `const` in BudgetConfig.js, and
+ * top-level `const`/`let` are not properties of the global object. See the
+ * header of 20_data/LetsDB.js for the full explanation.
+ *
+ * This file was the most dangerous instance of the bug. It has no top-level
+ * property access, so it LOADED cleanly with CONFIG === undefined and only
+ * threw when a budget figure was actually requested — meaning the budget
+ * gatekeeper and both dashboards would fail at call time, not at deploy time.
+ *
+ * Regression coverage: lets_app/test_gas_module_load.js
  */
 
 (function (root, factory) {
@@ -8,7 +22,7 @@
     const config = require('../00_config/BudgetConfig.js');
     module.exports = factory(config);
   } else {
-    root.BudgetEngine = factory(root.LETS_CONFIG);
+    root.BudgetEngine = factory(LETS_CONFIG);
   }
 })(typeof self !== 'undefined' ? self : this, function (CONFIG) {
   'use strict';

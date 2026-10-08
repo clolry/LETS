@@ -1,6 +1,20 @@
 /**
  * LETS - Logistics, Events, and Travel System
  * Request & Workflow Domain Service
+ *
+ * DUAL-ENVIRONMENT LOADING
+ * ------------------------
+ * Under Apps Script, dependencies are read as bare identifiers. See the header
+ * of 20_data/LetsDB.js for why `root.LETS_CONFIG` was undefined.
+ *
+ * `root.BudgetEngine` and `root.LetsDB` did resolve correctly here, because
+ * those are created by assignment and assignment does create a real global
+ * property. They are still read as bare identifiers for consistency and to
+ * fail loudly: if a dependency failed to load, a bare reference throws a
+ * ReferenceError naming it, whereas `root.X` passes `undefined` into the
+ * factory and defers the failure to some later call (AGENTS.md §14.5).
+ *
+ * Regression coverage: lets_app/test_gas_module_load.js
  */
 
 (function (root, factory) {
@@ -10,7 +24,7 @@
     const letsDB = require('../20_data/LetsDB.js');
     module.exports = factory(config, budgetEngine, letsDB);
   } else {
-    root.RequestService = factory(root.LETS_CONFIG, root.BudgetEngine, root.LetsDB);
+    root.RequestService = factory(LETS_CONFIG, BudgetEngine, LetsDB);
   }
 })(typeof self !== 'undefined' ? self : this, function (CONFIG, BudgetEngine, LetsDB) {
   'use strict';

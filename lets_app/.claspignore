@@ -1,5 +1,13 @@
+# Test suites must never reach the Apps Script project. clasp pushes .js files
+# into one shared global scope where ALL top-level code runs on every
+# execution — a pushed test file's `require('assert')` would throw and take
+# down doGet. Entries are listed explicitly rather than by glob because the
+# glob behavior cannot be verified without clasp; a CI guard in
+# .github/workflows/verify.yml fails the build if a test_*.js file is missing
+# from this list.
 test_budget_engine.js
 test_fas_tracker_env.js
+test_gas_module_load.js
 preview.html
 node_modules/**
 .git/**
