@@ -3,7 +3,35 @@
  * Server Configuration: Budget, DAC Allocations, Set-Asides, and Org Approvers
  */
 
-const LETS_CONFIG = {
+// MUST BE `var`, NOT `const`/`let`.
+//
+// Three files read this as a property of the global object:
+//   20_data/LetsDB.js:11          root.LETS_CONFIG
+//   30_services/BudgetEngine.js:11 root.LETS_CONFIG
+//   40_domain/RequestService.js:13 root.LETS_CONFIG
+//
+// In the Apps Script V8 runtime a top-level `const`/`let`/`class` creates a
+// LEXICAL binding that is NOT a property of the global object, while `var`
+// creates both. Declared `const`, `LETS_CONFIG` is visible to code that
+// references the bare identifier but `root.LETS_CONFIG` is `undefined`.
+//
+// That is not a latent problem confined to the budget layer. Those three files
+// read it inside an IIFE that runs at FILE EVALUATION time, and Apps Script
+// evaluates every file on every execution. So the `const` form threw
+// "TypeError: Cannot read properties of undefined (reading 'sheets')" from
+// LetsDB.js:20 before any user code ran, taking down the entire web app —
+// including the travel workflow, which does not use this object at all.
+//
+// `docs/SYSTEM_COMPONENT_MAP.md` §2.6 establishes that nothing CALLS these
+// four modules. True, and it is why this went unnoticed: unreachable code
+// still has its top-level IIFE evaluated, so it can still break the app at
+// load. Reachability and evaluation are different things.
+//
+// Do not "modernize" this to `const` (AGENTS.md §12.3 — encode the fix so it
+// cannot silently regress). verify.yml has a guard that fails the build if
+// this declaration changes, and test_budget_config_global.js asserts the
+// global-object property exists.
+var LETS_CONFIG = {
   appName: 'LETS - Logistics, Events, and Travel System',
   fiscalYear: 'FY27',
   
