@@ -4,7 +4,7 @@ description: "Every file and module in the system, what it does, who owns it, an
 status: canonical
 tier: 1
 audience: "project manager, system owner, developer scoping a change"
-last_updated: "2026-10-28"
+last_updated: "2026-10-29"
 evidence_base: "docs/evidence/pass6_component_map.js"
 ---
 
@@ -612,7 +612,9 @@ Three Node test suites exist and **all three pass** `[VERIFIED]`:
 2. **Failures are swallowed.** Each HC call in the site gate is wrapped in `try/catch` that warns and continues `[VERIFIED]` `Access.js:423, 434`. Failing closed is right; failing *silently and totally* is the hazard.
 3. **`getHCStaffingBundle` is itself unguarded** and returns the full personnel roster to any caller (**G-026**) `[VERIFIED]`.
 
-**VT-03** settles whether a library is attached and what values it emits.
+**And the data crossing this edge is trusted more than it is checked.** The gate tests two fields from each HC record, two lines apart, and they fail in opposite directions `[VERIFIED]` `Access.js:416-418`: `supervisoryStatus` is an **allowlist** (anything but `'2'` denies — so `'02'` or `' 2'` silently locks out a real supervisor), while `occupancyStatus` is a **denylist** (only `VACANT`/`OBLIGATED` deny — so a blank or unrecognised value **grants** access). That asymmetry is **G-074**.
+
+**VT-03** settles whether a library is attached and, critically, **the exact values it emits** — which is the input both the allowlist and the denylist need before either can be corrected.
 
 ### 2.7.3 One boundary is exemplary
 

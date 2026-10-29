@@ -682,7 +682,7 @@ Worth stating because it tells you which comments to trust:
 | The exact columns these rules read and write | [`DATA_DICTIONARY.md`](./DATA_DICTIONARY.md) |
 | The ranked findings with evidence | `GAP_REGISTER.md` (Deliverable 6) |
 | How to change a rule safely | `ENHANCEMENT_PLAYBOOK.md` (Deliverable 7) |
-| The verification tasks in order | `HUMAN_VERIFICATION_CHECKLIST.md` (Deliverable 10) |
+| The verification tasks in order | [`HUMAN_VERIFICATION_CHECKLIST.md`](./HUMAN_VERIFICATION_CHECKLIST.md) (Deliverable 10) |
 
 ### Reproducing this document's findings
 

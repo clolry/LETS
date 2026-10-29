@@ -4,7 +4,7 @@ description: "The Apps Script projects, the deployment pipeline, the configurati
 status: canonical
 tier: 1
 audience: "project manager, system owner, ISSO, developer deploying a change"
-last_updated: "2026-10-28"
+last_updated: "2026-10-29"
 evidence_base: "docs/evidence/pass6_deployment_census.js"
 ---
 
@@ -84,19 +84,21 @@ Both point `rootDir` at `lets_app/` and would each push **111 pushable files** `
 }
 ```
 
-**`rootDir: ""` resolves to the repository root, and `skipSubdirectories: false` means recurse.** A `clasp push` run from the repository root would carry **224 pushable files** into an undocumented Apps Script project `[VERIFIED]`:
+**`rootDir: ""` resolves to the repository root, and `skipSubdirectories: false` means recurse.** A `clasp push` run from the repository root would carry **228 pushable files** into an undocumented Apps Script project `[VERIFIED]`:
 
 | Files | Source tree |
 |---|---|
 | 111 | `lets_app/` — the real application |
 | **94** | **`reference_travel_app/`** — the GSA/AAS TRIP application snapshot |
-| 12 | `docs/` — this documentation effort |
+| 16 | `docs/` — this documentation effort's evidence scripts |
 | **4** | **`reference_training_tracker/`** — another referenced application |
 | 3 | Loose root files: `Code.gs`, `appsscript.json`, `.clasp.json` |
 
+> **The `docs/` row grows as this effort adds evidence scripts** — it was 12 when this section was first written and is 16 now, which is why the total moved from 224 to 228. **Ignore that row when judging the severity.** The figure that matters is the **209 application files** from the three app trees: those are the ones that collide in a shared global scope. A pushed `.js` evidence script would merely fail to do anything useful.
+
 **Why this matters more than "an extra project exists":**
 
-1. **It would push another organisation's application code** into a project nobody has documented. 98 of the 224 files are reference snapshots of systems LETS does not own.
+1. **It would push another organisation's application code** into a project nobody has documented. **98 files** are reference snapshots of systems LETS does not own.
 2. **All pushed `.js` files share one global scope** (`SYSTEM_COMPONENT_MAP.md` §2.1.1). Pushing `lets_app/` and `reference_travel_app/` together means **two full copies of the same ~459 function names in one namespace** — the later-loading definition silently wins. The result would not merely be untidy; it would be unpredictable.
 3. **It is untracked**, so it exists only on whichever machine created it. Nobody reviewing this repository would see it.
 4. **A single `clasp push` from the wrong directory is the whole accident.** No flag, no confirmation.
@@ -160,6 +162,35 @@ developer → pull request
 **Which it is, is `[UNKNOWN]`.** This is not a minor detail: it is the difference between continuous delivery and a pipeline whose output never ships. **VT-01 captures it** along with the execute-as setting, in the same two-minute visit to Deploy → Manage deployments.
 
 > **Do not describe this system as continuously deployed until VT-01 answers that.** It may be; the repository cannot say.
+
+#### Both deployment IDs are now known — and nothing reads them
+
+**Added 2026-10-29.** Two **repository variables** were created on the GitHub repository `clolry/LETS`:
+
+| Variable | Holds |
+|---|---|
+| `GAS_PRODUCTION_DEPLOYMENT_ID` | The production web-app deployment ID (72 characters, `AKfycb…`) |
+| `GAS_SANDBOX_DEPLOYMENT_ID` | The sandbox web-app deployment ID (72 characters, `AKfycb…`, **distinct from production**) |
+
+**Nothing in this repository consumes either one** `[VERIFIED]`. Measured by `pass6_deployment_census.js` §[3]:
+
+| Measure | Count |
+|---|---|
+| `${{ vars.* }}` interpolations across all workflows | **0** |
+| Workflow steps naming a `DEPLOYMENT_ID` | **0** |
+| Occurrences of `clasp deploy` anywhere | **0** |
+
+**So §5.2.1's diagram is unchanged.** The `???` step is still `???`. What changed is that **the target is now recorded** — previously the deployment ID existed only inside the Apps Script UI, which is why §5.8 listed the deployed URL as an unknown.
+
+**Three consequences, in the order they matter:**
+
+1. **The deployed URL is now derivable:** `https://script.google.com/macros/s/<production-id>/exec`. **VT-01's third sub-question is effectively answered** — though the URL is still not *in* the repository, so §5.8 item 3 remains literally true.
+2. **The sandbox has its own deployment**, not merely a push target. That makes it a **second live, reachable front door** onto whatever database it is configured against — **which sharpens VT-21 from a housekeeping question into an access-surface question.**
+3. **A `clasp deploy` step is now possible to write, and should not land alone.** Today `push ≠ deploy` is an *accidental* safety buffer: a merge replaces the code but may not publish it. **Adding a deploy step removes that buffer**, which is the right direction — a pipeline whose output never ships is worse — but it makes **G-021** (no branch protection, and whoever holds `CLASPRC_JSON` has standing production deploy authority) immediately load-bearing. **Sequence it after branch protection, not before.**
+
+> **One security note, and it is conditional on VT-01.** Repository *variables* are not secrets: anyone with repository access can read them and they are safe to print in logs. That is normally correct for a deployment ID, since it already appears in the URL every user visits. **But if VT-01 reports "Who has access: Anyone,"** then that URL is the only thing between the public and 412 browser-reachable functions, 51 of which write with no authorization check (**G-001**). In that case the ID is closer to a capability than to configuration, and a plaintext variable is the wrong home for it. **This makes VT-01 more urgent, not less.**
+
+**The CI guard did not cover this identifier shape, and now does.** See §5.3.3 — deployment IDs begin with `A`, so the hardcoded-ID guard's `1`-anchored pattern missed them entirely regardless of length.
 
 ### 5.2.2 The execute-as contradiction, measured
 
@@ -229,40 +260,74 @@ The eight, located `[VERIFIED]`:
 |---|---|---|
 | 1. Deploy must not trigger on `pull_request` | clean — passes | **CAUGHT** — bites correctly |
 | 2. `verify.yml` must interpolate no secrets | clean — passes | **CAUGHT** — bites correctly |
-| 3. No hardcoded spreadsheet/script IDs in `server/` | clean — passes | **see §5.3.3** |
+| 3. No hardcoded Google identifiers in `server/` | 2 tracked exceptions — passes | **CAUGHT** — all 5 identifier types, and 5 near-miss inputs stay quiet. **Widened 2026-10-29; see §5.3.3** |
 | 4. Every test file listed in `.claspignore` | 3 of 3 listed — passes | n/a (enumerates directly) |
 
 **Guard 2 has a nice detail worth noticing:** it greps its own file for a secret-interpolation pattern, so its explanatory comment **deliberately avoids writing the pattern literally** or it would match itself `[VERIFIED]`. Someone thought that through.
 
 **Guard 4's rationale is the most valuable thing in the file.** clasp pushes every `.js` into one global scope where all top-level code runs on **every** execution. A pushed test file would call `require('assert')` at load time, throw, and **abort every execution including `doGet`** — taking the whole application down. `.claspignore` lists files explicitly rather than by glob *because the glob behaviour could not be verified without clasp*, and CI enforces the list `[VERIFIED]`. That is correct paranoia about a real and obscure hazard.
 
-### 5.3.3 Guard 3 has a real coverage gap
+### 5.3.3 Guard 3 had a real coverage gap — now closed
 
-**This is a new finding from Pass 6, registered as G-072 (Low).**
+**This was a new finding from Pass 6, registered as G-072 (Low). The guard has since been widened; this section records both states, because the reasoning is more useful than the outcome.**
 
-The guard rejects any literal matching `'1[A-Za-z0-9_-]{39,}'` — a 40-character floor. Its comment explains the choice: *"Google Sheets IDs are 44 chars and Apps Script IDs are 57; the 40-char floor catches both."* `[VERIFIED]`
+#### What the gap was
 
-**It does catch both. But Google has four identifier types, not two:**
+The guard rejected any literal matching `'1[A-Za-z0-9_-]{39,}'` — a 40-character floor. Its comment explained the choice: *"Google Sheets IDs are 44 chars and Apps Script IDs are 57; the 40-char floor catches both."* `[VERIFIED]`
 
-| Identifier type | Length | Caught by the guard? |
-|---|---|---|
-| Apps Script project ID | 57 | **yes** |
-| Spreadsheet ID | 44 | **yes** |
-| **Drive folder ID** | **32** | **NO** |
-| **Drive file ID** | **33** | **NO** |
+**It did catch both. But Google has five identifier types, not two** — and the fifth only became visible when two deployment IDs were stored as repository variables on 2026-10-29:
 
-**And there are two uncaught hardcoded Drive IDs in the tree right now** `[VERIFIED]`:
+| Identifier type | Length | Starts with | Old guard | New guard |
+|---|---|---|---|---|
+| Apps Script project ID | 57 | `1` | **yes** | yes |
+| Spreadsheet ID | 44 | `1` | **yes** | yes |
+| **Drive folder ID** | **32** | `1` | **NO** | **yes** |
+| **Drive file ID** | **33** | `1` | **NO** | **yes** |
+| **Web-app deployment ID** | **72** | **`AKfycb`** | **NO** | **yes** |
+
+**And there were two uncaught hardcoded Drive IDs in the tree** `[VERIFIED]`:
 
 | Location | Literal |
 |---|---|
 | `server/91_setup/Database.js:28` | `DRIVE_FOLDER_ID: '1BVAqc5GM6L5LAE85kW94uGHLNwIAa3e'` — **finding G-065** |
 | `server/00_config/TripConfig.js:154` | `const TRIP_FAVICON_ID = '1y_J9fxewAJxvdGWGc1zU988Lyd3it7WB'` |
 
-**So the guard passes while the exact class of defect it exists to prevent is present in the code it scans.** Two asset identifiers are embedded in source where the guard's own stated principle — *"never hardcode connection strings; read from Script Properties"* — says they should not be.
+**So the guard passed while the exact class of defect it exists to prevent was present in the code it scans.**
 
-> **The fix is one character: lower the floor from `{39,}` to `{29,}`.** That catches all four identifier types. It would currently fail the build on the two literals above, which is the correct outcome — they are the finding.
->
-> **This is not a criticism of the guard's author.** The comment states the reasoning transparently, which is exactly why the gap is findable. A guard that silently used a magic number would have hidden it. **The lesson is that a guard should be tested against what it is supposed to reject, not only against a clean tree** — which is what `pass6_deployment_census.js` §[4] now does on every run.
+#### The deployment ID is the interesting case, because length was never the problem
+
+**A 72-character identifier sailed through a 40-character floor.** The pattern was anchored on a leading `1`, and deployment IDs begin with `A` — so **no lowering of the floor would ever have caught them.** Verified by execution `[VERIFIED]`: the old pattern tested against a quoted deployment ID returns no match.
+
+> **That is worth more than the fix.** The original guard's reasoning was *"what is the shortest identifier I need to catch?"* — a sound question that produced a correct floor and a blind spot, because the real question was *"what shapes do Google identifiers take?"* **A length-based test cannot answer a prefix-based question**, and nothing about the guard's output would ever have revealed that. It passed, cleanly, for as long as nobody pasted one in.
+
+#### What the guard does now
+
+Two patterns rather than one, and an explicit exception list `[VERIFIED]`:
+
+```
+['"]1[A-Za-z0-9_-]{29,}['"]        ← Sheets, Apps Script, Drive folder, Drive file
+['"]AKfycb[A-Za-z0-9_-]{20,}['"]   ← web-app deployment
+```
+
+**The floor moved from 39 to 29** to reach Drive IDs, and **the second pattern was added** because deployment IDs are a different shape, not a different length.
+
+**The two pre-existing literals are tracked exceptions, not suppressions.** Each is scoped to **file *and* symbol** rather than to the whole file, so a **new** identifier in either file still fails the build — verified by running the guard against exactly that case `[VERIFIED]`. The exception list names the finding each literal belongs to (`G-065`, `G-072`) and carries the instruction *"shrink this list, never grow it."*
+
+#### It was tested against what it must reject *and* what it must ignore
+
+Both directions, before adoption `[VERIFIED]` — a guard that fires on ordinary strings gets deleted by the next person who trips over it, which is a slower way of having no guard:
+
+| Must fire | Result | | Must stay quiet | Result |
+|---|---|---|---|---|
+| All five identifier types | **all 5 caught** | | A 28-character `1…` string | quiet |
+| A new ID in a tracked file | **caught** | | An unquoted ID in a comment | quiet |
+| A new ID in any other file | **caught** | | A long English sentence | quiet |
+| | | | A base64 blob | quiet |
+| | | | A semver string (`1.0.0-rc.1+build…`) | quiet |
+
+**This is not a criticism of the guard's author.** The comment stated the reasoning transparently, which is precisely why the gap was findable at all. A guard using a bare magic number would have hidden it. **The lesson stands and has now been applied twice: test a guard against what it should reject, not only against a clean tree** — which is what `pass6_deployment_census.js` §[4] does on every run.
+
+> **And the script that checks the guard had the same defect the guard did.** It held its own *copy* of the pattern, so when the guard was widened it would have gone on reporting the old coverage and the old gap — confidently, and wrongly. **It now reads the pattern out of `verify.yml` on every run** and reports a problem if the extraction fails, rather than falling back to a hardcoded default. A fallback would have quietly restored the stale-copy defect, which is the thing being fixed.
 
 ### 5.3.4 One divergence the pipeline documents about itself
 
@@ -388,7 +453,7 @@ Measured against what anything reads `[VERIFIED]`:
 >
 > **The fix is to stop lower-casing** and write the `PROPS_KEYS` values. Four of seven keys would then work; the three that already work are unaffected because their canonical names happen to be lower-case already.
 
-**And `drive_folder_id`'s default value is itself a finding** — a hardcoded Drive folder ID in source `Database.js:28` (**G-065**), which §5.3.3 showed the CI guard does not catch.
+**And `drive_folder_id`'s default value is itself a finding** — a hardcoded Drive folder ID in source `Database.js:28` (**G-065**), which §5.3.3 showed the CI guard did not catch. **The guard now covers that shape**, and this literal is carried as a named tracked exception rather than silently passing.
 
 ---
 
@@ -530,22 +595,22 @@ It matters only because an administrator familiar with other Apps Script tools w
 |---|---|---|---|
 | 1 | **The active deployment's "Execute as" and "Who has access"** | Gates the severity of all six Critical findings, and §5.2.2's contradiction | **VT-01** — 2 min |
 | 2 | **Whether a merge reaches users** | No `clasp deploy` step exists. The pipeline may or may not ship (§5.2.1) | **VT-01** — same visit |
-| 3 | **The deployed web-app URL** | Recorded nowhere in the repository | **VT-01** — same visit |
+| 3 | **The deployed web-app URL** | Recorded nowhere in the repository — but **now derivable** from the `GAS_PRODUCTION_DEPLOYMENT_ID` repository variable (§5.2.1) | **VT-01** — same visit, to confirm |
 | 4 | **Who holds project editor, sheet editor, and `CLASPRC_JSON`** | Three privileges above the app's own `admin` (§5.2.3) | **VT-02** — 15 min |
 | 5 | **Every Script Property value** | All configuration. Also the core of a recovery runbook (§5.7.3) | **VT-09** — 10 min |
-| 6 | **Whether an HC library is attached, and to which projects** | Declared in no manifest; its absence is silent (§5.7.2) | **VT-03** — 20 min |
-| 7 | **What the undocumented third project is** | 224 files would push into it, including another org's application (§5.1.3) | **VT-21** — 20 min |
-| 8 | **Whether the sandbox shares the production database** | If it does, sandbox testing writes live data (§5.6.2) | **VT-21** — same visit |
+| 6 | **Whether an HC library is attached, to which projects, and the exact values it emits** | Declared in no manifest; its absence is silent (§5.7.2). The emitted values decide whether the supervisor allow-path works at all (**G-074**) | **VT-03** — 20 min |
+| 7 | **What the undocumented third project is** | 228 files would push into it, including another org's application (§5.1.3) | **VT-21** — 20 min |
+| 8 | **Whether the sandbox shares the production database** | If it does, sandbox testing writes live data (§5.6.2). **Sharper now that the sandbox is known to have its own live deployment** (§5.2.1) — it is a second reachable front door, not just a push target | **VT-21** — same visit |
 | 9 | **Which triggers are installed, and under whose account** | A deprovisioned owner stops them silently (§5.5.2) | **VT-18** — 15 min, per editor |
 | 10 | **The actual OAuth consent scope list** | No `oauthScopes` declared; the grant is inferred | **VT-10** — 10 min |
 | 11 | **The live sender address, and whether a send-as alias exists** | Two initializers disagree (§5.4.4) | **VT-19** — 10 min |
 | 12 | **Whether the manifest in the live project matches this repository's** | `clasp push --force` overwrites it, but deployment settings survive | **VT-01** / **VT-21** |
 
-**Items 1, 2 and 3 are one two-minute task.** Items 7 and 8 are one twenty-minute task. **The whole table is under two hours**, and items 5 and 4 together produce most of a disaster-recovery runbook that does not currently exist.
+**Items 1, 2 and 3 are one two-minute task.** Items 7 and 8 are one twenty-minute task. **The whole table is 102 minutes** — eight distinct visits closing twelve unknowns — and items 5 and 4 together produce most of a disaster-recovery runbook that does not currently exist.
 
 ### 5.8.1 Two findings in this deliverable are new
 
-1. **G-072 — Guard 3's coverage gap** (§5.3.3). The hardcoded-ID guard uses a 40-character floor and **misses Drive folder and file IDs at 32–33 characters**. Two uncaught literals are in the tree now. **Rated Low**: the fix is one character, and the defect it misses is itself only a Low. But it is a false-assurance defect, which deserves more attention than its rating.
+1. **G-072 — Guard 3's coverage gap** (§5.3.3). The hardcoded-ID guard used a 40-character floor and **missed Drive folder and file IDs at 32–33 characters**, plus web-app deployment IDs, which are 72 characters but `A`-prefixed. **Rated Low**: the defect it misses is itself only a Low. But it was a false-assurance defect, which deserves more attention than its rating. **Remediated 2026-10-29** — two patterns, all five identifier types covered, five near-miss inputs verified quiet, and the checking script changed to read the pattern from `verify.yml` rather than hold a copy of it.
 2. **G-073 — two initializers writing conflicting defaults to one property** (§5.4.4). **Rated Low**, and the reason to care is diagnostic rather than operational: it makes "why is mail coming from the wrong address?" unanswerable from the code.
 
 **Both are now in `GAP_REGISTER.md` §6.5**, numbered after the existing findings so no ID moved.
@@ -590,7 +655,7 @@ A short operational summary, drawn from everything above.
 | Every rule the system enforces | [`WORKFLOW_AND_BUSINESS_RULES.md`](./WORKFLOW_AND_BUSINESS_RULES.md) |
 | The ranked findings with evidence | `GAP_REGISTER.md` (Deliverable 6) |
 | How to make a change safely | `ENHANCEMENT_PLAYBOOK.md` (Deliverable 7) |
-| The verification tasks in order | `HUMAN_VERIFICATION_CHECKLIST.md` (Deliverable 10) |
+| The verification tasks in order | [`HUMAN_VERIFICATION_CHECKLIST.md`](./HUMAN_VERIFICATION_CHECKLIST.md) (Deliverable 10) |
 
 ### Reproducing this document's figures
 

@@ -1050,7 +1050,7 @@ Every item here is a verification task. None is left vague.
 | What the statuses mean as a workflow | `WORKFLOW_AND_BUSINESS_RULES.md` (Deliverable 4) |
 | The ranked findings with evidence | `GAP_REGISTER.md` (Deliverable 6) |
 | How to change a schema safely | `ENHANCEMENT_PLAYBOOK.md` (Deliverable 7) — §3.9 is its starting point |
-| The verification tasks in order | `HUMAN_VERIFICATION_CHECKLIST.md` (Deliverable 10) |
+| The verification tasks in order | [`HUMAN_VERIFICATION_CHECKLIST.md`](./HUMAN_VERIFICATION_CHECKLIST.md) (Deliverable 10) |
 
 ### Reproducing this document's figures
 

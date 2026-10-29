@@ -4,7 +4,7 @@ description: "How to obtain, hold, and account for administrative and security c
 status: canonical
 tier: 1
 audience: "project manager, system owner, ISSO"
-last_updated: "2026-10-28"
+last_updated: "2026-10-29"
 evidence_base: "docs/GAP_CONSOLIDATION_PASS6.md and docs/evidence/*.js"
 ---
 
@@ -345,7 +345,9 @@ Whoever holds the `CLASPRC_JSON` GitHub secret can push code directly to product
 
 The third is in no project document. Its config has `"rootDir": ""` and `"skipSubdirectories": false`, meaning a `clasp push` run from the repository root would push **the entire repository** — including the TRIP reference snapshot — into it. Resolve via **VT-21**.
 
-A minor related note: `lets_app/.claspignore` does not exclude `.DS_Store`, and one exists inside `lets_app/` `[VERIFIED]`. Harmless, but it confirms the ignore list is maintained by hand.
+A minor related note: **`lets_app/.claspignore` does not exclude `.DS_Store`, and two now exist inside `lets_app/`** — at `lets_app/.DS_Store` and `lets_app/server/.DS_Store` `[VERIFIED]`. Both are untracked by git, so a reviewer looking at a pull request would not see them, **but `clasp push --force` would carry them into the production project.** They are macOS folder-metadata files, not code; the practical cost is clutter rather than risk.
+
+> **It is worth noting *why* this is listed at all.** When these documents were written there was one such file; a second appeared during the work. **An ignore list maintained by hand drifts in exactly this way** — silently, between reviews, in files nobody is watching because they are untracked. The one-line fix is to add `.DS_Store` (or `**/.DS_Store`) to that file. The CI guard in `verify.yml` checks that test files are listed; it does not check this.
 
 ---
 
@@ -676,11 +678,18 @@ Failing closed is the **right** default — an HR data outage should not grant a
 
 **3. The failure is indistinguishable from correct operation.** If the library is detached or broken, every HC-derived allow-path returns false. Every supervisor who relies on it is denied access. The application reports no error — it shows them the normal "you don't have access" card. **An administrator would see a wave of access complaints with no corresponding error anywhere in the system.**
 
-**And there is a subtler version of the same failure already possible.** The gate tests `String(p.supervisoryStatus) !== '2'` — a **string** comparison `[VERIFIED]` `Access.js:416`. If the library emits a number rather than text, the comparison never matches and **two of three allow-paths are already dead today**, with no symptom other than people who should have access not having it.
+**And there is a subtler version of the same failure, which an earlier draft of this guide described wrongly.** The gate reads `String(p.supervisoryStatus) !== '2'` `[VERIFIED]` `Access.js:416`.
 
-> **VT-03 — twenty minutes, and it answers both questions.**
+> **Correction, recorded rather than quietly fixed.** This section previously said that *if the library emits a number rather than text, two of three allow-paths are already dead.* **That is false, and `pass6_hc_gate_predicate.js` §[1] disproves it by execution:** the explicit `String()` coercion means a numeric `2` **passes**. The comparison is not the bare `===` the claim assumed. It was also wrong about the blast radius — the third allow-path (`_isBuLeadByTitle` `Access.js:864`) never tests `supervisoryStatus` at all, so even a genuine type mismatch would disable **one** path, not two.
+
+**The underlying worry was right; the trigger named was not.** Executed across input classes `[VERIFIED]`, the values that silently deny a real supervisor are **`'02'`, `' 2'`, `'2 '`, `'2.0'`, and `'two'`** — zero-padded, whitespace-bearing, and decimal-formatted text. The gate trims nothing and pads nothing. Those are exactly the shapes a spreadsheet export, a CSV round-trip, or a text-formatted column produces, so **the question is still worth twenty minutes — it just has to ask for the exact distinct values rather than the type.**
+
+**The adjacent field fails the other way.** `occupancyStatus` is read as a **denylist** — only `VACANT` and `OBLIGATED` are refused `[VERIFIED]` `Access.js:417-418` — so a blank, absent, or unrecognised occupancy value **grants** access. Two checks, two lines apart, failing in opposite directions. That is finding **G-074**, and VT-03 captures the data for it in the same visit.
+
+> **VT-03 — twenty minutes, and it answers three questions.**
 > 1. Apps Script editor → Libraries: is an HC library attached? To production *and* to the sandbox?
 > 2. If yes, run `_probeHcForUser('<any surname>')` `CacheWarming.js:1563` and read the Logs. It prints the distinct `supervisoryStatus` and `occupancyStatus` values the library actually emits.
+> 3. **Record those values verbatim — with any padding or whitespace intact.** `'2'` and `'02'` behave differently and look identical in a summary. A value of `2` is fine; a value of `'02'` means supervisors are being denied right now.
 >
 > Use `_probeHcForUser`, not `_probeHcDistinctValues` — the latter needs an argument the editor's Run button cannot supply.
 
@@ -777,12 +786,14 @@ That is accurate, it does not overstate the risk, it does not hide it, and it do
 | **2** | **VT-04** — check whether `bootstrapTravelAdmin` has ever been called by anyone unexpected | 30 min | **Must happen before G-002 is fixed** — remediation destroys the evidence |
 | **3** | **VT-02** — enumerate privileges 1–3 | 15 min | You do not know who controls this system until this is done (§1.5.2) |
 | **4** | **VT-05 + VT-11** — export the role tables; run the routing check | 15 min | Establishes who holds access today, and creates the first historical record (§1.8.2) |
-| **5** | **VT-03** — the HC library | 20 min | Two of three access paths depend on it and it may already be half-broken (§1.7.2) |
+| **5** | **VT-03** — the HC library, and the exact values it emits | 20 min | Two of three access paths depend on it, and whether either works turns on values nobody has recorded (§1.7.2) |
 | **6** | **VT-07 + VT-06 + VT-08** — the live tab list and the core header rows | 20 min | Settles six findings and is the only test for silent ongoing data corruption (§1.6.5) |
 | **7** | Answer **BD-1** and **BD-3** | A conversation | BD-3 unblocks **G-067**, the cheapest fix for the two worst findings |
 | **8** | Fix **G-022** — the false FAS-sync notice | A wording change | The system is currently making a compliance claim to users that is not true |
 
-**Everything above costs under two hours in total.** The full checklist is 29 tasks and under six hours — it is Deliverable 10, `HUMAN_VERIFICATION_CHECKLIST.md`.
+**The eight actions above sum to 102 minutes of work** — items 1–6 are measured tasks; items 7 and 8 are a conversation and a wording change. **The full checklist is 29 tasks and 7 h 1 m, of which 5 h 1 m needs the live system open** and the remaining two hours are a code review (VT-26) that can be done from the repository alone. It is Deliverable 10, [`HUMAN_VERIFICATION_CHECKLIST.md`](./HUMAN_VERIFICATION_CHECKLIST.md).
+
+> **This sentence previously read "under two hours" and "under six hours".** The first is true (102 min) and now states the figure rather than a bound. **The second was wrong** — it came from `GAP_CONSOLIDATION_PASS6.md` §6.7.2, where the total had been read off a table instead of summed. Corrected there and in every document that repeated it; `pass6_checklist_check.js` §[2] re-sums it on every run.
 
 ---
 
@@ -797,7 +808,7 @@ That is accurate, it does not overstate the risk, it does not hide it, and it do
 | Deployment, environments, and configuration | `DEPLOYMENT_AND_ENVIRONMENTS.md` (Deliverable 5) |
 | How to scope an enhancement without breaking something | `ENHANCEMENT_PLAYBOOK.md` (Deliverable 7) |
 | An honest current-state summary for leadership | `SYSTEM_STATE.md` (Deliverable 8) |
-| The verification tasks, in order, with locations | `HUMAN_VERIFICATION_CHECKLIST.md` (Deliverable 10) |
+| The verification tasks, in order, with locations | [`HUMAN_VERIFICATION_CHECKLIST.md`](./HUMAN_VERIFICATION_CHECKLIST.md) (Deliverable 10) |
 | The evidence behind every number in this guide | [`GAP_CONSOLIDATION_PASS6.md`](./GAP_CONSOLIDATION_PASS6.md) and `docs/evidence/` |
 
 ### Reproducing this guide's figures

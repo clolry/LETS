@@ -6,6 +6,8 @@
 
 **Reading guide.** §6.1 is the ID scheme and the cross-reference table — read it first, because it is the key to every other section. §6.2 is the merge decisions. §6.3 is the corrections, and it is the section a reviewer should be most skeptical of, because it says four published numbers were wrong. §6.4 states the severity rubric before §6.5 applies it, so the ranking can be argued with. §6.6 is remediation ownership. §6.7–6.9 consolidate the verification work and the decisions that only the business owner can make.
 
+> **Editorial note, added 2026-10-29.** This is a *working* document, not a deliverable, and it is the consolidation the nine deliverables were built from. **It has therefore been edited in place where it was found to be wrong** — leaving a known-bad figure here would propagate it into everything downstream. Three such edits exist: **§6.3.3** (the file inventory has drifted), **§6.7.2** (its effort total was wrong), and **§6.7.4** (one of its claims is withdrawn). The earlier *pass* documents, Passes 1–5, are left exactly as written and are corrected only by reference. The running tally of what has changed since Pass 6 closed is at the end of this file.
+
 ---
 
 ## 6.0 What Pass 6 found
@@ -266,6 +268,10 @@ The three non-existent targets are confirmed and unchanged: `apiGetInitialData`,
 Pass 1's own subtotals sum to 229 against its stated 230 — an internal arithmetic error independent of anything measured.
 
 **The important finding here is reassuring.** Counting the rows of Pass 1's own per-file tables gives 9 + 53 + 51 = **113**, and its status column gives **88 / 7 / 18** — all three matching the filesystem exactly. **Pass 1's evidence is sound; only its prose summaries are wrong.** The inventory does not need re-gathering. Four prose figures need correcting, and `SYSTEM_COMPONENT_MAP.md` should cite the tables, not the summary.
+
+> **The figures in this table are a snapshot, and the tree has since moved.** `pass6_manifest_recount.js` now measures **231 total / 114 in `lets_app/` / 88 byte-identical / 19 LETS-only**. The cause is not a code change: **two untracked `.DS_Store` files appeared inside `lets_app/`** during this effort, one of them in `server/`. They are macOS metadata, excluded from neither `.claspignore` nor git — so they are invisible in review and would still be pushed to production.
+>
+> **The script reports the drift rather than absorbing it, which is the behaviour to keep.** A validator that silently re-baselines teaches nothing; one that says *"measured 114, Pass 1 said 112"* on every run makes the drift the reader's decision. The 53-file server count in this table is `.js` files only and is unaffected.
 
 ### 6.3.4 Figures that were re-derived and held
 
@@ -549,7 +555,7 @@ Ordered by unblocking power, then by cost — §6.7.3 explains the ranking. This
 |---|---|---|---|---|---|
 | **VT-01** | **Record the active deployment's "Execute as" and "Who has access" settings**, and the deployed web-app URL | V-1, V-30 | G-001–G-006 severity basis; the whole §6.4.4 amplifier; `DEPLOYMENT_AND_ENVIRONMENTS.md` | Apps Script editor → Deploy → Manage deployments | 2 min |
 | **VT-02** | **Record who holds Apps Script project editor access, spreadsheet edit access, and the GitHub `CLASPRC_JSON` secret** | V-3, V-7, V-8, V-43 | G-009, G-021; `ADMINISTRATOR_GUIDE.md` §1.5 — these are privileges 1–3, all above the app's own `admin` role | Project share dialog; Drive share dialog; GitHub → Settings → Secrets | 15 min |
-| **VT-03** | **Confirm whether an HC library is attached**, to production and to sandbox — and if so run `_probeHcForUser('<surname>')` and record the distinct `supervisoryStatus` / `occupancyStatus` values | V-2, V-38 | G-008. The site gate compares `supervisoryStatus === '2'` as a **string**; if HC emits a number, two of three allow-paths are already dead | Editor → Libraries; then Run the probe → read Logs | 20 min |
+| **VT-03** | **Confirm whether an HC library is attached**, to production and to sandbox — and if so run `_probeHcForUser('<surname>')` and record the distinct `supervisoryStatus` / `occupancyStatus` values **verbatim, with padding intact** | V-2, V-38 | G-008, G-074. ~~The site gate compares `supervisoryStatus === '2'` as a **string**; if HC emits a number, two of three allow-paths are already dead~~ **— withdrawn, see §6.7.4.** The gate coerces with `String()`, so a numeric `2` passes; what fails is `'02'`, `' 2'`, `'2.0'` | Editor → Libraries; then Run the probe → read Logs | 20 min |
 | **VT-04** | **Determine whether `bootstrapTravelAdmin` has ever been called by anyone other than the project owner.** Search Cloud Logging for the function name; check `Travel_User_Roles` for rows with `Granted_By: 'bootstrap'` | V-41 | G-002 incident response. **Do this before remediating** — remediation destroys the evidence | GCP → Logs Explorer, filtered to the script project; plus the role tab | 30 min |
 | **VT-05** | **Export `Travel_Users` and `Travel_User_Roles` in full**, every row and column, including the raw `Is_Active` cell values | V-32 | G-007, G-009, G-032; `ADMINISTRATOR_GUIDE.md` §1.4. The only way to answer “who are the admins today” | Open the Sheet → export both tabs | 10 min |
 | **VT-06** | **Read row 1 of the tab named `Requests` verbatim** and record the exact header text and column count | V-10, V-13 | G-013 — decides which schema owns the tab, and therefore whether the two data layers have already collided. Also reveals whether G-044's three runtime columns are present | Open the Sheet, read row 1 | 2 min |
@@ -575,9 +581,13 @@ Ordered by unblocking power, then by cost — §6.7.3 explains the ranking. This
 | **VT-26** | **Targeted XSS review of `travelRequestTravelers.html` and `travelReviewController.html`** — every template-literal interpolation that renders a name, justification, or comment | V-35 | Pass 5 flagged this as the one security question its static pass could not close | Code review, two files | 2 h |
 | **VT-27** | **Record the exact `Is_Active` cell values** found in VT-05's export — blank, `'no'`, `0`, `FALSE`, typos | — (derived from V-32) | G-032 — only `false`/`'false'` read as inactive, so a manual revocation may silently not have revoked | From VT-05's export | 5 min |
 | **VT-28** | **Confirm the three Drive folder IDs resolve, and record their sharing settings** — including the hardcoded `1BVAqc5GM6L5LAE85kW94uGHLNwIAa3e` | — (from R-D1 / G-065) | G-065; the asset inventory in `SYSTEM_COMPONENT_MAP.md` | Drive | 10 min |
-| **VT-29** | **Re-run all eight evidence scripts and confirm they still reconcile** before the deliverables are published | — (Pass 6 addition) | Every counted claim in all ten deliverables. The scripts self-report divergence from the prose, so this is the cheapest regression check available | `cd docs/evidence && for f in *.js; do node $f; done` | 5 min |
+| **VT-29** | **Re-run all sixteen evidence scripts and confirm they still reconcile** before the deliverables are published | — (Pass 6 addition) | Every counted claim in all ten deliverables. The scripts self-report divergence from the prose, so this is the cheapest regression check available | `cd docs/evidence && for f in *.js; do node $f; done` | 5 min |
 
-Total estimated effort: **under six hours**, of which VT-26 (the XSS review) is two. Twenty of the 29 tasks take fifteen minutes or less, and eleven are a single look at a spreadsheet or a settings page.
+Total estimated effort: **7 h 1 m** — of which **VT-26 (the XSS review) is two hours of code review**, leaving **5 h 1 m of live-access work**. **23** of the 29 tasks take fifteen minutes or less, and **11** are a single look at a spreadsheet or a settings page.
+
+> **These two figures are corrected. This section originally said "under six hours" and "twenty of the 29", and both were repeated into four other documents.** Summing the per-task costs in the table above gives **421 minutes**, not under 360, and the ≤15-minute bucket holds 23 tasks, not 20. **"Under six hours" is defensible only of the live-access portion** — the honest phrasing is *"about five hours with the system open, plus a two-hour code review."*
+>
+> **Why it went wrong is worth more than the correction.** This is a figure derived from a table in the same document, written by reading the table rather than adding it up — the identical failure mode `SYSTEM_STATE.md` §8.3 describes, and the fifth withdrawn figure in this effort (§6.3). **`pass6_checklist_check.js` §[2] now re-sums the per-task costs on every run** and flags any document whose stated total the sum will not support, so this particular error cannot recur silently.
 
 ### 6.7.3 The five tasks that unblock the most (Pass 6 item 7)
 
@@ -588,10 +598,27 @@ Ranking criterion, stated so it can be argued with: **how many findings cannot b
 | **1** | **VT-01** — the "Execute as" setting | All 6 Criticals, plus the §6.4.4 amplifier across G-003, G-005, G-012, G-027, G-044 | **2 min** | The single highest-value item in the entire effort. Two minutes in a settings dialog determines whether every unguarded write executes with the caller's authority or with a privileged identity. No Critical finding can be finally rated until it is answered, and the codebase contradicts itself on the point in six places |
 | **2** | **VT-07** — the live tab list | G-016, G-040, G-041, G-043, G-055, G-057 — six findings | **5 min** | Settles whether Layer B's tabs were ever created. If they were not, §6.3.5's latency conclusion is confirmed and seventeen findings are formally inert. If they were, several Medium findings become live and must be re-rated upward |
 | **3** | **VT-05 + VT-11** — the role export and the routing check | G-007, G-009, G-010, G-029, G-031, G-032 | **15 min** | Together these answer "who actually holds authority in this system today" — the question `ADMINISTRATOR_GUIDE.md` exists to answer and which no file in the repository can. VT-11 is one function call that reports four distinct coverage gaps |
-| **4** | **VT-03** — the HC library and its emitted values | G-008, and by extension the site gate itself | **20 min** | If no HC library is attached, access silently denies for everyone outside the explicit role table. If one is attached but emits numbers where the gate compares strings, two of three allow-paths are already dead and nobody would know. Both outcomes change the access model as documented |
+| **4** | **VT-03** — the HC library and its emitted values | G-008, G-074, and by extension the site gate itself | **20 min** | If no HC library is attached, access silently denies for everyone outside the explicit role table. If one is attached, the exact values it emits decide whether the supervisor path works at all — `'2'` passes, `'02'` does not, and the two are indistinguishable in a summary. **The original reason given here — "if it emits numbers where the gate compares strings" — is withdrawn (§6.7.4); the gate coerces.** Both outcomes still change the access model as documented |
 | **5** | **VT-06 + VT-08** — row 1 of the seven core tabs | G-013, G-014, G-044 — including the live data-corruption risk | **12 min** | G-014's 8 positional write arrays are correct only while the column order holds. This is the only task that can detect silent, ongoing data corruption, and it is twelve minutes of reading header rows |
 
 **What is deliberately not in the top five.** VT-04 (has `bootstrapTravelAdmin` been exercised?) is the most urgent *incident-response* task and is not a top-five *unblocking* task — it changes what must be reported, not how anything is rated. It must still run **before** G-002 is remediated, because remediation destroys the evidence. That sequencing constraint is more important than its rank.
+
+### 6.7.4 One reason given in §6.7.2 is withdrawn — VT-03's stated mechanism
+
+**The task stands. The justification Pass 6 gave for it was wrong, and it was repeated into two other documents.**
+
+| | |
+|---|---|
+| **What §6.7.2 and §6.7.3 claimed** | *"The site gate compares `supervisoryStatus === '2'` as a **string**; if HC emits a number, two of three allow-paths are already dead."* |
+| **What the source says** | `if (String(p.supervisoryStatus) !== '2') continue;` `[VERIFIED]` `Access.js:416` |
+| **Why the claim fails** | The comparison is **not** a bare `===` against the raw field. The explicit `String()` coercion means `String(2) === '2'` — **a numeric `2` passes.** Proven by execution: `pass6_hc_gate_predicate.js` §[1] |
+| **Why it fails a second time** | *"Two of three allow-paths"* is also wrong. Path 3 (`_isBuLeadByTitle` `Access.js:864`) tests occupancy and office title but **never reads `supervisoryStatus`** `[VERIFIED]`. Even a genuine type mismatch would disable **one** path |
+
+**The concern was legitimate and the task is still worth its twenty minutes.** The values that *do* silently deny a real supervisor are **`'02'`, `' 2'`, `'2 '`, `'2.0'`, `'two'`** `[VERIFIED]` — zero-padded, whitespace-bearing, decimal-formatted. The gate neither trims nor normalises. Those are precisely the shapes produced by a spreadsheet export, a CSV round-trip, or a text-formatted column, so **VT-03 must ask for the exact distinct values with padding intact, not for the type.**
+
+**And running the predicate produced a finding nobody had.** The adjacent `occupancyStatus` check is a **denylist** — only `VACANT` and `OBLIGATED` are refused `[VERIFIED]` `Access.js:417-418` — so a blank, absent, or unrecognised occupancy value **grants** access. **Two checks, two lines apart, failing in opposite directions:** an allowlist that fails closed beside a denylist that fails open. That is **G-074**, appended to the register.
+
+> **The method point, which is the fifth instance of the rule in §8.2 of the working notes and the first in this direction.** Every earlier instance was a *measurement* producing a confident wrong answer that contradicted established prose. This one is the reverse — **the prose was wrong and the measurement was right** — and the two are indistinguishable until the predicate is actually executed. A claim about what a line of code does is not verified by having read the line. `pass6_hc_gate_predicate.js` §[4] now scans every document for the withdrawn wording on each run, so it cannot creep back.
 
 ---
 
@@ -661,8 +688,10 @@ Every script committed under `docs/evidence/` was run to completion. The three P
 | `pass4_request_service_edge_cases.js` | Runs clean |
 | `pass5_guard_census.js` | Runs clean — 459/412/47 unchanged |
 | **`pass6_write_surface_census.js`** | **New.** 51 / 72 / 94; 0 prose disagreements in the 28-function spot-check; 0 duplicate function names; fixpoint converges in 4 rounds |
-| **`pass6_manifest_recount.js`** | **New.** 230 total confirmed; 5 disagreements with Pass 1's prose; Pass 1's tables confirmed correct; 3 Pass 5 ownership labels corrected |
+| **`pass6_manifest_recount.js`** | **New.** 230 total confirmed *at the time of this run*; 5 disagreements with Pass 1's prose; Pass 1's tables confirmed correct; 3 Pass 5 ownership labels corrected. **Now reports 231 / 114** — see the note in §6.3.3 |
 | **`pass6_client_call_census.js`** | **New.** 64/61/3; 6 disagreements with Pass 2's prose, including the 11 misclassified functions |
+| **`pass6_hc_gate_predicate.js`** | **Added while writing Deliverable 10.** Executes the site gate's two HC field tests against every input class. **Disproved a claim this document made** (§6.7.4) and produced **G-074** |
+| **`pass6_checklist_check.js`** | **Added for Deliverable 10.** Validates the checklist as a dataset and **re-sums its effort arithmetic**, which is how §6.7.2's total was found to be wrong |
 
 Project test suites, re-run unchanged: `test_budget_engine.js` **PASS**, `test_fas_tracker_env.js` **PASS**, `test_gas_module_load.js` **PASS**.
 
@@ -675,4 +704,15 @@ cd ../../lets_app && for f in test_*.js; do echo "== $f"; node "$f"; done
 
 ---
 
-*End of Pass 6. The evidence base is complete: 68 canonical findings, 29 verification tasks, 6 business-owner decisions, eight reproducible scripts, and four corrected figures. Next: the ten deliverables, in strict order 1–9 with the verification checklist last, beginning with `ADMINISTRATOR_GUIDE.md`.*
+*End of Pass 6 as originally written. The evidence base was complete at that point: 68 canonical findings, 29 verification tasks, 6 business-owner decisions, eight reproducible scripts, and four corrected figures. Next: the ten deliverables, in strict order 1–9 with the verification checklist last, beginning with `ADMINISTRATOR_GUIDE.md`.*
+
+> **What has changed since, recorded here because the sections above have been edited in place rather than frozen.** This document is the consolidation the deliverables are built from, so leaving a known-wrong figure in it would propagate the error; the earlier *pass* documents (Passes 1–5) are left exactly as written and corrected only by reference.
+>
+> | | Then | Now |
+> |---|---|---|
+> | Canonical findings | 68 | **74** — `G-069`…`G-074`, appended, no ID moved |
+> | Reproducible scripts | 8 | **16** |
+> | Corrected figures | 4 | **5** — the fifth is this document's own effort total, §6.7.2 |
+> | Withdrawn *claims* | — | **1** — VT-03's stated mechanism, §6.7.4 |
+>
+> **Two of those six new findings came out of checking this document's own assertions** (G-074 and the §6.7.4 withdrawal), which is the argument for validators that re-derive rather than re-read.
