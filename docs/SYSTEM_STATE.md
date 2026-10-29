@@ -4,8 +4,8 @@ description: "An honest current-state summary of the Logistics, Events, and Trav
 status: canonical
 tier: 1
 audience: "system owner, Deputy Administrator, ISSO, incoming project manager"
-last_updated: "2026-10-28"
-evidence_base: "Deliverables 1-7 and the fourteen measurement scripts in docs/evidence/"
+last_updated: "2026-10-29"
+evidence_base: "Deliverables 1-7 and the sixteen measurement scripts in docs/evidence/"
 ---
 
 # LETS System State
@@ -271,13 +271,15 @@ No finding is tagged as blocked on it, because it does not block a specific defe
 | The "Execute as" and "Who has access" settings, **whether a merge reaches users**, and the web-app URL | **VT-01** | **2 min** |
 | Who holds project editor, spreadsheet editor, and the CI secret | VT-02 | 15 min |
 | Every configuration value (API key, mileage rates, folder IDs, sender address) | VT-09 | 10 min |
-| Whether the HR data library is attached, and what values it emits | VT-03 | 20 min |
+| Whether the HR data library is attached, and **the exact values it emits** — `'2'` and `'02'` behave oppositely and look identical in a summary | VT-03 | 20 min |
 | What the undocumented third Apps Script project is, and whether the sandbox shares the production database | VT-21 | 20 min |
 | Which scheduled jobs are installed, and under whose account | VT-18 | 15 min |
 | The actual Google permission scope users consent to | VT-10 | 10 min |
 | The live email sender address | VT-19 | 10 min |
 
-**The whole table is under two hours.** The full verification checklist is **29 tasks and under six hours** — Deliverable 10.
+**The whole table is 102 minutes.** The full verification checklist is **29 tasks and 7 h 1 m — of which 5 h 1 m needs the live system open**, the balance being a two-hour code review (VT-26) doable from the repository. That is Deliverable 10.
+
+> **"Under six hours" was wrong and this document repeated it.** The figure originated in `GAP_CONSOLIDATION_PASS6.md` §6.7.2 and was read off a table rather than summed; the per-task costs add to 421 minutes. Corrected at source and everywhere it was cited. **This is precisely the failure mode §8.3 describes** — a derived figure going stale in silence — which is why `pass6_checklist_check.js` §[2] now recomputes it on every run.
 
 ### 8.6.1 Two of these are also disaster-recovery artefacts
 
@@ -323,10 +325,10 @@ That is a correctable process, and this documentation set is the correction.
 | **Request auditing** | **Good.** A real append-only trail |
 | **Authorization auditing** | **Largely absent.** Historical state is unrecoverable |
 | **Deployment pipeline** | **Better than most**, with four self-documenting controls |
-| **Deployment state** | **Unrecorded.** Twelve unknowns, under two hours to close |
+| **Deployment state** | **Unrecorded.** Twelve unknowns, 102 minutes to close |
 | **Disaster recovery** | **No runbook.** Eight configuration categories outside git |
-| **Findings** | 73 — 6 Critical, 19 High, 32 Medium, 13 Low, 1 Informational, 2 Constructive |
-| **Of those, inherited** | **43 — including every Critical** |
+| **Findings** | 74 — 6 Critical, 19 High, 33 Medium, 13 Low, 1 Informational, 2 Constructive |
+| **Of those, inherited** | **44 — including every Critical** |
 | **Blocked on a decision** | 7 |
 | **Currently untriggerable** | 22 |
 | **Fixes that already exist, unused** | **2** |
@@ -344,7 +346,7 @@ That is a correctable process, and this documentation set is the correction.
 | Deployment, configuration, and recovery | [`DEPLOYMENT_AND_ENVIRONMENTS.md`](./DEPLOYMENT_AND_ENVIRONMENTS.md) |
 | **The findings, ranked, with ownership and blockers** | [`GAP_REGISTER.md`](./GAP_REGISTER.md) |
 | **How to fix them without breaking something** | [`ENHANCEMENT_PLAYBOOK.md`](./ENHANCEMENT_PLAYBOOK.md) |
-| The verification tasks, with locations and costs | `HUMAN_VERIFICATION_CHECKLIST.md` (Deliverable 10) |
+| The verification tasks, with locations and costs | [`HUMAN_VERIFICATION_CHECKLIST.md`](./HUMAN_VERIFICATION_CHECKLIST.md) (Deliverable 10) |
 | The index to all ten documents | `README.md` (Deliverable 9) |
 
 ### Verifying this summary
@@ -355,7 +357,9 @@ That is a correctable process, and this documentation set is the correction.
 cd docs/evidence && for f in *.js; do echo "== $f"; node "$f"; done
 ```
 
-Fourteen scripts, about fifteen seconds. Several of them deliberately report where their mechanical answer differs from a document's prose, so a stale claim surfaces rather than persisting quietly — **four citation errors and one wrong cross-document count were caught that way while these documents were being written.**
+Sixteen scripts, about fifteen seconds. Several of them deliberately report where their mechanical answer differs from a document's prose, so a stale claim surfaces rather than persisting quietly — **four citation errors, one wrong cross-document count, and this document's own effort total were caught that way while these documents were being written.**
+
+> **One of the sixteen was written to check a claim and disproved it.** `pass6_hc_gate_predicate.js` executes the site gate's HC field tests; it showed that a published assertion about them was wrong in two ways, and found **G-074** in the process. **A document that cites a script is only as good as whether the script ran** — which is why §8.6's VT-29 exists.
 
 ---
 

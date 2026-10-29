@@ -4,7 +4,7 @@ description: "How to change this system without breaking it — recipes, prohibi
 status: canonical
 tier: 1
 audience: "developer making a change, whether or not they have read the other nine documents"
-last_updated: "2026-10-28"
+last_updated: "2026-10-29"
 evidence_base: "docs/evidence/pass6_change_impact.js"
 ---
 
@@ -61,7 +61,7 @@ Merge to `main`. The pipeline runs `clasp push --force` and four regression guar
 
 **Do not push locally.** A local `clasp push` bypasses the review gate and all four guards.
 
-> **And never run `clasp push` from the repository root.** An untracked `.clasp.json` there has `rootDir: ""` and `skipSubdirectories: false`, so a push from that directory carries **224 files** into an undocumented Apps Script project — including 94 files from `reference_travel_app/`, which is another organisation's application (**G-048**) `[VERIFIED]`.
+> **And never run `clasp push` from the repository root.** An untracked `.clasp.json` there has `rootDir: ""` and `skipSubdirectories: false`, so a push from that directory carries **228 files** into an undocumented Apps Script project — including 94 files from `reference_travel_app/`, which is another organisation's application (**G-048**) `[VERIFIED]`.
 
 ### Rule 2 — `clasp push` is not `clasp deploy`
 
@@ -626,7 +626,7 @@ cd docs/evidence && for f in *.js; do echo "== $f"; node "$f"; done
 cd ../../lets_app && for f in test_*.js; do echo "== $f"; node "$f"; done
 ```
 
-**Fourteen evidence scripts, three test suites, about fifteen seconds.** Several scripts self-report where their mechanical answer differs from a document's prose, so a stale claim surfaces rather than persisting quietly.
+**Sixteen evidence scripts, three test suites, about fifteen seconds.** Several scripts self-report where their mechanical answer differs from a document's prose, so a stale claim surfaces rather than persisting quietly.
 
 ### 7.8.2 What green tests do and do not prove
 
@@ -712,7 +712,7 @@ Collecting one new piece of information is the most common enhancement, and it t
 | Deployment, configuration, and recovery | [`DEPLOYMENT_AND_ENVIRONMENTS.md`](./DEPLOYMENT_AND_ENVIRONMENTS.md) |
 | **The findings, ranked, with ownership and blockers** | [`GAP_REGISTER.md`](./GAP_REGISTER.md) — §6.10.2 has the sequencing constraints |
 | An honest current-state summary | `SYSTEM_STATE.md` (Deliverable 8) |
-| The verification tasks, with locations and costs | `HUMAN_VERIFICATION_CHECKLIST.md` (Deliverable 10) |
+| The verification tasks, with locations and costs | [`HUMAN_VERIFICATION_CHECKLIST.md`](./HUMAN_VERIFICATION_CHECKLIST.md) (Deliverable 10) |
 
 ### Computing the blast radius of your own change
 

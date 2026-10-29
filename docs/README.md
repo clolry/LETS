@@ -4,12 +4,12 @@ description: "Where to find the answer to your question about the Logistics, Eve
 status: canonical
 tier: 1
 audience: "anyone opening this folder for the first time"
-last_updated: "2026-10-28"
+last_updated: "2026-10-29"
 ---
 
 # LETS Documentation
 
-**Nine documents and fourteen measurement scripts describing the Logistics, Events, and Travel System as it actually is.**
+**Ten documents and sixteen measurement scripts describing the Logistics, Events, and Travel System as it actually is.**
 
 This file is an **index**, not a summary. For the current state of the system in one page, read [`SYSTEM_STATE.md`](./SYSTEM_STATE.md) §8.0.
 
@@ -83,24 +83,24 @@ This file is an **index**, not a summary. For the current state of the system in
 | Who owns the fix — us or the system we inherited? | `GAP_REGISTER.md` — the Owner column, derived mechanically |
 | What can we not fix without a decision? | **`GAP_REGISTER.md`** §6.8 — seven findings |
 | What is already fixed but switched off? | **`GAP_REGISTER.md`** §6.9 — two |
-| What do I need to go and check manually? | `HUMAN_VERIFICATION_CHECKLIST.md` *(Deliverable 10 — not yet written)* |
+| What do I need to go and check manually? | [`HUMAN_VERIFICATION_CHECKLIST.md`](./HUMAN_VERIFICATION_CHECKLIST.md) *(Deliverable 10)* |
 
 ---
 
-## The nine documents
+## The ten documents
 
 | # | Document | Answers | Lines |
 |---|---|---|---|
-| 1 | [`ADMINISTRATOR_GUIDE.md`](./ADMINISTRATOR_GUIDE.md) | How to obtain, hold, and account for control of the system | 816 |
-| 2 | [`SYSTEM_COMPONENT_MAP.md`](./SYSTEM_COMPONENT_MAP.md) | Every file and module, what it does, who owns it, how the parts connect | 692 |
-| 3 | [`DATA_DICTIONARY.md`](./DATA_DICTIONARY.md) | Every tab, every column, its meaning, sensitivity, and provenance | 1,068 |
-| 4 | [`WORKFLOW_AND_BUSINESS_RULES.md`](./WORKFLOW_AND_BUSINESS_RULES.md) | Every rule it enforces, every rule it only claims, every rule needing a decision | 702 |
-| 5 | [`DEPLOYMENT_AND_ENVIRONMENTS.md`](./DEPLOYMENT_AND_ENVIRONMENTS.md) | The projects, the pipeline, the configuration, and what a rebuild would lose | 608 |
-| 6 | [`GAP_REGISTER.md`](./GAP_REGISTER.md) | **73 findings**, severity-ranked with a stated rubric, with ownership and blockers | 635 |
-| 7 | [`ENHANCEMENT_PLAYBOOK.md`](./ENHANCEMENT_PLAYBOOK.md) | How to change it without breaking it — recipes, prohibitions, verification | 730 |
-| 8 | [`SYSTEM_STATE.md`](./SYSTEM_STATE.md) | **An honest current-state summary.** Start here | 362 |
+| 1 | [`ADMINISTRATOR_GUIDE.md`](./ADMINISTRATOR_GUIDE.md) | How to obtain, hold, and account for control of the system | 826 |
+| 2 | [`SYSTEM_COMPONENT_MAP.md`](./SYSTEM_COMPONENT_MAP.md) | Every file and module, what it does, who owns it, how the parts connect | 693 |
+| 3 | [`DATA_DICTIONARY.md`](./DATA_DICTIONARY.md) | Every tab, every column, its meaning, sensitivity, and provenance | 1,067 |
+| 4 | [`WORKFLOW_AND_BUSINESS_RULES.md`](./WORKFLOW_AND_BUSINESS_RULES.md) | Every rule it enforces, every rule it only claims, every rule needing a decision | 701 |
+| 5 | [`DEPLOYMENT_AND_ENVIRONMENTS.md`](./DEPLOYMENT_AND_ENVIRONMENTS.md) | The projects, the pipeline, the configuration, and what a rebuild would lose | 672 |
+| 6 | [`GAP_REGISTER.md`](./GAP_REGISTER.md) | **74 findings**, severity-ranked with a stated rubric, with ownership and blockers | 703 |
+| 7 | [`ENHANCEMENT_PLAYBOOK.md`](./ENHANCEMENT_PLAYBOOK.md) | How to change it without breaking it — recipes, prohibitions, verification | 729 |
+| 8 | [`SYSTEM_STATE.md`](./SYSTEM_STATE.md) | **An honest current-state summary.** Start here | 366 |
 | 9 | `README.md` | This index | — |
-| 10 | `HUMAN_VERIFICATION_CHECKLIST.md` | **29 tasks a human must do with live access.** *Not yet written* | — |
+| 10 | [`HUMAN_VERIFICATION_CHECKLIST.md`](./HUMAN_VERIFICATION_CHECKLIST.md) | **29 tasks a human must do with live access**, grouped by where the work happens | 363 |
 
 ---
 
@@ -113,7 +113,7 @@ This file is an **index**, not a summary. For the current state of the system in
 | 1 | [`SYSTEM_STATE.md`](./SYSTEM_STATE.md) | §8.0 is one page and ends with what to do this week |
 | 2 | [`ADMINISTRATOR_GUIDE.md`](./ADMINISTRATOR_GUIDE.md) | §1.5 tells you who actually controls the system; §1.6 is the operational detail |
 | 3 | [`GAP_REGISTER.md`](./GAP_REGISTER.md) | §6.8 — the seven findings **you** have to unblock, not engineering |
-| 4 | `HUMAN_VERIFICATION_CHECKLIST.md` | Under six hours of work that closes most of the unknowns |
+| 4 | [`HUMAN_VERIFICATION_CHECKLIST.md`](./HUMAN_VERIFICATION_CHECKLIST.md) | **5 h 1 m with the system open** (plus a 2 h code review) and it closes most of the unknowns |
 
 **The one thing to do first:** `ADMINISTRATOR_GUIDE.md` §1.3.4 — **VT-01**, two minutes, and it conditions the severity of every Critical finding.
 
@@ -133,7 +133,7 @@ This file is an **index**, not a summary. For the current state of the system in
 | Order | Document | Why |
 |---|---|---|
 | 1 | [`SYSTEM_STATE.md`](./SYSTEM_STATE.md) | §8.2 the security position; §8.7 the inheritance question, answered both ways |
-| 2 | [`GAP_REGISTER.md`](./GAP_REGISTER.md) | 73 findings with a stated rubric, mechanical ownership, and evidence pointers |
+| 2 | [`GAP_REGISTER.md`](./GAP_REGISTER.md) | 74 findings with a stated rubric, mechanical ownership, and evidence pointers |
 | 3 | [`DEPLOYMENT_AND_ENVIRONMENTS.md`](./DEPLOYMENT_AND_ENVIRONMENTS.md) | §5.8 — twelve things nobody has recorded, each with the task that closes it |
 | 4 | [`DATA_DICTIONARY.md`](./DATA_DICTIONARY.md) | Sensitivity classification on every column; §3.4 for the authorization tables |
 
@@ -151,11 +151,11 @@ Three ID series run through every document.
 
 | Series | Meaning | Where defined |
 |---|---|---|
-| **`G-001`…`G-073`** | **Findings.** Permanent; never reused or renumbered | [`GAP_REGISTER.md`](./GAP_REGISTER.md) §6.3 |
-| **`VT-01`…`VT-29`** | **Verification tasks** — things a human must check with live access | `HUMAN_VERIFICATION_CHECKLIST.md` |
+| **`G-001`…`G-074`** | **Findings.** Permanent; never reused or renumbered | [`GAP_REGISTER.md`](./GAP_REGISTER.md) §6.3 |
+| **`VT-01`…`VT-29`** | **Verification tasks** — things a human must check with live access | [`HUMAN_VERIFICATION_CHECKLIST.md`](./HUMAN_VERIFICATION_CHECKLIST.md) |
 | **`BD-1`…`BD-6`** | **Business decisions** — questions no amount of code reading can answer | [`WORKFLOW_AND_BUSINESS_RULES.md`](./WORKFLOW_AND_BUSINESS_RULES.md) §4.9 |
 
-> **`G-NNN` is not the current severity order.** The register carries a separate, mutable **`Rank`** column, and **rank is what reflects current severity**. IDs began in severity order and no longer are — one finding has been re-rated and five were added after the initial numbering. Renumbering would invalidate citations in nine documents, so the ID is frozen and the rank moves.
+> **`G-NNN` is not the current severity order.** The register carries a separate, mutable **`Rank`** column, and **rank is what reflects current severity**. IDs began in severity order and no longer are — one finding has been re-rated and six were added after the initial numbering. Renumbering would invalidate citations in nine other documents, so the ID is frozen and the rank moves.
 
 ### Confidence markers
 
@@ -180,7 +180,7 @@ Every factual claim in these documents carries one:
 cd docs/evidence && for f in *.js; do echo "== $f"; node "$f"; done
 ```
 
-**Fourteen scripts, about fifteen seconds, no credentials and no network.** They read the repository and print what they find.
+**Sixteen scripts, about fifteen seconds, no credentials and no network.** They read the repository and print what they find.
 
 | Script | Proves |
 |---|---|
@@ -194,6 +194,8 @@ cd docs/evidence && for f in *.js; do echo "== $f"; node "$f"; done
 | `pass6_manifest_recount.js` | The file inventory, and **every finding's ownership by byte-comparison** against the inherited application |
 | `pass6_change_impact.js` | Rename blast radius per function, the adoption surface for the two unused guards, and the recipe baselines |
 | `pass6_register_check.js` | **The register as a dataset** — ID continuity, block counts, bidirectional citation consistency |
+| `pass6_hc_gate_predicate.js` | The site gate's two HC field tests, **executed** — and **the withdrawn claim it disproved** (G-074) |
+| `pass6_checklist_check.js` | **Deliverable 10 as a dataset** — task continuity, and **its own effort arithmetic**, recomputed |
 | `pass4_budget_engine_baseline.js` | The real FY27 budget figures, by execution |
 | `pass4_budget_engine_edge_cases.js` | Four budget defects, by execution |
 | `pass4_request_service_edge_cases.js` | Three request-service defects, by execution |
@@ -209,9 +211,12 @@ That convention caught real errors while these documents were being written:
 |---|---|
 | **Four mis-numbered finding citations** | Each named a plausible *nearby* finding, which is why a human reviewer would have passed over them |
 | **One wrong cross-document count** | Two scripts counted the guard functions themselves as "guarded", reporting 33 where 31 is correct |
-| **Four published figures withdrawn** | See below |
+| **Five published figures withdrawn** | See below |
+| **One published *claim* withdrawn** | A claim about what a line of code does, which nobody had executed. `GAP_REGISTER.md` §6.6.1 |
 
 **And four times the naive measurement produced a confident wrong answer** — reporting a status vocabulary entry as a status, a verification workflow as a deploying one, 55 of 73 findings as dropped, and 42 coupled functions instead of 61. All four were caught because the result contradicted something already established. **The standing rule: when a measurement contradicts a document's central claim, suspect the measurement first.**
+
+**Once it went the other way, and that case is instructive.** Four documents stated that the site gate's `supervisoryStatus` test would break if the HR library emitted a *number*. Executing the predicate showed the opposite — the code coerces with `String()`, so a number passes; what fails is `'02'` and `' 2'`. **The prose was wrong and the measurement was right**, and the two are indistinguishable without running it. Reading a line of code is not the same as knowing what it does. Full account: `GAP_REGISTER.md` §6.6.1.
 
 ### Also runnable
 
@@ -235,16 +240,17 @@ Six files in this folder are the analysis passes that produced the deliverables.
 
 **Of these, only [`GAP_CONSOLIDATION_PASS6.md`](./GAP_CONSOLIDATION_PASS6.md) is worth reading on its own** — it records how 75 pass-level IDs were reconciled into the register, and §6.11 is the cross-reference appendix if you are following a citation from an older document.
 
-### Four figures that must not be cited again
+### Five figures that must not be cited again
 
-Found wrong during consolidation `[VERIFIED]`:
+Four were found wrong during consolidation; the fifth was found while writing Deliverable 10 `[VERIFIED]`:
 
 | Withdrawn | Use instead |
 |---|---|
 | *"64 unguarded write-capable functions"* | **51** (writes in its own body) or **72** (including transitive reach) — never 64, which is neither reading |
 | A four-way guard breakdown claiming **12** screen-invoked functions have no authorization check | **27.** The original read *"reads the caller's identity"* as *"checks the caller's identity"* |
-| An inventory of 112 application files, 87 byte-identical | **113** and **88**. The per-file tables were correct; only the prose summary was wrong |
+| An inventory of 112 application files, 87 byte-identical | **113** and **88** at the time of measurement. The per-file tables were correct; only the prose summary was wrong. **Two untracked `.DS_Store` files have since appeared, so the live count is 114** — `pass6_manifest_recount.js` reports the drift rather than absorbing it |
 | Four ownership labels attributing inherited defects to this project | Three are inherited; one is shared |
+| *"The verification checklist is under six hours"* | **7 h 1 m**, of which **5 h 1 m** needs live access and 2 h is a code review. The total had been read off a table instead of summed |
 
 ### Scaffolding, to be deleted
 
@@ -254,7 +260,7 @@ Found wrong during consolidation `[VERIFIED]`:
 
 **Twelve facts about the live deployment are not in version control** — which project is live, how it executes, who holds the privileged accounts, what every configuration value is. That is not a gap in the work; deployment state genuinely lives outside the repository.
 
-[`DEPLOYMENT_AND_ENVIRONMENTS.md`](./DEPLOYMENT_AND_ENVIRONMENTS.md) §5.8 lists all twelve with the task and cost that closes each. **The whole table is under two hours.**
+[`DEPLOYMENT_AND_ENVIRONMENTS.md`](./DEPLOYMENT_AND_ENVIRONMENTS.md) §5.8 lists all twelve with the task and cost that closes each. **The whole table is 102 minutes.**
 
 ---
 
@@ -262,7 +268,7 @@ Found wrong during consolidation `[VERIFIED]`:
 
 | | |
 |---|---|
-| **Method** | Six analysis passes over the source, then nine deliverables synthesised from them |
+| **Method** | Six analysis passes over the source, then ten deliverables synthesised from them |
 | **Evidence rule** | **If a number appears in a document, a script must produce it.** Adopted after hand-counted figures in the early passes proved wrong |
 | **Verification** | Every file and line citation was checked to resolve; every table checked for consistency; every finding ID checked in both directions against the register |
 | **Scope** | Static analysis of the repository, plus execution of logic copied verbatim from the source. **No Google service was contacted and no live system was read** |
