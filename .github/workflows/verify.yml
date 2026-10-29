@@ -70,6 +70,27 @@ jobs:
           fi
           echo "PASS - verify workflow interpolates no credentials."
 
+      - name: 'Guard: deploy job must stay behind an environment gate'
+        run: |
+          echo "Checking that the deploy job declares environment:..."
+          # The `environment:` key is what makes GitHub apply the required
+          # reviewer / prevent-self-review / deployment-branch rules BEFORE the
+          # job starts, and what scopes CLASPRC_JSON once it is moved to
+          # environment scope. Deleting this one line silently removes the
+          # human gate on production deploys while the workflow still looks
+          # correct and still goes green (CM-5; AGENTS.md §14.2).
+          if ! grep -qE '^[[:space:]]*environment:' .github/workflows/deploy-gas.yml; then
+            echo "::error file=.github/workflows/deploy-gas.yml::deploy-gas.yml has no 'environment:' key. The production deploy would run with no required-reviewer gate. Restore 'environment: \${{ needs.resolve.outputs.env_name }}' on the deploy job."
+            exit 1
+          fi
+          # The gate must be driven by the credential-free resolve job, not a
+          # literal, so the two deploy targets cannot be conflated.
+          if ! grep -qE 'environment:.*needs\.resolve\.outputs\.env_name' .github/workflows/deploy-gas.yml; then
+            echo "::error file=.github/workflows/deploy-gas.yml::'environment:' is present but is not derived from needs.resolve.outputs.env_name. A hardcoded environment name would let a sandbox push deploy under the production gate, or vice versa."
+            exit 1
+          fi
+          echo "PASS - deploy job is gated by the resolved environment."
+
       - name: 'Guard: no hardcoded spreadsheet IDs in application source'
         run: |
           echo "Checking that no spreadsheet/script ID is hardcoded in lets_app/server..."

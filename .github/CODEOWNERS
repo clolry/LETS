@@ -1,0 +1,49 @@
+# CODEOWNERS — LETS
+#
+# Purpose: automatically request review from the right people when
+# deployment-, configuration-, or environment-sensitive files change.
+#
+# NOTE: this is ADVISORY only. Branch protection sets
+# require_code_owner_reviews=false, so these owners are auto-REQUESTED as
+# reviewers but their approval is not hard-required. That is deliberate:
+# hard-requiring it would block an owner's own pull requests, and with only
+# two collaborators that would deadlock.
+#
+# Reviewers (PROJECT_PLAN.md "Team"):
+#   @clolry       — Chris Olry, Project Owner / Lead Developer
+#   @0zelKirkland — Ozel Kirkland, Secondary Developer
+#                   (note: leading character is the DIGIT ZERO, not the letter O)
+#
+# Listing both means either reviewer can satisfy the auto-request.
+# @0zelKirkland must hold at least "push" (write) access for the auto-request
+# to resolve.
+
+# Default owners for everything not matched below.
+*                                       @clolry @0zelKirkland
+
+# --- Deployment and environment configuration: extra scrutiny ---
+# Any change here can alter what is deployed, or where.
+/.github/workflows/                     @clolry @0zelKirkland
+/lets_app/.clasp.json                   @clolry @0zelKirkland
+/lets_app/.clasp.sandbox.json           @clolry @0zelKirkland
+/lets_app/.claspignore                  @clolry @0zelKirkland
+/.githooks/                             @clolry @0zelKirkland
+/scripts/                               @clolry @0zelKirkland
+
+# --- Apps Script manifest: OAuth scopes and advanced services ---
+# Changes here can force re-authorization for every user.
+/lets_app/appsscript.json               @clolry @0zelKirkland
+
+# --- The environment gate: the FAS tracker isolation guarantee ---
+# A mistake in either file can send test data to the official FAS Travel
+# Exception Tracker, which is owned by the FAS front office, not this project.
+/lets_app/server/00_config/             @clolry @0zelKirkland
+/lets_app/server/30_services/FASTrackerSync.js  @clolry @0zelKirkland
+
+# --- Access control ---
+/lets_app/server/30_services/Access.js  @clolry @0zelKirkland
+
+# --- Governance ---
+/PROJECT_PLAN.md                        @clolry @0zelKirkland
+/AGENTS.md                              @clolry @0zelKirkland
+/.github/CODEOWNERS                     @clolry @0zelKirkland
