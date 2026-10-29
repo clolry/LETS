@@ -374,6 +374,262 @@ function bootstrapTravelAdmin(email, name, userId) {
 }
 
 /**
+ * ONE-SHOT: seed the two initial LETS administrators.
+ * =========================================================================
+ * DELETE THIS FUNCTION, AND ITS HELPER _seedInitialAdminsPreflight(),
+ * ONCE IT HAS RUN SUCCESSFULLY. See "Removal" below.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * Admin rights in this system are DATA, not code: an administrator is a row
+ * in Travel_User_Roles with Role_Type 'admin', joined to Travel_Users by
+ * User_ID. There is no hardcoded admin list anywhere in the codebase, and
+ * there must not be one — every access decision routes through that table.
+ *
+ * The normal way to grant admin is the admin console (?mode=admin → Users),
+ * but that path calls requireTravelAdmin(), so it cannot create the FIRST
+ * admin. bootstrapTravelAdmin() exists for exactly that, but it takes its
+ * identity as arguments and the Apps Script editor's Run button cannot pass
+ * arguments — so an unparameterised run would silently fall through to its
+ * hardcoded default (a TRIP-era project owner) and seed the wrong person.
+ *
+ * This wrapper supplies the two real identities explicitly. It follows the
+ * same "editor convenience wrapper" pattern as _testAccessGate()
+ * (30_services/Access.js:443) and _diagnoseAccess() (:512).
+ *
+ * HOW TO RUN
+ * ----------
+ *   1. Apps Script editor → select `_seedInitialAdmins` in the function
+ *      dropdown → Run.
+ *   2. Authorise if prompted.
+ *   3. Read the execution log. Every seeded identity is printed with the
+ *      action taken ('created' or 'exists').
+ *   4. Confirm in the spreadsheet: two new rows in Travel_Users and two in
+ *      Travel_User_Roles with Role_Type 'admin' and Is_Active TRUE.
+ *   5. Sign in to the web app and open ?mode=admin.
+ *
+ * IDEMPOTENT. bootstrapTravelAdmin matches on User_ID OR lowercased email
+ * and reuses an existing row, so re-running this is safe and will report
+ * 'exists' rather than creating duplicates.
+ *
+ * WHY ext_* USER IDS
+ * ------------------
+ * Both administrators are outside the HC directory, so neither has an HC
+ * employee_id to use as User_ID. The `ext_` prefix is this schema's
+ * convention for non-HC people (see bootstrapTravelAdmin's header and
+ * _seedTestSubmitter's 'External' Source value).
+ *
+ * KNOWN LIMITATION — the audit trail will say 'bootstrap', not a person.
+ * bootstrapTravelAdmin hardcodes Granted_By: 'bootstrap' (:333), so these
+ * two grants are not attributable to a named human. That is finding G-002
+ * and it is not fixed here, because changing the shared bootstrap writer is
+ * a separate change with its own blast radius. The console-granted roles
+ * that follow WILL carry a real Granted_By.
+ *
+ * AFTER THIS RUNS — three things, in order
+ * ----------------------------------------
+ *   a) Verify:  run `verifyPhase7Routing` (30_services/OrgLookup.js:192).
+ *      It should no longer report a missing active admin.
+ *   b) Grant every subsequent user through the admin console, NOT through
+ *      this function or the spreadsheet. Console writes record a real
+ *      Granted_By and clear the caches; direct sheet edits do neither and
+ *      can take up to 10 minutes to take effect.
+ *   c) REMOVAL: delete this function AND _seedInitialAdminsPreflight() from
+ *      this file, then push. Leaving them in
+ *      place leaves a browser-reachable, unguarded admin-seeding function in
+ *      production, which is a second instance of G-002. It has no trailing
+ *      underscore in the Apps Script privacy sense (a LEADING underscore
+ *      confers nothing — see ADMINISTRATOR_GUIDE.md §1.4.5), so while this
+ *      function exists, any authenticated user can call it.
+ *
+ * @returns {Object} { success, seeded: Object[], adminCountAfter }
+ */
+function _seedInitialAdmins() {
+  // The two initial administrators. Confirmed 2026-10-28.
+  var ADMINS = [
+    { email: 'ozel.kirkland@gsa.gov',       name: 'Ozel Kirkland',       userId: 'ext_kirkland' },
+    { email: 'christopher.olry@gsa.gov',    name: 'Christopher Olry',    userId: 'ext_olry' }
+  ];
+
+  console.log('=== _seedInitialAdmins: seeding ' + ADMINS.length + ' administrator(s) ===');
+
+  // ---- PRE-FLIGHT -------------------------------------------------------
+  // Every write below reaches the sheet through SpreadsheetApp.openById(
+  // TRAVEL_DB_SPREADSHEET_ID). That constant is read from Script Properties
+  // at module load (00_config/TripConfig.js:134) and is NULL when the
+  // property is unset, which makes openById throw the platform's own
+  // 'Invalid argument: id' — a message that says nothing about the cause.
+  //
+  // This block exists because that is precisely what happened on the first
+  // real run of this function: the property was unset in the target project
+  // and the log showed three 'Invalid argument: id' errors with no hint that
+  // a configuration value was missing. Diagnose it here instead.
+  var preflight = _seedInitialAdminsPreflight();
+  if (!preflight.ok) {
+    console.error('=== _seedInitialAdmins ABORTED — nothing was written ===');
+    for (var p = 0; p < preflight.problems.length; p++) {
+      console.error('  ' + preflight.problems[p]);
+    }
+    return { success: false, aborted: true, problems: preflight.problems };
+  }
+  console.log('  pre-flight OK — database reachable, both role tabs present');
+
+  var results = [];
+
+  for (var i = 0; i < ADMINS.length; i++) {
+    var a = ADMINS[i];
+    var r = bootstrapTravelAdmin(a.email, a.name, a.userId);
+    results.push({ email: a.email, userId: a.userId, result: r });
+
+    if (r && r.success) {
+      console.log('  OK   ' + a.email + '  (' + a.userId + ')  ' + r.action);
+    } else {
+      console.error('  FAIL ' + a.email + '  ' + ((r && r.error) || 'unknown error'));
+    }
+  }
+
+  // Confirm the grants are visible to the authorization layer, not just
+  // written to the sheet. bootstrapTravelAdmin invalidates the caches, so a
+  // read here should see the new rows. If this reports false, the role write
+  // landed but the cache did not clear — wait 600 seconds and re-check
+  // rather than re-running.
+  var verified = [];
+  for (var j = 0; j < ADMINS.length; j++) {
+    var isAdmin = false;
+    try {
+      isAdmin = isTravelAdmin(ADMINS[j].email);
+    } catch (e) {
+      console.warn('  verification call failed for ' + ADMINS[j].email + ': ' + e.message);
+    }
+    verified.push({ email: ADMINS[j].email, recognizedAsAdmin: isAdmin });
+    console.log('  verify ' + ADMINS[j].email + ' → isTravelAdmin: ' + isAdmin);
+  }
+
+  var allOk = results.every(function (x) { return x.result && x.result.success; }) &&
+              verified.every(function (v) { return v.recognizedAsAdmin; });
+
+  console.log('=== _seedInitialAdmins ' + (allOk ? 'COMPLETE' : 'INCOMPLETE — read the log above') + ' ===');
+  if (allOk) {
+    console.log('NEXT: 1. run verifyPhase7Routing() to confirm the admin gap is closed');
+    console.log('      2. DELETE _seedInitialAdmins AND _seedInitialAdminsPreflight');
+    console.log('         from 91_setup/Database.js, then push.');
+    console.log('      Leaving them in place leaves an unguarded, browser-reachable');
+    console.log('      admin-seeding function in production (finding G-002).');
+  }
+
+  return { success: allOk, seeded: results, verified: verified };
+}
+
+/**
+ * ONE-SHOT HELPER — delete alongside _seedInitialAdmins.
+ *
+ * Pre-flight for _seedInitialAdmins: confirm the database is reachable and
+ * both role tabs exist BEFORE attempting any write.
+ *
+ * Checks, in dependency order — each one is a prerequisite of the next, so
+ * the first failure stops the chain and reports the actual cause rather than
+ * a downstream symptom:
+ *
+ *   1. TRAVEL_DB_SPREADSHEET_ID is set.          Unset → openById(null)
+ *                                                throws 'Invalid argument: id'.
+ *   2. The ID opens.                             Wrong/revoked ID, or the
+ *                                                executing account lacks
+ *                                                access to that sheet.
+ *   3. Travel_Users exists, with a User_ID column.
+ *   4. Travel_User_Roles exists.
+ *                                                Either missing → run the
+ *                                                addUnifiedUserSchema function.
+ *
+ * Read-only. Writes nothing under any outcome.
+ *
+ * @private
+ * @returns {Object} { ok: boolean, problems: string[], spreadsheetName?: string }
+ */
+function _seedInitialAdminsPreflight() {
+  var problems = [];
+
+  // 1 — is the property set at all?
+  if (!TRAVEL_DB_SPREADSHEET_ID) {
+    problems.push(
+      'TRAVEL_DB_SPREADSHEET_ID is NOT SET in this project\'s Script Properties.');
+    problems.push(
+      '  Fix: Project Settings (gear) -> Script Properties -> Add script property');
+    problems.push(
+      '       name:  TRAVEL_DB_SPREADSHEET_ID');
+    problems.push(
+      '       value: the ID of the LETS database Google Sheet');
+    problems.push(
+      '  The ID is the long string in the sheet URL between /d/ and /edit.');
+    problems.push(
+      '  Verify the sheet has Travel_Users and Travel_User_Roles tabs first.');
+    problems.push(
+      '  Note: this constant is read ONCE at module load, so after setting the');
+    problems.push(
+      '  property you must re-run this function (no redeploy needed).');
+    return { ok: false, problems: problems };
+  }
+
+  // 2 — does it open? Covers a wrong ID, a deleted sheet, and the case where
+  // the executing account simply cannot see it.
+  var ss;
+  try {
+    ss = SpreadsheetApp.openById(TRAVEL_DB_SPREADSHEET_ID);
+  } catch (e) {
+    problems.push(
+      'TRAVEL_DB_SPREADSHEET_ID is set but the sheet could not be opened.');
+    problems.push('  value: ' + TRAVEL_DB_SPREADSHEET_ID);
+    problems.push('  error: ' + e.message);
+    problems.push(
+      '  Either the ID is wrong, or the account running this function does not');
+    problems.push(
+      '  have access to that spreadsheet. Open it in a browser as yourself to');
+    problems.push('  check: https://docs.google.com/spreadsheets/d/' +
+      TRAVEL_DB_SPREADSHEET_ID + '/edit');
+    return { ok: false, problems: problems };
+  }
+
+  // 3 and 4 — the two tabs bootstrapTravelAdmin writes. It performs the same
+  // checks itself and throws a clearer message than openById does, but by
+  // then it has already been called once per administrator; reporting here
+  // keeps the failure to a single line and guarantees no partial seeding.
+  var usersSheet = ss.getSheetByName(SHEET_NAMES.TRAVEL_USERS);
+  var rolesSheet = ss.getSheetByName(SHEET_NAMES.TRAVEL_USER_ROLES);
+
+  if (!usersSheet || !rolesSheet) {
+    problems.push('The unified user schema is not present in "' + ss.getName() + '".');
+    if (!usersSheet) problems.push('  missing tab: ' + SHEET_NAMES.TRAVEL_USERS);
+    if (!rolesSheet) problems.push('  missing tab: ' + SHEET_NAMES.TRAVEL_USER_ROLES);
+    problems.push('  Fix: run the addUnifiedUserSchema function in this file,');
+    problems.push('       then re-run this one.');
+    problems.push(
+      '  If this spreadsheet is unexpectedly empty, confirm that');
+    problems.push(
+      '  TRAVEL_DB_SPREADSHEET_ID points at the LETS database and not at some');
+    problems.push('  other sheet. It currently points at: ' + ss.getName());
+    return { ok: false, problems: problems };
+  }
+
+  // The User_ID column is what bootstrapTravelAdmin keys on, and its absence
+  // means the tab predates the unified schema rather than being absent.
+  var lastCol = usersSheet.getLastColumn();
+  var userHeaders = lastCol > 0
+    ? usersSheet.getRange(1, 1, 1, lastCol).getValues()[0]
+    : [];
+  if (userHeaders.indexOf('User_ID') === -1) {
+    problems.push(SHEET_NAMES.TRAVEL_USERS +
+      ' exists but has no User_ID column, so it predates the unified schema.');
+    problems.push('  headers found: ' + JSON.stringify(userHeaders));
+    problems.push('  Fix: run the addUnifiedUserSchema function in this file,');
+    problems.push('       then re-run this one.');
+    return { ok: false, problems: problems };
+  }
+
+  console.log('  pre-flight: database "' + ss.getName() + '" opened; ' +
+    SHEET_NAMES.TRAVEL_USERS + ' has ' + userHeaders.length + ' columns');
+  return { ok: true, problems: [], spreadsheetName: ss.getName() };
+}
+
+/**
  * Generate a deterministic Role_ID from (User_ID, Role_Type, Scope).
  * The triple uniquely identifies a role assignment. Used by the bootstrap
  * helper and by future role-write code so the same role assignment always
@@ -972,4 +1228,3 @@ function _bulkDeleteSmokeRequests(opts) {
     dryRun: false
   };
 }
-
