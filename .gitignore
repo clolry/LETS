@@ -22,3 +22,11 @@ Thumbs.db
 # Build artifacts
 dist/
 build/
+
+# Output of the admin scripts in scripts/. These are local review artifacts
+# containing raw GitHub API responses (collaborator lists, protection state).
+# Nothing secret, but it is point-in-time output that goes stale immediately —
+# the verification transcript belongs in the pull request, not in the tree.
+scripts/protection-result.txt
+scripts/environments-result.txt
+

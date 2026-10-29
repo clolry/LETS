@@ -1,11 +1,15 @@
-# Deploys lets_app/ to the PRODUCTION Google Apps Script project.
+# Deploys lets_app/ to a Google Apps Script project.
+#
+# BRANCH -> TARGET
+#   main      -> PRODUCTION  (.clasp.json)
+#   sandbox   -> SANDBOX     (.clasp.sandbox.json)
 #
 # WHY THERE IS NO `pull_request` TRIGGER:
-#   This workflow performs `clasp push --force` against the live production
-#   GAS project. Deploying on `pull_request` would push unreviewed, unmerged
-#   code straight to production — opening a PR would *be* the deploy, which
-#   defeats the review gate entirely (NIST SP 800-53 CM-3, CM-5; AGENTS.md
-#   §14.2 "no merging/deploying own work without human approval").
+#   This workflow performs `clasp push --force` against a live GAS project.
+#   Deploying on `pull_request` would push unreviewed, unmerged code straight
+#   to production — opening a PR would *be* the deploy, which defeats the
+#   review gate entirely (NIST SP 800-53 CM-3, CM-5; AGENTS.md §14.2 "no
+#   merging/deploying own work without human approval").
 #
 #   Pull requests are verified by `.github/workflows/verify.yml`, which runs
 #   the test suite with NO credentials and therefore cannot deploy. Code
@@ -13,6 +17,24 @@
 #
 #   Do not add `pull_request` here. `verify.yml` has a guard step that fails
 #   the build if it reappears.
+#
+# WHY `workflow_dispatch` IS BRANCH-RESTRICTED:
+#   A bare `workflow_dispatch` can be run against ANY ref, so a manual
+#   dispatch from an arbitrary branch could ship that branch's code to
+#   production, bypassing review entirely. The `resolve` job below refuses to
+#   deploy unless the ref is a recognized deploy branch.
+#
+# WHY THIS IS TWO JOBS:
+#   `resolve` holds NO credentials and decides which environment is being
+#   targeted, failing closed on an unrecognized ref. `deploy` then names that
+#   environment via `environment:`, which is what makes GitHub apply the
+#   environment's protection rules (required reviewer, prevent-self-review,
+#   deployment branch policy) BEFORE the job starts and before it can read
+#   CLASPRC_JSON.
+#
+#   Doing the branch check in a separate credential-free job means the
+#   fail-closed guard cannot itself be the thing that leaks a token, and the
+#   environment name handed to `deploy` is always one of two validated values.
 
 name: Deploy to Google Apps Script
 
@@ -20,22 +42,70 @@ on:
   push:
     branches:
       - main
+      - sandbox
   workflow_dispatch:
 
 # Least privilege: this job only needs to read the repo to push it to GAS.
 permissions:
   contents: read
 
-# `clasp push --force` overwrites the target project. Serialize deploys so two
-# runs can never interleave and leave production in a mixed state.
+# `clasp push --force` overwrites the target project. Serialize per environment
+# so two runs can never interleave and leave a project in a mixed state.
+# Production and sandbox deploys do not block each other.
 concurrency:
-  group: deploy-gas-production
+  group: deploy-gas-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Decide the target. NO CREDENTIALS. Fails closed on an unrecognized ref.
+  # ---------------------------------------------------------------------------
+  resolve:
+    name: Resolve Deploy Target
+    runs-on: ubuntu-latest
+    outputs:
+      env_name: ${{ steps.target.outputs.env_name }}
+      clasp_config: ${{ steps.target.outputs.clasp_config }}
+
+    steps:
+      - name: Resolve deploy target from branch
+        id: target
+        run: |
+          # Fail closed: only known branches map to a GAS project. Anything
+          # else (including a manual dispatch from a feature branch) stops here
+          # rather than guessing a target.
+          #
+          # This is belt-and-braces with the environments' deployment branch
+          # policies, which independently refuse a deploy from any other ref.
+          case "${{ github.ref_name }}" in
+            main)
+              echo "env_name=production"             >> "$GITHUB_OUTPUT"
+              echo "clasp_config=.clasp.json"        >> "$GITHUB_OUTPUT"
+              ;;
+            sandbox)
+              echo "env_name=sandbox"                >> "$GITHUB_OUTPUT"
+              echo "clasp_config=.clasp.sandbox.json" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Refusing to deploy from ref '${{ github.ref_name }}'. Only 'main' (production) and 'sandbox' deploy. Merge to one of those branches instead of dispatching from an arbitrary ref."
+              exit 1
+              ;;
+          esac
+
+  # ---------------------------------------------------------------------------
+  # Do the deploy. Gated by the named environment's protection rules.
+  # ---------------------------------------------------------------------------
   deploy-to-gas:
     name: Clasp Push to Google Apps Script
+    needs: resolve
     runs-on: ubuntu-latest
+
+    # THIS LINE IS THE GATE. It makes GitHub hold the job until the
+    # environment's required reviewers approve, and refuse it outright if
+    # github.ref is not allowed by that environment's deployment branch policy.
+    # It is also what scopes CLASPRC_JSON: as an ENVIRONMENT secret, the
+    # credential is unreadable by any job that does not name this environment.
+    environment: ${{ needs.resolve.outputs.env_name }}
 
     steps:
       - name: Checkout Code
@@ -64,13 +134,51 @@ jobs:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
         run: |
           if [ -z "$CLASPRC_JSON" ]; then
-            echo "ERROR: CLASPRC_JSON secret is missing! Please configure CLASPRC_JSON in your GitHub repository secrets."
+            echo "::error::CLASPRC_JSON is not readable by this job. If it was moved to environment scope, confirm it exists on the '${{ needs.resolve.outputs.env_name }}' environment specifically — an environment-scoped secret is invisible to jobs targeting a different environment."
             exit 1
           fi
-          echo "$CLASPRC_JSON" > ~/.clasprc.json
+          # Written via the environment, not shell interpolation, so the value
+          # is never parsed as part of the command line.
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
           chmod 600 ~/.clasprc.json
 
-      - name: Push Code to GAS Project
+      - name: Select clasp config for target
+        working-directory: lets_app
+        env:
+          CLASP_CONFIG: ${{ needs.resolve.outputs.clasp_config }}
+          ENV_NAME: ${{ needs.resolve.outputs.env_name }}
         run: |
-          cd lets_app
-          clasp push --force
+          if [ ! -f "$CLASP_CONFIG" ]; then
+            echo "::error::$CLASP_CONFIG not found in lets_app/."
+            exit 1
+          fi
+          # .clasp.json is the production pointer and is committed. For a
+          # sandbox deploy, overwrite it in the runner's checkout only — this
+          # never touches the repository.
+          if [ "$CLASP_CONFIG" != ".clasp.json" ]; then
+            cp "$CLASP_CONFIG" .clasp.json
+          fi
+          echo "Deploying to: $ENV_NAME"
+
+      - name: Push Code to GAS Project
+        working-directory: lets_app
+        run: clasp push --force
+
+      - name: Create new version and update web app deployment
+        working-directory: lets_app
+        env:
+          ENV_NAME: ${{ needs.resolve.outputs.env_name }}
+          DEPLOYMENT_ID: ${{ needs.resolve.outputs.env_name == 'production' && vars.GAS_PRODUCTION_DEPLOYMENT_ID || vars.GAS_SANDBOX_DEPLOYMENT_ID }}
+        run: |
+          # `clasp push` updates the script CONTENT only. A versioned web app
+          # deployment (/exec) keeps serving its pinned version until a new
+          # version is created and the deployment is redeployed. Without this
+          # step, a green "deploy" can leave the live /exec URL on stale code.
+          #
+          # The /dev URL always serves HEAD, so it reflects `push` immediately.
+          if [ -z "$DEPLOYMENT_ID" ]; then
+            echo "::warning::No deployment ID configured for '$ENV_NAME'. Code was pushed, but the versioned /exec web app was NOT updated and will keep serving its previous version. Set the repository variable GAS_PRODUCTION_DEPLOYMENT_ID / GAS_SANDBOX_DEPLOYMENT_ID to enable this step. The /dev URL already reflects this push."
+            exit 0
+          fi
+          clasp deploy -i "$DEPLOYMENT_ID" -d "$ENV_NAME via GitHub Actions: ${{ github.sha }}"
+          echo "Updated $ENV_NAME web app deployment."

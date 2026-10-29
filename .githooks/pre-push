@@ -7,20 +7,22 @@
 #   `clasp push --force` against the PRODUCTION Apps Script project. A direct
 #   push therefore deploys to production with no review and no passing checks.
 #
-#   The proper control is GitHub branch protection. That is unavailable on this
-#   repository today: it is private under a personal free account, and branch
-#   protection on private repos requires a paid plan. Tracked in issue #1.
+#   The proper control is server-side GitHub branch protection, which IS applied
+#   to this repository (see scripts/setup-branch-protection.sh). This hook is a
+#   second, local layer that fails earlier: it rejects the push before it leaves
+#   your machine, with a message that names the right workflow.
 #
 # WHAT THIS IS NOT
 #   This is NOT branch protection and must not be represented as one:
 #     - it is client-side, so it protects only the clone it is installed in
 #     - it is bypassed by `git push --no-verify`
 #     - it does nothing for other collaborators unless they install it too
-#     - it is not committed to the repository (.git/hooks is not versioned),
-#       so it does not survive a fresh clone
+#     - it is versioned here, but git does not run hooks from a tracked
+#       directory by default, so a fresh clone is UNPROTECTED until someone
+#       runs `sh .githooks/install.sh` to point core.hooksPath at it
 #
-#   It is a guardrail against muscle memory, not an enforced control. The real
-#   fix is moving this repository into a GSA GitHub organization (issue #1).
+#   It is a guardrail against muscle memory, not an enforced control. Server-side
+#   branch protection is the control; if the two ever disagree, the server wins.
 #
 # INSTALL (per clone)
 #   sh .githooks/install.sh
@@ -81,7 +83,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   incident record that follows.
 
   This hook is a local convenience, not enforced branch protection.
-  See issue #1 for the real fix.
+  Server-side protection on '$PROTECTED_BRANCH' is the actual control.
   ------------------------------------------------------------------------
 
 EOF
