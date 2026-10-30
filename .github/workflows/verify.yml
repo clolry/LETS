@@ -48,9 +48,65 @@ jobs:
       - name: LETS_CONFIG global binding tests
         run: node lets_app/test_budget_config_global.js
 
+      - name: HC data layer tests
+        run: node lets_app/test_hc_data.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
+
+      - name: 'Guard: HC must be declared with var, not const/let'
+        run: |
+          echo "Checking the HC declaration keyword..."
+          # Same failure mode as LETS_CONFIG below, and the same consequence.
+          # 28 call sites across 9 server files reference the HC namespace.
+          if ! grep -qE '^var HC[[:space:]]*=' lets_app/server/20_data/HCData.js; then
+            echo "::error file=lets_app/server/20_data/HCData.js::HC is not declared with 'var'. A top-level const/let is not a property of the global object under Apps Script V8. 28 call sites depend on this namespace. Restore 'var HC = '."
+            exit 1
+          fi
+          echo "PASS - HC is declared with var."
+
+      - name: 'Guard: org chart projection must not emit PII'
+        run: |
+          echo "Checking the org chart projection for sensitive fields..."
+          # hcGetOrgChartTree feeds a SEPARATE Apps Script project that any
+          # domain user can open with the link. Its reduced payload — workgroup
+          # name, supervisor name, employee names — IS the access control for
+          # that deployment, because there is no role check behind it.
+          #
+          # test_hc_data.js §10 serializes the real payload and asserts no
+          # sensitive value appears. This guard is a cheaper structural check
+          # that fails the build if someone adds a sensitive field to the node
+          # literal, and names the consequence in the log.
+          BODY=$(awk '/function hcGetOrgChartTree/,/^  }$/' lets_app/server/20_data/HCData.js)
+          for FIELD in emailAddress employeeId supervisoryStatus locationCode occupancyStatus; do
+            if echo "$BODY" | grep -qE "(^|[^a-zA-Z_])${FIELD}[^a-zA-Z_]*:" ; then
+              echo "::error file=lets_app/server/20_data/HCData.js::hcGetOrgChartTree emits '${FIELD}'. That projection is served by the org chart deployment, which any domain user can open with the link and which has no role check. It must emit only workgroup name, supervisor name and employee names."
+              exit 1
+            fi
+          done
+          # `grade` and the duty-station fields are checked separately because
+          # 'grade' appears legitimately in the GS-15 predicate comment above.
+          if echo "$BODY" | grep -qE "(grade|dutyStation|location)[[:space:]]*:"; then
+            echo "::error file=lets_app/server/20_data/HCData.js::hcGetOrgChartTree emits a grade or duty-station field. See the comment above this guard."
+            exit 1
+          fi
+          echo "PASS - org chart projection emits no sensitive fields."
+
+      - name: 'Guard: seed data must not contain real email addresses'
+        run: |
+          echo "Checking HCSeed.js for non-example.gov addresses..."
+          # HCSeed.js is fictional test data. Every address must stay on the
+          # RFC 2606 reserved example.gov domain so a stray notification cannot
+          # reach a real mailbox, and so the roster can never be mistaken for
+          # a real one. A real address here would also grant its owner LETS
+          # access through canAccessTrip (Access.js:416) once seeded.
+          if grep -oE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+' lets_app/server/91_setup/HCSeed.js \
+             | grep -v '@example\.gov' | grep . ; then
+            echo "::error file=lets_app/server/91_setup/HCSeed.js::HCSeed.js contains an address outside example.gov. Seed data must stay fictional; a real address here is seeded into HC_Positions and grants that person LETS access via canAccessTrip."
+            exit 1
+          fi
+          echo "PASS - all seed addresses are on example.gov."
 
       - name: 'Guard: LETS_CONFIG must be declared with var, not const/let'
         run: |
