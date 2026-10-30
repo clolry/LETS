@@ -41,7 +41,13 @@ const SHEET_NAMES = {
   DOD_PER_DIEM:       'DoD_Per_Diem',
   DOD_SYNC_LOG:       'DoD_Sync_Log',
   FOREIGN_PER_DIEM:   'Foreign_Per_Diem',
-  DOS_SYNC_TRACKER:   'DOS_Sync_Tracker'
+  DOS_SYNC_TRACKER:   'DOS_Sync_Tracker',
+
+  // HR / org reference data. Replaces the inherited HC Apps Script Library,
+  // which held another workgroup's employees and is no longer reachable.
+  // See 20_data/HCData.js for the HC namespace these two tabs back.
+  HC_POSITIONS:       'HC_Positions',
+  HC_ORGS:            'HC_Orgs'
 };
 
 // ============================================================================
@@ -282,6 +288,75 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Notes',
     'Granted_By',
     'Granted_At',
+    'Updated_By',
+    'Updated_At'
+  ],
+
+  // ==========================================================================
+  // HR / ORG REFERENCE DATA — backs the HC namespace (20_data/HCData.js)
+  // ==========================================================================
+  //
+  // These two tabs replace the inherited HC Apps Script Library. That library
+  // was bound as a PROJECT SETTING, declared in no manifest, and held the
+  // previous workgroup's employees — so it was invisible to this repository
+  // and its data was never ours. See docs/GAP_REGISTER.md G-008.
+  //
+  // COLUMN ORDER IS LOAD-BEARING. docs/DATA_DICTIONARY.md §3.9: reads resolve
+  // by header name but writes are positional. Append at the far right only;
+  // never insert or reorder.
+
+  // One row per POSITION, filled or vacant. The position — not the person —
+  // is the unit of record, because the supervisor chain is a tree of
+  // positions: Position_Number -> Reports_To_Position_Number.
+  //
+  // Grade and Supervisory_Status are compared as STRINGS at 16 sites
+  // (e.g. Access.js:133-134 `String(p.grade) !== '15'`). Sheets coerces a
+  // cell holding 07 to the number 7, and String(7) is '7', not '07' — so
+  // HCData.js normalizes both at the read boundary rather than trusting the
+  // sheet. Do not add client-side comparisons that skip that normalization.
+  HC_Positions: [
+    'Position_Number',             // PK. Text format — may carry leading zeros
+    'Reports_To_Position_Number',  // FK to Position_Number. Empty = top of tree
+    'Employee_ID',                 // Text format — may carry leading zeros
+    'Employee_Name',
+    'Email_Address',
+    'Org_Code',                    // FK to HC_Orgs.Org_Code
+    'Office_Title',                // Access.js:132 substring-matches this
+    'Grade',                       // '15', '14', '07' — zero-padded STRING
+    'Supervisory_Status',          // '2' = supervisor. Compared as a STRING
+    'Occupancy_Status',            // FILLED | VACANT | OBLIGATED
+    'LCAT',
+    'Location_Code',
+    'Duty_Station_Address',
+    'Duty_Station_City',
+    'Duty_Station_State',
+    'Is_Active',
+    'Created_By',
+    'Created_At',
+    'Updated_By',
+    'Updated_At'
+  ],
+
+  // One row per ORG. Two code namespaces coexist deliberately:
+  //   Org_Code    — HR org code (FC, FCA, FCB, FCC). What positions carry.
+  //   Office_Code — budget office key (FO, OMD, IDV, CM). What
+  //                 00_config/BudgetConfig.js keys allocations off.
+  // Confirmed mapping: FC->FO, FCA->OMD, FCB->IDV, FCC->CM. Keeping both on
+  // one row makes the correspondence explicit instead of implied by position.
+  //
+  // Former_Org_Codes is a comma-separated list. OrgLookup.js:52 maps retired
+  // codes onto current values so historical requests still resolve.
+  HC_Orgs: [
+    'Org_Code',                    // PK
+    'Office_Code',                 // BudgetConfig.js key. May be blank
+    'Business_Unit',
+    'Sector',
+    'Division',
+    'Status',                      // Active | Decommissioned | Not In Use
+    'Former_Org_Codes',            // comma-separated
+    'Is_Active',
+    'Created_By',
+    'Created_At',
     'Updated_By',
     'Updated_At'
   ]
