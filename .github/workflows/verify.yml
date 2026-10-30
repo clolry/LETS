@@ -45,9 +45,32 @@ jobs:
       - name: FAS tracker environment isolation tests
         run: node lets_app/test_fas_tracker_env.js
 
+      - name: LETS_CONFIG global binding tests
+        run: node lets_app/test_budget_config_global.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
+
+      - name: 'Guard: LETS_CONFIG must be declared with var, not const/let'
+        run: |
+          echo "Checking the LETS_CONFIG declaration keyword..."
+          # LetsDB.js, BudgetEngine.js and RequestService.js all read this as
+          # `root.LETS_CONFIG`. In the Apps Script V8 runtime a top-level
+          # const/let creates a lexical binding that is NOT a property of the
+          # global object, so root.LETS_CONFIG would be undefined and
+          # LetsDB.js:20 throws at FILE EVALUATION time — taking down the whole
+          # web app, not just the budget layer.
+          #
+          # test_budget_config_global.js already asserts this and carries a
+          # negative control. This guard is a second, cheaper signal that names
+          # the consequence directly in the build log, because the failure mode
+          # is a total outage and the fix is one keyword.
+          if ! grep -qE '^var LETS_CONFIG[[:space:]]*=' lets_app/server/00_config/BudgetConfig.js; then
+            echo "::error file=lets_app/server/00_config/BudgetConfig.js::LETS_CONFIG is not declared with 'var'. Three files read it as root.LETS_CONFIG, which is undefined for a const/let declaration under Apps Script V8. This breaks the ENTIRE web app at file-evaluation time. Restore 'var LETS_CONFIG = {'."
+            exit 1
+          fi
+          echo "PASS - LETS_CONFIG is declared with var."
 
       - name: 'Guard: deploy workflow must not trigger on pull_request'
         run: |
