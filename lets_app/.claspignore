@@ -6,6 +6,7 @@ test_other_cost_percentage.js
 test_city_pairs.js
 test_access_audit.js
 test_airport_prefs.js
+test_diagnostics.js
 preview.html
 node_modules/**
 .git/**

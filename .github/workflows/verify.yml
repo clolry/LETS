@@ -63,6 +63,9 @@ jobs:
       - name: Airport selection and preference tests
         run: node lets_app/test_airport_prefs.js
 
+      - name: Diagnostics smoke tests
+        run: node lets_app/test_diagnostics.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -164,6 +167,21 @@ jobs:
             exit 1
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
+
+      - name: 'Guard: diagnostics must stay read-only'
+        run: |
+          echo "Checking Diagnostics.js performs no writes..."
+          # Diagnostics.js is run by hand against live environments, including
+          # production. A mutating call in here is a foot-gun: the whole point
+          # is that it is safe to run anywhere at any time.
+          for OP in setValue setValues appendRow deleteRow insertSheet \
+                    clearContent setProperty deleteProperty createTrigger; do
+            if grep -q "${OP}(" lets_app/server/99_triggers/Diagnostics.js; then
+              echo "::error file=lets_app/server/99_triggers/Diagnostics.js::Diagnostics.js calls ${OP}(). Diagnostics are run by hand against production and must stay read-only. Move anything that writes into 91_setup/ with its own authorization guard."
+              exit 1
+            fi
+          done
+          echo "PASS - diagnostics are read-only."
 
       - name: 'Guard: sheet writes that are re-read must flush'
         run: |
