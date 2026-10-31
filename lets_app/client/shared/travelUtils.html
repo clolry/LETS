@@ -96,6 +96,16 @@ window.TravelUtils = (function() {
       GOVERNMENT: 0.22
     },
 
+    // LAST-RESORT fallback for the "other costs" gross-up, used only when the
+    // RPC that reads the `other_cost_percentage` Script Property fails. The
+    // configured value is authoritative — see TravelCostService.loadCostConfig().
+    //
+    // This is NOT the business default. Changing it does not change what the
+    // form applies; set the Script Property instead. It exists so a failed RPC
+    // produces a plausible estimate rather than a 0% gross-up, which would
+    // silently understate every request.
+    OTHER_COST_PERCENTAGE_FALLBACK: 30,
+
     // Form configuration
     FORM_STEPS: {
       TOTAL: 6,

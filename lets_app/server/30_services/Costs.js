@@ -21,7 +21,9 @@
 const COST_RATE_DEFAULTS = {
   PRIVATE_MILEAGE_RATE: 0.70,
   GOV_MILEAGE_RATE: 0.22,
-  OTHER_COST_PERCENTAGE: 15
+  // Last-resort value used only when PropertiesService itself throws. Kept in
+  // step with the Props.js:117 fallback; the Script Property is authoritative.
+  OTHER_COST_PERCENTAGE: 30
 };
 
 // =============================================================================
@@ -55,7 +57,7 @@ function getMileageRates() {
  * handles the property read + default); catch-block returns the local
  * hardcoded default if PropertiesService itself is broken.
  *
- * @returns {number} Percentage (e.g., 15)
+ * @returns {number} Percentage (e.g., 30)
  * @server
  */
 function getDefaultOtherPercentage() {
@@ -64,6 +66,28 @@ function getDefaultOtherPercentage() {
   } catch (e) {
     return COST_RATE_DEFAULTS.OTHER_COST_PERCENTAGE;
   }
+}
+
+/**
+ * The cost configuration the client needs at page init.
+ *
+ * Exists because the form calculates costs in the browser. Before this, the
+ * client hardcoded the gross-up percentage in three places and never read the
+ * `other_cost_percentage` Script Property — so changing the property moved the
+ * server's recalculation at submission while the form kept showing the old
+ * figure. Costs.js:675 prefers `traveler.otherPercentage` when the row carries
+ * one, so the stale client value silently won on every request.
+ *
+ * Mirrors getMileageRatesForClient (PerDiemGSA.js:742): one small RPC, read
+ * once at init, no caching needed since a Script Property read is cheap.
+ *
+ * @returns {{otherCostPercentage: number}}
+ * @client
+ */
+function getCostConfigForClient() {
+  return {
+    otherCostPercentage: getDefaultOtherPercentage()
+  };
 }
 
 // =============================================================================

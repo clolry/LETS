@@ -341,7 +341,7 @@ All line references below are in `server/30_services/Costs.js`. **Note there are
 | **C-02** | Lodging is paid per **night**, not per day | APPLIED | `calculateLodgingTotal` `:294`, `calculateNights` `:254` |
 | **C-03** | Per-diem source routes by location: GSA (CONUS) / DoD (OCONUS) / State (foreign) | APPLIED | `getPerDiemForLeg` `:90` |
 | **C-04** | Mileage uses the `private` or `gov` rate per traveller's transport mode | APPLIED | `calculateTransportationTotal` `:392`, modes at `:400`, `:404` |
-| **C-05** | An "other costs" gross-up is applied, default **15%** | APPLIED | `calculateOtherCosts` `:499` |
+| **C-05** | An "other costs" gross-up is applied, configured by the `other_cost_percentage` Script Property. **Set to 30%** in both environments as of 2026-10-30 | APPLIED | `calculateOtherCosts` `:499`, `Props.js:117` |
 | **C-06** | Lodging and M&IE support an override with `{enabled, amount, reason}`, stored per leg | APPLIED | `:294`, `:326` |
 | **C-07** | The rate in force at submission is **copied into the row**, not referenced | APPLIED | `DATA_DICTIONARY.md` §3.3.1 |
 | **C-08** | `Grand_Total` = `Shared_Total` + `Traveler_Total` — **the authoritative cost figure for System A** | APPLIED | §3.2.3 col 23 |
@@ -357,8 +357,8 @@ All line references below are in `server/30_services/Costs.js`. **Note there are
 |---|---|---|---|
 | `MILEAGE_RATE_PRIVATE` | `Props.js:89` | `0.70` | `[UNKNOWN]` |
 | `MILEAGE_RATE_GOV` | `Props.js:98` | `0.22` | `[UNKNOWN]` |
-| `other_cost_percentage` | `Props.js:117` | `15` | `[UNKNOWN]` |
-| `GSA_PERDIEM_API_KEY` | `PerDiemGSA.js` | none — **CONUS lookups fail** | `[UNKNOWN]` |
+| `other_cost_percentage` | `Props.js:117` | `30` | **`30`** `[VERIFIED]` |
+| `GSA_PERDIEM_API_KEY` | `PerDiemGSA.js` | none — **CONUS lookups fail** | **set** `[VERIFIED]` — confirmed HTTP 200 on 2026-10-30 |
 
 **VT-09** captures the live values.
 
