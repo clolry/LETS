@@ -241,6 +241,27 @@ jobs:
           fi
           echo "PASS - preference writes flush and are serialized."
 
+      - name: 'Guard: city resolution must have a fallback'
+        run: |
+          echo "Checking getAirportsForCity never returns an empty picker..."
+          # getAirportsForCity matches the GSA award file's city name EXACTLY.
+          # HR and GSA do not always agree: FORT WORTH, TX resolved to NOTHING
+          # because GSA files DFW and DAL under DALLAS, so a traveller based
+          # there got an empty airport picker — which blocks a submission.
+          #
+          # The state-level fallback is what guarantees an actionable result,
+          # and matchType is what lets the UI explain itself instead of
+          # silently presenting 22 state airports as serving the asked-for city.
+          if ! grep -q "GSA_CITY_ALIASES" lets_app/server/30_services/CityPairs.js; then
+            echo "::error file=lets_app/server/30_services/CityPairs.js::GSA_CITY_ALIASES is missing. Cities GSA names differently from HR resolve to no airports at all."
+            exit 1
+          fi
+          if ! grep -q "matchType = 'state'" lets_app/server/30_services/CityPairs.js; then
+            echo "::error file=lets_app/server/30_services/CityPairs.js::The state-level fallback in getAirportsForCity is gone. An unrecognised city name now yields an empty airport picker instead of a broad but usable list."
+            exit 1
+          fi
+          echo "PASS - city resolution falls back to state level."
+
       - name: 'Guard: metro-area codes must never win an airport default'
         run: |
           echo "Checking the metro-aware airport sort..."

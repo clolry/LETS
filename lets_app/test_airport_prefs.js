@@ -56,9 +56,27 @@ const CP_H=['Pair_Key','Award_Year','Origin_Airport_Abbrev','Destination_Airport
 const PF_H=['Pref_ID','User_ID','Pref_Type','City_Name','State','Airport_Code','Use_Count',
 'First_Used_At','Last_Used_At','Updated_By'];
 function cp(o){return CP_H.map(h=>h in o?o[h]:'');}
+// Real shape from the sandbox: Sheets hands dates back as Date objects.
+const D1=new Date(2026,9,1), D2=new Date(2027,8,30);
+// A pair between DCA and a code, used to give the city/state columns real
+// values for cities other than the hand-written ones below.
+function pair2(code,city,state,fare){
+  const first=code<='DCA';
+  const k=first?code+'|DCA':'DCA|'+code;
+  return cp({Pair_Key:k,
+    Origin_Airport_Abbrev:first?code:'DCA',
+    Destination_Airport_Abbrev:first?'DCA':code,
+    Origin_City_Name:first?city:'WASHINGTON',
+    Origin_State:first?state:'DC',
+    Origin_Country:'UNITED STATES',
+    Destination_City_Name:first?'WASHINGTON':city,
+    Destination_State:first?'DC':state,
+    Destination_Country:'UNITED STATES',
+    Airline_Abbrev:'AA',Awarded_Service:'Non-stop',YCA_Fare:fare,CA_Fare:0,Business_Fare:0,
+    Effective_Date:D1,Expiration_Date:D2});
+}
 // Real shape from the sandbox: GSA uses WAS (metro) in DOMESTIC rows, and
 // Sheets hands dates back as Date objects.
-const D1=new Date(2026,9,1), D2=new Date(2027,8,30);
 const CPROWS=[
  cp({Pair_Key:'DCA|ORD',Origin_Airport_Abbrev:'DCA',Destination_Airport_Abbrev:'ORD',
   Origin_City_Name:'WASHINGTON',Origin_State:'DC',Origin_Country:'UNITED STATES',
@@ -101,6 +119,41 @@ const CPROWS=[
   Destination_City_Name:'WASHINGTON',Destination_State:'DC',Destination_Country:'UNITED STATES',
   Airline_Abbrev:'UA',Awarded_Service:'Non-stop',YCA_Fare:400,CA_Fare:0,Business_Fare:0,
   Effective_Date:D1,Expiration_Date:D2}),
+ // Extra WAS rows. The negative control in section 15 depends on WAS
+ // outranking DCA on route count, as it does in the real data (260 vs 254).
+ // The TX rows below each add a DCA side, so without these the control stops
+ // discriminating and would pass for the wrong reason.
+ cp({Pair_Key:'SEA|WAS',Origin_Airport_Abbrev:'SEA',Destination_Airport_Abbrev:'WAS',
+  Origin_City_Name:'SEATTLE',Origin_State:'WA',Origin_Country:'UNITED STATES',
+  Destination_City_Name:'WASHINGTON',Destination_State:'DC',Destination_Country:'UNITED STATES',
+  Airline_Abbrev:'UA',Awarded_Service:'Non-stop',YCA_Fare:390,CA_Fare:0,Business_Fare:0,
+  Effective_Date:D1,Expiration_Date:D2}),
+ cp({Pair_Key:'MIA|WAS',Origin_Airport_Abbrev:'MIA',Destination_Airport_Abbrev:'WAS',
+  Origin_City_Name:'MIAMI',Origin_State:'FL',Origin_Country:'UNITED STATES',
+  Destination_City_Name:'WASHINGTON',Destination_State:'DC',Destination_Country:'UNITED STATES',
+  Airline_Abbrev:'UA',Awarded_Service:'Non-stop',YCA_Fare:300,CA_Fare:0,Business_Fare:0,
+  Effective_Date:D1,Expiration_Date:D2}),
+ cp({Pair_Key:'MSP|WAS',Origin_Airport_Abbrev:'MSP',Destination_Airport_Abbrev:'WAS',
+  Origin_City_Name:'MINNEAPOLIS',Origin_State:'MN',Origin_Country:'UNITED STATES',
+  Destination_City_Name:'WASHINGTON',Destination_State:'DC',Destination_Country:'UNITED STATES',
+  Airline_Abbrev:'UA',Awarded_Service:'Non-stop',YCA_Fare:280,CA_Fare:0,Business_Fare:0,
+  Effective_Date:D1,Expiration_Date:D2}),
+ cp({Pair_Key:'PDX|WAS',Origin_Airport_Abbrev:'PDX',Destination_Airport_Abbrev:'WAS',
+  Origin_City_Name:'PORTLAND',Origin_State:'OR',Origin_Country:'UNITED STATES',
+  Destination_City_Name:'WASHINGTON',Destination_State:'DC',Destination_Country:'UNITED STATES',
+  Airline_Abbrev:'UA',Awarded_Service:'Non-stop',YCA_Fare:410,CA_Fare:0,Business_Fare:0,
+  Effective_Date:D1,Expiration_Date:D2}),
+ cp({Pair_Key:'PHX|WAS',Origin_Airport_Abbrev:'PHX',Destination_Airport_Abbrev:'WAS',
+  Origin_City_Name:'PHOENIX',Origin_State:'AZ',Origin_Country:'UNITED STATES',
+  Destination_City_Name:'WASHINGTON',Destination_State:'DC',Destination_Country:'UNITED STATES',
+  Airline_Abbrev:'UA',Awarded_Service:'Non-stop',YCA_Fare:330,CA_Fare:0,Business_Fare:0,
+  Effective_Date:D1,Expiration_Date:D2}),
+ // Texas. GSA files DFW and DAL under DALLAS; there is no FORT WORTH row,
+ // which is exactly why a Fort Worth duty station resolved to nothing.
+ pair2('DFW','DALLAS','TX',260),
+ pair2('DAL','DALLAS','TX',200),
+ pair2('AUS','AUSTIN','TX',240),
+ pair2('SAT','SAN ANTONIO','TX',310),
  // Honolulu: single airport, must produce no choice
  cp({Pair_Key:'DCA|HNL',Origin_Airport_Abbrev:'DCA',Destination_Airport_Abbrev:'HNL',
   Origin_City_Name:'WASHINGTON',Origin_State:'DC',Origin_Country:'UNITED STATES',
@@ -319,6 +372,50 @@ console.log('13. lock timeout must not block a submission');
   ok('nothing written', h.prefs.length===0);
 }
 
+console.log('13b. city-name resolution never returns an empty picker');
+{
+  const h=build();
+  // Tier 1: exact match.
+  const exact=h.run("getAirportsForCity('DALLAS','TX')");
+  ok('exact match reports matchType exact', exact.matchType==='exact', exact.matchType);
+  ok('DFW busiest first', exact.airports[0].code==='DFW', exact.airports.map(a=>a.code));
+
+  // Tier 2: alias. GSA files DFW and DAL under DALLAS, so a FORT WORTH duty
+  // station resolved to NOTHING — an empty airport picker, which blocks a
+  // submission rather than merely inconveniencing it. Confirmed against the
+  // real FY27 data: of the 22 Texas city names GSA uses, none is FORT WORTH.
+  const alias=h.run("getAirportsForCity('FORT WORTH','TX')");
+  ok('alias resolves', alias.airports.length>0, alias);
+  ok('alias reports matchType alias', alias.matchType==='alias', alias.matchType);
+  ok('alias names the matched city', alias.matchedCity==='DALLAS', alias.matchedCity);
+  ok('alias preserves what was asked for', alias.requestedCity==='FORT WORTH', alias.requestedCity);
+  ok('alias yields DFW first', alias.airports[0].code==='DFW', alias.airports.map(a=>a.code));
+
+  // Tier 3: unknown city, known state. Must degrade to state-wide rather than
+  // empty — "no airports" reads to a user as a broken form.
+  const fallback=h.run("getAirportsForCity('LUBBOCK','TX')");
+  ok('unknown TX city still returns airports', fallback.airports.length>0, fallback);
+  ok('reports matchType state', fallback.matchType==='state', fallback.matchType);
+  ok('matchedCity blank on a state match', fallback.matchedCity==='', fallback.matchedCity);
+  // Each TX airport has one fixture row, so route counts tie at 1 and the
+  // order is insertion-dependent. Assert the SET; ranking is already covered
+  // by section 1 against the WAS/DCA counts that actually differ.
+  const txCodes=fallback.airports.map(a=>a.code).sort().join(',');
+  ok('state list contains every TX airport', txCodes==='AUS,DAL,DFW,SAT', txCodes);
+  ok('no metro aggregate in the state list', fallback.airports.every(a=>!a.isMetroArea));
+
+  // No state means nothing to fall back to.
+  const nostate=h.run("getAirportsForCity('NOWHERESVILLE')");
+  ok('unknown city with no state -> none', nostate.matchType==='none', nostate.matchType);
+  ok('and an empty list, not a throw', nostate.airports.length===0);
+
+  // The tier must survive into the priced-options payload, or the UI cannot
+  // explain why it is showing four Texas airports for Fort Worth.
+  const priced=h.run("getPricedDestinationOptions('ORD','FORT WORTH','TX')");
+  ok('priced options carry matchType', priced.matchType==='alias', priced.matchType);
+  ok('priced options carry requestedCity', priced.requestedCity==='FORT WORTH', priced.requestedCity);
+}
+
 console.log('14. negative control: removing the flushes must reproduce the bug');
 {
   const src=fs.readFileSync('lets_app/server/30_services/AirportPrefs.js','utf8');
@@ -356,7 +453,12 @@ console.log('14. negative control: removing the flushes must reproduce the bug')
 console.log('15. negative control: the metro sort');
 {
   const src=fs.readFileSync('lets_app/server/30_services/CityPairs.js','utf8');
-  const broken=src.replace("if (a.isMetroArea !== b.isMetroArea) return a.isMetroArea ? 1 : -1;\n        return b.routeCount - a.routeCount;","return b.routeCount - a.routeCount;");
+  // Patch out ONLY the metro discriminator, leaving the route-count sort. Keyed
+  // on the single line rather than a multi-line block, so extracting or
+  // reindenting rank() cannot silently break the control.
+  const broken=src.replace(
+    "if (a.isMetroArea !== b.isMetroArea) return a.isMetroArea ? 1 : -1;",
+    "// metro discriminator removed");
   if(broken===src){ok('negative control patched source',false);}
   else{
     const cache={};

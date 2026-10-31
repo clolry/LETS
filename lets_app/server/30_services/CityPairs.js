@@ -362,6 +362,39 @@ function _readCityPairRows_(pairKey) {
 }
 
 /**
+ * City name aliases, HR spelling -> GSA award-file spelling.
+ *
+ * The award file names each airport's city, and that is not always the city an
+ * employee's duty station records. FORT WORTH, TX resolved to NOTHING because
+ * GSA files DFW and DAL under DALLAS — so a traveller based in Fort Worth got
+ * an EMPTY airport picker, which blocks a submission rather than merely
+ * inconveniencing it.
+ *
+ * Observed from the real FY27 data via diagUnresolvedCityNames(), not guessed.
+ * Of the 22 Texas city names GSA uses, none is FORT WORTH.
+ *
+ * This table is the PRECISE layer. It is deliberately small, because a
+ * hand-maintained map of US city names would rot: HR naming and GSA naming
+ * drift independently, and a stale entry is worse than no entry. The
+ * state-level fallback below is what guarantees nobody ever sees an empty
+ * picker, so this table only has to cover cases where the fallback would be
+ * annoyingly broad.
+ *
+ * Add an entry when diagDutyStationAirports() reports a NO MATCH and the
+ * fallback's result is too wide to be useful.
+ */
+var GSA_CITY_ALIASES = {
+  'FORT WORTH|TX': 'DALLAS',
+  'ARLINGTON|TX': 'DALLAS',      // DFW serves it; GSA lists no ARLINGTON TX
+  'PLANO|TX': 'DALLAS',
+  'IRVING|TX': 'DALLAS',
+  'OAKLAND|CA': 'SAN FRANCISCO', // OAK is filed under SAN FRANCISCO
+  'NEWARK|NJ': 'NEW YORK',       // EWR is filed under NEW YORK
+  'ARLINGTON|VA': 'WASHINGTON',  // DCA is filed under WASHINGTON DC
+  'ALEXANDRIA|VA': 'WASHINGTON'
+};
+
+/**
  * Airports serving a city, derived from the synced data rather than a
  * hardcoded table.
  *
@@ -378,9 +411,21 @@ function _readCityPairRows_(pairKey) {
  * WAS outranked DCA on route count, which is what made the original
  * country-based detection wrong.
  *
+ * RESOLUTION IS THREE-TIERED, and never returns empty when the state is known:
+ *
+ *   1. exact city match                 matchType 'exact'
+ *   2. GSA_CITY_ALIASES                 matchType 'alias'
+ *   3. every airport in the state       matchType 'state'
+ *
+ * The fallback matters more than it looks. An exact-match-only lookup returns
+ * nothing for a city GSA spells differently, and "no airports" reads to a user
+ * as a broken form. Degrading to "all Texas airports, busiest first" is
+ * imperfect but always actionable, and matchType lets the UI explain itself
+ * rather than silently offering 22 options.
+ *
  * @param {string} cityName
  * @param {string} [stateCode]
- * @returns {Object} { success, airports: [{code, city, state, country, isMetroArea, metroLabel, routeCount}] }
+ * @returns {Object} { success, airports[], matchType, matchedCity, requestedCity }
  * @server
  */
 function getAirportsForCity(cityName, stateCode) {
@@ -405,7 +450,8 @@ function getAirportsForCity(cityName, stateCode) {
     }
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) {
-      return { success: true, airports: [], message: 'City_Pairs is empty. Run syncCityPairs().' };
+      return { success: true, airports: [], matchType: 'none',
+               requestedCity: city, message: 'City_Pairs is empty. Run syncCityPairs().' };
     }
 
     var headers = TRAVEL_SHEET_SCHEMAS[SHEET_NAMES.CITY_PAIRS];
@@ -413,14 +459,41 @@ function getAirportsForCity(cityName, stateCode) {
     headers.forEach(function (h, i) { c[h] = i; });
     var values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
 
+    // Tier 2 is resolved before the scan so the matcher only has to compare
+    // against one target name.
+    var aliasTarget = GSA_CITY_ALIASES[city + '|' + state] || null;
+    var targetCity = aliasTarget || city;
+    var matchType = aliasTarget ? 'alias' : 'exact';
+
     var found = {};
+    var stateWide = {};
     function consider(code, cityVal, stateVal, countryVal) {
       var rowCity = String(cityVal || '').trim().toUpperCase();
-      if (rowCity !== city) return;
       var rowState = String(stateVal || '').trim().toUpperCase();
-      if (state && rowState && rowState !== state) return;
       var abbrev = String(code || '').trim().toUpperCase();
       if (!abbrev) return;
+      if (state && rowState && rowState !== state) return;
+
+      // Collected during the SAME pass as the exact match, so tier 3 costs no
+      // extra sheet scan. A 17,403-row scan is ~2.7s cold; doing it twice to
+      // handle a fallback would be worse than the problem.
+      if (state && rowState === state) {
+        if (!stateWide[abbrev]) {
+          var metroS = isMetroAreaCode(abbrev);
+          stateWide[abbrev] = {
+            code: abbrev,
+            city: String(cityVal || '').trim(),
+            state: String(stateVal || '').trim(),
+            country: String(countryVal || '').trim(),
+            isMetroArea: metroS,
+            metroLabel: metroS ? IATA_METRO_CODES[abbrev] : '',
+            routeCount: 0
+          };
+        }
+        stateWide[abbrev].routeCount++;
+      }
+
+      if (rowCity !== targetCity) return;
       if (!found[abbrev]) {
         var metro = isMetroAreaCode(abbrev);
         found[abbrev] = {
@@ -447,22 +520,49 @@ function getAirportsForCity(cityName, stateCode) {
                values[i][c['Destination_State']], values[i][c['Destination_Country']]);
     }
 
-    // Real airports first, most-connected first within each group. Metro
-    // aggregates sort LAST so they can never become a default: WAS carries
-    // more routes than DCA, so a pure route-count sort picked the aggregate.
-    var airports = Object.keys(found).map(function (k) { return found[k]; })
-      .sort(function (a, b) {
-        if (a.isMetroArea !== b.isMetroArea) return a.isMetroArea ? 1 : -1;
-        return b.routeCount - a.routeCount;
-      });
+    function rank(map) {
+      // Real airports first, most-connected first within each group. Metro
+      // aggregates sort LAST so they can never become a default: WAS carries
+      // more routes than DCA, so a pure route-count sort picked the aggregate.
+      return Object.keys(map).map(function (k) { return map[k]; })
+        .sort(function (a, b) {
+          if (a.isMetroArea !== b.isMetroArea) return a.isMetroArea ? 1 : -1;
+          return b.routeCount - a.routeCount;
+        });
+    }
 
-    var result = { success: true, airports: airports };
+    var airports = rank(found);
+    var matchedCity = targetCity;
+
+    // Tier 3. Only reached when neither the city nor its alias matched, and
+    // only when a state is known — a bare city name with no state has nothing
+    // to fall back to.
+    if (!airports.length && state) {
+      airports = rank(stateWide);
+      if (airports.length) {
+        matchType = 'state';
+        matchedCity = '';
+      }
+    }
+
+    if (!airports.length) matchType = 'none';
+
+    var result = {
+      success: true,
+      airports: airports,
+      // The UI needs this to explain itself: a 'state' match should say so
+      // rather than silently presenting 22 airports as though they all serve
+      // the requested city.
+      matchType: matchType,
+      matchedCity: matchedCity,
+      requestedCity: city
+    };
     cache.put(cacheKey, JSON.stringify(result), CACHE_CONFIG.TTL.PER_DIEM);
     return result;
 
   } catch (error) {
     console.error('getAirportsForCity failed: ' + error.message);
-    return { success: false, airports: [], error: error.message };
+    return { success: false, airports: [], matchType: 'none', error: error.message };
   }
 }
 

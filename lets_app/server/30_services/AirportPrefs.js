@@ -255,6 +255,9 @@ function getAirportOptionsForCity(cityName, stateCode, userId, prefType) {
     var listing = getAirportsForCity(cityName, stateCode);
     if (!listing.success) return { success: false, error: listing.error, airports: [], defaultCode: '' };
 
+    // Carry the resolution tier through, so the UI can say "no airports listed
+    // for Fort Worth, TX — showing Texas airports" instead of presenting a
+    // state-wide list as though every one of them served the requested city.
     var airports = (listing.airports || []).map(function (a) {
       return {
         code: a.code,
@@ -308,6 +311,9 @@ function getAirportOptionsForCity(cityName, stateCode, userId, prefType) {
       airports: airports,
       defaultCode: airports.length ? airports[0].code : '',
       preferredCode: preferredCode,
+      matchType: listing.matchType || 'none',
+      matchedCity: listing.matchedCity || '',
+      requestedCity: listing.requestedCity || '',
       // True when the UI should offer a choice at all. A single-airport city
       // (Honolulu is only HNL) should not make anyone pick.
       hasChoice: airports.filter(function (a) { return !a.isMetroArea; }).length > 1
@@ -391,6 +397,9 @@ function getPricedDestinationOptions(originCode, destCityName, destState, userId
       origin: origin,
       options: options,
       defaultCode: options.length ? options[0].code : '',
+      matchType: listing.matchType || 'none',
+      matchedCity: listing.matchedCity || '',
+      requestedCity: listing.requestedCity || '',
       hasChoice: options.filter(function (o) { return !o.isMetroArea; }).length > 1
     };
 
