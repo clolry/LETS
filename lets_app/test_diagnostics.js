@@ -65,6 +65,7 @@ console.log('2. every diag function is reachable and returns nothing');
     PropertiesService:{getScriptProperties:()=>({getProperty:k=>
       k==='LETS_ENV'?'development':k==='TRAVEL_DB_SPREADSHEET_ID'?'1AAAAAAAAAAAAAAAAAAAA':null})},
     CacheService:{getScriptCache:()=>({get:()=>null,put:()=>{}})},
+    ScriptApp:{getProjectTriggers:()=>[]},
     Session:{getActiveUser:()=>({getEmail:()=>'chris@gsa.gov'})}};
   const ctx=vm.createContext(sb);
   vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID='1AAAAAAAAAAAAAAAAAAAA'; var LETS_ENV='development';",ctx);
@@ -84,7 +85,7 @@ console.log('2. every diag function is reachable and returns nothing');
   `,ctx);
   vm.runInContext(fs.readFileSync(SRC,'utf8'),ctx,{filename:'Diagnostics.js'});
 
-  ['diagEnvironment','diagCityPairs','diagHcData','diagAirportPrefs','diagAccess','diagAll']
+  ['diagEnvironment','diagCityPairs','diagHcData','diagAirportPrefs','diagTriggers','diagAccess','diagAll']
     .forEach(fn=>{
       let threw=null,ret;
       try{ ret=vm.runInContext(fn+'()',ctx); }catch(e){ threw=e; }
@@ -103,6 +104,7 @@ console.log('3. diagAccess refuses a non-admin');
     SpreadsheetApp:{openById:()=>({getSheetByName:()=>null})},
     PropertiesService:{getScriptProperties:()=>({getProperty:()=>null})},
     CacheService:{getScriptCache:()=>({get:()=>null,put:()=>{}})},
+    ScriptApp:{getProjectTriggers:()=>[]},
     Session:{getActiveUser:()=>({getEmail:()=>'nobody@gsa.gov'})}};
   const ctx=vm.createContext(sb);
   vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID=null; var LETS_ENV='development';",ctx);
@@ -127,6 +129,7 @@ console.log('4. survives a completely unconfigured environment');
     SpreadsheetApp:{openById:()=>{throw new Error('no such spreadsheet');}},
     PropertiesService:{getScriptProperties:()=>({getProperty:()=>null})},
     CacheService:{getScriptCache:()=>({get:()=>null,put:()=>{}})},
+    ScriptApp:{getProjectTriggers:()=>{throw new Error('no access');}},
     Session:{getActiveUser:()=>({getEmail:()=>''})}};
   const ctx=vm.createContext(sb);
   vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID=null; var LETS_ENV='development';",ctx);

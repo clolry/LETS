@@ -301,8 +301,27 @@ function getCityPairFaresBulk(originCode, destCodes, travelDate) {
 
   try {
     var buckets = _readCityPairRowsBulk_(keys);
+    var cache = CacheService.getScriptCache();
     keys.forEach(function (key) {
-      out[keyToDest[key]] = _selectFare_(key, buckets[key], travelDate);
+      var result = _selectFare_(key, buckets[key], travelDate);
+      out[keyToDest[key]] = result;
+
+      // Write THROUGH the same cache getCityPairFare reads, using an identical
+      // key, so a bulk call warms the single-lookup path. Without this, bulk
+      // and single were separate worlds: warmCityPairCache would run, report
+      // success, and leave every subsequent getCityPairFare paying the full
+      // 2.7s cold scan. The warming function's own comment claimed this
+      // happened before it actually did.
+      try {
+        cache.put(
+          'cp_fare_' + key + (travelDate ? '_' + travelDate : ''),
+          JSON.stringify(result),
+          CACHE_CONFIG.TTL.PER_DIEM
+        );
+      } catch (ce) {
+        // A cache write failure is never fatal; the sheet is the truth.
+        console.warn('getCityPairFaresBulk: cache write failed for ' + key + ': ' + ce.message);
+      }
     });
   } catch (e) {
     console.error('getCityPairFaresBulk failed: ' + e.message);

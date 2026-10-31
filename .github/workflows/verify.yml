@@ -66,6 +66,9 @@ jobs:
       - name: Diagnostics smoke tests
         run: node lets_app/test_diagnostics.js
 
+      - name: Cache warming tests
+        run: node lets_app/test_cache_warming.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -167,6 +170,23 @@ jobs:
             exit 1
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
+
+      - name: 'Guard: bulk fare lookups must warm the single-lookup cache'
+        run: |
+          echo "Checking getCityPairFaresBulk writes through to the cache..."
+          # A cold fare lookup scans all 17,403 City_Pairs rows (2.7s measured
+          # in the sandbox). warmCityPairCache pre-warms common routes via the
+          # bulk reader, so the bulk reader MUST write the same cache keys
+          # getCityPairFare reads.
+          #
+          # It originally did not. Warming ran, reported success, and left
+          # every later lookup paying the full cold scan — a feature that was
+          # entirely decorative with no visible failure.
+          if ! grep -q "cp_fare_' + key" lets_app/server/30_services/CityPairs.js; then
+            echo "::error file=lets_app/server/30_services/CityPairs.js::getCityPairFaresBulk no longer writes cp_fare_ cache entries. Cache warming becomes a no-op and every fare lookup pays a 2.7s cold scan, silently."
+            exit 1
+          fi
+          echo "PASS - bulk lookups warm the single-lookup cache."
 
       - name: 'Guard: diagnostics must stay read-only'
         run: |

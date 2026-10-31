@@ -59,6 +59,7 @@ function diagAll() {
   diagCityPairs();
   diagHcData();
   diagAirportPrefs();
+  diagTriggers();
   diagAccess();
   console.log('================================================================');
   console.log('END OF DIAGNOSTICS');
@@ -410,6 +411,57 @@ function diagAirportPrefs() {
 
   } catch (error) {
     console.log('diagAirportPrefs FAILED: ' + error.message);
+  }
+}
+
+/**
+ * Installed triggers, and whether their handlers still exist.
+ *
+ * Renaming a trigger handler is a silent breakage: the installed trigger keeps
+ * firing against a function that no longer resolves, and the only evidence is
+ * a failure email nobody reads. Relocating a handler between files is safe;
+ * renaming it is not.
+ *
+ * @editor
+ */
+function diagTriggers() {
+  console.log('');
+  console.log('--- TRIGGERS ---');
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    if (!triggers.length) {
+      console.log('No installed triggers.');
+      console.log('Expected in a configured environment:');
+      console.log('  syncCityPairs           installCityPairSyncTrigger()');
+      console.log('  warmCityPairCache       installCityPairWarmingTrigger()');
+      console.log('  warmGSACitiesCache      installGSACitiesWarmingTrigger()');
+      return;
+    }
+
+    console.log(triggers.length + ' installed:');
+    triggers.forEach(function (t) {
+      var handler = t.getHandlerFunction();
+      // A handler that no longer resolves is the failure this check exists for.
+      var exists = true;
+      try {
+        exists = (typeof this[handler] === 'function');
+      } catch (e) {
+        exists = false;
+      }
+      console.log('  ' + handler +
+                  '  [' + t.getEventType() + ']' +
+                  (exists ? '' : '  *** HANDLER NOT FOUND — this trigger fires into nothing ***'));
+    });
+
+    var handlers = triggers.map(function (t) { return t.getHandlerFunction(); });
+    ['syncCityPairs', 'warmCityPairCache'].forEach(function (want) {
+      if (handlers.indexOf(want) === -1) {
+        console.log('  NOTE: ' + want + ' is not installed.');
+      }
+    });
+
+  } catch (error) {
+    console.log('diagTriggers FAILED: ' + error.message);
   }
 }
 

@@ -2029,3 +2029,199 @@ function _checkAllPageTemplates() {
   }
   return { ok: ok, failed: failed };
 }
+
+// ============================================================================
+// CITY PAIR FARES — warm the routes people actually fly
+// ============================================================================
+
+/**
+ * Trigger target — pre-warms contract-fare lookups for the routes this
+ * workgroup is most likely to request.
+ *
+ * WHY THIS EXISTS, AND WHAT IT DOES NOT FIX
+ * -----------------------------------------
+ * A cold getCityPairFare scans all 17,403 City_Pairs rows. Measured in the
+ * sandbox: 2,749ms cold, 27ms warm. The 2.7s is structural — ~296,000 cells
+ * per scan — and getCityPairFaresBulk already collapses N lookups into one, so
+ * the remaining cost is the single irreducible scan.
+ *
+ * Warming CANNOT cover the space. There are 17,403 pairs and the cache holds
+ * per-pair entries with a 24h TTL, so this reduces HOW OFTEN someone waits
+ * rather than eliminating the wait. A traveller picking an unwarmed city still
+ * pays the full 2.7s, and the picker UI shows a spinner for exactly that case.
+ * @clolry accepted that trade-off explicitly.
+ *
+ * The routes warmed are derived from DATA, not hardcoded: every HC duty
+ * station is an origin, and the destinations are the busiest airports in the
+ * City_Pairs set. That keeps working as the roster and the award file change,
+ * where a hardcoded route list would quietly go stale.
+ *
+ * Paced with Utilities.sleep to stay clear of per-second limits, and bounded
+ * by CITY_PAIR_WARM_MAX_PAIRS so a large roster cannot push this past the
+ * 6-minute execution cap.
+ *
+ * @trigger
+ */
+function warmCityPairCache() {
+  var MAX_ORIGINS = 12;
+  var MAX_DESTINATIONS = 20;
+  var CITY_PAIR_WARM_MAX_PAIRS = 150;
+
+  var started = Date.now();
+  var warmed = 0, failed = 0, skipped = 0;
+
+  try {
+    // Origins: the distinct duty-station cities in the HC roster. These are
+    // where real travel starts.
+    var origins = [];
+    try {
+      var bundle = HC.hcGetBundle();
+      if (bundle && bundle.success && bundle.data) {
+        var seenCity = {};
+        for (var i = 0; i < bundle.data.length && origins.length < MAX_ORIGINS; i++) {
+          var loc = bundle.data[i].location || {};
+          var city = String(loc.city || '').trim().toUpperCase();
+          var state = String(loc.state || '').trim().toUpperCase();
+          if (!city || seenCity[city + '|' + state]) continue;
+          seenCity[city + '|' + state] = true;
+
+          // Resolve the city to its real airports, skipping metro aggregates —
+          // an aggregate code carries no awarded fare, so warming it is waste.
+          var opts = getAirportsForCity(city, state);
+          if (!opts || !opts.success) continue;
+          for (var a = 0; a < opts.airports.length; a++) {
+            if (opts.airports[a].isMetroArea) continue;
+            origins.push(opts.airports[a].code);
+            break;   // busiest real airport per duty station is enough
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('warmCityPairCache: HC origins unavailable: ' + e.message);
+    }
+
+    if (!origins.length) {
+      console.log('warmCityPairCache: no HC duty stations resolved; nothing to warm.');
+      return { success: true, warmed: 0, skipped: 0, failed: 0 };
+    }
+
+    // Destinations: the most-connected real airports in the award file. One
+    // scan, reused for every origin.
+    var destinations = _busiestCityPairAirports_(MAX_DESTINATIONS);
+    if (!destinations.length) {
+      console.log('warmCityPairCache: City_Pairs is empty; run syncCityPairs().');
+      return { success: true, warmed: 0, skipped: 0, failed: 0 };
+    }
+
+    // One bulk call per origin: a single sheet scan prices every destination
+    // for that origin, and getCityPairFaresBulk writes each result through the
+    // per-pair cache.
+    for (var o = 0; o < origins.length; o++) {
+      if (warmed + skipped >= CITY_PAIR_WARM_MAX_PAIRS) break;
+      var origin = origins[o];
+      var dests = destinations.filter(function (d) { return d !== origin; });
+
+      try {
+        var fares = getCityPairFaresBulk(origin, dests);
+        Object.keys(fares).forEach(function (d) {
+          if (fares[d] && fares[d].success && fares[d].found) warmed++;
+          else skipped++;   // no awarded fare on that route; nothing to cache
+        });
+      } catch (e) {
+        failed++;
+        console.warn('warmCityPairCache: ' + origin + ' threw: ' + e.message);
+      }
+      Utilities.sleep(80);
+    }
+
+    var ms = Date.now() - started;
+    console.log('warmCityPairCache: ' + warmed + ' warmed, ' + skipped +
+      ' unawarded, ' + failed + ' failed across ' + origins.length +
+      ' origin(s) in ' + ms + 'ms');
+    if (ms > 240000) {
+      console.warn('warmCityPairCache: approaching the 6-minute execution cap; ' +
+        'lower MAX_ORIGINS or MAX_DESTINATIONS.');
+    }
+    return { success: true, warmed: warmed, skipped: skipped, failed: failed, durationMs: ms };
+
+  } catch (error) {
+    console.error('warmCityPairCache failed: ' + error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * The most-connected non-metro airports in City_Pairs.
+ *
+ * Counts both sides of each pair, because GSA stores origin and destination in
+ * alphabetical order — an airport appears on whichever side sorts first, so
+ * counting one side would miss roughly half its routes.
+ *
+ * @param {number} limit
+ * @returns {Array<string>} airport codes, busiest first
+ */
+function _busiestCityPairAirports_(limit) {
+  if (!TRAVEL_DB_SPREADSHEET_ID) return [];
+  var ss = SpreadsheetApp.openById(TRAVEL_DB_SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(SHEET_NAMES.CITY_PAIRS);
+  if (!sheet) return [];
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  var headers = TRAVEL_SHEET_SCHEMAS[SHEET_NAMES.CITY_PAIRS];
+  var c = {};
+  headers.forEach(function (h, i) { c[h] = i; });
+  var values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+
+  var counts = {};
+  for (var i = 0; i < values.length; i++) {
+    var oc = String(values[i][c['Origin_Airport_Abbrev']] || '').trim().toUpperCase();
+    var dc = String(values[i][c['Destination_Airport_Abbrev']] || '').trim().toUpperCase();
+    if (oc) counts[oc] = (counts[oc] || 0) + 1;
+    if (dc) counts[dc] = (counts[dc] || 0) + 1;
+  }
+
+  return Object.keys(counts)
+    .filter(function (code) { return !isMetroAreaCode(code); })
+    .sort(function (a, b) { return counts[b] - counts[a]; })
+    .slice(0, limit || 20);
+}
+
+/**
+ * Install (or reinstall) the city-pair warming trigger.
+ *
+ * Every 6 hours, matching warmGSACitiesCache. The per-pair cache TTL is 24h,
+ * but CacheService LRU-evicts under quota pressure and these entries compete
+ * with TravelDB warming, the HC bundle and request_review_* entries — so a
+ * cadence shorter than the TTL is deliberate.
+ *
+ * Fares themselves are fixed for the fiscal year, so this is purely about
+ * cache residency, not freshness.
+ *
+ * @editor
+ */
+function installCityPairWarmingTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'warmCityPairCache') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('warmCityPairCache').timeBased().everyHours(6).create();
+  console.log('Installed city pair warming trigger (every 6 hours)');
+  return { success: true };
+}
+
+/**
+ * Remove the city-pair warming trigger.
+ *
+ * @editor
+ */
+function removeCityPairWarmingTrigger() {
+  var removed = 0;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'warmCityPairCache') {
+      ScriptApp.deleteTrigger(t);
+      removed++;
+    }
+  });
+  console.log('Removed ' + removed + ' city pair warming trigger(s)');
+  return { success: true, removed: removed };
+}
