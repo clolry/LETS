@@ -36,7 +36,45 @@
  * not seventeen thousand, so per-pair caching is both smaller and warmer than
  * caching the whole index. CACHE_CONFIG.CHUNK_SIZE exists if a full index is
  * ever needed.
+ *
+ * CACHE KEYS ARE VERSIONED — BUMP THEM WHEN A RESULT SHAPE CHANGES
+ * ---------------------------------------------------------------
+ * Entries live for CACHE_CONFIG.TTL.PER_DIEM (24h). An unversioned key means a
+ * deploy that changes what a cached value MEANS keeps serving the old shape
+ * until the TTL expires, so correct new code produces stale output and nothing
+ * errors.
+ *
+ * That happened. The three-tier city resolution (exact / alias / state) shipped
+ * and diagDutyStationAirports still reported FORT WORTH as NO MATCH, because
+ * 'cp_airports_FORT WORTH_TX' had been cached empty before the alias existed.
+ * The deploy was fine; the cache was lying.
+ *
+ * So: if you change the fields on a cached result, or change how one is
+ * computed, bump the version suffix in the same commit. CI greps for the
+ * constants below, but it cannot tell you that a bump was NEEDED — that
+ * judgement is yours.
  */
+
+// Bump when the cached result shape or its computation changes.
+//   v1 -> v2: getAirportsForCity gained matchType/matchedCity/requestedCity
+//             and three-tier alias + state fallback resolution.
+var CP_AIRPORTS_CACHE_VERSION = 'v2';
+
+// Bump when the fare result shape changes.
+//   v1 -> v2: added awardedService; effective/expiration dates normalized
+//             from Date objects to ISO strings.
+var CP_FARE_CACHE_VERSION = 'v2';
+
+/** Cache key for a single pair's fare result. */
+function cityPairFareCacheKey_(pairKey, travelDate) {
+  return 'cp_fare_' + CP_FARE_CACHE_VERSION + '_' + pairKey +
+         (travelDate ? '_' + travelDate : '');
+}
+
+/** Cache key for a city's airport listing. */
+function cityAirportsCacheKey_(city, state) {
+  return 'cp_airports_' + CP_AIRPORTS_CACHE_VERSION + '_' + city + '_' + state;
+}
 
 /**
  * IATA METROPOLITAN AREA CODES.
@@ -133,7 +171,7 @@ function getCityPairFare(originCode, destCode, travelDate) {
   }
 
   try {
-    var cacheKey = 'cp_fare_' + pairKey + (travelDate ? '_' + travelDate : '');
+    var cacheKey = cityPairFareCacheKey_(pairKey, travelDate);
     var cache = CacheService.getScriptCache();
     var hit = cache.get(cacheKey);
     if (hit) return JSON.parse(hit);
@@ -314,7 +352,7 @@ function getCityPairFaresBulk(originCode, destCodes, travelDate) {
       // happened before it actually did.
       try {
         cache.put(
-          'cp_fare_' + key + (travelDate ? '_' + travelDate : ''),
+          cityPairFareCacheKey_(key, travelDate),
           JSON.stringify(result),
           CACHE_CONFIG.TTL.PER_DIEM
         );
@@ -434,7 +472,7 @@ function getAirportsForCity(cityName, stateCode) {
   var state = String(stateCode || '').trim().toUpperCase();
 
   try {
-    var cacheKey = 'cp_airports_' + city + '_' + state;
+    var cacheKey = cityAirportsCacheKey_(city, state);
     var cache = CacheService.getScriptCache();
     var hit = cache.get(cacheKey);
     if (hit) return JSON.parse(hit);

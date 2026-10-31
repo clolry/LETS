@@ -241,6 +241,38 @@ jobs:
           fi
           echo "PASS - preference writes flush and are serialized."
 
+      - name: 'Guard: CacheService keys must be versioned'
+        run: |
+          echo "Checking cache keys carry a version token..."
+          # Cache entries live 24h. An UNVERSIONED key means a deploy that
+          # changes what a cached value MEANS keeps serving the old shape until
+          # the TTL expires — correct new code producing stale output, with
+          # nothing erroring.
+          #
+          # This already happened: the three-tier city resolution shipped and
+          # FORT WORTH still reported NO MATCH, because its airport list had
+          # been cached EMPTY before the alias logic existed.
+          #
+          # This guard only checks the keys are BUILT through the versioned
+          # helpers. It cannot tell you a bump was NEEDED — that judgement
+          # belongs to whoever changes a cached result's shape.
+          for CONST in CP_AIRPORTS_CACHE_VERSION CP_FARE_CACHE_VERSION; do
+            if ! grep -q "var ${CONST} = 'v" lets_app/server/30_services/CityPairs.js; then
+              echo "::error file=lets_app/server/30_services/CityPairs.js::${CONST} is missing or malformed. Cache keys must carry a version so a shape change cannot serve stale entries for 24h."
+              exit 1
+            fi
+          done
+          # Any raw key literal outside the two helper functions bypasses
+          # versioning entirely.
+          STRAY=$(grep -nE "'cp_(fare|airports)_'" lets_app/server/30_services/CityPairs.js \
+                  | grep -vE 'cp_fare_. \+ CP_FARE_CACHE_VERSION|cp_airports_. \+ CP_AIRPORTS_CACHE_VERSION' || true)
+          if [ -n "$STRAY" ]; then
+            echo "::error file=lets_app/server/30_services/CityPairs.js::An unversioned cache key literal was found. Build keys with cityPairFareCacheKey_() or cityAirportsCacheKey_():"
+            echo "$STRAY"
+            exit 1
+          fi
+          echo "PASS - cache keys are versioned."
+
       - name: 'Guard: city resolution must have a fallback'
         run: |
           echo "Checking getAirportsForCity never returns an empty picker..."

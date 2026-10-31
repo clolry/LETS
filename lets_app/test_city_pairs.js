@@ -158,6 +158,34 @@ const url=run("getCityPairCsvUrl_()");
 ok('substitutes a 4-digit FY', /awards_20\d\d\.csv$/.test(url), url);
 ok('uses FY27 in Oct 2026', url.indexOf('awards_2027')>-1, url);
 
+console.log('10b. cache keys are versioned');
+{
+  // An unversioned key means a deploy that changes what a cached value MEANS
+  // keeps serving the old shape for the 24h TTL — correct new code producing
+  // stale output, with nothing erroring.
+  //
+  // This is not hypothetical. The three-tier city resolution shipped and
+  // diagDutyStationAirports still reported FORT WORTH as NO MATCH, because
+  // 'cp_airports_FORT WORTH_TX' had been cached EMPTY before the alias logic
+  // existed. The deploy was correct; the cache was lying.
+  const fareKey=run("cityPairFareCacheKey_('DCA|ORD')");
+  ok('fare key carries a version', /^cp_fare_v\d+_/.test(fareKey), fareKey);
+  ok('fare key includes the pair', fareKey.indexOf('DCA|ORD')>-1, fareKey);
+  const dated=run("cityPairFareCacheKey_('DCA|ORD','2027-02-15')");
+  ok('travel date varies the key', dated!==fareKey && dated.indexOf('2027-02-15')>-1, dated);
+
+  const apKey=run("cityAirportsCacheKey_('FORT WORTH','TX')");
+  ok('airports key carries a version', /^cp_airports_v\d+_/.test(apKey), apKey);
+  ok('airports key includes city and state',
+     apKey.indexOf('FORT WORTH')>-1 && apKey.indexOf('TX')>-1, apKey);
+
+  // The whole point: bumping the constant must invalidate every old entry.
+  const v=run('CP_AIRPORTS_CACHE_VERSION');
+  ok('version is a bare vN token', /^v\d+$/.test(v), v);
+  ok('reads cannot hit a previous version',
+     apKey.indexOf('cp_airports_v1_')===-1 || v==='v1', apKey);
+}
+
 console.log('11. negative control (the suite must be able to fail)');
 {
   // Remove the alphabetical sort from buildPairKey_ and confirm section 2

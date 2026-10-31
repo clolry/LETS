@@ -166,6 +166,15 @@ function diagEnvironment() {
       console.log('  ' + k + ': ' + shown);
     });
 
+    console.log('');
+    try {
+      console.log('Cache key versions (bump on a result-shape change):');
+      console.log('  cp_airports: ' + CP_AIRPORTS_CACHE_VERSION);
+      console.log('  cp_fare:     ' + CP_FARE_CACHE_VERSION);
+    } catch (e) {
+      console.log('Cache key versions: [unavailable: ' + e.message + ']');
+    }
+
     // Two known traps worth surfacing every time rather than remembering.
     console.log('');
     if (props.getProperty('MILEAGE_RATE_PRIVATE') === null) {
@@ -542,6 +551,12 @@ function diagDutyStationAirports() {
       console.log(unresolved.length + ' city/state pair(s) resolve to NO airport.');
       console.log('A traveller based there gets an empty airport picker.');
       console.log('Run diagUnresolvedCityNames() to see what GSA calls them.');
+      console.log('');
+      console.log('If an alias for one of these was added recently, a STALE CACHE');
+      console.log('entry may be masking it: airport listings cache for 24h, so a');
+      console.log('city cached empty before the alias existed keeps reporting NO');
+      console.log('MATCH. Bump CP_AIRPORTS_CACHE_VERSION in CityPairs.js to');
+      console.log('invalidate every entry at once.');
     }
 
   } catch (error) {
