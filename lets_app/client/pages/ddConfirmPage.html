@@ -1108,7 +1108,7 @@
     function renderTraveler(t, idx, alreadyConfirmed) {
       const isClientPaid = String(t.isClientPaid || '').toLowerCase().includes('client');
       const fundingClass = isClientPaid ? 'dd-traveler__funding--client' : 'dd-traveler__funding--overhead';
-      const fundingLabel = isClientPaid ? 'Client' : 'Overhead';
+      const fundingLabel = isClientPaid ? 'Client' : 'GSA-Paid';
       const isChecked = t.ddConfirmed || checkedTravelers.has(idx);
       const isFlagged = flaggedTravelers.has(idx);
       const checkedClass = isChecked && !isFlagged ? 'dd-traveler--checked' : '';
@@ -1280,7 +1280,7 @@
         if (!t) return '';
         const isClientPaid = String(t.isClientPaid || '').toLowerCase().includes('client');
         const badgeClass = isClientPaid ? 'issue-modal__flagged-badge--client' : 'issue-modal__flagged-badge--overhead';
-        const badgeLabel = isClientPaid ? 'Client' : 'Overhead';
+        const badgeLabel = isClientPaid ? 'Client' : 'GSA-Paid';
         return `
           <div class="issue-modal__flagged-item">
             <i aria-hidden="true" class="fas fa-flag"></i>
@@ -1323,7 +1323,7 @@
           return {
             travelerId: t?.travelerId || '',
             employeeName: t?.employeeName || '',
-            currentFunding: t?.isClientPaid === 'client' ? 'Client' : 'Overhead'
+            currentFunding: t?.isClientPaid === 'client' ? 'Client' : 'GSA-Paid'
           };
         }).filter(t => t.travelerId);
 

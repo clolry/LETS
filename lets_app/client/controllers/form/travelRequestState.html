@@ -649,7 +649,15 @@
         otherExplanation: '',
 
         // Classification
-        isClientPaid: '',
+        //
+        // Defaults to 'overhead' (GSA-Paid). The workgroup this code was
+        // inherited from did a great deal of customer-funded travel; this one
+        // does perhaps one client-paid trip a year, so leaving it blank made
+        // every traveller pick the same answer. The stored value stays
+        // 'overhead' because Submission.js routing, Admin_Dashboard spend
+        // buckets, ReviewerDashboard and Review_Action all branch on it —
+        // only the LABEL changed to GSA-Paid.
+        isClientPaid: 'overhead',
         roleJustification: '',
 
         // International fields (shown if any attended leg is international)

@@ -2445,7 +2445,7 @@ function sendFasReviewerNotification(requestId, formData, reviewer) {
   const travelerCount = (formData.travelers || []).length;
   const travelerNames = _getTravelerNames(formData.travelers);
 
-  const subject = 'TRIP Request ' + requestId + ' - NEW Overhead Travel Request Pending Your Review';
+  const subject = 'TRIP Request ' + requestId + ' - NEW GSA-Paid Travel Request Pending Your Review';
 
   // Build intro with personalization
   const introText = (reviewerName + ',<br><br>An overhead mission-critical travel request has been approved by AAS leadership and now requires FAS Front Office review. Please review the request at your earliest convenience and take the appropriate action in AAS TRIP.');
@@ -2847,7 +2847,7 @@ function sendDDConfirmationEmail(ddGroup, request, confirmUrl) {
     const name = escapeHtml(t.employeeName || t.name || 'Unknown');
     const dutyLocation = escapeHtml(t.dutyLocation || 'N/A');
     const isClientPaid = String(t.isClientPaid || '').toLowerCase().includes('client');
-    const fundingLabel = isClientPaid ? 'Client-Paid' : 'Overhead';
+    const fundingLabel = isClientPaid ? 'Client-Paid' : 'GSA-Paid';
     const fundingColor = isClientPaid ? EMAIL_STYLES.colors.successDark : EMAIL_STYLES.colors.primary;
     const fundingBg = isClientPaid ? '#ECFDF5' : '#EFF6FF';
 
@@ -2977,7 +2977,7 @@ function sendDDReconfirmationEmail(ddGroup, request, confirmUrl) {
     const name = escapeHtml(t.employeeName || t.name || 'Unknown');
     const dutyLocation = escapeHtml(t.dutyLocation || 'N/A');
     const isClientPaid = String(t.isClientPaid || '').toLowerCase().includes('client');
-    const fundingLabel = isClientPaid ? 'Client-Paid' : 'Overhead';
+    const fundingLabel = isClientPaid ? 'Client-Paid' : 'GSA-Paid';
     const fundingColor = isClientPaid ? EMAIL_STYLES.colors.successDark : EMAIL_STYLES.colors.primary;
     const fundingBg = isClientPaid ? '#ECFDF5' : '#EFF6FF';
 
@@ -3122,7 +3122,7 @@ function sendDDFundingIssueEmail(request, reporter, flaggedTravelers, descriptio
         </td>
         <td style="padding: 10px 16px; border-bottom: 1px solid #FECACA; text-align: right;">
           <span style="display: inline-block; padding: 4px 10px; background: ${isClient ? '#DCFCE7' : '#E0F2FE'}; color: ${isClient ? '#15803D' : '#0369A1'}; font-size: 11px; font-weight: 600; border-radius: 16px;">
-            ${isClient ? 'Client' : 'Overhead'}
+            ${isClient ? 'Client-Paid' : 'GSA-Paid'}
           </span>
         </td>
       </tr>
@@ -3503,8 +3503,8 @@ function _testAllEmailTemplates() {
     sendDDFundingIssueEmail(
       testRequest,
       { name: 'Michael Director', email: testEmail },
-      [{ employeeName: 'John Smith', currentFunding: 'Overhead' }],
-      'GO.gov authorization shows Client-Paid but request shows Overhead. Please verify correct funding source.'
+      [{ employeeName: 'John Smith', currentFunding: 'GSA-Paid' }],
+      'GO.gov authorization shows Client-Paid but request shows GSA-Paid. Please verify correct funding source.'
     )
   );
 

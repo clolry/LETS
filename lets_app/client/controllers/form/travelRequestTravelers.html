@@ -461,15 +461,27 @@
                 <div class="tc__funding">
                   <label class="tc__field-label">Funding</label>
                   <div class="tc__toggle-group">
+                    <!--
+                      GSA-Paid is first and defaults selected. This workgroup
+                      does roughly one client-paid trip a year, where the group
+                      this code came from did a great deal of customer-funded
+                      travel.
+
+                      The stored VALUE stays 'overhead'. Submission.js routing,
+                      Admin_Dashboard spend buckets, ReviewerDashboard and
+                      Review_Action all branch on that string, and some already
+                      carry rows written with it. Renaming the value would mean
+                      a data migration for a wording change.
+                    -->
+                    <label class="tc__toggle ${traveler.isClientPaid !== 'client' ? 'tc__toggle--active' : ''}">
+                      <input type="radio" name="tcFunding_${traveler.id}" value="overhead"
+                             ${traveler.isClientPaid !== 'client' ? 'checked' : ''}>
+                      <span>GSA-Paid</span>
+                    </label>
                     <label class="tc__toggle ${traveler.isClientPaid === 'client' ? 'tc__toggle--active' : ''}">
                       <input type="radio" name="tcFunding_${traveler.id}" value="client"
                              ${traveler.isClientPaid === 'client' ? 'checked' : ''}>
                       <span>Client-Paid</span>
-                    </label>
-                    <label class="tc__toggle ${traveler.isClientPaid === 'overhead' ? 'tc__toggle--active' : ''}">
-                      <input type="radio" name="tcFunding_${traveler.id}" value="overhead"
-                             ${traveler.isClientPaid === 'overhead' ? 'checked' : ''}>
-                      <span>Overhead</span>
                     </label>
                   </div>
                 </div>

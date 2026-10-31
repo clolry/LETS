@@ -237,6 +237,12 @@ return rows.some(row => {
 
 Executed against every input class — the copy is verified character-for-character against the source before running `[VERIFIED]`:
 
+**Terminology note (2026-10-31):** the UI now labels this funding type
+**GSA-Paid** rather than "Overhead", and it is the DEFAULT for a new traveller —
+this workgroup does roughly one client-paid trip a year. The STORED value is
+unchanged (`overhead`), so everything below still holds verbatim. The blank-cell
+row is now less likely to occur, since the form no longer starts unset.
+
 | Input | `isOverhead` | Outcome |
 |---|---|---|
 | One overhead traveller | `true` | `PENDING_FAS` — reviewed |

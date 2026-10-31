@@ -1029,13 +1029,18 @@
               </div>
             </div>
             <div class="correction-traveler__funding">
+              <!--
+                The radio VALUES are the strings the server stores and
+                branches on (ReviewerDashboard.js:426, Admin_Dashboard.js:446).
+                Only the labels changed to GSA-Paid / Client-Paid.
+              -->
               <label class="correction-funding-option">
                 <input type="radio" name="funding_${idx}" value="Overhead" ${!isClient ? 'checked' : ''}>
-                <span class="correction-funding-label correction-funding-label--overhead">Overhead</span>
+                <span class="correction-funding-label correction-funding-label--overhead">GSA-Paid</span>
               </label>
               <label class="correction-funding-option">
                 <input type="radio" name="funding_${idx}" value="Client-Paid" ${isClient ? 'checked' : ''}>
-                <span class="correction-funding-label correction-funding-label--client">Client</span>
+                <span class="correction-funding-label correction-funding-label--client">Client-Paid</span>
               </label>
             </div>
           </div>

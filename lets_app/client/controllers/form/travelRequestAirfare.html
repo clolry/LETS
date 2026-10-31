@@ -58,6 +58,82 @@
     return;
   }
 
+  /**
+   * IATA carrier codes -> airline names.
+   *
+   * The award file's AIRLINE_ABBREV column is a two-character IATA code. I
+   * originally rendered it raw on the grounds that mislabelling a carrier is
+   * worse than showing a code — but @clolry had to ask what WN and DL meant,
+   * which is the answer: the codes are opaque to the people choosing between
+   * options.
+   *
+   * GSA's own Fare Finder spells them out ("Southwest Airlines", "United
+   * Airlines") where the CSV abbreviates, so this is restoring information the
+   * source deliberately compresses rather than inventing it.
+   *
+   * An UNKNOWN code falls through to the raw code. That is the whole point of
+   * the fallback: a new or regional carrier shows as 'G4' rather than being
+   * guessed at or silently dropped, and the list can be extended when one
+   * appears. Same maintenance weakness as IATA_METRO_CODES and
+   * GSA_CITY_ALIASES — a small hand-kept table that degrades gracefully
+   * instead of a large one that rots invisibly.
+   */
+  var AIRLINE_NAMES = {
+    AA: 'American',
+    AS: 'Alaska',
+    B6: 'JetBlue',
+    DL: 'Delta',
+    F9: 'Frontier',
+    G4: 'Allegiant',
+    HA: 'Hawaiian',
+    MX: 'Breeze',
+    NK: 'Spirit',
+    SY: 'Sun Country',
+    UA: 'United',
+    WN: 'Southwest',
+    YX: 'Republic',
+    OO: 'SkyWest',
+    '9K': 'Cape Air',
+    KS: 'PenAir',
+    AC: 'Air Canada',
+    BA: 'British Airways',
+    LH: 'Lufthansa',
+    AF: 'Air France',
+    KL: 'KLM',
+    IB: 'Iberia',
+    VS: 'Virgin Atlantic',
+    EI: 'Aer Lingus',
+    SK: 'SAS',
+    LX: 'Swiss',
+    OS: 'Austrian',
+    TP: 'TAP Portugal',
+    AZ: 'ITA Airways',
+    JL: 'Japan Airlines',
+    NH: 'ANA',
+    QF: 'Qantas',
+    NZ: 'Air New Zealand',
+    SQ: 'Singapore Airlines',
+    CX: 'Cathay Pacific',
+    KE: 'Korean Air',
+    OZ: 'Asiana',
+    TK: 'Turkish Airlines',
+    EK: 'Emirates',
+    QR: 'Qatar Airways',
+    ET: 'Ethiopian',
+    SA: 'South African',
+    LA: 'LATAM',
+    AV: 'Avianca',
+    CM: 'Copa',
+    AM: 'Aeromexico'
+  };
+
+  /** Airline name for a code, or the code itself when unrecognised. */
+  Controller._airlineName = function (code) {
+    var key = String(code || '').trim().toUpperCase();
+    if (!key) return '';
+    return AIRLINE_NAMES[key] || key;
+  };
+
   // ==========================================================================
   // RENDERING
   // ==========================================================================
@@ -179,7 +255,10 @@
         html += '<li>' + seg.from + ' &rarr; ' + seg.to + ' ';
         if (seg.found) {
           html += '<strong>$' + seg.ycaFare.toFixed(2) + '</strong>';
-          if (seg.airline) html += ' <span class="tc__airfare-carrier">' + seg.airline + '</span>';
+          if (seg.airline) {
+            html += ' <span class="tc__airfare-carrier">' +
+                    escapeHtml(Controller._airlineName(seg.airline)) + '</span>';
+          }
           if (seg.awardedService) {
             // A connecting itinerary can cost 4x the non-stop on the same
             // route (IAD->ORD $441 vs DCA->ORD $112), so the service type is
@@ -246,7 +325,7 @@
     }
     if (option.found && typeof option.ycaFare === 'number') {
       label += ' — $' + option.ycaFare.toFixed(0);
-      if (option.airline) label += ' ' + option.airline;
+      if (option.airline) label += ' ' + Controller._airlineName(option.airline);
       if (option.awardedService) label += ' ' + option.awardedService.toLowerCase();
     } else {
       label += ' — no contract fare';

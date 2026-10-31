@@ -150,6 +150,11 @@ console.log('2. air mode loads, prices and pre-fills');
   ok('input populated', input.value==='224.00', input.value);
   ok('breakdown rendered', wrap.innerHTML.indexOf('DCA &rarr; ORD')>-1 && wrap.innerHTML.indexOf('ORD &rarr; DCA')>-1);
   ok('shows service type', wrap.innerHTML.indexOf('Non-stop')>-1);
+  // @clolry had to ask what WN and DL meant. GSA's own Fare Finder spells
+  // carriers out where the CSV abbreviates, so showing the raw IATA code was
+  // compressing information the source had already expanded.
+  ok('carrier shown as a name, not a code', wrap.innerHTML.indexOf('United')>-1, wrap.innerHTML.slice(0,400));
+  ok('raw code not shown', wrap.innerHTML.indexOf('>UA<')===-1);
   ok('shows fare basis', wrap.innerHTML.indexOf('YCA')>-1);
   ok('metro option labelled', wrap.innerHTML.indexOf('all airports')>-1 || wrap.innerHTML.indexOf('Washington, DC area')>-1);
 }
@@ -282,6 +287,23 @@ console.log('11. changing duty station DOES re-fetch');
   await sleep(30);
   const after=h.calls.filter(c=>c.fn==='getAirportOptionsForCityForClient').length;
   ok('re-resolves the origin', after===before+1, 'before='+before+' after='+after);
+}
+
+console.log('11b. airline codes resolve to names, unknown codes pass through');
+{
+  const h=build({legs:[],handlers:baseHandlers()});
+  const C=h.C();
+  ok('WN -> Southwest', C._airlineName('WN')==='Southwest', C._airlineName('WN'));
+  ok('DL -> Delta', C._airlineName('DL')==='Delta');
+  ok('UA -> United', C._airlineName('UA')==='United');
+  ok('AA -> American', C._airlineName('AA')==='American');
+  ok('AS -> Alaska', C._airlineName('AS')==='Alaska');
+  ok('lowercase input works', C._airlineName('wn')==='Southwest');
+  // A new or regional carrier must show its code rather than be guessed at or
+  // silently dropped — the table is small and hand-kept on purpose.
+  ok('unknown code passes through', C._airlineName('ZZ')==='ZZ', C._airlineName('ZZ'));
+  ok('blank stays blank', C._airlineName('')==='');
+  ok('null stays blank', C._airlineName(null)==='');
 }
 
 console.log('12. cache is dropped when a traveler is removed');

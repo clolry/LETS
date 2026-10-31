@@ -1628,7 +1628,7 @@
                       onclick="TravelReview.Controller.toggleTravelerFundingType('${travelerId}')"
                       title="Click to switch funding type"
                       style="cursor:pointer;">
-                      ${(traveler.isClientPaid === 'client' || String(traveler.isClientPaid || '').toLowerCase().includes('client')) ? 'Client-Paid' : 'Overhead'}
+                      ${(traveler.isClientPaid === 'client' || String(traveler.isClientPaid || '').toLowerCase().includes('client')) ? 'Client-Paid' : 'GSA-Paid'}
                       <i aria-hidden="true" class="fas fa-arrows-rotate" style="font-size:0.6em; opacity:0.55; margin-left:4px;"></i>
                     </span>
                     <span class="review-traveler-row__separator">·</span>
@@ -1708,7 +1708,7 @@
                     <span class="review-traveler-row__funding-badge review-traveler-row__funding-badge--${
                       (traveler.isClientPaid === 'client' || String(traveler.isClientPaid || '').toLowerCase().includes('client')) ? 'client' : 'overhead'
                     }">
-                      ${(traveler.isClientPaid === 'client' || String(traveler.isClientPaid || '').toLowerCase().includes('client')) ? 'Client-Paid' : 'Overhead'}
+                      ${(traveler.isClientPaid === 'client' || String(traveler.isClientPaid || '').toLowerCase().includes('client')) ? 'Client-Paid' : 'GSA-Paid'}
                     </span>
                     <span class="review-traveler-row__separator">·</span>
                     <i aria-hidden="true" class="fas ${transportIcon}"></i>
@@ -2123,7 +2123,8 @@
     },
 
     /**
-     * Flip a traveler's funding type (Overhead ↔ Client-Paid) in edit mode.
+     * Flip a traveler's funding type (GSA-Paid ↔ Client-Paid) in edit mode.
+     * The stored value stays 'overhead' / 'client'.
      * Mutates local state and re-renders the travelers section so the badge
      * reflects the change. Persisted on Save via saveTravelers().
      */
@@ -6718,7 +6719,8 @@
       }
 
       if (data.updatedFundingTypes && data.updatedFundingTypes.length > 0) {
-        const labelFor = (v) => String(v || '').toLowerCase().includes('client') ? 'Client-Paid' : 'Overhead';
+        // 'overhead' remains the STORED value; GSA-Paid is the label.
+        const labelFor = (v) => String(v || '').toLowerCase().includes('client') ? 'Client-Paid' : 'GSA-Paid';
         data.updatedFundingTypes.forEach((f) => {
           const name = f.name || 'Unknown';
           parts.push(`

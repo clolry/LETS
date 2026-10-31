@@ -72,6 +72,9 @@ jobs:
       - name: Airfare picker UI tests
         run: node lets_app/test_airfare_ui.js
 
+      - name: Funding label tests
+        run: node lets_app/test_funding_label.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -173,6 +176,24 @@ jobs:
             exit 1
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
+
+      - name: 'Guard: funding relabel must not change the stored value'
+        run: |
+          echo "Checking the GSA-Paid label did not rename the stored value..."
+          # "Overhead" was relabelled "GSA-Paid" for users. The STORED value is
+          # still 'overhead', and Submission.js routing, Admin_Dashboard spend
+          # buckets, ReviewerDashboard filtering and Review_Action's overhead
+          # detection all branch on that string — plus every already-submitted
+          # row carries it. Renaming it would misroute requests silently.
+          if ! grep -q 'value="overhead"' lets_app/client/controllers/form/travelRequestTravelers.html; then
+            echo "::error file=lets_app/client/controllers/form/travelRequestTravelers.html::The funding radio no longer submits value=\"overhead\". Four server paths branch on that string and submitted rows already carry it; changing it misroutes requests."
+            exit 1
+          fi
+          if ! grep -q '<span>GSA-Paid</span>' lets_app/client/controllers/form/travelRequestTravelers.html; then
+            echo "::error file=lets_app/client/controllers/form/travelRequestTravelers.html::The GSA-Paid label is missing. Users should not see \"Overhead\"."
+            exit 1
+          fi
+          echo "PASS - label is GSA-Paid, stored value is still overhead."
 
       - name: 'Guard: airfare must never overwrite a manual figure'
         run: |

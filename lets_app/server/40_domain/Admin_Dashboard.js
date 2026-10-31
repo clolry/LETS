@@ -1150,8 +1150,12 @@ function _buildRequestSummary(requestId) {
         }
       }
     }
+    // DISPLAY label sent to the dashboard. The stored traveler value is still
+    // 'overhead' / 'client' — only the wording changed to GSA-Paid, because
+    // this workgroup's travel is almost entirely agency-funded and "Overhead"
+    // read as accounting jargon.
     const fundingSource = hasClientPaid && hasOverhead ? 'Mixed' :
-                          hasClientPaid ? 'Client Paid' : 'Overhead';
+                          hasClientPaid ? 'Client-Paid' : 'GSA-Paid';
 
     // Travel dates come from the request's legs (single source of truth in
     // TripDates.js), falling back to the event dates for legacy/legless records.

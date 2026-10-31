@@ -1012,7 +1012,7 @@
         html += '<div class="funding-strip__seg" style="width:' + clientPct.toFixed(2) + '%; background:' + clientColor + ';" title="Client-Paid: ' + self._formatCurrency(clientPaid.total) + '"></div>';
       }
       if (overhead.total > 0) {
-        html += '<div class="funding-strip__seg" style="width:' + overheadPct.toFixed(2) + '%; background:' + overheadColor + ';" title="Overhead: ' + self._formatCurrency(overhead.total) + '"></div>';
+        html += '<div class="funding-strip__seg" style="width:' + overheadPct.toFixed(2) + '%; background:' + overheadColor + ';" title="GSA-Paid: ' + self._formatCurrency(overhead.total) + '"></div>';
       }
       html += '</div>';
       // Inline legend with pct + dollars on each side
@@ -1025,7 +1025,7 @@
         '</span>';
       html += '<span class="funding-strip__legend-item">' +
         '<span class="funding-strip__dot" style="background:' + overheadColor + ';"></span>' +
-        '<span class="funding-strip__legend-name">Overhead</span>' +
+        '<span class="funding-strip__legend-name">GSA-Paid</span>' +
         '<span class="funding-strip__legend-pct">' + Math.round(overheadPct) + '%</span>' +
         '<span class="funding-strip__legend-value">' + self._formatCurrency(overhead.total) + '</span>' +
         '</span>';
@@ -2074,7 +2074,7 @@
         '</div>' +
         '<div class="slidein__detail">' +
           '<div class="slidein__detail-label">Funding Source</div>' +
-          '<div class="slidein__detail-value">' + this._escapeHtml(data.fundingSource || 'Overhead') + '</div>' +
+          '<div class="slidein__detail-value">' + this._escapeHtml(data.fundingSource || 'GSA-Paid') + '</div>' +
         '</div>' +
         '<div class="slidein__detail">' +
           '<div class="slidein__detail-label">Travelers</div>' +
