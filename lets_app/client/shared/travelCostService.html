@@ -8,7 +8,7 @@
   - Local travel reimbursement
   - Leg costs (lodging, M&IE)
   - Traveler total costs
-  - Other costs (15% calculation)
+  - Other costs (configurable gross-up; see other_cost_percentage)
   - Grand total calculations
 
   Used by both the form and review pages.
@@ -31,6 +31,14 @@ window.TravelCostService = (function() {
 
   let ratesLoaded = false;
   let ratesLoadPromise = null;
+
+  // "Other costs" gross-up percentage, read from the `other_cost_percentage`
+  // Script Property at page init. Starts null so getOtherCostPercentage() can
+  // distinguish "not loaded yet" from "loaded and happens to equal the
+  // fallback".
+  let otherCostPercentage = null;
+  let costConfigLoaded = false;
+  let costConfigLoadPromise = null;
 
   /**
    * Load mileage rates from server
@@ -67,6 +75,89 @@ window.TravelCostService = (function() {
     });
 
     return ratesLoadPromise;
+  }
+
+  /**
+   * Load the "other costs" gross-up percentage from the server.
+   * Call this on page init, alongside loadMileageRates().
+   *
+   * WHY THIS EXISTS
+   * ---------------
+   * The percentage is configurable via the `other_cost_percentage` Script
+   * Property (Props.js:117). Before this loader, the client hardcoded 15 in
+   * three places and never read the property, so changing the property moved
+   * the SERVER's recalculation at submission while the figure shown in the
+   * form stayed at 15.
+   *
+   * That divergence is worse than a wrong constant: the submitter approves an
+   * estimate, and the stored record carries a different number. Costs.js:675
+   * prefers `traveler.otherPercentage` when present, so whatever the client
+   * sent wins — meaning a stale client default silently overrode the
+   * configured value on every request.
+   *
+   * Mirrors loadMileageRates: same dedupe-by-promise pattern, same
+   * resolve-on-failure behaviour so a dead RPC degrades to the fallback
+   * instead of hanging the form.
+   */
+  async function loadCostConfig() {
+    if (costConfigLoaded) return { otherCostPercentage: getOtherCostPercentage() };
+    if (costConfigLoadPromise) return costConfigLoadPromise;
+
+    costConfigLoadPromise = new Promise((resolve) => {
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(function(config) {
+            if (config && typeof config.otherCostPercentage === 'number') {
+              otherCostPercentage = config.otherCostPercentage;
+            } else {
+              console.warn('TravelCostService: cost config RPC returned an ' +
+                'unusable value; using the fallback percentage.');
+            }
+            costConfigLoaded = true;
+            costConfigLoadPromise = null;
+            resolve({ otherCostPercentage: getOtherCostPercentage() });
+          })
+          .withFailureHandler(function(error) {
+            // Deliberately noisy. A silent fallback here is what produced the
+            // original 15-vs-30 divergence, and the only visible symptom is a
+            // subtly wrong dollar figure.
+            console.error('TravelCostService: failed to load cost config (' +
+              ((error && error.message) || 'unknown') + '). Falling back to ' +
+              getOtherCostPercentage() + '%. The figure shown may not match ' +
+              'the configured other_cost_percentage.');
+            costConfigLoaded = true;
+            costConfigLoadPromise = null;
+            resolve({ otherCostPercentage: getOtherCostPercentage() });
+          })
+          .getCostConfigForClient();
+      } else {
+        costConfigLoaded = true;
+        resolve({ otherCostPercentage: getOtherCostPercentage() });
+      }
+    });
+
+    return costConfigLoadPromise;
+  }
+
+  /**
+   * The configured "other costs" gross-up percentage, as a whole number
+   * (30 means 30%).
+   *
+   * Returns the TRAVEL_CONFIG fallback until loadCostConfig() resolves. Every
+   * caller should treat this as the single source of truth rather than
+   * carrying its own literal.
+   *
+   * @returns {number}
+   */
+  function getOtherCostPercentage() {
+    if (otherCostPercentage !== null) return otherCostPercentage;
+    const fallback = TravelUtils?.TRAVEL_CONFIG?.OTHER_COST_PERCENTAGE_FALLBACK;
+    return typeof fallback === 'number' ? fallback : 30;
+  }
+
+  /** True once the server value has been read (successfully or not). */
+  function isCostConfigLoaded() {
+    return costConfigLoaded;
   }
 
   /**
@@ -235,19 +326,23 @@ window.TravelCostService = (function() {
   }
 
   /**
-   * Calculate "Other" costs (default 15% of transport + lodging + M&IE)
+   * Calculate "Other" costs — a gross-up on transport + lodging + M&IE.
    *
    * @param {number} transportation - Transportation total
    * @param {number} lodging - Lodging total
    * @param {number} mie - M&IE total
-   * @param {number} [percentage=15] - Percentage to apply
+   * @param {number} [percentage] - Percentage to apply. Defaults to the
+   *        configured `other_cost_percentage`; do NOT pass a literal.
    * @returns {number} Other costs
    */
-  function calculateOtherCosts(transportation, lodging, mie, percentage = 15) {
+  function calculateOtherCosts(transportation, lodging, mie, percentage) {
     const base = (parseFloat(transportation) || 0) +
                  (parseFloat(lodging) || 0) +
                  (parseFloat(mie) || 0);
-    return base * (percentage / 100);
+    const pct = (percentage === undefined || percentage === null || isNaN(parseFloat(percentage)))
+      ? getOtherCostPercentage()
+      : parseFloat(percentage);
+    return base * (pct / 100);
   }
 
   /**
@@ -287,8 +382,13 @@ window.TravelCostService = (function() {
       rentalCarCost: traveler.rentalCarCost
     });
 
-    // Other costs (15% default)
-    const otherPercentage = parseFloat(traveler.otherPercentage) || 15;
+    // Other costs. A traveler row may carry its own percentage (an existing
+    // request keeps the rate in force when it was submitted — rule C-07), so
+    // honour that when present and fall back to the configured value.
+    const parsedTravelerPct = parseFloat(traveler.otherPercentage);
+    const otherPercentage = isNaN(parsedTravelerPct)
+      ? getOtherCostPercentage()
+      : parsedTravelerPct;
     const otherTotal = calculateOtherCosts(
       transportation.total,
       lodgingTotal,
@@ -520,6 +620,11 @@ window.TravelCostService = (function() {
     loadMileageRates,
     getMileageRate,
     getMileageRates,
+
+    // Cost config (other_cost_percentage)
+    loadCostConfig,
+    getOtherCostPercentage,
+    isCostConfigLoaded,
 
     // Local travel
     calculateLocalTravelReimbursement,

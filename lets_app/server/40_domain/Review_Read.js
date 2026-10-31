@@ -202,6 +202,12 @@ function getRequestForReview(requestId, db) {
           lodgingTotal: parseFloat(travelersRows[i][travelerIndex['Lodging_Total']]) || 0,
           mieTotal: parseFloat(travelersRows[i][travelerIndex['MIE_Total']]) || 0,
           localTravelTotal: parseFloat(travelersRows[i][travelerIndex['Local_Travel_Total']]) || 0,
+          // Reading a SUBMITTED row: the stored Other_Percentage is the rate
+          // in force when the request was submitted (rule C-07 — rates are
+          // copied into the row, not referenced). The fallback applies only to
+          // rows written before the column existed; it must NOT become the
+          // current configured value, or reopening an old request would
+          // silently restate its cost under today's rate.
           otherPercentage: parseFloat(travelersRows[i][travelerIndex['Other_Percentage']]) || 15,
           otherTotal: parseFloat(travelersRows[i][travelerIndex['Other_Total']]) || 0,
           subtotal: parseFloat(travelersRows[i][travelerIndex['Subtotal']]) || 0,

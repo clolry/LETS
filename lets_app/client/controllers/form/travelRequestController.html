@@ -103,6 +103,39 @@
         window.TravelRequest.loadMileageRates();
       }
 
+      // Load the "other costs" gross-up percentage (Script Property
+      // `other_cost_percentage`). Fired here, next to the mileage rates, so
+      // both are in flight before the traveler step can be reached.
+      //
+      // Non-blocking by design, matching loadMileageRates. A traveler added in
+      // the first moments after load would otherwise be stamped with the
+      // fallback percentage, so _recalculateTravelerCosts re-resolves a
+      // non-numeric value and the handler below refreshes any row already
+      // created.
+      if (window.TravelRequest.loadCostConfig) {
+        const self = this;
+        window.TravelRequest.loadCostConfig().then(function() {
+          // Restamp travelers created before the real value arrived, then
+          // repaint. Without this, a fast-moving submitter sees the fallback.
+          const state = window.TravelRequest.State;
+          if (!state || typeof state.getTravelers !== 'function') return;
+          const pct = window.TravelRequest.getOtherCostPercentage();
+          const travelers = state.getTravelers() || [];
+          let changed = false;
+          travelers.forEach(function(t) {
+            if (parseFloat(t.otherPercentage) !== pct) {
+              state.updateTraveler(t.id, 'otherPercentage', pct);
+              changed = true;
+            }
+          });
+          if (!changed) return;
+          travelers.forEach(function(t) {
+            if (self._updateTravelerCostDisplay) self._updateTravelerCostDisplay(t.id);
+          });
+          if (self._updateTravelersTotal) self._updateTravelersTotal();
+        });
+      }
+
       // Initialize module-specific functionality
       if (this._initItinerary) this._initItinerary();
       if (this._initTravelers) this._initTravelers();
@@ -1574,7 +1607,14 @@
           breakdownParts.push(`<span><i aria-hidden="true" class="fas fa-car"></i> Local: ${state.formatCurrency(localTravelCost)}</span>`);
         }
         if (otherCost > 0) {
-          breakdownParts.push(`<span><i aria-hidden="true" class="fas fa-plus-circle"></i> +15%: ${state.formatCurrency(otherCost)}</span>`);
+          // Label the actual percentage applied to THIS traveler, not a
+          // literal. The row may carry a different rate than the current
+          // configuration (rule C-07 keeps the rate in force at submission).
+          const otherPct = parseFloat(traveler.otherPercentage);
+          const otherPctLabel = isNaN(otherPct)
+            ? window.TravelRequest.getOtherCostPercentage()
+            : otherPct;
+          breakdownParts.push(`<span><i aria-hidden="true" class="fas fa-plus-circle"></i> +${otherPctLabel}%: ${state.formatCurrency(otherCost)}</span>`);
         }
 
         // Build NFS status indicator

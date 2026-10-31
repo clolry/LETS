@@ -55,6 +55,40 @@
       : window.TravelRequest.MILEAGE_RATES.private;
   };
 
+  /**
+   * Load the "other costs" gross-up percentage from Script Properties.
+   *
+   * Delegates to TravelCostService, which dedupes concurrent loads, so calling
+   * this more than once still results in a single RPC.
+   */
+  window.TravelRequest.loadCostConfig = function() {
+    if (window.TravelCostService && typeof window.TravelCostService.loadCostConfig === 'function') {
+      return window.TravelCostService.loadCostConfig();
+    }
+    console.warn('TravelCostService not available; other-cost percentage remains at the fallback');
+    return Promise.resolve(null);
+  };
+
+  /**
+   * The configured "other costs" gross-up percentage (30 means 30%).
+   *
+   * ALWAYS call this rather than writing a literal. The value lives in the
+   * `other_cost_percentage` Script Property; hardcoding it in the client is
+   * what caused the form to display 15% while the server stored a different
+   * number, because Costs.js:675 prefers whatever percentage the client sent.
+   *
+   * @returns {number}
+   */
+  window.TravelRequest.getOtherCostPercentage = function() {
+    if (window.TravelCostService && typeof window.TravelCostService.getOtherCostPercentage === 'function') {
+      return window.TravelCostService.getOtherCostPercentage();
+    }
+    const fallback = window.TravelUtils &&
+      window.TravelUtils.TRAVEL_CONFIG &&
+      window.TravelUtils.TRAVEL_CONFIG.OTHER_COST_PERCENTAGE_FALLBACK;
+    return typeof fallback === 'number' ? fallback : 30;
+  };
+
   // OCONUS states/territories are defined in TravelUtils.OCONUS_STATES
   // Use TravelUtils.isOCONUS(stateAbbr) for checks
 
@@ -581,7 +615,11 @@
         lodgingTotal: 0,
         mieTotal: 0,
         localTravelTotal: 0,
-        otherPercentage: 15,
+        // Read from the `other_cost_percentage` Script Property, not a
+        // literal. A hardcoded value here silently overrode the configured one
+        // on every request: Costs.js:675 prefers traveler.otherPercentage when
+        // present, so whatever the client stamped onto the row won.
+        otherPercentage: window.TravelRequest.getOtherCostPercentage(),
         otherTotal: 0,
         subtotal: 0,
 
@@ -939,9 +977,18 @@
       traveler.transportationTotal = ticketCost + mileageCost + rentalCarCost;
       traveler.transportation = traveler.transportationTotal; // Legacy
 
-      // Other (15% of transportation + lodging + M&IE) - excludes local travel
+      // "Other" gross-up on transportation + lodging + M&IE. Excludes local
+      // travel. The percentage is configured, not fixed — see
+      // getOtherCostPercentage(). A traveler row created before the config
+      // loaded could still hold a stale value, so re-resolve a missing or
+      // non-numeric one rather than silently applying 0%.
       const baseForOther = traveler.transportationTotal + traveler.lodgingTotal + traveler.mieTotal;
-      traveler.otherTotal = baseForOther * (traveler.otherPercentage / 100);
+      const rowPct = parseFloat(traveler.otherPercentage);
+      const otherPct = isNaN(rowPct)
+        ? window.TravelRequest.getOtherCostPercentage()
+        : rowPct;
+      traveler.otherPercentage = otherPct;
+      traveler.otherTotal = baseForOther * (otherPct / 100);
       traveler.other = traveler.otherTotal; // Legacy
 
       // Subtotal (includes local travel)
