@@ -138,56 +138,9 @@ function getCityPairFare(originCode, destCode, travelDate) {
     var hit = cache.get(cacheKey);
     if (hit) return JSON.parse(hit);
 
-    var rows = _readCityPairRows_(pairKey);
-    var result;
-
-    if (!rows.length) {
-      result = {
-        success: true, found: false, pairKey: pairKey,
-        message: 'No GSA contract fare is awarded for this city pair.'
-      };
-    } else {
-      var usable = rows;
-      if (travelDate) {
-        var inWindow = rows.filter(function (r) {
-          // Blank dates are treated as always-valid rather than as excluded:
-          // a malformed date in the source should not hide a real fare.
-          var okFrom = !r.effectiveDate || r.effectiveDate <= travelDate;
-          var okTo = !r.expirationDate || r.expirationDate >= travelDate;
-          return okFrom && okTo;
-        });
-        if (inWindow.length) usable = inWindow;
-      }
-
-      // Lowest YCA across carriers.
-      usable.sort(function (a, b) { return a.ycaFare - b.ycaFare; });
-      var best = usable[0];
-
-      result = {
-        success: true,
-        found: true,
-        pairKey: pairKey,
-        ycaFare: best.ycaFare,
-        // 0 means not awarded; surface null so the UI cannot print $0.00.
-        caFare: best.caFare > 0 ? best.caFare : null,
-        businessFare: best.businessFare > 0 ? best.businessFare : null,
-        airline: best.airline,
-        awardedService: best.awardedService,
-        carriers: usable.map(function (r) {
-          return {
-            airline: r.airline,
-            awardedService: r.awardedService,
-            ycaFare: r.ycaFare,
-            caFare: r.caFare > 0 ? r.caFare : null
-          };
-        }),
-        origin: { code: best.originCode, city: best.originCity, state: best.originState, country: best.originCountry },
-        destination: { code: best.destCode, city: best.destCity, state: best.destState, country: best.destCountry },
-        effectiveDate: best.effectiveDate,
-        expirationDate: best.expirationDate,
-        awardYear: best.awardYear
-      };
-    }
+    // Shared selector, so this and the bulk path cannot disagree about which
+    // carrier wins or how the date window applies.
+    var result = _selectFare_(pairKey, _readCityPairRows_(pairKey), travelDate);
 
     cache.put(cacheKey, JSON.stringify(result), CACHE_CONFIG.TTL.PER_DIEM);
     return result;
@@ -196,6 +149,168 @@ function getCityPairFare(originCode, destCode, travelDate) {
     console.error('getCityPairFare failed: ' + error.message);
     return { success: false, found: false, pairKey: pairKey, error: error.message };
   }
+}
+
+/**
+ * Fares for MANY pairs in ONE sheet scan.
+ *
+ * getCityPairFare scans all 17,403 rows per call, which is fine once but not
+ * N times. getPricedDestinationOptions took 11 SECONDS in the sandbox pricing
+ * three Chicago airports — three full scans — and that is a form keystroke, not
+ * an editor run.
+ *
+ * This scans once and buckets by pair key. Cost is one scan regardless of how
+ * many pairs are requested.
+ *
+ * @param {Array<string>} pairKeys normalized keys from buildPairKey_
+ * @returns {Object} pairKey -> array of row objects (absent keys are omitted)
+ */
+function _readCityPairRowsBulk_(pairKeys) {
+  var wanted = {};
+  (pairKeys || []).forEach(function (k) { if (k) wanted[k] = true; });
+  if (!Object.keys(wanted).length) return {};
+
+  if (!TRAVEL_DB_SPREADSHEET_ID) {
+    throw new Error('TRAVEL_DB_SPREADSHEET_ID is not set in Script Properties.');
+  }
+  var ss = SpreadsheetApp.openById(TRAVEL_DB_SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(SHEET_NAMES.CITY_PAIRS);
+  if (!sheet) {
+    throw new Error('Tab "' + SHEET_NAMES.CITY_PAIRS + '" not found. Run ' +
+      'setupTravelDatabase() then syncCityPairs().');
+  }
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return {};
+
+  var headers = TRAVEL_SHEET_SCHEMAS[SHEET_NAMES.CITY_PAIRS];
+  var values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  var c = {};
+  headers.forEach(function (h, i) { c[h] = i; });
+
+  var out = {};
+  for (var i = 0; i < values.length; i++) {
+    var key = String(values[i][c['Pair_Key']]).trim().toUpperCase();
+    if (!wanted[key]) continue;
+    if (!out[key]) out[key] = [];
+    out[key].push(_mapCityPairRow_(values[i], c));
+  }
+  return out;
+}
+
+/** Shared row mapper, so the single and bulk readers cannot drift apart. */
+function _mapCityPairRow_(row, c) {
+  return {
+    awardYear: String(row[c['Award_Year']] || ''),
+    originCode: String(row[c['Origin_Airport_Abbrev']] || ''),
+    destCode: String(row[c['Destination_Airport_Abbrev']] || ''),
+    originCity: String(row[c['Origin_City_Name']] || ''),
+    originState: String(row[c['Origin_State']] || ''),
+    originCountry: String(row[c['Origin_Country']] || ''),
+    destCity: String(row[c['Destination_City_Name']] || ''),
+    destState: String(row[c['Destination_State']] || ''),
+    destCountry: String(row[c['Destination_Country']] || ''),
+    airline: String(row[c['Airline_Abbrev']] || ''),
+    awardedService: String(row[c['Awarded_Service']] || ''),
+    ycaFare: parseFloat(row[c['YCA_Fare']]) || 0,
+    caFare: parseFloat(row[c['CA_Fare']]) || 0,
+    businessFare: parseFloat(row[c['Business_Fare']]) || 0,
+    // Sheets returns these as Date objects, not the strings that were
+    // written. Normalizing here is what makes the window filter work.
+    effectiveDate: normalizeSheetDate_(row[c['Effective_Date']]),
+    expirationDate: normalizeSheetDate_(row[c['Expiration_Date']])
+  };
+}
+
+/**
+ * Picks the best row for a pair and shapes the public fare result.
+ *
+ * Extracted so getCityPairFare and the bulk path apply IDENTICAL selection and
+ * date-window rules. Duplicating that logic would let the single and bulk
+ * lookups disagree, and the symptom would be a fare that changes depending on
+ * which code path produced it.
+ */
+function _selectFare_(pairKey, rows, travelDate) {
+  if (!rows || !rows.length) {
+    return {
+      success: true, found: false, pairKey: pairKey,
+      message: 'No GSA contract fare is awarded for this city pair.'
+    };
+  }
+
+  var usable = rows;
+  if (travelDate) {
+    var inWindow = rows.filter(function (r) {
+      // Blank dates are treated as always-valid rather than as excluded: a
+      // malformed date in the source should not hide a real fare.
+      var okFrom = !r.effectiveDate || r.effectiveDate <= travelDate;
+      var okTo = !r.expirationDate || r.expirationDate >= travelDate;
+      return okFrom && okTo;
+    });
+    if (inWindow.length) usable = inWindow;
+  }
+
+  usable = usable.slice().sort(function (a, b) { return a.ycaFare - b.ycaFare; });
+  var best = usable[0];
+
+  return {
+    success: true,
+    found: true,
+    pairKey: pairKey,
+    ycaFare: best.ycaFare,
+    // 0 means not awarded; surface null so the UI cannot print $0.00.
+    caFare: best.caFare > 0 ? best.caFare : null,
+    businessFare: best.businessFare > 0 ? best.businessFare : null,
+    airline: best.airline,
+    awardedService: best.awardedService,
+    carriers: usable.map(function (r) {
+      return {
+        airline: r.airline,
+        awardedService: r.awardedService,
+        ycaFare: r.ycaFare,
+        caFare: r.caFare > 0 ? r.caFare : null
+      };
+    }),
+    origin: { code: best.originCode, city: best.originCity, state: best.originState, country: best.originCountry },
+    destination: { code: best.destCode, city: best.destCity, state: best.destState, country: best.destCountry },
+    effectiveDate: best.effectiveDate,
+    expirationDate: best.expirationDate,
+    awardYear: best.awardYear
+  };
+}
+
+/**
+ * Fares for several destinations from one origin, in a single sheet scan.
+ *
+ * @param {string} originCode
+ * @param {Array<string>} destCodes
+ * @param {string} [travelDate]
+ * @returns {Object} destCode -> same shape as getCityPairFare
+ */
+function getCityPairFaresBulk(originCode, destCodes, travelDate) {
+  var out = {};
+  var keyToDest = {};
+  var keys = [];
+
+  (destCodes || []).forEach(function (d) {
+    var key = buildPairKey_(originCode, d);
+    if (!key) return;
+    keyToDest[key] = String(d).trim().toUpperCase();
+    keys.push(key);
+  });
+  if (!keys.length) return out;
+
+  try {
+    var buckets = _readCityPairRowsBulk_(keys);
+    keys.forEach(function (key) {
+      out[keyToDest[key]] = _selectFare_(key, buckets[key], travelDate);
+    });
+  } catch (e) {
+    console.error('getCityPairFaresBulk failed: ' + e.message);
+    keys.forEach(function (key) {
+      out[keyToDest[key]] = { success: false, found: false, pairKey: key, error: e.message };
+    });
+  }
+  return out;
 }
 
 /** Every City_Pairs row matching a normalized pair key. */
@@ -222,26 +337,7 @@ function _readCityPairRows_(pairKey) {
   var out = [];
   for (var i = 0; i < values.length; i++) {
     if (String(values[i][c['Pair_Key']]).trim().toUpperCase() !== pairKey) continue;
-    out.push({
-      awardYear: String(values[i][c['Award_Year']] || ''),
-      originCode: String(values[i][c['Origin_Airport_Abbrev']] || ''),
-      destCode: String(values[i][c['Destination_Airport_Abbrev']] || ''),
-      originCity: String(values[i][c['Origin_City_Name']] || ''),
-      originState: String(values[i][c['Origin_State']] || ''),
-      originCountry: String(values[i][c['Origin_Country']] || ''),
-      destCity: String(values[i][c['Destination_City_Name']] || ''),
-      destState: String(values[i][c['Destination_State']] || ''),
-      destCountry: String(values[i][c['Destination_Country']] || ''),
-      airline: String(values[i][c['Airline_Abbrev']] || ''),
-      awardedService: String(values[i][c['Awarded_Service']] || ''),
-      ycaFare: parseFloat(values[i][c['YCA_Fare']]) || 0,
-      caFare: parseFloat(values[i][c['CA_Fare']]) || 0,
-      businessFare: parseFloat(values[i][c['Business_Fare']]) || 0,
-      // Sheets returns these as Date objects, not the strings that were
-      // written. Normalizing here is what makes the window filter work.
-      effectiveDate: normalizeSheetDate_(values[i][c['Effective_Date']]),
-      expirationDate: normalizeSheetDate_(values[i][c['Expiration_Date']])
-    });
+    out.push(_mapCityPairRow_(values[i], c));
   }
   return out;
 }

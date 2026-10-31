@@ -165,6 +165,28 @@ jobs:
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
 
+      - name: 'Guard: sheet writes that are re-read must flush'
+        run: |
+          echo "Checking SpreadsheetApp.flush() after preference writes..."
+          # Apps Script BUFFERS sheet writes. recordAirportPreference writes
+          # then may be called again in the same execution, so without a flush
+          # the second call reads a stale getLastRow(), finds no existing row,
+          # and appends onto the SAME physical row — overwriting the first.
+          #
+          # Observed in the sandbox: two calls produced one row with Use_Count
+          # 1, so promotion never fired and the hybrid-learning feature was
+          # entirely inert. The failure is silent; nothing errors.
+          FLUSHES=$(grep -c "SpreadsheetApp.flush()" lets_app/server/30_services/AirportPrefs.js || true)
+          if [ "$FLUSHES" -lt 2 ]; then
+            echo "::error file=lets_app/server/30_services/AirportPrefs.js::Expected a SpreadsheetApp.flush() after both the update and the append path in recordAirportPreference, found ${FLUSHES}. Without it Use_Count cannot increment and airport preferences never get promoted."
+            exit 1
+          fi
+          if ! grep -q "LockService.getScriptLock()" lets_app/server/30_services/AirportPrefs.js; then
+            echo "::error file=lets_app/server/30_services/AirportPrefs.js::recordAirportPreference lost its LockService guard. Concurrent submissions clobber the same preference row."
+            exit 1
+          fi
+          echo "PASS - preference writes flush and are serialized."
+
       - name: 'Guard: metro-area codes must never win an airport default'
         run: |
           echo "Checking the metro-aware airport sort..."

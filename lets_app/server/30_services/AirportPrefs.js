@@ -52,7 +52,26 @@ var AIRPORT_PREF_PROMOTION_THRESHOLD = 2;
  * old count should not keep the stale airport promoted. The switch starts
  * earning its own history.
  *
- * Never throws. A failure to record a preference must not block a submission.
+ * TWO THINGS THIS HAS TO GET RIGHT, BOTH LEARNED THE HARD WAY
+ *
+ * 1. SpreadsheetApp.flush() after every write. Apps Script BUFFERS sheet
+ *    writes, so a read later in the same execution sees stale data. Without
+ *    the flush, calling this twice in one execution made both calls behave as
+ *    "first use": the second _openPrefsSheet_() saw a stale getLastRow(),
+ *    found no existing row, and appended again onto the SAME physical row —
+ *    overwriting the first. Use_Count could never pass 1, so promotion never
+ *    happened and the whole hybrid-learning feature was inert. Confirmed in
+ *    the sandbox: one row, Use_Count 1, after two calls.
+ *
+ * 2. LockService around the read-modify-write. The same clobbering happens
+ *    across concurrent executions — two travelers submitting at once both read
+ *    the pre-write state and the later append wins. The lock makes the
+ *    increment atomic. LOCK_TIMEOUT_MS is the repo-wide 30s (Costs.js:26),
+ *    matching Users.js:1512.
+ *
+ * Never throws, and a lock timeout is NOT an error: a failure to record a
+ * preference must not block a submission. The cost of losing one increment is
+ * a default airport that takes one more trip to learn.
  *
  * @param {string} userId Travel_Users.User_ID
  * @param {string} prefType HOME_ORIGIN | DESTINATION
@@ -84,40 +103,72 @@ function recordAirportPreference(userId, prefType, airportCode, cityName, state)
       return { success: false, error: 'cityName is required for a DESTINATION preference.' };
     }
 
-    var ctx = _openPrefsSheet_();
-    if (!ctx) return { success: false, error: 'Traveler_Airport_Prefs tab not found.' };
-
-    var now = new Date();
-    var existing = _findPrefRow_(ctx, uid, type, city, st);
-
-    if (existing) {
-      var sameAirport = existing.airportCode === code;
-      var newCount = sameAirport ? existing.useCount + 1 : 1;
-      ctx.sheet.getRange(existing.rowNumber, ctx.col.Airport_Code + 1).setValue(code);
-      ctx.sheet.getRange(existing.rowNumber, ctx.col.Use_Count + 1).setValue(newCount);
-      ctx.sheet.getRange(existing.rowNumber, ctx.col.Last_Used_At + 1).setValue(now);
-      ctx.sheet.getRange(existing.rowNumber, ctx.col.Updated_By + 1).setValue(_prefActor_());
-      return {
-        success: true,
-        useCount: newCount,
-        promoted: newCount >= AIRPORT_PREF_PROMOTION_THRESHOLD
-      };
+    // Serialize the read-modify-write. Two concurrent submissions would
+    // otherwise both read the pre-write state and clobber each other's row.
+    var lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(LOCK_TIMEOUT_MS);
+    } catch (le) {
+      // Not an error. Losing one increment costs a default that takes one more
+      // trip to learn; blocking the caller would cost a submission.
+      console.warn('recordAirportPreference: lock timed out, skipping record');
+      return { success: false, lockTimeout: true, error: 'Could not acquire lock.' };
     }
 
-    var row = ctx.headers.map(function () { return ''; });
-    row[ctx.col.Pref_ID] = 'APF-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
-    row[ctx.col.User_ID] = uid;
-    row[ctx.col.Pref_Type] = type;
-    row[ctx.col.City_Name] = city;
-    row[ctx.col.State] = st;
-    row[ctx.col.Airport_Code] = code;
-    row[ctx.col.Use_Count] = 1;
-    row[ctx.col.First_Used_At] = now;
-    row[ctx.col.Last_Used_At] = now;
-    row[ctx.col.Updated_By] = _prefActor_();
-    ctx.sheet.appendRow(row);
+    try {
+      var ctx = _openPrefsSheet_();
+      if (!ctx) return { success: false, error: 'Traveler_Airport_Prefs tab not found.' };
 
-    return { success: true, useCount: 1, promoted: 1 >= AIRPORT_PREF_PROMOTION_THRESHOLD };
+      var now = new Date();
+      var existing = _findPrefRow_(ctx, uid, type, city, st);
+
+      if (existing) {
+        var sameAirport = existing.airportCode === code;
+        var newCount = sameAirport ? existing.useCount + 1 : 1;
+        // One batched setValues rather than four setValue round-trips. The
+        // four target columns are not contiguous, so write the whole row.
+        var updated = ctx.rows[existing.rowNumber - 2].slice();
+        updated[ctx.col.Airport_Code] = code;
+        updated[ctx.col.Use_Count] = newCount;
+        updated[ctx.col.Last_Used_At] = now;
+        updated[ctx.col.Updated_By] = _prefActor_();
+        ctx.sheet.getRange(existing.rowNumber, 1, 1, ctx.headers.length)
+          .setValues([updated]);
+
+        // Commit before returning, so a caller that reads back in the same
+        // execution sees this write. See note 1 in the contract above.
+        SpreadsheetApp.flush();
+
+        return {
+          success: true,
+          useCount: newCount,
+          promoted: newCount >= AIRPORT_PREF_PROMOTION_THRESHOLD
+        };
+      }
+
+      var row = ctx.headers.map(function () { return ''; });
+      row[ctx.col.Pref_ID] = 'APF-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+      row[ctx.col.User_ID] = uid;
+      row[ctx.col.Pref_Type] = type;
+      row[ctx.col.City_Name] = city;
+      row[ctx.col.State] = st;
+      row[ctx.col.Airport_Code] = code;
+      row[ctx.col.Use_Count] = 1;
+      row[ctx.col.First_Used_At] = now;
+      row[ctx.col.Last_Used_At] = now;
+      row[ctx.col.Updated_By] = _prefActor_();
+      ctx.sheet.appendRow(row);
+
+      // Without this, a second call in the same execution reads a stale
+      // getLastRow(), finds no existing row, and appends onto the same
+      // physical row — silently overwriting this one.
+      SpreadsheetApp.flush();
+
+      return { success: true, useCount: 1, promoted: 1 >= AIRPORT_PREF_PROMOTION_THRESHOLD };
+
+    } finally {
+      lock.releaseLock();
+    }
 
   } catch (error) {
     console.warn('recordAirportPreference failed (submission unaffected): ' + error.message);
@@ -296,8 +347,17 @@ function getPricedDestinationOptions(originCode, destCityName, destState, userId
     var listing = getAirportOptionsForCity(destCityName, destState, userId, 'DESTINATION');
     if (!listing.success) return { success: false, error: listing.error, options: [] };
 
+    // ONE sheet scan for every candidate, not one per candidate. Pricing three
+    // Chicago airports with getCityPairFare took 11 SECONDS in the sandbox —
+    // three full 17,403-row scans. This is reached from a form keystroke.
+    var fares = getCityPairFaresBulk(
+      origin,
+      listing.airports.map(function (a) { return a.code; }),
+      travelDate
+    );
+
     var options = listing.airports.map(function (a) {
-      var fare = getCityPairFare(origin, a.code, travelDate);
+      var fare = fares[a.code] || { success: true, found: false };
       return {
         code: a.code,
         city: a.city,

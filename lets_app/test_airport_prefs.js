@@ -108,29 +108,45 @@ const CPROWS=[
   Airline_Abbrev:'HA',Awarded_Service:'Connect',YCA_Fare:890,CA_Fare:0,Business_Fare:0,
   Effective_Date:D1,Expiration_Date:D2}),
 ];
-function build(prefRows){
-  const prefs=(prefRows||[]).slice();
+// Models Apps Script WRITE BUFFERING. This is the whole reason the flush bug
+// reached production: the original stub applied appendRow synchronously, so a
+// subsequent read saw it immediately and the missing flush was invisible.
+//
+// Here `committed` is what reads see and `pending` is what has been written but
+// not yet flushed. SpreadsheetApp.flush() moves pending into committed. Any
+// code that writes and then re-reads without flushing sees stale data, exactly
+// as it does on the real platform.
+function build(prefRows, opts){
+  opts=opts||{};
+  const committed=(prefRows||[]).map(r=>r.slice());
+  let pending=[];
+  let scans=0;
   const cache={};
+  const flush=()=>{ pending.forEach(op=>op()); pending=[]; };
   const sheets={City_Pairs:{
     getLastRow:()=>1+CPROWS.length,
-    getRange:(r,c,nr,nc)=>({getValues:()=>CPROWS.slice(r-2,r-2+nr).map(x=>x.slice(c-1,c-1+nc))})},
+    getRange:(r,c,nr,nc)=>({getValues:()=>{scans++;return CPROWS.slice(r-2,r-2+nr).map(x=>x.slice(c-1,c-1+nc));}})},
    Traveler_Airport_Prefs:{
-    getLastRow:()=>1+prefs.length,
+    getLastRow:()=>1+committed.length,
     getRange:(r,c,nr,nc)=>({
-      getValues:()=>prefs.slice(r-2,r-2+nr).map(x=>x.slice(c-1,c-1+nc)),
-      setValue:v=>{prefs[r-2][c-1]=v;}}),
-    appendRow:row=>prefs.push(row)}};
+      getValues:()=>committed.slice(r-2,r-2+nr).map(x=>x.slice(c-1,c-1+nc)),
+      setValue:v=>{pending.push(()=>{committed[r-2][c-1]=v;});},
+      setValues:vals=>{pending.push(()=>{for(let i=0;i<vals.length;i++)committed[r-2+i]=vals[i].slice();});}}),
+    appendRow:row=>{pending.push(()=>committed.push(row.slice()));}}};
   const sb={console:{log(){},warn(){},error(){}},JSON,Date,Object,String,Number,Array,Math,parseFloat,parseInt,isNaN,RegExp,Error,
-   SpreadsheetApp:{openById:()=>({getSheetByName:n=>sheets[n]||null})},
+   SpreadsheetApp:{openById:()=>({getSheetByName:n=>sheets[n]||null}),flush:flush},
+   LockService:{getScriptLock:()=>({
+     waitLock:()=>{ if(opts.lockTimeout) throw new Error('lock timeout'); },
+     releaseLock:()=>{}})},
    CacheService:{getScriptCache:()=>({get:k=>cache[k]||null,put:(k,v)=>{cache[k]=v;}})},
    PropertiesService:{getScriptProperties:()=>({getProperty:()=>null})},
    Session:{getActiveUser:()=>({getEmail:()=>'t@gsa.gov'})}};
   const ctx=vm.createContext(sb);
   vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID='x';",ctx);
-  for(const f of ['01_constants/Cache.js','01_constants/Sheets.js','91_setup/CityPairSync.js',
-    '30_services/CityPairs.js','30_services/AirportPrefs.js'])
+  for(const f of ['01_constants/Cache.js','01_constants/Costs.js','01_constants/Sheets.js',
+    '91_setup/CityPairSync.js','30_services/CityPairs.js','30_services/AirportPrefs.js'])
     vm.runInContext(fs.readFileSync('lets_app/server/'+f,'utf8'),ctx,{filename:f});
-  return {run:e=>vm.runInContext(e,ctx),prefs};
+  return {run:e=>vm.runInContext(e,ctx),prefs:committed,scanCount:()=>scans};
 }
 let fails=0;
 const ok=(n,c,x)=>{if(c)console.log('  PASS',n);else{console.log('  FAIL',n,x===undefined?'':JSON.stringify(x));fails++;}};
@@ -258,7 +274,86 @@ console.log('10. degrades without a prefs tab');
   ok('write fails soft', w.success===false && !!w.error, w);
 }
 
-console.log('11. negative control (the suite must be able to fail)');
+console.log('11. write buffering: the flush bug that reached production');
+{
+  const h=build();
+  const r1=h.run("recordAirportPreference('u8','HOME_ORIGIN','DCA')");
+  const r2=h.run("recordAirportPreference('u8','HOME_ORIGIN','DCA')");
+  // Without SpreadsheetApp.flush(), the second call read a stale getLastRow(),
+  // found no existing row, and appended onto the SAME physical row. Both calls
+  // reported useCount 1, Use_Count could never pass 1, and promotion never
+  // happened — the hybrid learning feature was entirely inert. Confirmed in
+  // the sandbox: one row, Use_Count 1, after two calls.
+  ok('second call sees the first write', r2.useCount===2, [r1.useCount,r2.useCount]);
+  ok('promotion actually fires', r2.promoted===true, r2);
+  ok('exactly one row, not two', h.prefs.length===1, h.prefs.length);
+  const stored=h.prefs[0];
+  ok('stored Use_Count is 2', stored[6]===2, stored);
+}
+
+console.log('12. scan cost does not grow with airport count');
+{
+  const h=build();
+  const before=h.scanCount();
+  const r=h.run("getPricedDestinationOptions('DCA','CHICAGO','IL')");
+  const scans=h.scanCount()-before;
+  // Two scans is the floor: one to enumerate the city's airports, one to price
+  // them all together. Before this, pricing was one scan PER airport — three
+  // Chicago airports meant four full 17,403-row scans and took 11 seconds in
+  // the sandbox. This is reached from a form keystroke.
+  //
+  // Both are CacheService-backed in production, so a repeat lookup for the
+  // same city costs zero scans; this measures the cold path.
+  ok('priced options cost 2 scans regardless of airport count', scans===2, 'scans='+scans);
+  ok('still priced correctly', r.options[0].code==='ORD'&&r.options[0].ycaFare===112, r.options.map(o=>o.code+':'+o.ycaFare));
+  ok('bulk and single paths agree',
+     h.run("getCityPairFare('DCA','ORD').ycaFare")===r.options[0].ycaFare);
+}
+
+console.log('13. lock timeout must not block a submission');
+{
+  const h=build(null,{lockTimeout:true});
+  const r=h.run("recordAirportPreference('u7','HOME_ORIGIN','DCA')");
+  ok('reports lockTimeout', r.lockTimeout===true, r);
+  ok('does not throw', r.success===false);
+  ok('nothing written', h.prefs.length===0);
+}
+
+console.log('14. negative control: removing the flushes must reproduce the bug');
+{
+  const src=fs.readFileSync('lets_app/server/30_services/AirportPrefs.js','utf8');
+  const broken=src.split('      SpreadsheetApp.flush();').join('      // flush removed');
+  if(broken===src){ ok('negative control patched AirportPrefs',false); }
+  else{
+    const committed=[]; let pending=[];
+    const flush=()=>{pending.forEach(o=>o());pending=[];};
+    const sheets={City_Pairs:{getLastRow:()=>1+CPROWS.length,
+      getRange:(r,c,nr,nc)=>({getValues:()=>CPROWS.slice(r-2,r-2+nr).map(x=>x.slice(c-1,c-1+nc))})},
+     Traveler_Airport_Prefs:{getLastRow:()=>1+committed.length,
+      getRange:(r,c,nr,nc)=>({getValues:()=>committed.slice(r-2,r-2+nr).map(x=>x.slice(c-1,c-1+nc)),
+        setValue:v=>{pending.push(()=>{committed[r-2][c-1]=v;});},
+        setValues:vals=>{pending.push(()=>{for(let i=0;i<vals.length;i++)committed[r-2+i]=vals[i].slice();});}}),
+      appendRow:row=>{pending.push(()=>committed.push(row.slice()));}}};
+    const sb={console:{log(){},warn(){},error(){}},JSON,Date,Object,String,Number,Array,Math,parseFloat,parseInt,isNaN,RegExp,Error,
+     SpreadsheetApp:{openById:()=>({getSheetByName:n=>sheets[n]||null}),flush:flush},
+     LockService:{getScriptLock:()=>({waitLock:()=>{},releaseLock:()=>{}})},
+     CacheService:{getScriptCache:()=>({get:()=>null,put:()=>{}})},
+     PropertiesService:{getScriptProperties:()=>({getProperty:()=>null})},
+     Session:{getActiveUser:()=>({getEmail:()=>'t@gsa.gov'})}};
+    const c4=vm.createContext(sb);
+    vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID='x';",c4);
+    for(const f of ['01_constants/Cache.js','01_constants/Costs.js','01_constants/Sheets.js',
+      '91_setup/CityPairSync.js','30_services/CityPairs.js'])
+      vm.runInContext(fs.readFileSync('lets_app/server/'+f,'utf8'),c4);
+    vm.runInContext(broken,c4,{filename:'AirportPrefs.js (no flush)'});
+    vm.runInContext("recordAirportPreference('nf','HOME_ORIGIN','DCA')",c4);
+    const second=vm.runInContext("recordAirportPreference('nf','HOME_ORIGIN','DCA')",c4);
+    ok('without flush, the second call wrongly reports first use',
+       second.useCount===1, second);
+  }
+}
+
+console.log('15. negative control: the metro sort');
 {
   const src=fs.readFileSync('lets_app/server/30_services/CityPairs.js','utf8');
   const broken=src.replace("if (a.isMetroArea !== b.isMetroArea) return a.isMetroArea ? 1 : -1;\n        return b.routeCount - a.routeCount;","return b.routeCount - a.routeCount;");
