@@ -86,7 +86,7 @@ console.log('2. every diag function is reachable and returns nothing');
   vm.runInContext(fs.readFileSync(SRC,'utf8'),ctx,{filename:'Diagnostics.js'});
 
   ['diagEnvironment','diagCityPairs','diagHcData','diagAirportPrefs','diagTriggers',
-   'diagDutyStationAirports','diagAccess','diagAll']
+   'diagDutyStationAirports','diagUnresolvedCityNames','diagAccess','diagAll']
     .forEach(fn=>{
       let threw=null,ret;
       try{ ret=vm.runInContext(fn+'()',ctx); }catch(e){ threw=e; }
@@ -104,6 +104,21 @@ console.log('2. every diag function is reachable and returns nothing');
   let threw3=null;
   try{ vm.runInContext("diagCityNamesForState()",ctx); }catch(e){ threw3=e; }
   ok('diagCityNamesForState survives a missing argument', threw3===null, threw3&&threw3.message);
+}
+
+console.log('2b. every diagAll member takes ZERO arguments');
+{
+  // The Apps Script editor cannot pass arguments: the Run button always calls
+  // with none. A diagnostic that requires a parameter is therefore unrunnable
+  // from the editor, which is the whole point of this file. diagAll must only
+  // call zero-arity functions.
+  const src=fs.readFileSync(SRC,'utf8');
+  const called=(src.match(/^  diag\w+\(\);$/gm)||[]).map(l=>l.trim().replace('();',''));
+  ok('diagAll calls several diagnostics', called.length>=6, called.length);
+  called.forEach(fn=>{
+    const m=src.match(new RegExp('function '+fn+'\\(([^)]*)\\)'));
+    ok(fn+' takes no arguments', m && m[1].trim()==='', m&&m[1]);
+  });
 }
 
 console.log('3. diagAccess refuses a non-admin');

@@ -188,6 +188,22 @@ jobs:
           fi
           echo "PASS - bulk lookups warm the single-lookup cache."
 
+      - name: 'Guard: diagAll members must take no arguments'
+        run: |
+          echo "Checking every diagAll member is zero-arity..."
+          # The Apps Script editor CANNOT pass arguments — the Run button always
+          # calls with none. A diagnostic that requires a parameter is
+          # unrunnable from the editor, which defeats the purpose of having a
+          # committed diagnostics file at all. @clolry hit this with
+          # diagCityNamesForState('TX').
+          for FN in $(grep -oE '^  diag[A-Za-z]+\(\);$' lets_app/server/99_triggers/Diagnostics.js | tr -d ' ();'); do
+            if ! grep -qE "function ${FN}\(\)" lets_app/server/99_triggers/Diagnostics.js; then
+              echo "::error file=lets_app/server/99_triggers/Diagnostics.js::${FN} is called by diagAll but does not have a zero-argument signature. The editor Run button cannot pass arguments, so it would be unrunnable by hand."
+              exit 1
+            fi
+          done
+          echo "PASS - every diagAll member is zero-arity."
+
       - name: 'Guard: diagnostics must stay read-only'
         run: |
           echo "Checking Diagnostics.js performs no writes..."

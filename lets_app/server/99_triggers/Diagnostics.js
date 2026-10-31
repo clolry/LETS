@@ -27,9 +27,15 @@
  *   diagAirportPrefs() stored preferences and the promotion threshold
  *   diagTriggers()     installed triggers, and whether their handlers exist
  *
- * And one that takes an argument, so it is not part of diagAll():
+ *   diagDutyStationAirports()   which HC duty stations resolve to an airport
+ *   diagUnresolvedCityNames()   and what GSA calls the ones that do not
  *
- *   diagCityNamesForState('TX')   every city name GSA uses in that state
+ * The Apps Script editor CANNOT pass arguments — the Run button always calls
+ * with none. Everything above therefore takes no parameters. One helper does
+ * take a state code and is called by the zero-argument wrapper above rather
+ * than directly:
+ *
+ *   diagCityNamesForState('TX')
  *
  * THE COST OF THIS FILE, STATED PLAINLY
  * -------------------------------------
@@ -65,6 +71,7 @@ function diagAll() {
   diagHcData();
   diagAirportPrefs();
   diagDutyStationAirports();
+  diagUnresolvedCityNames();
   diagTriggers();
   diagAccess();
   console.log('================================================================');
@@ -534,12 +541,72 @@ function diagDutyStationAirports() {
       console.log('');
       console.log(unresolved.length + ' city/state pair(s) resolve to NO airport.');
       console.log('A traveller based there gets an empty airport picker.');
-      console.log('Run diagCityNamesForState("' + unresolved[0].state +
-        '") to see what GSA calls that city.');
+      console.log('Run diagUnresolvedCityNames() to see what GSA calls them.');
     }
 
   } catch (error) {
     console.log('diagDutyStationAirports FAILED: ' + error.message);
+  }
+}
+
+/**
+ * Zero-argument companion to diagDutyStationAirports.
+ *
+ * Finds the duty-station cities that resolve to no airport, then lists every
+ * city name GSA uses in each of THOSE states — so the answer to "what does the
+ * award file call this place?" arrives without anyone typing an argument.
+ *
+ * WHY THIS EXISTS RATHER THAN JUST diagCityNamesForState('TX'): the Apps Script
+ * editor cannot pass arguments. The Run button always calls with none, so a
+ * function that needs a parameter can only be invoked from a hand-written
+ * wrapper — which is exactly the scratch-file pattern this whole file exists
+ * to remove.
+ *
+ * @editor
+ */
+function diagUnresolvedCityNames() {
+  console.log('');
+  console.log('--- CITY NAMES FOR UNRESOLVED DUTY STATIONS ---');
+  try {
+    var bundle = HC.hcGetBundle();
+    if (!bundle || !bundle.success) {
+      console.log('hcGetBundle failed: ' + (bundle && bundle.error));
+      return;
+    }
+
+    var seen = {};
+    var unresolvedStates = {};
+    var unresolvedCities = [];
+
+    bundle.data.forEach(function (p) {
+      var loc = p.location || {};
+      var city = String(loc.city || '').trim().toUpperCase();
+      var state = String(loc.state || '').trim().toUpperCase();
+      if (!city) return;
+      var key = city + '|' + state;
+      if (seen[key]) return;
+      seen[key] = true;
+
+      var r = getAirportsForCity(city, state);
+      var real = (r.airports || []).filter(function (a) { return !a.isMetroArea; });
+      if (!real.length) {
+        unresolvedCities.push(city + ', ' + state);
+        if (state) unresolvedStates[state] = true;
+      }
+    });
+
+    if (!unresolvedCities.length) {
+      console.log('Every duty-station city resolves to at least one airport.');
+      return;
+    }
+
+    console.log('Unresolved: ' + unresolvedCities.join('; '));
+    Object.keys(unresolvedStates).forEach(function (st) {
+      diagCityNamesForState(st);
+    });
+
+  } catch (error) {
+    console.log('diagUnresolvedCityNames FAILED: ' + error.message);
   }
 }
 
