@@ -25,6 +25,11 @@
  *   diagHcData()       position and org counts, validation problems, a DD walk
  *   diagAccess()       who currently has access, and by which path
  *   diagAirportPrefs() stored preferences and the promotion threshold
+ *   diagTriggers()     installed triggers, and whether their handlers exist
+ *
+ * And one that takes an argument, so it is not part of diagAll():
+ *
+ *   diagCityNamesForState('TX')   every city name GSA uses in that state
  *
  * THE COST OF THIS FILE, STATED PLAINLY
  * -------------------------------------
@@ -59,6 +64,7 @@ function diagAll() {
   diagCityPairs();
   diagHcData();
   diagAirportPrefs();
+  diagDutyStationAirports();
   diagTriggers();
   diagAccess();
   console.log('================================================================');
@@ -462,6 +468,156 @@ function diagTriggers() {
 
   } catch (error) {
     console.log('diagTriggers FAILED: ' + error.message);
+  }
+}
+
+/**
+ * Does every HC duty-station city resolve to an airport?
+ *
+ * getAirportsForCity matches ORIGIN_CITY_NAME / DESTINATION_CITY_NAME
+ * EXACTLY. GSA and HR do not always agree on a city's name, and when they
+ * disagree the traveller gets NO airport options at all — which would block a
+ * submission rather than merely inconvenience it.
+ *
+ * Found in the sandbox: FORT WORTH returns no match, because GSA files that
+ * airport under a different city name. Eight of nine seeded duty stations
+ * resolved; that one did not, and the only visible symptom was
+ * warmCityPairCache reporting 8 origins instead of 9.
+ *
+ * Run this after any HC roster change, and after each fiscal-year award file.
+ *
+ * @editor
+ */
+function diagDutyStationAirports() {
+  console.log('');
+  console.log('--- DUTY STATION AIRPORT RESOLUTION ---');
+  try {
+    var bundle = HC.hcGetBundle();
+    if (!bundle || !bundle.success) {
+      console.log('hcGetBundle failed: ' + (bundle && bundle.error));
+      return;
+    }
+
+    var seen = {};
+    var cities = [];
+    bundle.data.forEach(function (p) {
+      var loc = p.location || {};
+      var city = String(loc.city || '').trim().toUpperCase();
+      var state = String(loc.state || '').trim().toUpperCase();
+      if (!city) return;
+      var key = city + '|' + state;
+      if (seen[key]) return;
+      seen[key] = true;
+      cities.push({ city: city, state: state });
+    });
+
+    if (!cities.length) {
+      console.log('No duty-station cities in the HC roster.');
+      return;
+    }
+
+    console.log(cities.length + ' distinct duty-station city/state pair(s):');
+    var unresolved = [];
+    cities.forEach(function (c) {
+      var r = getAirportsForCity(c.city, c.state);
+      var real = (r.airports || []).filter(function (a) { return !a.isMetroArea; });
+      if (!real.length) {
+        unresolved.push(c);
+        console.log('  ' + c.city + ', ' + c.state + '  *** NO MATCH ***');
+      } else {
+        console.log('  ' + c.city + ', ' + c.state + '  -> ' +
+          real.map(function (a) { return a.code; }).join(', '));
+      }
+    });
+
+    if (unresolved.length) {
+      console.log('');
+      console.log(unresolved.length + ' city/state pair(s) resolve to NO airport.');
+      console.log('A traveller based there gets an empty airport picker.');
+      console.log('Run diagCityNamesForState("' + unresolved[0].state +
+        '") to see what GSA calls that city.');
+    }
+
+  } catch (error) {
+    console.log('diagDutyStationAirports FAILED: ' + error.message);
+  }
+}
+
+/**
+ * Every city name GSA uses in one state, with its airport codes.
+ *
+ * The companion to diagDutyStationAirports: when a duty station does not
+ * resolve, this shows what the award file actually calls the place. Scans both
+ * the origin and destination columns, because GSA stores each pair
+ * alphabetically so a city appears on whichever side sorts first.
+ *
+ * @param {string} stateCode two-letter state, e.g. 'TX'
+ * @editor
+ */
+function diagCityNamesForState(stateCode) {
+  var state = String(stateCode || '').trim().toUpperCase();
+  console.log('');
+  console.log('--- GSA CITY NAMES IN ' + (state || '[no state given]') + ' ---');
+  if (!state) {
+    console.log('Pass a two-letter state code, e.g. diagCityNamesForState("TX").');
+    return;
+  }
+  try {
+    if (!TRAVEL_DB_SPREADSHEET_ID) {
+      console.log('TRAVEL_DB_SPREADSHEET_ID unset; skipping.');
+      return;
+    }
+    var ss = SpreadsheetApp.openById(TRAVEL_DB_SPREADSHEET_ID);
+    var sheet = ss.getSheetByName(SHEET_NAMES.CITY_PAIRS);
+    if (!sheet) {
+      console.log('City_Pairs tab missing. Run setupTravelDatabase() then syncCityPairs().');
+      return;
+    }
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      console.log('City_Pairs is empty. Run syncCityPairs().');
+      return;
+    }
+
+    var headers = TRAVEL_SHEET_SCHEMAS[SHEET_NAMES.CITY_PAIRS];
+    var c = {};
+    headers.forEach(function (h, i) { c[h] = i; });
+    var values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+
+    var found = {};
+    function note(city, st, code) {
+      if (String(st || '').trim().toUpperCase() !== state) return;
+      var name = String(city || '').trim();
+      var abbrev = String(code || '').trim().toUpperCase();
+      if (!name || !abbrev) return;
+      if (!found[name]) found[name] = {};
+      found[name][abbrev] = (found[name][abbrev] || 0) + 1;
+    }
+
+    for (var i = 0; i < values.length; i++) {
+      note(values[i][c['Origin_City_Name']], values[i][c['Origin_State']],
+           values[i][c['Origin_Airport_Abbrev']]);
+      note(values[i][c['Destination_City_Name']], values[i][c['Destination_State']],
+           values[i][c['Destination_Airport_Abbrev']]);
+    }
+
+    var names = Object.keys(found).sort();
+    if (!names.length) {
+      console.log('No rows found for state ' + state + '.');
+      return;
+    }
+    console.log(names.length + ' city name(s):');
+    names.forEach(function (n) {
+      var codes = Object.keys(found[n]).sort(function (a, b) {
+        return found[n][b] - found[n][a];
+      });
+      console.log('  ' + n + '  ->  ' + codes.map(function (k) {
+        return k + ' (' + found[n][k] + ')';
+      }).join(', '));
+    });
+
+  } catch (error) {
+    console.log('diagCityNamesForState FAILED: ' + error.message);
   }
 }
 

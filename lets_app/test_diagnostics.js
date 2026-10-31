@@ -78,14 +78,15 @@ console.log('2. every diag function is reachable and returns nothing');
             hcGetOrgHierarchy:()=>[],hcFindDivisionDirector:()=>({ddName:'',ddEmail:''})};
     function validateHCData(){return {success:true,problems:[]};}
     function getCityPairFare(){return {success:true,found:false};}
-    function getAirportsForCity(){return {success:true,airports:[]};}
+    function getAirportsForCity(){return {success:true,airports:[{code:'DCA',isMetroArea:false}]};}
     function isTravelAdmin(){return true;}
     function getAccessInventory(){return {success:true,hcDerivedEnabled:true,
       roleHolders:[],hcSupervisors:[],buLeads:[]};}
   `,ctx);
   vm.runInContext(fs.readFileSync(SRC,'utf8'),ctx,{filename:'Diagnostics.js'});
 
-  ['diagEnvironment','diagCityPairs','diagHcData','diagAirportPrefs','diagTriggers','diagAccess','diagAll']
+  ['diagEnvironment','diagCityPairs','diagHcData','diagAirportPrefs','diagTriggers',
+   'diagDutyStationAirports','diagAccess','diagAll']
     .forEach(fn=>{
       let threw=null,ret;
       try{ ret=vm.runInContext(fn+'()',ctx); }catch(e){ threw=e; }
@@ -94,6 +95,15 @@ console.log('2. every diag function is reachable and returns nothing');
       ok(fn+' returns undefined', ret===undefined, ret);
     });
   ok('produced log output', logs.length>10, logs.length);
+
+  // Takes an argument, so it is excluded from diagAll and tested separately.
+  let threw2=null, ret2;
+  try{ ret2=vm.runInContext("diagCityNamesForState('TX')",ctx); }catch(e){ threw2=e; }
+  ok('diagCityNamesForState does not throw', threw2===null, threw2&&threw2.message);
+  ok('diagCityNamesForState returns undefined', ret2===undefined, ret2);
+  let threw3=null;
+  try{ vm.runInContext("diagCityNamesForState()",ctx); }catch(e){ threw3=e; }
+  ok('diagCityNamesForState survives a missing argument', threw3===null, threw3&&threw3.message);
 }
 
 console.log('3. diagAccess refuses a non-admin');
