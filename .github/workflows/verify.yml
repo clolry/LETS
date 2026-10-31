@@ -57,6 +57,9 @@ jobs:
       - name: City pair airfare tests
         run: node lets_app/test_city_pairs.js
 
+      - name: Access audit (G-008) tests
+        run: node lets_app/test_access_audit.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -136,6 +139,28 @@ jobs:
             exit 1
           fi
           echo "PASS - no hardcoded gross-up percentage in the client."
+
+      - name: 'Guard: HC-derived access must stay logged and switchable'
+        run: |
+          echo "Checking the G-008 access-audit controls are still wired..."
+          # canAccessTrip grants site access from HR data on two of its three
+          # paths, with no row in Travel_User_Roles and no admin-console
+          # visibility. Those grants must stay (a) logged and (b) disableable
+          # without a deploy, or G-008 reopens silently.
+          for FN in _logAccessDecision_ isHcDerivedAccessEnabled getAccessInventory; do
+            if ! grep -q "function ${FN}" lets_app/server/30_services/Access.js; then
+              echo "::error file=lets_app/server/30_services/Access.js::${FN} is missing. HC-derived access grants must remain logged and switchable (G-008)."
+              exit 1
+            fi
+          done
+          # Each allow-path must log before returning. Three GRANTED calls, one
+          # per path, plus the DENIED paths.
+          GRANTS=$(grep -c "_logAccessDecision_(emailLower, 'GRANTED'" lets_app/server/30_services/Access.js || true)
+          if [ "$GRANTS" -lt 3 ]; then
+            echo "::error file=lets_app/server/30_services/Access.js::Expected 3 GRANTED log calls in canAccessTrip (one per allow-path), found ${GRANTS}. An unlogged allow-path is exactly the G-008 defect."
+            exit 1
+          fi
+          echo "PASS - access decisions are logged and the kill switch is present."
 
       - name: 'Guard: city pair keys must be alphabetically normalized'
         run: |

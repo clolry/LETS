@@ -52,7 +52,11 @@ const SHEET_NAMES = {
   // Government contract airfares, synced daily from the GSA City Pair
   // Program CSV. See 91_setup/CityPairSync.js.
   CITY_PAIRS:         'City_Pairs',
-  CITY_PAIR_SYNC_LOG: 'City_Pair_Sync_Log'
+  CITY_PAIR_SYNC_LOG: 'City_Pair_Sync_Log',
+
+  // Audit trail for site-access decisions. See 30_services/Access.js and
+  // docs/GAP_REGISTER.md G-008.
+  ACCESS_LOG:         'Access_Log'
 };
 
 // ============================================================================
@@ -419,5 +423,38 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Status',
     'Error',
     'Duration_Ms'
+  ],
+
+  // ==========================================================================
+  // ACCESS AUDIT TRAIL — G-008
+  // ==========================================================================
+  //
+  // canAccessTrip() has three allow-paths. Two of them are driven by HR data
+  // rather than by anything LETS stores:
+  //
+  //   1. an active row in Travel_User_Roles        (visible, auditable)
+  //   2. an HC position with Supervisory_Status=2  (invisible)
+  //   3. an HC office title naming a BU lead       (invisible)
+  //
+  // Paths 2 and 3 grant access with no role row and no audit record, so access
+  // appears and disappears as HR data changes and the admin console cannot see
+  // it. That is docs/GAP_REGISTER.md G-008, rated C4/R2.
+  //
+  // This tab makes those decisions observable. It records the path taken and
+  // the HC position that justified it, so "who can get in, and why?" is
+  // answerable from the data instead of by reading Access.js.
+  //
+  // Writes are best-effort and must never block a page load — a failure to log
+  // cannot be allowed to deny access. See _logAccessDecision_().
+  Access_Log: [
+    'Log_ID',
+    'Timestamp',
+    'Email',
+    'Decision',            // GRANTED | DENIED
+    'Path',                // role | hc-supervisor | hc-bu-lead | none | disabled
+    'Position_Number',     // the HC position that justified paths 2 and 3
+    'Office_Title',
+    'Org_Code',
+    'Detail'
   ]
 };

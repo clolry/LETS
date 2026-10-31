@@ -398,9 +398,30 @@ function canAccessTrip(email) {
   // 1. Any active role in Travel_User_Roles → allow.
   try {
     var roles = _getUnifiedRolesForEmail(emailLower);
-    if (roles && roles.length > 0) return true;
+    if (roles && roles.length > 0) {
+      _logAccessDecision_(emailLower, 'GRANTED', 'role', {
+        detail: roles.length + ' active role row(s)'
+      });
+      return true;
+    }
   } catch (e) {
     console.warn('canAccessTrip: unified-roles check failed: ' + e.message);
+  }
+
+  // Paths 2 and 3 are HR-driven: they grant access with no row in
+  // Travel_User_Roles and no admin-console visibility (G-008). The kill switch
+  // below exists because a roster import can widen access without any LETS
+  // change — setting HC_SUPERVISOR_ACCESS_ENABLED to 'false' closes both paths
+  // without a deploy, leaving the explicit role table as the only way in.
+  //
+  // Defaults to ENABLED. The previous workgroup relied on these paths, and
+  // defaulting to closed would lock out every supervisor the moment a real
+  // roster lands.
+  if (!isHcDerivedAccessEnabled()) {
+    _logAccessDecision_(emailLower, 'DENIED', 'disabled', {
+      detail: 'HC-derived access paths are disabled by HC_SUPERVISOR_ACCESS_ENABLED'
+    });
+    return false;
   }
 
   // 2. HC supervisor → allow. Walks the bundle for any filled position
@@ -416,6 +437,12 @@ function canAccessTrip(email) {
         if (String(p.supervisoryStatus) !== '2') continue;
         var status = String(p.occupancyStatus || '').toUpperCase();
         if (status === 'VACANT' || status === 'OBLIGATED') continue;
+        _logAccessDecision_(emailLower, 'GRANTED', 'hc-supervisor', {
+          positionNumber: p.positionNumber,
+          officeTitle: p.officeTitle,
+          orgCode: p.orgCode,
+          detail: 'Supervisory_Status=2, occupancy ' + status
+        });
         return true;
       }
     }
@@ -427,12 +454,182 @@ function canAccessTrip(email) {
   // their deputies) → allow. Independent of supervisoryStatus; matches filled
   // seats only. Mirrors the BU-lead access getReviewerContext already grants.
   try {
-    if (_isBuLeadByTitle(emailLower)) return true;
+    var buLead = _isBuLeadByTitle(emailLower);
+    if (buLead) {
+      _logAccessDecision_(emailLower, 'GRANTED', 'hc-bu-lead', {
+        officeTitle: buLead.title || '',
+        orgCode: (buLead.buCodes || []).join(','),
+        detail: 'BU lead by office title: ' + ((buLead.buNames || []).join(', ') || 'unknown BU')
+      });
+      return true;
+    }
   } catch (e) {
     console.warn('canAccessTrip: bu-lead-by-title check failed: ' + e.message);
   }
 
+  _logAccessDecision_(emailLower, 'DENIED', 'none', {
+    detail: 'No role row, no HC supervisor position, no BU-lead title'
+  });
   return false;
+}
+
+/**
+ * Whether the two HR-driven allow-paths in canAccessTrip are active.
+ *
+ * Reads the HC_SUPERVISOR_ACCESS_ENABLED Script Property. Anything other than
+ * the exact string 'false' leaves them enabled, so a typo or a blank value
+ * cannot accidentally lock the site down — a fail-open default is correct here
+ * because the alternative is denying every supervisor at once.
+ *
+ * @returns {boolean}
+ * @server
+ */
+function isHcDerivedAccessEnabled() {
+  try {
+    var raw = PropertiesService.getScriptProperties()
+      .getProperty('HC_SUPERVISOR_ACCESS_ENABLED');
+    return String(raw).trim().toLowerCase() !== 'false';
+  } catch (e) {
+    console.warn('isHcDerivedAccessEnabled: property read failed, defaulting to enabled: ' + e.message);
+    return true;
+  }
+}
+
+/**
+ * Appends one row to Access_Log.
+ *
+ * BEST EFFORT, NEVER THROWS. canAccessTrip runs on every page load, so a
+ * logging failure must not deny access — an audit gap is bad, locking the
+ * whole site out because a sheet write failed is worse.
+ *
+ * Why this exists: before it, paths 2 and 3 returned `true` silently. Access
+ * granted by HR data left no trace anywhere, so nobody could answer "who can
+ * get in, and why?" without reading this file. docs/GAP_REGISTER.md G-008.
+ *
+ * DENIED rows are logged too. A user reporting "I can't get in" is the most
+ * common support question this system will get, and the log turns it into a
+ * lookup instead of a reproduction.
+ *
+ * @param {string} email
+ * @param {string} decision GRANTED | DENIED
+ * @param {string} path role | hc-supervisor | hc-bu-lead | none | disabled
+ * @param {Object} [info] { positionNumber, officeTitle, orgCode, detail }
+ */
+function _logAccessDecision_(email, decision, path, info) {
+  try {
+    if (!TRAVEL_DB_SPREADSHEET_ID) return;
+    info = info || {};
+
+    var ss = SpreadsheetApp.openById(TRAVEL_DB_SPREADSHEET_ID);
+    var sheet = ss.getSheetByName(SHEET_NAMES.ACCESS_LOG);
+    // Absent tab is not an error: this runs before setupTravelDatabase() has
+    // necessarily been run against a given environment.
+    if (!sheet) return;
+
+    sheet.appendRow([
+      'ACC-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+      new Date(),
+      email || '',
+      decision || '',
+      path || '',
+      info.positionNumber || '',
+      info.officeTitle || '',
+      info.orgCode || '',
+      info.detail || ''
+    ]);
+  } catch (e) {
+    // Deliberately swallowed. See the contract above.
+    console.warn('_logAccessDecision_ failed (access unaffected): ' + e.message);
+  }
+}
+
+/**
+ * Everyone who currently holds access, and by which path.
+ *
+ * Answers "who can get in?" from the data rather than by reading code. The
+ * two HC-driven paths are the point: those grants exist only in HR data, so
+ * before this there was no way to enumerate them.
+ *
+ * Reads HC and the role table directly rather than replaying Access_Log —
+ * the log records decisions that HAPPENED, which is a different question from
+ * who WOULD be admitted right now.
+ *
+ * @returns {Object} { success, hcDerivedEnabled, roleHolders[], hcSupervisors[], buLeads[], error? }
+ * @server
+ */
+function getAccessInventory() {
+  try {
+    var out = {
+      success: true,
+      hcDerivedEnabled: isHcDerivedAccessEnabled(),
+      roleHolders: [],
+      hcSupervisors: [],
+      buLeads: []
+    };
+
+    // Role table. _getUnifiedRoleData already returns an email-keyed map and
+    // is CacheService-backed, so this reuses it rather than re-reading the
+    // sheet — and it is the SAME source canAccessTrip path 1 consults, so the
+    // inventory cannot disagree with the gate.
+    try {
+      var roleData = _getUnifiedRoleData();
+      var rolesByEmail = (roleData && roleData.rolesByEmail) || {};
+      out.roleHolders = Object.keys(rolesByEmail).map(function (em) {
+        return {
+          email: em,
+          roles: (rolesByEmail[em] || []).map(function (r) {
+            return r.roleType + (r.scope ? ':' + r.scope : '');
+          })
+        };
+      });
+    } catch (e) {
+      out.roleError = e.message;
+    }
+
+    // HC supervisors and BU leads.
+    try {
+      var bundle = HC.hcGetBundle();
+      if (bundle && bundle.success && bundle.data) {
+        for (var i = 0; i < bundle.data.length; i++) {
+          var p = bundle.data[i];
+          if (!p || !p.emailAddress) continue;
+          var status = String(p.occupancyStatus || '').toUpperCase();
+          if (status === 'VACANT' || status === 'OBLIGATED') continue;
+
+          if (String(p.supervisoryStatus) === '2') {
+            out.hcSupervisors.push({
+              email: String(p.emailAddress).toLowerCase(),
+              name: p.employeeName || '',
+              positionNumber: p.positionNumber || '',
+              officeTitle: p.officeTitle || '',
+              orgCode: p.orgCode || ''
+            });
+          }
+
+          var titleLower = String(p.officeTitle || '').toLowerCase();
+          if (titleLower.indexOf('chief of staff') !== -1 ||
+              titleLower.indexOf('client executive') !== -1) {
+            out.buLeads.push({
+              email: String(p.emailAddress).toLowerCase(),
+              name: p.employeeName || '',
+              positionNumber: p.positionNumber || '',
+              officeTitle: p.officeTitle || '',
+              orgCode: p.orgCode || ''
+            });
+          }
+        }
+      } else if (bundle && bundle.error) {
+        out.hcError = bundle.error;
+      }
+    } catch (e) {
+      out.hcError = e.message;
+    }
+
+    return out;
+  } catch (error) {
+    console.error('getAccessInventory failed: ' + error.message);
+    return { success: false, error: error.message, roleHolders: [], hcSupervisors: [], buLeads: [] };
+  }
 }
 
 /**
