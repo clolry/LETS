@@ -120,7 +120,10 @@ window.TravelUtils = (function() {
     },
 
     // Location types that require site name
-    LOCATION_TYPES_WITH_SITE: ['client-site', 'contractor-site'],
+    // Location types that also need a site NAME. 'gsa-site' is included: a GSA
+    // facility still needs identifying ("Regional Office Building", "1800 F"),
+    // and without it a reviewer sees only a city.
+    LOCATION_TYPES_WITH_SITE: ['client-site', 'contractor-site', 'gsa-site'],
 
     // Character limits
     CHAR_LIMITS: {

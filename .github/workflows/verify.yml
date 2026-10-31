@@ -75,6 +75,9 @@ jobs:
       - name: Funding label tests
         run: node lets_app/test_funding_label.js
 
+      - name: UI fix regression tests
+        run: node lets_app/test_ui_fixes.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -176,6 +179,25 @@ jobs:
             exit 1
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
+
+      - name: 'Guard: no relative ?mode= navigation'
+        run: |
+          echo "Checking for relative mode navigation in page templates..."
+          # Apps Script serves the app inside a sandbox iframe on
+          # googleusercontent.com, so window.location.href='?mode=x' resolves
+          # against the IFRAME origin, not /exec. The result is a blank page
+          # plus a history entry per attempt — @clolry needed ~25 back presses
+          # to escape the budget page.
+          #
+          # Use navigateToTravel(), which builds an absolute URL and navigates
+          # window.top.
+          if grep -rnE "window\.location\.href\s*=\s*['\"]\?mode=" \
+               lets_app/client/pages/ lets_app/client/controllers/ \
+               | grep -vE '^\s*(//|\*|<!--)' | grep -v 'NOT window.location'; then
+            echo "::error::A relative ?mode= navigation was found. Inside the Apps Script sandbox iframe this navigates to googleusercontent.com and renders a blank page. Use navigateToTravel(mode) instead."
+            exit 1
+          fi
+          echo "PASS - no relative mode navigation."
 
       - name: 'Guard: funding relabel must not change the stored value'
         run: |

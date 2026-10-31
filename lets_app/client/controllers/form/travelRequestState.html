@@ -529,7 +529,7 @@
 
       // Add site name for client-site or contractor-site locations
       const locationType = this._formData.locationType;
-      if ((locationType === 'client-site' || locationType === 'contractor-site') && leg.siteName) {
+      if (window.TravelUtils.TRAVEL_CONFIG.LOCATION_TYPES_WITH_SITE.indexOf(locationType) !== -1 && leg.siteName) {
         parts.push(leg.siteName);
       }
 

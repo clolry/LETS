@@ -64,6 +64,21 @@
 </head>
 
 <body class="travel-portal-body">
+  <script>
+    // Set BEFORE navLoader initialises: it prefers this over resolving the
+    // script URL asynchronously, and an async resolve would lose the
+    // user-gesture activation that a top-level navigation requires.
+    window._travelScriptUrl = '<?= scriptUrl ?>';
+  </script>
+
+  <!--
+    Provides navigateToTravel() and the navigation loader. Included in <body>
+    rather than <head> for two reasons: it renders a <div>, which is invalid in
+    the head, and its IIFE reads window._travelScriptUrl at load time — so it
+    has to run AFTER the assignment above or it falls back to an async resolve.
+  -->
+  <?!= include('client/components/navLoader'); ?>
+
   <!-- Fixed Branded Header -->
   <header class="travel-header">
     <div class="travel-header__left">
@@ -75,11 +90,25 @@
       </h1>
     </div>
     <div class="travel-header__right">
-      <a href="#" onclick="window.location.href='?mode=travel'; return false;" class="travel-header__role-link">
+      <!--
+        navigateToTravel(), NOT window.location.href='?mode=...'.
+
+        An Apps Script web app renders inside a sandbox iframe on
+        *.googleusercontent.com, so a RELATIVE url resolves against that iframe
+        origin rather than the /exec address. The browser navigated the iframe
+        to a googleusercontent URL with no handler, producing a blank page —
+        and because each attempt pushed a history entry, backing out took
+        @clolry roughly 25 presses.
+
+        navigateToTravel builds an absolute URL from the cached script URL and
+        navigates window.top. Every other page in the app already used it; this
+        one did not.
+      -->
+      <a href="#" onclick="navigateToTravel('travel'); return false;" class="travel-header__role-link">
         <i aria-hidden="true" class="fas fa-arrow-left"></i>
         <span>Return to Portal</span>
       </a>
-      <a href="#" onclick="window.location.href='?mode=form'; return false;" class="travel-header__role-link">
+      <a href="#" onclick="navigateToTravel('form'); return false;" class="travel-header__role-link">
         <i aria-hidden="true" class="fas fa-plus"></i>
         <span>New Travel Request</span>
       </a>

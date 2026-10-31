@@ -10,6 +10,7 @@ test_diagnostics.js
 test_cache_warming.js
 test_airfare_ui.js
 test_funding_label.js
+test_ui_fixes.js
 preview.html
 node_modules/**
 .git/**

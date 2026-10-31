@@ -4160,7 +4160,17 @@
             <div class="review-cost-matrix__cell review-cost-matrix__cell--amount">Transport</div>
             <div class="review-cost-matrix__cell review-cost-matrix__cell--amount">Lodging</div>
             <div class="review-cost-matrix__cell review-cost-matrix__cell--amount">M&IE</div>
-            <div class="review-cost-matrix__cell review-cost-matrix__cell--amount">15% Gross-Up</div>
+            <div class="review-cost-matrix__cell review-cost-matrix__cell--amount">${(function () {
+              // Label the rate these rows were actually computed at. A
+              // submitted request keeps the rate in force when it was
+              // submitted (rule C-07), so a hardcoded 15% would misdescribe
+              // every request submitted after the property changed to 30.
+              var pcts = (travelers || []).map(function (t) {
+                return parseFloat(t.otherPercentage);
+              }).filter(function (p) { return !isNaN(p); });
+              var uniq = pcts.filter(function (p, i) { return pcts.indexOf(p) === i; });
+              return uniq.length === 1 ? uniq[0] + '% Gross-Up' : 'Gross-Up';
+            })()}</div>
             <div class="review-cost-matrix__cell review-cost-matrix__cell--total">Total</div>
           </div>
           <div class="review-cost-matrix__body">

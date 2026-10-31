@@ -618,7 +618,7 @@
                 <span>Lodging: <strong id="tcGrandLodging_${traveler.id}">$0.00</strong></span>
                 <span>M&IE: <strong id="tcGrandMie_${traveler.id}">$0.00</strong></span>
                 <span>Local: <strong id="tcGrandLocal_${traveler.id}">$0.00</strong></span>
-                <span>+15%: <strong id="tcGrandOther_${traveler.id}">$0.00</strong></span>
+                <span><span id="tcGrandOtherLabel_${traveler.id}">+${traveler.otherPercentage || window.TravelRequest.getOtherCostPercentage()}%</span>: <strong id="tcGrandOther_${traveler.id}">$0.00</strong></span>
               </div>
               <div class="tc__grand-total">
                 <span>TOTAL</span>
@@ -3061,6 +3061,16 @@
     if (gtOther) {
       gtOther.textContent = `$${otherVal.toFixed(2)}`;
       gtOther.parentElement.classList.toggle('hidden', otherVal <= 0);
+      // The label is rendered once at card-build time, but otherPercentage can
+      // arrive later: loadCostConfig is non-blocking, so a card built in the
+      // first moments after page load carries the fallback. Without this the
+      // card showed "+15%" beside a figure computed at 30%.
+      const gtOtherLabel = document.getElementById(`tcGrandOtherLabel_${travelerId}`);
+      if (gtOtherLabel) {
+        const pct = parseFloat(traveler.otherPercentage);
+        gtOtherLabel.textContent = '+' +
+          (isNaN(pct) ? window.TravelRequest.getOtherCostPercentage() : pct) + '%';
+      }
     }
 
     // traveler.subtotal already includes localTravelTotal from state calculation

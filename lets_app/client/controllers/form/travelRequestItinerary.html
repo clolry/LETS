@@ -180,7 +180,7 @@
   Controller._renderLegCard = function(leg) {
     const state = window.TravelRequest.State;
     const locationType = state.getField('locationType');
-    const showSiteName = locationType === 'client-site' || locationType === 'contractor-site';
+    const showSiteName = window.TravelUtils.TRAVEL_CONFIG.LOCATION_TYPES_WITH_SITE.indexOf(locationType) !== -1;
 
     const cardHtml = `
       <div class="leg-card leg-card--compact" data-leg-id="${leg.id}">
@@ -366,7 +366,7 @@
   Controller._refreshLegSiteNameFields = function() {
     const state = window.TravelRequest.State;
     const locationType = state.getField('locationType');
-    const showSiteName = locationType === 'client-site' || locationType === 'contractor-site';
+    const showSiteName = window.TravelUtils.TRAVEL_CONFIG.LOCATION_TYPES_WITH_SITE.indexOf(locationType) !== -1;
     const legs = state.getLegs() || [];
 
     legs.forEach(leg => {
