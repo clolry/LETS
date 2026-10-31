@@ -8,6 +8,7 @@ test_access_audit.js
 test_airport_prefs.js
 test_diagnostics.js
 test_cache_warming.js
+test_airfare_ui.js
 preview.html
 node_modules/**
 .git/**

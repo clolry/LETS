@@ -1,0 +1,762 @@
+<script>
+/**
+ * travelRequestAirfare.html
+ * GSA City Pair airfare estimation for the traveler step.
+ *
+ * WHAT THIS DOES
+ * --------------
+ * Airfare was never estimated by this system: the "Estimated Cost" field is a
+ * plain number input and the submitter typed a figure in. This module
+ * pre-fills it from the GSA City Pair Program contract fares, editably, and
+ * shows the per-segment breakdown behind the number.
+ *
+ * AIR MODE ONLY. Rail, bus and rental keep the manual cost field; private and
+ * gov vehicle use the mileage fields instead, which the existing transport-card
+ * handler already switches between.
+ *
+ * THE FLOW, AND WHY IT IS ORDERED THIS WAY
+ * ----------------------------------------
+ * @clolry's sequencing, which is better than pricing everything up front:
+ *
+ *   1. confirm the ORIGIN airport (one per traveler, from their duty station)
+ *   2. price DESTINATIONS from that origin only
+ *   3. pre-fill the total, editable, with the breakdown visible
+ *
+ * Pricing every origin-destination combination eagerly would mean 8 sheet
+ * scans for a DC-to-Chicago leg and would surface options the traveller would
+ * never accept. Confirming the origin first makes it 1.
+ *
+ * WHY A PROMOTED PREFERENCE BEATS A CHEAPER FARE
+ * ----------------------------------------------
+ * Airport choice is a LOGISTICAL constraint, not a cost optimization. @clolry
+ * will only fly into DCA because of Metro access to the office, so a cheaper
+ * BWI fare is not a real option for him — and offering it as the default
+ * invites an approver to ask why the saving was not taken. The server sorts a
+ * promoted preference first and uses price only as a tiebreak; this module
+ * renders that order as given.
+ *
+ * LATENCY IS REAL AND VISIBLE BY DESIGN
+ * -------------------------------------
+ * A cold airport lookup or fare lookup scans 17,403 rows: ~2.7s measured in
+ * the sandbox. warmCityPairCache pre-warms duty-station origins, but
+ * destinations are arbitrary, so a user picking a city nobody queried today
+ * pays the full cost. Every async call here shows a spinner with specific text
+ * rather than blocking or silently stalling.
+ *
+ * NOTHING HERE IS AUTHORITATIVE
+ * -----------------------------
+ * ticketCost remains the submitted value. This module only ever proposes a
+ * number; the moment the user edits the field, airfareIsEstimate goes false
+ * and no later lookup overwrites their figure.
+ */
+(function () {
+  'use strict';
+
+  var Controller = window.TravelRequest && window.TravelRequest.Controller;
+  if (!Controller) {
+    console.error('travelRequestAirfare: Controller not found; airfare estimation disabled');
+    return;
+  }
+
+  // ==========================================================================
+  // RENDERING
+  // ==========================================================================
+
+  /**
+   * Repaints the airfare block for one traveler.
+   *
+   * Rebuilt wholesale rather than patched, because the block's SHAPE changes
+   * with state — a loading row, an origin picker, a per-leg destination list,
+   * an error — and incremental patching across those shapes is where subtle
+   * stale-DOM bugs live.
+   */
+  Controller._renderAirfare = function (travelerId) {
+    var wrap = document.getElementById('tcAirfareWrap_' + travelerId);
+    if (!wrap) return;
+
+    var state = window.TravelRequest.State;
+    var traveler = state.getTraveler(travelerId);
+    if (!traveler) return;
+
+    // Air mode only. Leaving stale markup visible after a mode switch would
+    // imply a fare applies to a rail ticket.
+    if (traveler.transportMode !== 'air') {
+      wrap.innerHTML = '';
+      wrap.classList.add('tc__airfare--hidden');
+      return;
+    }
+    wrap.classList.remove('tc__airfare--hidden');
+
+    var ui = this._airfareUi(travelerId);
+
+    if (ui.status === 'loading') {
+      wrap.innerHTML = this._airfareSpinnerHtml(ui.message);
+      return;
+    }
+    if (ui.status === 'unavailable') {
+      wrap.innerHTML = this._airfareNoticeHtml(ui.message, 'warn');
+      return;
+    }
+
+    var html = '';
+
+    // --- origin -------------------------------------------------------------
+    html += '<div class="tc__airfare-row">';
+    html += '<span class="tc__airfare-label">Departing from</span>';
+    if (ui.originOptions.length > 1) {
+      html += '<select class="form-select form-select-sm tc__airfare-select" ' +
+              'id="tcAirfareOrigin_' + travelerId + '" data-traveler-id="' + travelerId + '">';
+      ui.originOptions.forEach(function (o) {
+        html += '<option value="' + o.code + '"' +
+                (o.code === ui.originCode ? ' selected' : '') + '>' +
+                Controller._airfareAirportLabel(o) + '</option>';
+      });
+      html += '</select>';
+    } else if (ui.originOptions.length === 1) {
+      // One airport is not a decision. Show it, do not make them choose.
+      html += '<span class="tc__airfare-fixed">' +
+              Controller._airfareAirportLabel(ui.originOptions[0]) + '</span>';
+    } else {
+      html += '<span class="tc__airfare-fixed tc__airfare-fixed--muted">' +
+              'no airport found for ' +
+              escapeHtml(traveler.dutyStationCity || 'this duty station') + '</span>';
+    }
+    html += '</div>';
+
+    // The server resolved this city differently from how HR spells it, or fell
+    // back to the whole state. Say so — a state-wide list presented silently
+    // looks like 22 airports that all serve the requested city.
+    if (ui.originMatchNote) {
+      html += this._airfareNoticeHtml(ui.originMatchNote, 'info');
+    }
+
+    // --- destinations, one row per attended leg -----------------------------
+    ui.legs.forEach(function (leg) {
+      html += '<div class="tc__airfare-row">';
+      html += '<span class="tc__airfare-label">Leg ' + leg.legNumber + ' &rarr; ' +
+              escapeHtml(leg.cityLabel) + '</span>';
+
+      if (leg.status === 'loading') {
+        html += '<span class="tc__airfare-loading">' +
+                '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> ' +
+                'checking fares&hellip;</span>';
+      } else if (!leg.options.length) {
+        html += '<span class="tc__airfare-fixed tc__airfare-fixed--muted">no contract fare</span>';
+      } else if (leg.options.length === 1) {
+        html += '<span class="tc__airfare-fixed">' +
+                Controller._airfareOptionLabel(leg.options[0]) + '</span>';
+      } else {
+        html += '<select class="form-select form-select-sm tc__airfare-select" ' +
+                'id="tcAirfareDest_' + travelerId + '_' + leg.legId + '" ' +
+                'data-traveler-id="' + travelerId + '" data-leg-id="' + leg.legId + '">';
+        leg.options.forEach(function (o) {
+          html += '<option value="' + o.code + '"' +
+                  (o.code === leg.selectedCode ? ' selected' : '') + '>' +
+                  Controller._airfareOptionLabel(o) + '</option>';
+        });
+        html += '</select>';
+      }
+      html += '</div>';
+
+      if (leg.matchNote) {
+        html += Controller._airfareNoticeHtml(leg.matchNote, 'info');
+      }
+    });
+
+    // --- the summed estimate and its breakdown ------------------------------
+    if (ui.segments.length) {
+      html += '<div class="tc__airfare-summary">';
+      html += '<div class="tc__airfare-summary-head">';
+      html += '<span>Contract fare estimate</span>';
+      html += '<strong>$' + ui.total.toFixed(2) + '</strong>';
+      html += '</div>';
+
+      // The breakdown is the point. @clolry asked that a summed amount be
+      // explainable: a number a user cannot decompose is one they cannot check,
+      // and an approver seeing only a total cannot question it either.
+      html += '<ul class="tc__airfare-segments">';
+      ui.segments.forEach(function (seg) {
+        html += '<li>' + seg.from + ' &rarr; ' + seg.to + ' ';
+        if (seg.found) {
+          html += '<strong>$' + seg.ycaFare.toFixed(2) + '</strong>';
+          if (seg.airline) html += ' <span class="tc__airfare-carrier">' + seg.airline + '</span>';
+          if (seg.awardedService) {
+            // A connecting itinerary can cost 4x the non-stop on the same
+            // route (IAD->ORD $441 vs DCA->ORD $112), so the service type is
+            // decision-relevant, not decoration.
+            html += ' <span class="tc__airfare-service">' +
+                    escapeHtml(seg.awardedService) + '</span>';
+          }
+        } else {
+          html += '<span class="tc__airfare-missing">no contract fare</span>';
+        }
+        html += '</li>';
+      });
+      html += '</ul>';
+
+      if (!ui.complete) {
+        // A partial sum presented as a total is how an under-estimate reaches
+        // an approver.
+        html += this._airfareNoticeHtml(
+          'Some segments have no contract fare. This total covers only the ' +
+          'priced segments — add the remainder yourself.', 'warn');
+      }
+
+      html += '<div class="tc__airfare-actions">';
+      if (traveler.airfareIsEstimate) {
+        html += '<span class="tc__airfare-applied">' +
+                '<i aria-hidden="true" class="fas fa-check"></i> applied to Estimated Cost</span>';
+      } else {
+        html += '<button type="button" class="btn btn-sm btn-outline-secondary tc__airfare-apply" ' +
+                'id="tcAirfareApply_' + travelerId + '" data-traveler-id="' + travelerId + '">' +
+                'Use $' + ui.total.toFixed(2) + '</button>';
+        html += '<span class="tc__airfare-note">Your own figure is kept unless you choose this.</span>';
+      }
+      html += '</div>';
+
+      html += '<div class="tc__airfare-basis">' +
+              'GSA City Pair ' + (ui.fareBasis || 'YCA') + ' fare, one way per segment. ' +
+              'Valid for most estimates; book-rate may differ.</div>';
+      html += '</div>';
+    }
+
+    wrap.innerHTML = html;
+    this._bindAirfareControls(travelerId);
+  };
+
+  /** 'DCA — Washington, DC (254 routes)' or a metro-area label. */
+  Controller._airfareAirportLabel = function (airport) {
+    var label = airport.code;
+    if (airport.isMetroArea) {
+      // A metro code is not bookable; naming it as such stops someone picking
+      // it expecting a specific airport.
+      label += ' — ' + (airport.metroLabel || 'all airports');
+    } else if (airport.city) {
+      label += ' — ' + airport.city + (airport.state ? ', ' + airport.state : '');
+    }
+    if (airport.isPreferred) label += '  (your usual)';
+    return escapeHtml(label);
+  };
+
+  /** 'ORD — $112 United non-stop' */
+  Controller._airfareOptionLabel = function (option) {
+    var label = option.code;
+    if (option.isMetroArea) {
+      label += ' — ' + (option.metroLabel || 'all airports');
+    }
+    if (option.found && typeof option.ycaFare === 'number') {
+      label += ' — $' + option.ycaFare.toFixed(0);
+      if (option.airline) label += ' ' + option.airline;
+      if (option.awardedService) label += ' ' + option.awardedService.toLowerCase();
+    } else {
+      label += ' — no contract fare';
+    }
+    if (option.isPreferred) label += '  (your usual)';
+    return escapeHtml(label);
+  };
+
+  Controller._airfareSpinnerHtml = function (message) {
+    return '<div class="tc__airfare-loading">' +
+           '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> ' +
+           escapeHtml(message || 'Checking GSA contract fares…') +
+           '</div>';
+  };
+
+  Controller._airfareNoticeHtml = function (message, kind) {
+    return '<div class="tc__airfare-notice tc__airfare-notice--' + (kind || 'info') + '">' +
+           escapeHtml(message) + '</div>';
+  };
+
+  // ==========================================================================
+  // STATE DERIVATION
+  // ==========================================================================
+
+  /**
+   * Assembles everything the renderer needs from cached lookup results.
+   *
+   * Pure: it reads the per-traveler cache this module fills and never issues a
+   * call. Keeping fetch and render separate is what lets a repaint be cheap —
+   * a destination change must not re-fetch the origin list.
+   */
+  Controller._airfareUi = function (travelerId) {
+    var state = window.TravelRequest.State;
+    var traveler = state.getTraveler(travelerId);
+    var cache = this._airfareCache && this._airfareCache[travelerId];
+
+    if (!cache || cache.originStatus === 'loading') {
+      return { status: 'loading', message: 'Looking up airports…' };
+    }
+    if (cache.originStatus === 'error') {
+      return {
+        status: 'unavailable',
+        message: 'Could not reach the GSA fare data. Enter the airfare manually.'
+      };
+    }
+
+    var originOptions = cache.originOptions || [];
+    var originCode = traveler.originAirport ||
+                     (cache.originDefault || (originOptions[0] && originOptions[0].code) || '');
+
+    var originMatchNote = '';
+    if (cache.originMatchType === 'alias' && cache.originMatchedCity) {
+      originMatchNote = 'No airports are listed under "' + cache.originRequestedCity +
+        '"; showing airports for ' + cache.originMatchedCity + '.';
+    } else if (cache.originMatchType === 'state') {
+      originMatchNote = 'No airports are listed for ' + cache.originRequestedCity +
+        '; showing all airports in the state.';
+    }
+
+    var legs = [];
+    var segments = [];
+    var total = 0;
+    var complete = true;
+
+    var attended = this._airfareAttendedLegs(traveler);
+    for (var i = 0; i < attended.length; i++) {
+      var leg = attended[i];
+      var legCache = (cache.legs && cache.legs[leg.id]) || {};
+      var options = legCache.options || [];
+      var selectedCode = traveler.legAirports[leg.id] || legCache.defaultCode ||
+                         (options[0] && options[0].code) || '';
+      var selected = null;
+      for (var j = 0; j < options.length; j++) {
+        if (options[j].code === selectedCode) { selected = options[j]; break; }
+      }
+
+      var matchNote = '';
+      if (legCache.matchType === 'alias' && legCache.matchedCity) {
+        matchNote = 'No airports listed under "' + legCache.requestedCity +
+          '"; showing ' + legCache.matchedCity + '.';
+      } else if (legCache.matchType === 'state') {
+        matchNote = 'No airports listed for ' + legCache.requestedCity +
+          '; showing all airports in the state.';
+      }
+
+      legs.push({
+        legId: leg.id,
+        legNumber: leg.legNumber,
+        cityLabel: this._airfareLegLabel(leg),
+        status: legCache.status || 'idle',
+        options: options,
+        selectedCode: selectedCode,
+        matchNote: matchNote
+      });
+
+      if (legCache.status === 'loading') complete = false;
+
+      if (selected) {
+        var priced = selected.found && typeof selected.ycaFare === 'number';
+        segments.push({
+          from: i === 0 ? originCode : (traveler.legAirports[attended[i - 1].id] || originCode),
+          to: selected.code,
+          found: priced,
+          ycaFare: priced ? selected.ycaFare : null,
+          airline: selected.airline || '',
+          awardedService: selected.awardedService || ''
+        });
+        if (priced) total += selected.ycaFare; else complete = false;
+      }
+    }
+
+    // The return leg. CPP fares are published ONE WAY, and the mileage field
+    // beside this one is labelled "round trip", so the intent is a total trip
+    // cost — the journey home has to be priced too or every estimate is half.
+    if (segments.length && originCode) {
+      var lastLeg = segments[segments.length - 1];
+      var homeCache = cache.returnSegment;
+      if (homeCache && homeCache.found) {
+        segments.push({
+          from: lastLeg.to,
+          to: originCode,
+          found: true,
+          ycaFare: homeCache.ycaFare,
+          airline: homeCache.airline || '',
+          awardedService: homeCache.awardedService || ''
+        });
+        total += homeCache.ycaFare;
+      } else if (homeCache && homeCache.status === 'loading') {
+        complete = false;
+      } else if (homeCache) {
+        segments.push({ from: lastLeg.to, to: originCode, found: false, ycaFare: null });
+        complete = false;
+      }
+    }
+
+    return {
+      status: 'ready',
+      originOptions: originOptions,
+      originCode: originCode,
+      originMatchNote: originMatchNote,
+      legs: legs,
+      segments: segments,
+      total: total,
+      complete: complete,
+      fareBasis: cache.fareBasis || 'YCA'
+    };
+  };
+
+  /** Attended legs in itinerary order, excluding local travel. */
+  Controller._airfareAttendedLegs = function (traveler) {
+    var state = window.TravelRequest.State;
+    var all = state.getLegs() || [];
+    var attending = traveler.attendingLegs || [];
+    return all.filter(function (leg) {
+      if (attending.indexOf(leg.id) === -1) return false;
+      // A local-travel leg is a drive, not a flight.
+      var legCost = traveler.legCosts && traveler.legCosts[leg.id];
+      if (legCost && legCost.isLocalTravel) return false;
+      return !!leg.city;
+    });
+  };
+
+  Controller._airfareLegLabel = function (leg) {
+    if (leg.city && leg.state) return leg.city + ', ' + leg.state;
+    if (leg.city && leg.country && leg.country !== 'United States') {
+      return leg.city + ', ' + leg.country;
+    }
+    return leg.city || 'destination';
+  };
+
+  // ==========================================================================
+  // FETCHING
+  // ==========================================================================
+
+  /**
+   * Loads airports and fares for one traveler, then repaints.
+   *
+   * Sequenced deliberately: the origin resolves FIRST, then destinations are
+   * priced from it. Running them in parallel would mean pricing against an
+   * origin that is about to change.
+   */
+  Controller._loadAirfare = function (travelerId) {
+    var self = this;
+    var state = window.TravelRequest.State;
+    var traveler = state.getTraveler(travelerId);
+    if (!traveler || traveler.transportMode !== 'air') return;
+
+    if (!this._airfareCache) this._airfareCache = {};
+    var cache = this._airfareCache[travelerId] || {};
+    this._airfareCache[travelerId] = cache;
+
+    // Duty station comes from HC. Without it there is no origin to price from,
+    // and guessing one would produce a confidently wrong number.
+    var city = traveler.dutyStationCity || '';
+    var st = traveler.dutyStationState || '';
+    if (!city) {
+      cache.originStatus = 'ready';
+      cache.originOptions = [];
+      this._renderAirfare(travelerId);
+      return;
+    }
+
+    cache.originStatus = 'loading';
+    this._renderAirfare(travelerId);
+
+    serverCall('getAirportOptionsForCityForClient', city, st, traveler.userId || '', 'HOME_ORIGIN')
+      .then(function (res) {
+        if (!res || !res.success) throw new Error((res && res.error) || 'lookup failed');
+        cache.originStatus = 'ready';
+        cache.originOptions = res.airports || [];
+        cache.originDefault = res.defaultCode || '';
+        cache.originMatchType = res.matchType || '';
+        cache.originMatchedCity = res.matchedCity || '';
+        cache.originRequestedCity = res.requestedCity || city;
+
+        // Only adopt the server's default when the traveller has not chosen.
+        // Overwriting a deliberate choice on every repaint would be worse than
+        // having no default at all.
+        var t = state.getTraveler(travelerId);
+        if (t && !t.originAirport && cache.originDefault) {
+          state.updateTraveler(travelerId, 'originAirport', cache.originDefault);
+        }
+        self._renderAirfare(travelerId);
+        self._loadAirfareLegs(travelerId);
+      })
+      .catch(function (err) {
+        console.warn('_loadAirfare: ' + (err && err.message));
+        cache.originStatus = 'error';
+        self._renderAirfare(travelerId);
+      });
+  };
+
+  /** Prices every attended leg from the chosen origin, plus the return. */
+  Controller._loadAirfareLegs = function (travelerId) {
+    var self = this;
+    var state = window.TravelRequest.State;
+    var traveler = state.getTraveler(travelerId);
+    if (!traveler || traveler.transportMode !== 'air') return;
+
+    var cache = this._airfareCache[travelerId];
+    if (!cache) return;
+    var origin = traveler.originAirport || cache.originDefault;
+    if (!origin) return;
+
+    cache.legs = cache.legs || {};
+    var legs = this._airfareAttendedLegs(traveler);
+    if (!legs.length) {
+      this._renderAirfare(travelerId);
+      return;
+    }
+
+    var travelDate = legs[0].startDate || '';
+    var pending = legs.length;
+
+    legs.forEach(function (leg) {
+      cache.legs[leg.id] = cache.legs[leg.id] || {};
+      cache.legs[leg.id].status = 'loading';
+    });
+    this._renderAirfare(travelerId);
+
+    legs.forEach(function (leg) {
+      serverCall('getPricedDestinationOptionsForClient',
+        origin, leg.city, leg.state || '', traveler.userId || '', travelDate)
+        .then(function (res) {
+          var entry = cache.legs[leg.id];
+          entry.status = 'ready';
+          entry.options = (res && res.options) || [];
+          entry.defaultCode = (res && res.defaultCode) || '';
+          entry.matchType = (res && res.matchType) || '';
+          entry.matchedCity = (res && res.matchedCity) || '';
+          entry.requestedCity = (res && res.requestedCity) || leg.city;
+
+          var t = state.getTraveler(travelerId);
+          if (t && !t.legAirports[leg.id] && entry.defaultCode) {
+            var updated = Object.assign({}, t.legAirports);
+            updated[leg.id] = entry.defaultCode;
+            state.updateTraveler(travelerId, 'legAirports', updated);
+          }
+        })
+        .catch(function (err) {
+          console.warn('_loadAirfareLegs: ' + (err && err.message));
+          cache.legs[leg.id].status = 'error';
+          cache.legs[leg.id].options = [];
+        })
+        .then(function () {
+          pending--;
+          if (pending === 0) {
+            self._loadAirfareReturn(travelerId);
+          } else {
+            self._renderAirfare(travelerId);
+          }
+        });
+    });
+  };
+
+  /** Prices the final destination back to the origin. */
+  Controller._loadAirfareReturn = function (travelerId) {
+    var self = this;
+    var state = window.TravelRequest.State;
+    var traveler = state.getTraveler(travelerId);
+    var cache = this._airfareCache[travelerId];
+    if (!traveler || !cache) return;
+
+    var origin = traveler.originAirport || cache.originDefault;
+    var legs = this._airfareAttendedLegs(traveler);
+    if (!origin || !legs.length) {
+      this._renderAirfare(travelerId);
+      return;
+    }
+    var lastLegId = legs[legs.length - 1].id;
+    var lastAirport = traveler.legAirports[lastLegId] ||
+                      (cache.legs[lastLegId] && cache.legs[lastLegId].defaultCode);
+    if (!lastAirport || lastAirport === origin) {
+      cache.returnSegment = null;
+      this._renderAirfare(travelerId);
+      return;
+    }
+
+    cache.returnSegment = { status: 'loading' };
+    this._renderAirfare(travelerId);
+
+    serverCall('getItineraryAirfareForClient', [lastAirport, origin], legs[0].startDate || '')
+      .then(function (res) {
+        var seg = (res && res.segments && res.segments[0]) || null;
+        cache.returnSegment = seg && seg.found
+          ? { status: 'ready', found: true, ycaFare: seg.ycaFare,
+              airline: seg.airline, awardedService: seg.awardedService }
+          : { status: 'ready', found: false };
+      })
+      .catch(function (err) {
+        console.warn('_loadAirfareReturn: ' + (err && err.message));
+        cache.returnSegment = { status: 'ready', found: false };
+      })
+      .then(function () {
+        self._applyAirfareIfUntouched(travelerId);
+        self._renderAirfare(travelerId);
+      });
+  };
+
+  // ==========================================================================
+  // APPLYING
+  // ==========================================================================
+
+  /**
+   * Writes the estimate into ticketCost ONLY if the user has not typed a
+   * figure of their own.
+   *
+   * The whole feature is a suggestion. Overwriting a number someone entered
+   * deliberately — because they have a quote, or know the contract fare is
+   * unavailable on their dates — would make the form fight its user.
+   */
+  Controller._applyAirfareIfUntouched = function (travelerId) {
+    var state = window.TravelRequest.State;
+    var traveler = state.getTraveler(travelerId);
+    if (!traveler) return;
+
+    var ui = this._airfareUi(travelerId);
+    if (ui.status !== 'ready' || !ui.segments.length) return;
+
+    state.updateTraveler(travelerId, 'airfareSegments', ui.segments);
+    state.updateTraveler(travelerId, 'airfareTotal', ui.total);
+    state.updateTraveler(travelerId, 'airfareFareBasis', ui.fareBasis);
+
+    var userHasOwnFigure = traveler.ticketCost > 0 && !traveler.airfareIsEstimate;
+    if (userHasOwnFigure || !ui.total) return;
+
+    this._setAirfareOnTraveler(travelerId, ui.total);
+  };
+
+  /** Pushes a figure into ticketCost, the input, and every dependent total. */
+  Controller._setAirfareOnTraveler = function (travelerId, amount) {
+    var state = window.TravelRequest.State;
+    state.updateTraveler(travelerId, 'ticketCost', amount);
+    state.updateTraveler(travelerId, 'airfareIsEstimate', true);
+
+    var input = document.getElementById('tcTransportCost_' + travelerId);
+    if (input) input.value = amount ? amount.toFixed(2) : '';
+
+    if (this._updateTransportCalc) this._updateTransportCalc(travelerId);
+    if (this._updateTravelerCostDisplay) this._updateTravelerCostDisplay(travelerId);
+    if (this._updateTravelersTotal) this._updateTravelersTotal();
+    if (this._checkDisclosureProgress) this._checkDisclosureProgress(travelerId);
+  };
+
+  // ==========================================================================
+  // EVENTS
+  // ==========================================================================
+
+  /**
+   * Rebinds the controls inside the airfare block.
+   *
+   * Bound directly rather than delegated because innerHTML replaces these
+   * nodes on every repaint, so previous listeners die with them — no
+   * accumulation, nothing to remove.
+   */
+  Controller._bindAirfareControls = function (travelerId) {
+    var self = this;
+
+    var originSelect = document.getElementById('tcAirfareOrigin_' + travelerId);
+    if (originSelect) {
+      originSelect.addEventListener('change', function () {
+        window.TravelRequest.State.updateTraveler(travelerId, 'originAirport', this.value);
+        // Changing the origin invalidates every fare priced from the old one.
+        var cache = self._airfareCache[travelerId];
+        if (cache) { cache.legs = {}; cache.returnSegment = null; }
+        self._recordAirportPreference(travelerId, 'HOME_ORIGIN', this.value, '', '');
+        self._loadAirfareLegs(travelerId);
+      });
+    }
+
+    var state = window.TravelRequest.State;
+    var traveler = state.getTraveler(travelerId);
+    if (traveler) {
+      this._airfareAttendedLegs(traveler).forEach(function (leg) {
+        var sel = document.getElementById('tcAirfareDest_' + travelerId + '_' + leg.id);
+        if (!sel) return;
+        sel.addEventListener('change', function () {
+          var t = state.getTraveler(travelerId);
+          var updated = Object.assign({}, t.legAirports);
+          updated[leg.id] = this.value;
+          state.updateTraveler(travelerId, 'legAirports', updated);
+          self._recordAirportPreference(travelerId, 'DESTINATION', this.value,
+                                        leg.city, leg.state || '');
+          // The return leg departs from the last destination, so it may have
+          // changed too.
+          self._loadAirfareReturn(travelerId);
+        });
+      });
+    }
+
+    var applyBtn = document.getElementById('tcAirfareApply_' + travelerId);
+    if (applyBtn) {
+      applyBtn.addEventListener('click', function () {
+        var ui = self._airfareUi(travelerId);
+        self._setAirfareOnTraveler(travelerId, ui.total);
+        self._renderAirfare(travelerId);
+      });
+    }
+  };
+
+  /**
+   * Records a selection so it can become "your usual" after two uses.
+   *
+   * Fire-and-forget. A failed preference write must never interrupt the form;
+   * the cost of losing one is a default that takes an extra trip to learn.
+   */
+  Controller._recordAirportPreference = function (travelerId, prefType, code, city, st) {
+    var state = window.TravelRequest.State;
+    var traveler = state.getTraveler(travelerId);
+    if (!traveler || !traveler.userId || !code) return;
+
+    serverCall('recordAirportPreferenceForClient',
+      traveler.userId, prefType, code, city, st)
+      .catch(function (err) {
+        console.warn('_recordAirportPreference: ' + (err && err.message));
+      });
+  };
+
+  /**
+   * Called when the user edits the cost field by hand.
+   *
+   * Clears airfareIsEstimate so no later lookup overwrites their figure, and
+   * repaints so the "Use $X" button reappears — an estimate they can return
+   * to rather than one that has silently vanished.
+   */
+  Controller._onAirfareManualEdit = function (travelerId) {
+    var state = window.TravelRequest.State;
+    var traveler = state.getTraveler(travelerId);
+    if (!traveler || !traveler.airfareIsEstimate) {
+      if (traveler && traveler.transportMode === 'air') this._renderAirfare(travelerId);
+      return;
+    }
+    state.updateTraveler(travelerId, 'airfareIsEstimate', false);
+    this._renderAirfare(travelerId);
+  };
+
+  /**
+   * Entry point from the traveler-card lifecycle.
+   *
+   * Idempotent: safe to call on render, on a transport-mode switch, after an
+   * employee is selected (which is when the duty station arrives), and after
+   * the itinerary changes.
+   */
+  Controller._initAirfare = function (travelerId) {
+    var state = window.TravelRequest.State;
+    var traveler = state.getTraveler(travelerId);
+    if (!traveler) return;
+
+    if (traveler.transportMode !== 'air') {
+      this._renderAirfare(travelerId);
+      return;
+    }
+    if (!this._airfareCache) this._airfareCache = {};
+
+    // Re-fetch when the origin list was never loaded, or when the duty station
+    // has changed since it was. Otherwise repaint from cache: a repaint must
+    // not cost 2.7s.
+    var cache = this._airfareCache[travelerId];
+    var cityKey = (traveler.dutyStationCity || '') + '|' + (traveler.dutyStationState || '');
+    if (!cache || cache.cityKey !== cityKey) {
+      this._airfareCache[travelerId] = { cityKey: cityKey };
+      this._loadAirfare(travelerId);
+    } else {
+      this._renderAirfare(travelerId);
+    }
+  };
+
+  /** Drops cached lookups for a traveler that has been removed. */
+  Controller._clearAirfareCache = function (travelerId) {
+    if (this._airfareCache) delete this._airfareCache[travelerId];
+  };
+})();
+</script>

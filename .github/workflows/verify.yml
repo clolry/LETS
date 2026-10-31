@@ -69,6 +69,9 @@ jobs:
       - name: Cache warming tests
         run: node lets_app/test_cache_warming.js
 
+      - name: Airfare picker UI tests
+        run: node lets_app/test_airfare_ui.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -171,6 +174,23 @@ jobs:
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
 
+      - name: 'Guard: airfare must never overwrite a manual figure'
+        run: |
+          echo "Checking the airfare estimate stays a suggestion..."
+          # The feature pre-fills Estimated Cost. It must never overwrite a
+          # figure the user typed: they may have a quote, or know the contract
+          # fare is unavailable on their dates. airfareIsEstimate is the flag
+          # that distinguishes the two, and _onAirfareManualEdit clears it.
+          if ! grep -q "userHasOwnFigure" lets_app/client/controllers/form/travelRequestAirfare.html; then
+            echo "::error file=lets_app/client/controllers/form/travelRequestAirfare.html::The guard against overwriting a user-entered airfare is gone. _applyAirfareIfUntouched must check airfareIsEstimate before writing ticketCost."
+            exit 1
+          fi
+          if ! grep -q "_onAirfareManualEdit" lets_app/client/controllers/form/travelRequestTravelers.html; then
+            echo "::error file=lets_app/client/controllers/form/travelRequestTravelers.html::The cost input no longer notifies the airfare module on manual edit, so a later lookup can silently overwrite a hand-typed figure."
+            exit 1
+          fi
+          echo "PASS - the airfare estimate remains a suggestion."
+
       - name: 'Guard: bulk fare lookups must warm the single-lookup cache'
         run: |
           echo "Checking getCityPairFaresBulk writes through to the cache..."
@@ -182,8 +202,12 @@ jobs:
           # It originally did not. Warming ran, reported success, and left
           # every later lookup paying the full cold scan — a feature that was
           # entirely decorative with no visible failure.
-          if ! grep -q "cp_fare_' + key" lets_app/server/30_services/CityPairs.js; then
-            echo "::error file=lets_app/server/30_services/CityPairs.js::getCityPairFaresBulk no longer writes cp_fare_ cache entries. Cache warming becomes a no-op and every fare lookup pays a 2.7s cold scan, silently."
+          # Keyed on the call to the versioned key builder, not on a raw
+          # literal — the literal moved into cityPairFareCacheKey_ when keys
+          # were versioned, which silently broke the previous form of this
+          # check while it still reported PASS.
+          if ! grep -q "cityPairFareCacheKey_(key" lets_app/server/30_services/CityPairs.js; then
+            echo "::error file=lets_app/server/30_services/CityPairs.js::getCityPairFaresBulk no longer writes cache entries via cityPairFareCacheKey_. Cache warming becomes a no-op and every fare lookup pays a 2.7s cold scan, silently."
             exit 1
           fi
           echo "PASS - bulk lookups warm the single-lookup cache."

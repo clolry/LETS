@@ -611,6 +611,24 @@
         rentalCarCost: 0,
         transportationTotal: 0,
 
+        // GSA City Pair airfare estimation (air mode only).
+        //
+        // originAirport is PER TRAVELER, not per request: people on one request
+        // depart from different duty stations, and the fare differs by origin —
+        // BWI->ORD is $108 where IAD->ORD is $441 on a connecting itinerary.
+        //
+        // legAirports maps legId -> destination airport code, because the
+        // airport choice belongs to the leg, while ticketCost is a single
+        // traveler-level field. airfareSegments records what was summed into
+        // that one number so the figure can be explained rather than just
+        // asserted.
+        originAirport: '',
+        legAirports: {},
+        airfareSegments: [],
+        airfareTotal: 0,
+        airfareIsEstimate: false,   // true until the user edits ticketCost
+        airfareFareBasis: 'YCA',
+
         // Aggregated totals (sum across attended legs)
         lodgingTotal: 0,
         mieTotal: 0,

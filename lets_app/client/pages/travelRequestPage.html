@@ -819,6 +819,12 @@
   <?!= include('client/controllers/form/travelRequestController'); ?>
   <?!= include('client/controllers/form/travelRequestItinerary'); ?>
   <?!= include('client/controllers/form/travelRequestTravelers'); ?>
+  <!--
+    Must load AFTER travelRequestTravelers: it extends the same Controller
+    object and overrides nothing, but _initAirfare is called from the traveler
+    card lifecycle, so the methods have to exist by the time a card renders.
+  -->
+  <?!= include('client/controllers/form/travelRequestAirfare'); ?>
 
   <!-- Confirm Modal -->
   <?!= include('client/components/confirmModal'); ?>

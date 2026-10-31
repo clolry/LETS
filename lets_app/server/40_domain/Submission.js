@@ -489,7 +489,33 @@ function submitTravelRequestV2(formData) {
         traveler.hasValidPassport || '',                    // Has_Valid_Passport
         traveler.isSpeaking || '',                          // Is_Speaking
         traveler.eventOpenToPress || '',                    // Event_Open_To_Press
-        traveler.receivingNFS || ''                         // Receiving_NFS
+        traveler.receivingNFS || '',                        // Receiving_NFS
+
+        // DD_Confirmed and DD_Confirmed_At are set later by the approval flow,
+        // not at submission, so they are written blank to keep this row
+        // aligned with the schema. Writes here are POSITIONAL
+        // (docs/DATA_DICTIONARY.md §3.9), so a skipped column would silently
+        // shift every value after it.
+        '',                                                 // DD_Confirmed
+        '',                                                 // DD_Confirmed_At
+
+        // Airfare provenance. Ticket_Cost above is the submitted figure;
+        // these say where it came from. An approver looking at a $776 airfare
+        // can otherwise not tell a GSA contract fare from a guess.
+        traveler.airfareIsEstimate ? 'CITY_PAIR_ESTIMATE' : 'MANUAL',
+        traveler.originAirport || '',                       // Airfare_Origin_Airport
+        traveler.airfareFareBasis || '',                    // Airfare_Fare_Basis
+        // Stored as JSON because the segment count varies with the itinerary.
+        // Guarded: a serialization failure must not fail a submission.
+        (function () {
+          try {
+            var segs = traveler.airfareSegments;
+            return (segs && segs.length) ? JSON.stringify(segs) : '';
+          } catch (e) {
+            console.warn('Submission: could not serialize airfareSegments: ' + e.message);
+            return '';
+          }
+        })()
       ]);
     });
 

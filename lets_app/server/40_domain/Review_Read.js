@@ -222,7 +222,29 @@ function getRequestForReview(requestId, db) {
           eventOpenToPress: travelersRows[i][travelerIndex['Event_Open_To_Press']] || false,
           receivingNFS: travelersRows[i][travelerIndex['Receiving_NFS']] || false,
           ddConfirmed: travelersRows[i][travelerIndex['DD_Confirmed']] === true,
-          ddConfirmedAt: travelersRows[i][travelerIndex['DD_Confirmed_At']] || null
+          ddConfirmedAt: travelersRows[i][travelerIndex['DD_Confirmed_At']] || null,
+
+          // Airfare provenance. Rows submitted before these columns existed
+          // have no values, so everything defaults to "manual with no
+          // segments" — which is accurate for them: nobody estimated those.
+          airfareSource: travelersRows[i][travelerIndex['Airfare_Source']] || 'MANUAL',
+          originAirport: travelersRows[i][travelerIndex['Airfare_Origin_Airport']] || '',
+          airfareFareBasis: travelersRows[i][travelerIndex['Airfare_Fare_Basis']] || '',
+          airfareIsEstimate:
+            travelersRows[i][travelerIndex['Airfare_Source']] === 'CITY_PAIR_ESTIMATE',
+          // Stored as JSON. A malformed value must not break loading an entire
+          // request for review, so a parse failure degrades to no breakdown.
+          airfareSegments: (function (raw) {
+            if (!raw) return [];
+            try {
+              var parsed = JSON.parse(raw);
+              return Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+              console.warn('Review_Read: unparseable Airfare_Segments for traveler ' +
+                (travelersRows[i][travelerIndex['Traveler_ID']] || '?'));
+              return [];
+            }
+          })(travelersRows[i][travelerIndex['Airfare_Segments']])
         });
       }
     }

@@ -5005,6 +5005,7 @@ textarea.focus-expand:focus::placeholder {
 /* Hidden states - must come after base rules to override display property */
 .tc__transport-cost--hidden,
 .tc__transport-mileage--hidden,
+.tc__airfare--hidden,
 .tc__rental-car--hidden,
 .tc__rental-car-cost--hidden {
   display: none;
@@ -6583,5 +6584,202 @@ textarea.focus-expand:focus::placeholder {
 }
 .duplicate-banner__discard:hover {
   background: rgba(146, 64, 14, 0.08);
+}
+
+/* ==========================================================================
+   GSA CITY PAIR AIRFARE
+   ==========================================================================
+   Sits beneath the Estimated Cost field inside .tc__transport-cost, and is
+   shown for air mode only. The block is rebuilt by innerHTML on every state
+   change, so nothing here may depend on a transient class.
+
+   It is deliberately quiet: a bordered panel rather than a card, because this
+   is a SUGGESTION attached to an input the user still owns. Styling it as
+   prominently as the cost field would imply the estimate is authoritative.
+   ========================================================================== */
+
+.tc__airfare {
+  margin-top: 0.4rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--color-border, #d7d7d7);
+  border-radius: 4px;
+  background: var(--color-surface-subtle, #fafafa);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  /* Multi-leg itineraries can produce a long list; the traveler card should
+     not grow without bound. */
+  max-width: 420px;
+}
+
+.tc__airfare-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+}
+
+.tc__airfare-row:last-child {
+  margin-bottom: 0;
+}
+
+.tc__airfare-label {
+  flex: 0 0 auto;
+  color: var(--color-text-muted, #666);
+  white-space: nowrap;
+}
+
+.tc__airfare-select {
+  flex: 1 1 auto;
+  min-width: 0;        /* lets a long airport label truncate instead of
+                          stretching the card */
+  font-size: 0.78rem;
+  padding: 0.15rem 1.4rem 0.15rem 0.4rem;
+  height: auto;
+}
+
+.tc__airfare-fixed {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tc__airfare-fixed--muted {
+  font-weight: 400;
+  color: var(--color-text-muted, #777);
+  font-style: italic;
+}
+
+/* A cold lookup scans 17,403 rows (~2.7s), so this is visible often enough to
+   need to look deliberate rather than broken. */
+.tc__airfare-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--color-text-muted, #666);
+  font-style: italic;
+}
+
+.tc__airfare-loading .spinner-border-sm {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-width: 0.12em;
+}
+
+.tc__airfare-notice {
+  margin: 0.25rem 0;
+  padding: 0.3rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.74rem;
+}
+
+.tc__airfare-notice--info {
+  background: rgba(13, 110, 253, 0.07);
+  color: #0a4fa8;
+}
+
+/* Used when a total covers only SOME segments. An incomplete sum presented as
+   a total is how an under-estimate reaches an approver, so it must read as a
+   caution, not a footnote. */
+.tc__airfare-notice--warn {
+  background: rgba(146, 64, 14, 0.08);
+  color: #92400e;
+}
+
+.tc__airfare-summary {
+  margin-top: 0.45rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--color-border, #e3e3e3);
+}
+
+.tc__airfare-summary-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+
+/* The breakdown is the reason this panel exists: a summed number a user cannot
+   decompose is one they cannot check, and an approver seeing only a total
+   cannot question it. */
+.tc__airfare-segments {
+  list-style: none;
+  margin: 0.3rem 0 0;
+  padding: 0;
+}
+
+.tc__airfare-segments li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  padding: 0.1rem 0;
+  color: var(--color-text, #333);
+}
+
+.tc__airfare-carrier {
+  color: var(--color-text-muted, #777);
+  font-size: 0.72rem;
+}
+
+/* A connecting itinerary can cost 4x the non-stop on the same route
+   (IAD->ORD $441 vs DCA->ORD $112), so service type is decision-relevant. */
+.tc__airfare-service {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted, #888);
+}
+
+.tc__airfare-missing {
+  color: #92400e;
+  font-style: italic;
+}
+
+.tc__airfare-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin-top: 0.4rem;
+}
+
+.tc__airfare-apply {
+  font-size: 0.74rem;
+  padding: 0.15rem 0.5rem;
+}
+
+.tc__airfare-applied {
+  color: #146c43;
+  font-weight: 500;
+}
+
+.tc__airfare-note,
+.tc__airfare-basis {
+  color: var(--color-text-muted, #777);
+  font-size: 0.7rem;
+}
+
+.tc__airfare-basis {
+  margin-top: 0.35rem;
+  font-style: italic;
+}
+
+@media (max-width: 640px) {
+  /* Stack the label above its control so a long airport name does not squeeze
+     the select to unusability. */
+  .tc__airfare-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.15rem;
+  }
+  .tc__airfare-label {
+    white-space: normal;
+  }
+  .tc__airfare {
+    max-width: none;
+  }
 }
 </style>

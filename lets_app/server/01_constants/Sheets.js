@@ -175,7 +175,20 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Event_Open_To_Press',
     'Receiving_NFS',
     'DD_Confirmed',
-    'DD_Confirmed_At'
+    'DD_Confirmed_At',
+
+    // GSA City Pair airfare provenance. APPENDED AT THE FAR RIGHT — column
+    // order is load-bearing (docs/DATA_DICTIONARY.md §3.9: reads resolve by
+    // header name, writes are positional), so never insert above this point.
+    //
+    // Ticket_Cost above remains the submitted figure. These record WHERE that
+    // number came from, so an approver can see whether it is a contract fare
+    // or the submitter's own estimate, and which airports it assumed.
+    // Without them, a $776 airfare is unexplainable after the fact.
+    'Airfare_Source',          // CITY_PAIR_ESTIMATE | MANUAL
+    'Airfare_Origin_Airport',
+    'Airfare_Fare_Basis',      // YCA
+    'Airfare_Segments'         // JSON: [{from,to,ycaFare,airline,awardedService}]
   ],
 
   // Per-traveler, per-leg costs - one row per traveler-leg combination

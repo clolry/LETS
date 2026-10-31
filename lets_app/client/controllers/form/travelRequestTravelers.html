@@ -203,6 +203,11 @@
 
     // Check local travel status for all legs
     this._checkLocalTravelForTraveler(travelerId);
+
+    // The duty station only arrives HERE, when an employee is selected from
+    // HC — so this is the first moment an origin airport can be resolved. On a
+    // fresh card _initAirfare already ran with no city and did nothing.
+    if (this._initAirfare) this._initAirfare(travelerId);
   };
 
   Controller._updateEmployeeInfoDisplay = function(travelerId, employeeData) {
@@ -222,6 +227,9 @@
       if (card) card.remove();
       this._cleanupTravelerAutocomplete(travelerId);
       this._cleanupTravelerDatePickers(travelerId);
+      // Otherwise the cached airport and fare lookups leak for the lifetime of
+      // the page, and a re-added traveler with the same id would inherit them.
+      if (this._clearAirfareCache) this._clearAirfareCache(travelerId);
       this._updateTravelersEmptyState();
       this._updateTravelersTotal();
     }
@@ -519,6 +527,14 @@
                          value="${traveler.ticketCost > 0 ? traveler.ticketCost : ''}" min="0" step="0.01" placeholder="0.00"
                          data-traveler-id="${traveler.id}">
                 </div>
+                <!--
+                  GSA City Pair airfare. Populated by _initAirfare for air mode
+                  only; rail, bus and rental stay manual, and private/gov use
+                  the mileage fields instead. Rendered empty and filled
+                  asynchronously because a cold lookup costs ~2.7s.
+                -->
+                <div class="tc__airfare ${traveler.transportMode === 'air' ? '' : 'tc__airfare--hidden'}"
+                     id="tcAirfareWrap_${traveler.id}"></div>
               </div>
               <!-- Mileage fields (for Private/Gov Vehicle) -->
               <div class="tc__transport-mileage ${(traveler.transportMode === 'private' || traveler.transportMode === 'gov') ? '' : 'tc__transport-mileage--hidden'}"
@@ -2100,6 +2116,12 @@
     // Employee autocomplete
     this._initEmployeeAutocomplete(travelerId);
 
+    // GSA City Pair airfare. Idempotent and cache-backed, so calling it on
+    // every card render is cheap; it only hits the server when the duty
+    // station has changed. Lives in travelRequestAirfare.html, which loads
+    // after this file — guarded in case that include is ever dropped.
+    if (this._initAirfare) this._initAirfare(travelerId);
+
     // LCAT input (editable field) - also updates header Role-BU display
     const lcatInput = document.getElementById(`tcLcat_${travelerId}`);
     if (lcatInput) {
@@ -2189,6 +2211,11 @@
           }
         }
 
+        // Airfare estimation is air-only. Switching INTO air starts a lookup;
+        // switching out clears the block so a stale fare cannot sit beside a
+        // rail ticket.
+        if (self._initAirfare) self._initAirfare(travelerId);
+
         // Recalculate and update display
         self._updateTransportCalc(travelerId);
         self._updateTravelerCostDisplay(travelerId);
@@ -2202,6 +2229,10 @@
     if (transportCostInput) {
       transportCostInput.addEventListener('input', function() {
         window.TravelRequest.State.updateTraveler(travelerId, 'ticketCost', parseFloat(this.value) || 0);
+        // A hand-typed figure wins. This clears airfareIsEstimate so no later
+        // lookup overwrites it, and brings back the "Use $X" button so the
+        // estimate stays available rather than silently disappearing.
+        if (self._onAirfareManualEdit) self._onAirfareManualEdit(travelerId);
         self._updateTransportCalc(travelerId);
         self._updateTravelerCostDisplay(travelerId);
         self._updateTravelersTotal();
