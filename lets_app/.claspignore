@@ -3,6 +3,7 @@ test_fas_tracker_env.js
 test_budget_config_global.js
 test_hc_data.js
 test_other_cost_percentage.js
+test_city_pairs.js
 preview.html
 node_modules/**
 .git/**

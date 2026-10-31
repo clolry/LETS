@@ -54,6 +54,9 @@ jobs:
       - name: Other-cost percentage config tests
         run: node lets_app/test_other_cost_percentage.js
 
+      - name: City pair airfare tests
+        run: node lets_app/test_city_pairs.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -133,6 +136,24 @@ jobs:
             exit 1
           fi
           echo "PASS - no hardcoded gross-up percentage in the client."
+
+      - name: 'Guard: city pair keys must be alphabetically normalized'
+        run: |
+          echo "Checking buildPairKey_ still sorts its inputs..."
+          # GSA stores every pair with origin and destination in ALPHABETICAL
+          # order regardless of travel direction, so DCA->ORD and ORD->DCA are
+          # the same row. buildPairKey_ is the only place that ordering is
+          # decided, and both the sync and the lookup depend on it.
+          #
+          # Removing the sort makes reverse-direction lookups return "no
+          # contract fare awarded" for routes that have one — silently, and in
+          # a way that reads as missing data rather than a bug.
+          if ! grep -qE "x <= y \? \(x \+ '\|' \+ y\) : \(y \+ '\|' \+ x\)" \
+               lets_app/server/91_setup/CityPairSync.js; then
+            echo "::error file=lets_app/server/91_setup/CityPairSync.js::buildPairKey_ no longer sorts its inputs alphabetically. GSA stores pairs in alphabetical order; without the sort, half of all lookups silently return no fare."
+            exit 1
+          fi
+          echo "PASS - pair keys are alphabetically normalized."
 
       - name: 'Guard: LETS_CONFIG must be declared with var, not const/let'
         run: |

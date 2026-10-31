@@ -47,7 +47,12 @@ const SHEET_NAMES = {
   // which held another workgroup's employees and is no longer reachable.
   // See 20_data/HCData.js for the HC namespace these two tabs back.
   HC_POSITIONS:       'HC_Positions',
-  HC_ORGS:            'HC_Orgs'
+  HC_ORGS:            'HC_Orgs',
+
+  // Government contract airfares, synced daily from the GSA City Pair
+  // Program CSV. See 91_setup/CityPairSync.js.
+  CITY_PAIRS:         'City_Pairs',
+  CITY_PAIR_SYNC_LOG: 'City_Pair_Sync_Log'
 };
 
 // ============================================================================
@@ -359,5 +364,60 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Created_At',
     'Updated_By',
     'Updated_At'
+  ],
+
+  // ==========================================================================
+  // GSA CITY PAIR PROGRAM CONTRACT AIRFARES
+  // ==========================================================================
+  //
+  // Synced from https://www.gsa.gov/system/files/awards_<FY>.csv, which GSA
+  // rewrites each business day after 23:59 ET. 17,403 rows for FY27.
+  //
+  // The source CSV has 24 columns; this schema keeps 14 of them plus one
+  // computed key. ITEM_NUM, PAX_COUNT and the four redundant location columns
+  // (ORIGIN_AIRPORT_LOCATION, DESTINATION_AIRPORT_LOCATION,
+  // ORIGIN_CITY_STATE_AIRPORT, DESTINATION_CITY_STATE_AIRPORT) are dropped —
+  // they restate CITY_NAME and AIRPORT_ABBREV, and at 17k rows the write
+  // volume is what threatens the 6-minute execution cap.
+  //
+  // Pair_Key is COMPUTED during sync; it is not in the CSV. GSA stores each
+  // pair with origin and destination in ALPHABETICAL order regardless of
+  // travel direction, so DCA->ORD and ORD->DCA are the same row. Pair_Key is
+  // the normalized 'ABE|ATL' form both directions resolve to. Without it every
+  // lookup must re-derive that ordering, and getting it wrong returns "no fare
+  // found" for a route that genuinely has one — a failure that reads as
+  // missing data rather than as a bug.
+  City_Pairs: [
+    'Pair_Key',                  // computed: alphabetically-sorted 'ORIG|DEST'
+    'Award_Year',
+    'Origin_Airport_Abbrev',     // airport code (domestic) or city code (intl)
+    'Destination_Airport_Abbrev',
+    'Origin_City_Name',
+    'Origin_State',
+    'Origin_Country',
+    'Destination_City_Name',
+    'Destination_State',
+    'Destination_Country',
+    'Airline_Abbrev',            // multiple carriers per pair = multiple rows
+    'YCA_Fare',                  // unrestricted coach. The pre-fill basis.
+    'CA_Fare',                   // capacity-controlled discount; 0 = none
+    'Business_Fare',             // 0 = NOT AWARDED on this route, not free
+    'Effective_Date',
+    'Expiration_Date'
+  ],
+
+  // One row per sync attempt. Mirrors DoD_Sync_Log so all three external-data
+  // syncs are auditable the same way.
+  City_Pair_Sync_Log: [
+    'Sync_ID',
+    'Synced_At',
+    'Fiscal_Year',
+    'Source_URL',
+    'Rows_Parsed',
+    'Rows_Written',
+    'Rows_Skipped',
+    'Status',
+    'Error',
+    'Duration_Ms'
   ]
 };
