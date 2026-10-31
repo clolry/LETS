@@ -20,11 +20,19 @@ const TRAVEL_DB_CONFIG = {
   // Action types — moved to ACTION_TYPES in 01_constants/Status.js (Chunk 8b).
 
   // Default config values
+  //
+  // WARNING: initTravelSystemConfig() lowercases these keys when it writes
+  // them, but the Props.js getters read UPPER_SNAKE for four of the seven.
+  // Only other_cost_percentage, travel_email_address and travel_email_name
+  // round-trip; PRIVATE_MILEAGE_RATE, GOV_MILEAGE_RATE, LOCAL_TRAVEL_THRESHOLD
+  // and DRIVE_FOLDER_ID are written in a form nothing reads. Set
+  // MILEAGE_RATE_PRIVATE, MILEAGE_RATE_GOV and SHARED_DRIVE_FOLDER_ID by hand
+  // instead. See the Props.js:28 TODO about renaming these six.
   defaults: {
     PRIVATE_MILEAGE_RATE: 0.70,
     GOV_MILEAGE_RATE: 0.22,
     LOCAL_TRAVEL_THRESHOLD: 50,
-    OTHER_COST_PERCENTAGE: 15,
+    OTHER_COST_PERCENTAGE: 30,
     DRIVE_FOLDER_ID: '1BVAqc5GM6L5LAE85kW94uGHLNwIAa3e',
     TRAVEL_EMAIL_ADDRESS: 'ASD.Travel-Events@gsa.gov',
     TRAVEL_EMAIL_NAME: 'ASD Travel & Events'

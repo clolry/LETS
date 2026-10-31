@@ -348,6 +348,21 @@
       if (otherEl) {
         otherEl.textContent = state.formatCurrency(otherTotal);
         otherEl.parentElement.classList.toggle('hidden', otherTotal <= 0);
+
+        // Label the percentage actually applied rather than a hardcoded "15%".
+        // Travelers can in principle carry different rates (rule C-07 keeps the
+        // rate in force at submission), so show a single figure only when they
+        // all agree; otherwise just say "Gross-Up".
+        const otherLabelEl = document.getElementById('travelersTotalOtherLabel');
+        if (otherLabelEl) {
+          const pcts = travelers
+            .map(function(t) { return parseFloat(t.otherPercentage); })
+            .filter(function(p) { return !isNaN(p); });
+          const uniquePcts = pcts.filter(function(p, i) { return pcts.indexOf(p) === i; });
+          otherLabelEl.textContent = uniquePcts.length === 1
+            ? uniquePcts[0] + '% Gross-Up'
+            : 'Gross-Up';
+        }
       }
       if (valueEl) valueEl.textContent = state.formatCurrency(grandTotal);
     }

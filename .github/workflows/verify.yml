@@ -48,9 +48,35 @@ jobs:
       - name: LETS_CONFIG global binding tests
         run: node lets_app/test_budget_config_global.js
 
+      - name: Other-cost percentage config tests
+        run: node lets_app/test_other_cost_percentage.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
+
+      - name: 'Guard: client must not hardcode the other-cost percentage'
+        run: |
+          echo "Checking for hardcoded gross-up percentages in the client..."
+          # The percentage is configurable via the `other_cost_percentage`
+          # Script Property. A literal in the client silently overrides it,
+          # because Costs.js:675 prefers whatever percentage the row carries —
+          # so the form would display one number and store another.
+          #
+          # Callers must use TravelRequest.getOtherCostPercentage() or
+          # TravelCostService.getOtherCostPercentage().
+          if grep -nE "otherPercentage[[:space:]]*[:=][[:space:]]*[0-9]+" \
+               lets_app/client/controllers/form/travelRequestState.html \
+               lets_app/client/shared/travelCostService.html; then
+            echo "::error::A hardcoded otherPercentage literal was found in the client. Use getOtherCostPercentage() instead; a literal silently overrides the configured other_cost_percentage Script Property."
+            exit 1
+          fi
+          if grep -nE "percentage[[:space:]]*=[[:space:]]*[0-9]+" \
+               lets_app/client/shared/travelCostService.html; then
+            echo "::error file=lets_app/client/shared/travelCostService.html::calculateOtherCosts has a hardcoded default percentage. Leave the parameter undefined so it resolves from the configured value."
+            exit 1
+          fi
+          echo "PASS - no hardcoded gross-up percentage in the client."
 
       - name: 'Guard: LETS_CONFIG must be declared with var, not const/let'
         run: |

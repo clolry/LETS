@@ -110,12 +110,24 @@ function getMileageRateEffectiveDate() {
 }
 
 /**
- * "Other costs" gross-up percentage (15 for 15%). Default 15.
+ * "Other costs" gross-up percentage (30 for 30%).
+ *
+ * Reads the `other_cost_percentage` Script Property. This is the SINGLE SOURCE
+ * OF TRUTH; the client reads it at page init via getCostConfigForClient()
+ * rather than carrying its own literal.
+ *
+ * The fallback below applies only when the property is unset or unparseable.
+ * It is deliberately the same number as the configured value in both
+ * environments so an unset property cannot quietly change the arithmetic —
+ * but set the property. Note `parseInt(...) || 30` also maps a configured 0 to
+ * 30; a 0% gross-up is not a supported configuration, and treating it as one
+ * would silently understate every request.
+ *
  * @returns {number}
  * @server
  */
 function getOtherCostPercentage() {
-  return parseInt(_props().getProperty(PROPS_KEYS.OTHER_COST_PERCENTAGE)) || 15;
+  return parseInt(_props().getProperty(PROPS_KEYS.OTHER_COST_PERCENTAGE)) || 30;
 }
 
 // ============================================================================
