@@ -56,7 +56,10 @@ const SHEET_NAMES = {
 
   // Audit trail for site-access decisions. See 30_services/Access.js and
   // docs/GAP_REGISTER.md G-008.
-  ACCESS_LOG:         'Access_Log'
+  ACCESS_LOG:         'Access_Log',
+
+  // Learned per-traveler airport preferences. See 30_services/AirportPrefs.js.
+  TRAVELER_AIRPORT_PREFS: 'Traveler_Airport_Prefs'
 };
 
 // ============================================================================
@@ -403,6 +406,7 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Destination_State',
     'Destination_Country',
     'Airline_Abbrev',            // multiple carriers per pair = multiple rows
+    'Awarded_Service',           // Non-stop | Connect; explains the fare spread
     'YCA_Fare',                  // unrestricted coach. The pre-fill basis.
     'CA_Fare',                   // capacity-controlled discount; 0 = none
     'Business_Fare',             // 0 = NOT AWARDED on this route, not free
@@ -456,5 +460,50 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Office_Title',
     'Org_Code',
     'Detail'
+  ],
+
+  // ==========================================================================
+  // LEARNED AIRPORT PREFERENCES
+  // ==========================================================================
+  //
+  // Which airport a traveler actually uses is a LOGISTICAL constraint, not a
+  // cost optimization. @clolry's example: he will only fly into DCA because of
+  // Metro access to the office, so a cheaper BWI fare is not a real option for
+  // him. Offering the cheapest airport as the default would present choices
+  // nobody would accept and invite approvers to ask why the saving was not
+  // taken.
+  //
+  // Much executive travel is repeatable — the same person to the same hub
+  // offices — so the airport they chose last time is the best available
+  // prediction.
+  //
+  // KEYED ON USER_ID, NOT ON POSITION. These rows must survive an HC roster
+  // re-import, and they follow the person rather than the seat: someone moving
+  // jobs should keep their own preferences, not inherit the previous
+  // occupant's. That is why this is not a column on HC_Positions, which the
+  // admin GUI replaces wholesale.
+  //
+  // ORIGIN AND DESTINATION HAVE DIFFERENT SHAPES. Origin is one value per
+  // person (you depart from one airport). Destination is per destination city
+  // — ORD for Chicago, LGA for New York — so it is a set of rows, not a
+  // column. Pref_Type distinguishes them; City_Name and State are blank for
+  // HOME_ORIGIN.
+  //
+  // HYBRID LEARNING (confirmed with @clolry): a preference is only promoted to
+  // "your usual" after the SAME airport has been chosen at least
+  // AIRPORT_PREF_PROMOTION_THRESHOLD times. One accidental mis-click must not
+  // become a sticky default, and the UI labels a promoted preference
+  // explicitly rather than silently pre-selecting it.
+  Traveler_Airport_Prefs: [
+    'Pref_ID',
+    'User_ID',           // FK to Travel_Users.User_ID
+    'Pref_Type',         // HOME_ORIGIN | DESTINATION
+    'City_Name',         // blank for HOME_ORIGIN
+    'State',             // blank for HOME_ORIGIN
+    'Airport_Code',
+    'Use_Count',         // drives promotion; see threshold above
+    'First_Used_At',
+    'Last_Used_At',
+    'Updated_By'
   ]
 };

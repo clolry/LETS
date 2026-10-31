@@ -39,6 +39,80 @@
  */
 
 /**
+ * IATA METROPOLITAN AREA CODES.
+ *
+ * These are not airports. WAS covers DCA, IAD and BWI collectively; NYC covers
+ * JFK, LGA and EWR. GSA uses them in DOMESTIC rows as well as international
+ * ones, which broke the original assumption that a metro code could be
+ * detected by `country !== 'UNITED STATES'`.
+ *
+ * It matters because WAS appeared in the synced data with 260 routes against
+ * DCA's 254, so sorting by route count made WAS the default origin for
+ * Washington — an aggregate, not a bookable airport, and not the DCA default
+ * @clolry asked for.
+ *
+ * Nothing in the CSV marks these, so the list has to be known. Extend it when
+ * a new metro code shows up; an unlisted one sorts as though it were an
+ * airport and will quietly win a default it should not.
+ */
+var IATA_METRO_CODES = {
+  WAS: 'Washington, DC area',
+  NYC: 'New York City area',
+  CHI: 'Chicago area',
+  LON: 'London area',
+  PAR: 'Paris area',
+  ROM: 'Rome area',
+  TYO: 'Tokyo area',
+  MIL: 'Milan area',
+  MOW: 'Moscow area',
+  BUE: 'Buenos Aires area',
+  RIO: 'Rio de Janeiro area',
+  SAO: 'Sao Paulo area',
+  BER: 'Berlin area',
+  STO: 'Stockholm area',
+  OSA: 'Osaka area',
+  SEL: 'Seoul area',
+  BJS: 'Beijing area',
+  JKT: 'Jakarta area',
+  TEH: 'Tehran area',
+  DTT: 'Detroit area'
+};
+
+/** True when a code is a metropolitan-area aggregate rather than an airport. */
+function isMetroAreaCode(code) {
+  return !!IATA_METRO_CODES[String(code || '').trim().toUpperCase()];
+}
+
+/**
+ * Normalizes a sheet cell that may be a Date or a string into YYYY-MM-DD.
+ *
+ * Sheets coerces an ISO date string on write, so getValues() returns a Date
+ * object, not the 'YYYY-MM-DD' that was written. The original window filter
+ * compared that Date against a string — 'Thu Oct 01 2026...' <= '2027-02-15'
+ * is a lexical comparison of 'T' against '2', always false — so every row was
+ * filtered out and the code silently fell through to ignoring the window.
+ *
+ * It failed safe (a fare was still returned) which is exactly why it went
+ * unnoticed: the date-validity check was dead code that looked like it worked.
+ */
+function normalizeSheetDate_(value) {
+  if (!value) return '';
+  if (value instanceof Date) {
+    var y = value.getFullYear();
+    var m = String(value.getMonth() + 1);
+    var d = String(value.getDate());
+    return y + '-' + (m.length === 1 ? '0' + m : m) + '-' + (d.length === 1 ? '0' + d : d);
+  }
+  var s = String(value).trim();
+  // Already ISO.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // A Date rendered to string by an earlier layer.
+  var parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) return normalizeSheetDate_(parsed);
+  return '';
+}
+
+/**
  * Contract fares for one origin/destination pair.
  *
  * Direction-insensitive: GSA stores each pair alphabetically, so DCA->ORD and
@@ -98,8 +172,14 @@ function getCityPairFare(originCode, destCode, travelDate) {
         caFare: best.caFare > 0 ? best.caFare : null,
         businessFare: best.businessFare > 0 ? best.businessFare : null,
         airline: best.airline,
+        awardedService: best.awardedService,
         carriers: usable.map(function (r) {
-          return { airline: r.airline, ycaFare: r.ycaFare, caFare: r.caFare > 0 ? r.caFare : null };
+          return {
+            airline: r.airline,
+            awardedService: r.awardedService,
+            ycaFare: r.ycaFare,
+            caFare: r.caFare > 0 ? r.caFare : null
+          };
         }),
         origin: { code: best.originCode, city: best.originCity, state: best.originState, country: best.originCountry },
         destination: { code: best.destCode, city: best.destCity, state: best.destState, country: best.destCountry },
@@ -153,11 +233,14 @@ function _readCityPairRows_(pairKey) {
       destState: String(values[i][c['Destination_State']] || ''),
       destCountry: String(values[i][c['Destination_Country']] || ''),
       airline: String(values[i][c['Airline_Abbrev']] || ''),
+      awardedService: String(values[i][c['Awarded_Service']] || ''),
       ycaFare: parseFloat(values[i][c['YCA_Fare']]) || 0,
       caFare: parseFloat(values[i][c['CA_Fare']]) || 0,
       businessFare: parseFloat(values[i][c['Business_Fare']]) || 0,
-      effectiveDate: String(values[i][c['Effective_Date']] || ''),
-      expirationDate: String(values[i][c['Expiration_Date']] || '')
+      // Sheets returns these as Date objects, not the strings that were
+      // written. Normalizing here is what makes the window filter work.
+      effectiveDate: normalizeSheetDate_(values[i][c['Effective_Date']]),
+      expirationDate: normalizeSheetDate_(values[i][c['Expiration_Date']])
     });
   }
   return out;
@@ -174,14 +257,15 @@ function _readCityPairRows_(pairKey) {
  * Deriving this from the CSV means it stays correct as GSA adds or retires
  * routes. A hardcoded city->airport map would drift silently.
  *
- * Note the domestic/international split: domestic rows carry AIRPORT codes
- * (DCA, IAD, BWI) while international rows carry CITY codes (WAS, LON). Both
- * are returned, flagged by `isCityCode`, so the UI can explain why an
- * international trip offers one option where a domestic trip offers three.
+ * Metropolitan-area codes (WAS, NYC, LON) are returned but sort LAST and are
+ * flagged isMetroArea, so they can be labelled "all airports" and can never
+ * win a default. They appear in domestic rows as well as international ones —
+ * WAS outranked DCA on route count, which is what made the original
+ * country-based detection wrong.
  *
  * @param {string} cityName
  * @param {string} [stateCode]
- * @returns {Object} { success, airports: [{code, city, state, country, isCityCode, routeCount}] }
+ * @returns {Object} { success, airports: [{code, city, state, country, isMetroArea, metroLabel, routeCount}] }
  * @server
  */
 function getAirportsForCity(cityName, stateCode) {
@@ -223,13 +307,18 @@ function getAirportsForCity(cityName, stateCode) {
       var abbrev = String(code || '').trim().toUpperCase();
       if (!abbrev) return;
       if (!found[abbrev]) {
+        var metro = isMetroAreaCode(abbrev);
         found[abbrev] = {
           code: abbrev,
           city: String(cityVal || '').trim(),
           state: String(stateVal || '').trim(),
           country: String(countryVal || '').trim(),
-          // International rows use city codes, not airport codes.
-          isCityCode: String(countryVal || '').trim().toUpperCase() !== 'UNITED STATES',
+          // A metropolitan-area aggregate (WAS, NYC, LON) rather than a
+          // bookable airport. Detected from IATA_METRO_CODES, NOT from the
+          // country column — GSA uses metro codes in domestic rows too, which
+          // is what made WAS outrank DCA as Washington's default.
+          isMetroArea: metro,
+          metroLabel: metro ? IATA_METRO_CODES[abbrev] : '',
           routeCount: 0
         };
       }
@@ -243,10 +332,14 @@ function getAirportsForCity(cityName, stateCode) {
                values[i][c['Destination_State']], values[i][c['Destination_Country']]);
     }
 
-    // Most-connected airport first: it is the most likely choice and makes a
-    // sensible default without hardcoding one.
+    // Real airports first, most-connected first within each group. Metro
+    // aggregates sort LAST so they can never become a default: WAS carries
+    // more routes than DCA, so a pure route-count sort picked the aggregate.
     var airports = Object.keys(found).map(function (k) { return found[k]; })
-      .sort(function (a, b) { return b.routeCount - a.routeCount; });
+      .sort(function (a, b) {
+        if (a.isMetroArea !== b.isMetroArea) return a.isMetroArea ? 1 : -1;
+        return b.routeCount - a.routeCount;
+      });
 
     var result = { success: true, airports: airports };
     cache.put(cacheKey, JSON.stringify(result), CACHE_CONFIG.TTL.PER_DIEM);

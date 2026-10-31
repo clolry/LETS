@@ -60,6 +60,9 @@ jobs:
       - name: Access audit (G-008) tests
         run: node lets_app/test_access_audit.js
 
+      - name: Airport selection and preference tests
+        run: node lets_app/test_airport_prefs.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -161,6 +164,25 @@ jobs:
             exit 1
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
+
+      - name: 'Guard: metro-area codes must never win an airport default'
+        run: |
+          echo "Checking the metro-aware airport sort..."
+          # WAS is an IATA metropolitan-area code covering DCA, IAD and BWI.
+          # In the real GSA data it carries MORE routes than DCA (260 vs 254),
+          # so a plain route-count sort makes an unbookable aggregate the
+          # default origin for Washington. Nothing in the CSV marks these, so
+          # the IATA_METRO_CODES list and the sort that demotes them are the
+          # only defence.
+          if ! grep -q "IATA_METRO_CODES" lets_app/server/30_services/CityPairs.js; then
+            echo "::error file=lets_app/server/30_services/CityPairs.js::IATA_METRO_CODES is missing. Without it, metro aggregates like WAS outrank real airports on route count and become the default."
+            exit 1
+          fi
+          if ! grep -q "a.isMetroArea ? 1 : -1" lets_app/server/30_services/CityPairs.js; then
+            echo "::error file=lets_app/server/30_services/CityPairs.js::The airport sort no longer demotes metro-area codes. WAS has more routes than DCA in the real data and will win the default."
+            exit 1
+          fi
+          echo "PASS - metro-area codes sort last."
 
       - name: 'Guard: city pair keys must be alphabetically normalized'
         run: |

@@ -54,6 +54,7 @@ var CITY_PAIR_CSV_COLUMNS = {
   DEST_STATE: 'DESTINATION_STATE',
   DEST_COUNTRY: 'DESTINATION_COUNTRY',
   AIRLINE: 'AIRLINE_ABBREV',
+  AWARDED_SERV: 'AWARDED_SERV',
   YCA_FARE: 'YCA_FARE',
   CA_FARE: '_CA_FARE',
   BUSINESS_FARE: 'BUSINESS_FARE',
@@ -126,6 +127,31 @@ function parseCityPairDate_(value) {
 function parseFare_(value) {
   var n = parseFloat(String(value || '').replace(/[$,]/g, ''));
   return isNaN(n) || n < 0 ? 0 : n;
+}
+
+/**
+ * Decodes AWARDED_SERV into a human label.
+ *
+ * Originally dropped because the column's meaning was undocumented. @clolry's
+ * Fare Finder output settled it: the public UI shows a "Service" column
+ * reading Non-stop or Connect, and the sample row carried N.
+ *
+ * Worth surfacing because it explains the fare spread. For DC to Chicago:
+ *   BWI -> ORD   Non-stop   $108
+ *   DCA -> ORD   Non-stop   $112
+ *   IAD -> ORD   Connect    $441
+ *
+ * A connecting itinerary at four times the non-stop price is something a
+ * submitter should see before choosing, not discover afterwards.
+ *
+ * Unknown codes pass through uppercased rather than being mapped to a guess —
+ * mislabelling an itinerary is worse than showing a raw code.
+ */
+function decodeAwardedService_(value) {
+  var s = String(value || '').trim().toUpperCase();
+  if (s === 'N') return 'Non-stop';
+  if (s === 'C') return 'Connect';
+  return s;
 }
 
 /**
@@ -210,6 +236,7 @@ function syncCityPairs() {
         String(row[idx.DEST_STATE] || '').trim(),
         String(row[idx.DEST_COUNTRY] || '').trim(),
         String(row[idx.AIRLINE] || '').trim().toUpperCase(),
+        decodeAwardedService_(row[idx.AWARDED_SERV]),
         yca,
         parseFare_(row[idx.CA_FARE]),
         parseFare_(row[idx.BUSINESS_FARE]),

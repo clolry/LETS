@@ -40,7 +40,7 @@ const fs=require('fs'),vm=require('vm');
 // zero-as-not-awarded, international city codes, date windows.
 const H=['Pair_Key','Award_Year','Origin_Airport_Abbrev','Destination_Airport_Abbrev',
 'Origin_City_Name','Origin_State','Origin_Country','Destination_City_Name',
-'Destination_State','Destination_Country','Airline_Abbrev','YCA_Fare','CA_Fare',
+'Destination_State','Destination_Country','Airline_Abbrev','Awarded_Service','YCA_Fare','CA_Fare',
 'Business_Fare','Effective_Date','Expiration_Date'];
 function R(o){return H.map(h=>h in o?o[h]:'');}
 const ROWS=[
@@ -117,9 +117,9 @@ console.log('6. international city codes flagged');
 const ap=run("getAirportsForCity('WASHINGTON','DC')");
 const codes=ap.airports.map(a=>a.code).sort();
 ok('derives DCA/IAD/WAS from data', JSON.stringify(codes)===JSON.stringify(['DCA','IAD','WAS']), codes);
-ok('WAS flagged isCityCode=false (US row)', ap.airports.find(a=>a.code==='WAS').isCityCode===false);
+ok('WAS flagged isMetroArea (domestic row)', ap.airports.find(a=>a.code==='WAS').isMetroArea===true);
 const lonAp=run("getAirportsForCity('LONDON')");
-ok('LON flagged isCityCode=true', lonAp.airports[0].isCityCode===true);
+ok('LON flagged isMetroArea', lonAp.airports[0].isMetroArea===true);
 ok('DCA most-connected first', ap.airports[0].code==='DCA', ap.airports.map(a=>a.code+':'+a.routeCount));
 
 console.log('7. date window filtering');

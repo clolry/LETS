@@ -5,6 +5,7 @@ test_hc_data.js
 test_other_cost_percentage.js
 test_city_pairs.js
 test_access_audit.js
+test_airport_prefs.js
 preview.html
 node_modules/**
 .git/**
