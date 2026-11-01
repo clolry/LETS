@@ -78,6 +78,9 @@ jobs:
       - name: UI fix regression tests
         run: node lets_app/test_ui_fixes.js
 
+      - name: FAS tracker column mapping tests
+        run: node lets_app/test_fas_tracker_mapping.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -179,6 +182,35 @@ jobs:
             exit 1
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
+
+      - name: 'Guard: FAS tracker row must be built from the column list'
+        run: |
+          echo "Checking the FAS tracker row is not hand-ordered..."
+          # submitToFASTracker appends to a LIVE sheet owned by the FAS front
+          # office and shared across every FAS portfolio. A misaligned row is
+          # an uncorrectable write to someone else's system of record.
+          #
+          # The previous version hand-ordered 14 values into a 27-column sheet
+          # and matched nothing. Building the row by mapping over
+          # FAS_TRACKER_COLUMNS is what makes a tracker change shift nothing.
+          if ! grep -q 'FAS_TRACKER_COLUMNS.map(function (col)' lets_app/server/30_services/FASTrackerSync.js; then
+            echo "::error file=lets_app/server/30_services/FASTrackerSync.js::The FAS tracker row is no longer built by mapping over FAS_TRACKER_COLUMNS. A hand-ordered array writes every value into the wrong column of a live shared sheet."
+            exit 1
+          fi
+          if ! grep -q '_verifyTrackerHeader' lets_app/server/30_services/FASTrackerSync.js; then
+            echo "::error file=lets_app/server/30_services/FASTrackerSync.js::The tracker header verification is gone. The FAS front office can re-order their sheet without notice; appending a positionally-built row to a changed layout corrupts it."
+            exit 1
+          fi
+          # LETS must never assert a value in the front office's decision
+          # columns. Matched only in CODE: the comment explaining why the old
+          # status write was removed necessarily contains the old string, and a
+          # guard that trips on its own documentation is a guard people delete.
+          if grep -vE "^\s*(\*|//)" lets_app/server/30_services/FASTrackerSync.js \
+               | grep -q "'Pending FAS CoS Approval'"; then
+            echo "::error file=lets_app/server/30_services/FASTrackerSync.js::LETS is writing an approval status into the FAS tracker. 'Status:' is the front office's own decision column and must stay blank."
+            exit 1
+          fi
+          echo "PASS - tracker row is column-mapped and header-verified."
 
       - name: 'Guard: no relative ?mode= navigation'
         run: |

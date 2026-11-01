@@ -11,6 +11,7 @@ test_cache_warming.js
 test_airfare_ui.js
 test_funding_label.js
 test_ui_fixes.js
+test_fas_tracker_mapping.js
 preview.html
 node_modules/**
 .git/**
