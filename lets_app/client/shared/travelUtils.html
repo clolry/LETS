@@ -341,10 +341,19 @@ window.TravelUtils = (function() {
    * @returns {string}
    */
   function describeReviewStage(status, reviewLevel) {
+    // Labels from branding so a redeploy for another workgroup is a
+    // configuration change. SCD = Service Center Director, DAC = Deputy
+    // Assistant Commissioner (the SES running each of FCA/FCB/FCC). The
+    // inherited code said "Sector Director" and "Business Unit".
+    const b = (typeof window !== 'undefined' && window._letsBranding) || {};
+    const sector = (b.sectorLabel || 'SCD') + ' review';
+    const bu = (b.buLabel || 'DAC') + ' review';
+    const fo = (b.foLabel || 'ASD Travel & Events') + ' review';
+
     const STATUS_STAGES = {
-      PENDING_SECTOR: 'Sector Director review',
-      PENDING_BU: 'Business Unit review',
-      PENDING_OSO: 'AAS Front Office review',
+      PENDING_SECTOR: sector,
+      PENDING_BU: bu,
+      PENDING_OSO: fo,
       PENDING_FAS: 'FAS Front Office review',
       PENDING_DD_CONFIRMATION: 'Division Director confirmation',
       PENDING_CORRECTION: 'correction by the submitter',
@@ -356,11 +365,12 @@ window.TravelUtils = (function() {
     const key = String(status || '').toUpperCase().trim();
     if (STATUS_STAGES[key]) return STATUS_STAGES[key];
 
+    // Keys are STORED Initial_Review_Level values and must not change.
     const LEVEL_LABELS = {
-      'Sector': 'Sector Director review',
-      'BU': 'Business Unit review',
-      'OSO': 'AAS Front Office review',
-      'AAS FO': 'AAS Front Office review',
+      'Sector': sector,
+      'BU': bu,
+      'OSO': fo,
+      'AAS FO': fo,
       'FAS': 'FAS Front Office review'
     };
     if (LEVEL_LABELS[reviewLevel]) return LEVEL_LABELS[reviewLevel];

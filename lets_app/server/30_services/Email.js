@@ -3,7 +3,7 @@
  * Centralized email service for the Travel Request system
  *
  * All travel-related emails should be sent via this service to ensure
- * consistent sender address (aastravel@gsa.gov) and formatting.
+ * consistent sender address ({{contactEmail}}) and formatting.
  */
 
 // ============================================================================
@@ -318,9 +318,9 @@ function getEmailRoutingStatus() {
 
 /**
  * Send an email from the travel system
- * Uses GmailApp with send-as alias for aastravel@gsa.gov
+ * Uses GmailApp with send-as alias for {{contactEmail}}
  *
- * IMPORTANT: aastravel@gsa.gov must be configured as a send-as alias
+ * IMPORTANT: {{contactEmail}} must be configured as a send-as alias
  * in the Gmail settings of users who send travel request emails.
  *
  * @param {Object} options Email options
@@ -353,6 +353,15 @@ function sendTravelEmail(options) {
 
     const senderEmail = getTravelEmailAddress();
     const senderName = getTravelEmailName();
+
+    // Last-chance token expansion. _buildEmailTemplate handles the HTML body,
+    // but subjects and plain-text bodies are assembled at each call site — and
+    // 40 of those each remembering to expand is a guarantee that one will not.
+    options = Object.assign({}, options, {
+      subject: _expandBrandTokens(options.subject),
+      body: _expandBrandTokens(options.body),
+      htmlBody: _expandBrandTokens(options.htmlBody)
+    });
 
     // Environment gate. Outside production, every recipient is replaced with
     // a single safe address and the intended ones are listed in the body.
@@ -427,39 +436,48 @@ function sendTravelEmail(options) {
  * Workflow stages for the progress tracker
  */
 // Full workflow: SD → BU → FO → FAS (overhead travel, SD-level submitter)
-const WORKFLOW_STAGES_FULL = [
-  { id: 'submitted', label: 'Submitted' },
-  { id: 'sector_review', label: 'SD' },
-  { id: 'bu_review', label: 'BU' },
-  { id: 'oso_review', label: 'AAS FO' },
-  { id: 'fas_submission', label: 'FAS' }
-];
+// Stage LABELS are resolved at call time from branding properties, not frozen
+// at file-evaluation time. The inherited labels were 'SD', 'BU' and 'AAS FO';
+// this organisation calls them SCD (Service Center Director), DAC (Deputy
+// Assistant Commissioner) and the ASD Travel & Events team.
+//
+// The stage IDs are unchanged — they are internal identifiers that STAGE_MAP
+// and the progress tracker key off, and renaming them would be churn with no
+// user-visible benefit.
+function _stageLabel(id) {
+  switch (id) {
+    case 'submitted': return 'Submitted';
+    case 'sector_review': return getReviewLabelSector();
+    case 'bu_review': return getReviewLabelBU();
+    case 'oso_review': return getOrgFOLabel();
+    case 'fas_submission': return 'FAS';
+    default: return id;
+  }
+}
 
-// No SD: BU → FO → FAS (overhead travel, BU-level submitter)
-const WORKFLOW_STAGES_NO_SECTOR = [
-  { id: 'submitted', label: 'Submitted' },
-  { id: 'bu_review', label: 'BU' },
-  { id: 'oso_review', label: 'AAS FO' },
-  { id: 'fas_submission', label: 'FAS' }
-];
+function _stages(ids) {
+  return ids.map(function (id) { return { id: id, label: _stageLabel(id) }; });
+}
 
-// No FAS: SD → BU → FO (client-paid travel, SD-level submitter)
-const WORKFLOW_STAGES_NO_FAS = [
-  { id: 'submitted', label: 'Submitted' },
-  { id: 'sector_review', label: 'SD' },
-  { id: 'bu_review', label: 'BU' },
-  { id: 'oso_review', label: 'AAS FO' }
-];
+// Full: SCD → DAC → ASD Travel & Events → FAS
+function getWorkflowStagesFull() {
+  return _stages(['submitted', 'sector_review', 'bu_review', 'oso_review', 'fas_submission']);
+}
 
-// No SD, No FAS: BU → FO (client-paid travel, BU-level submitter)
-const WORKFLOW_STAGES_MINIMAL = [
-  { id: 'submitted', label: 'Submitted' },
-  { id: 'bu_review', label: 'BU' },
-  { id: 'oso_review', label: 'AAS FO' }
-];
+// No SCD (DAC-level submitter)
+function getWorkflowStagesNoSector() {
+  return _stages(['submitted', 'bu_review', 'oso_review', 'fas_submission']);
+}
 
-// Default workflow (full)
-const WORKFLOW_STAGES = WORKFLOW_STAGES_FULL;
+// No FAS (client-paid travel)
+function getWorkflowStagesNoFas() {
+  return _stages(['submitted', 'sector_review', 'bu_review', 'oso_review']);
+}
+
+// Neither (client-paid, DAC-level submitter)
+function getWorkflowStagesMinimal() {
+  return _stages(['submitted', 'bu_review', 'oso_review']);
+}
 
 // ============================================================================
 // EMAIL CONTENT CONFIGURATION
@@ -469,24 +487,53 @@ const WORKFLOW_STAGES = WORKFLOW_STAGES_FULL;
  * Centralized email content configuration
  * This structure enables future admin editing without code changes
  */
+// Branding resolved once per execution. The getters read Script Properties,
+// and this file interpolates them into dozens of templates — caching avoids a
+// property read per string while keeping a single source of truth.
+//
+// Deliberately a FUNCTION, not a const: EMAIL_CONTENT is evaluated at file
+// load, and reading properties then would run before TripConfig.js has
+// necessarily loaded.
+var _brandCache = null;
+function _brand() {
+  if (_brandCache) return _brandCache;
+  _brandCache = {
+    app: getAppName(),
+    orgShort: getOrgShortName(),
+    orgLong: getOrgLongName(),
+    contact: getEmailFromAddress(),
+    sender: getEmailFromName()
+  };
+  return _brandCache;
+}
+
 const EMAIL_CONTENT = {
-  // Global settings used across all emails
+  // Global settings used across all emails.
+  //
+  // These were hardcoded '{{appName}}' and {{contactEmail}}. The app was
+  // inherited from another workgroup, and @clolry wants a redeploy for a
+  // different group to be a configuration change rather than a code change —
+  // so each is a getter rather than a literal.
   global: {
-    senderName: 'AAS TRIP',
-    contactEmail: 'aastravel@gsa.gov',
-    systemName: 'AAS TRIP',
-    footerText: 'This is an automated notification from the AAS TRIP system.',
-    orgLine: 'GENERAL SERVICES ADMINISTRATION • ASSISTED ACQUISITION SERVICES'
+    get senderName() { return _brand().sender; },
+    get contactEmail() { return _brand().contact; },
+    get systemName() { return _brand().app; },
+    get footerText() {
+      return 'This is an automated notification from the ' + _brand().app + ' system.';
+    },
+    get orgLine() {
+      return 'GENERAL SERVICES ADMINISTRATION • ' + _brand().orgLong;
+    }
   },
 
   // Submission confirmation to submitter
   submitterConfirmation: {
-    subject: 'TRIP Request {{requestId}} Has Been Submitted',
+    subject: '{{appName}} Request {{requestId}} Has Been Submitted',
     title: 'Request Submitted',
-    intro: '{{submitterName}},<br><br>Your TRIP request has been submitted and is now pending review by <strong>{{reviewerName}}</strong>. You will receive notifications as your request progresses.',
-    ctaText: 'Open TRIP Request',
+    intro: '{{submitterName}},<br><br>Your {{appName}} request has been submitted and is now pending review by <strong>{{reviewerName}}</strong>. You will receive notifications as your request progresses.',
+    ctaText: 'Open {{appName}} Request',
     noActionText: 'No action is required from you at this time. You will be notified if additional information is needed or once a final determination is made.',
-    contactText: 'If you have questions in the meantime, please contact <a href="mailto:aastravel@gsa.gov" style="color: #2563EB; text-decoration: none;">aastravel@gsa.gov</a>.',
+    contactText: 'If you have questions in the meantime, please contact <a href="mailto:{{contactEmail}}" style="color: #2563EB; text-decoration: none;">{{contactEmail}}</a>.',
     labels: {
       event: 'Event',
       travelDates: 'Travel Dates',
@@ -496,11 +543,11 @@ const EMAIL_CONTENT = {
 
   // Review notification to reviewer (new request)
   reviewerNotification: {
-    subject: 'TRIP Request {{requestId}} - New Mission-Critical Travel Request Ready for Review',
+    subject: '{{appName}} Request {{requestId}} - New Mission-Critical Travel Request Ready for Review',
     title: 'Review Required',
-    intro: '{{reviewerName}},<br><br>A new mission-critical travel request has been submitted and requires your review. Please review the request at your earliest convenience and take the appropriate action in AAS TRIP.',
+    intro: '{{reviewerName}},<br><br>A new mission-critical travel request has been submitted and requires your review. Please review the request at your earliest convenience and take the appropriate action in {{appName}}.',
     contactText: 'If you have any questions, please contact <strong>{{submitterName}}</strong> directly.',
-    ctaText: 'Review TRIP Request',
+    ctaText: 'Review {{appName}} Request',
     labels: {
       event: 'Event',
       submittedBy: 'Submitted By',
@@ -511,11 +558,11 @@ const EMAIL_CONTENT = {
 
   // Resubmission notification to reviewer (after Needs Info)
   resubmissionNotification: {
-    subject: 'TRIP Request {{requestId}} - Revised Mission-Critical Travel Request Resubmitted for Review',
+    subject: '{{appName}} Request {{requestId}} - Revised Mission-Critical Travel Request Resubmitted for Review',
     title: 'Request Resubmitted',
-    intro: '{{reviewerName}},<br><br>A previously submitted mission-critical travel request has been revised and now requires your review. Please review the request at your earliest convenience and take the appropriate action in AAS TRIP.',
+    intro: '{{reviewerName}},<br><br>A previously submitted mission-critical travel request has been revised and now requires your review. Please review the request at your earliest convenience and take the appropriate action in {{appName}}.',
     contactText: 'If you have any questions, please contact <strong>{{submitterName}}</strong> directly.',
-    ctaText: 'Review TRIP Request',
+    ctaText: 'Review {{appName}} Request',
     labels: {
       event: 'Event',
       submittedBy: 'Submitted By',
@@ -526,7 +573,7 @@ const EMAIL_CONTENT = {
 
   // Reviewer approval confirmation (sent to reviewer after they approve)
   reviewerApprovalConfirmation: {
-    subject: 'TRIP Request {{requestId}} - Approved and Advancing to {{nextReviewerName}} for Review',
+    subject: '{{appName}} Request {{requestId}} - Approved and Advancing to {{nextReviewerName}} for Review',
     title: 'Approval Confirmed',
     intro: '{{reviewerName}},<br><br>This message confirms that the travel request you approved has successfully advanced to <strong>{{nextReviewerName}}</strong> for review. No further action is required from you at this time.',
     labels: {
@@ -538,12 +585,12 @@ const EMAIL_CONTENT = {
 
   // Needs more information notification to submitter
   needsInfoNotification: {
-    subject: 'TRIP Request {{requestId}} - Additional Information Required',
+    subject: '{{appName}} Request {{requestId}} - Additional Information Required',
     title: 'Additional Information Required',
     intro: '{{submitterName}},<br><br>Your mission-critical travel request has been reviewed by <strong>{{reviewerName}}</strong>, and additional information is required before the review can be completed.',
-    ctaText: 'Update TRIP Request',
+    ctaText: 'Update {{appName}} Request',
     feedbackTitle: 'Reviewer Feedback',
-    nextStepsText: 'Please review the comments above and provide the requested information by updating your submission in AAS TRIP. Once updated, the request will resume routing.',
+    nextStepsText: 'Please review the comments above and provide the requested information by updating your submission in {{appName}}. Once updated, the request will resume routing.',
     labels: {
       event: 'Event',
       travelDates: 'Travel Dates',
@@ -553,14 +600,14 @@ const EMAIL_CONTENT = {
 
   // Approval notification to submitter (stage advancement)
   approvalNotification: {
-    subject: 'TRIP Request {{requestId}} Approved by {{approverName}} - Advancing to {{nextReviewerName}} for Review',
-    subjectFinal: 'TRIP Request {{requestId}} Approved by {{approverName}} - Request Complete',
+    subject: '{{appName}} Request {{requestId}} Approved by {{approverName}} - Advancing to {{nextReviewerName}} for Review',
+    subjectFinal: '{{appName}} Request {{requestId}} Approved by {{approverName}} - Request Complete',
     title: 'Approved by {{stage}}',
     intro: '{{submitterName}},<br><br>Your mission-critical travel request has been reviewed and approved by <strong>{{approverName}}</strong> and is now advancing to <strong>{{nextReviewerName}}</strong> for review.',
     introFinal: '{{submitterName}},<br><br>Your mission-critical travel request has been reviewed and approved by <strong>{{approverName}}</strong>. Your request is now complete!',
     noActionText: 'No action is required from you at this time. You will be notified if additional information is needed or once a final determination is made.',
-    contactText: 'If you have questions in the meantime, please contact <a href="mailto:aastravel@gsa.gov" style="color: #2563EB; text-decoration: none;">aastravel@gsa.gov</a>.',
-    ctaText: 'Open TRIP Request',
+    contactText: 'If you have questions in the meantime, please contact <a href="mailto:{{contactEmail}}" style="color: #2563EB; text-decoration: none;">{{contactEmail}}</a>.',
+    ctaText: 'Open {{appName}} Request',
     labels: {
       event: 'Event',
       travelDates: 'Travel Dates',
@@ -569,18 +616,18 @@ const EMAIL_CONTENT = {
     stageNames: {
       Sector: 'SD',
       BU: 'BU',
-      OSO: 'AAS FO',
+      OSO: '{{foLabel}}',
       FAS: 'FAS'
     }
   },
 
   // Advancing to FAS notification (overhead travel approved at FO)
   advancingToFas: {
-    subject: 'TRIP Request {{requestId}} Approved by {{foReviewerName}} - Advancing to FAS for Review',
+    subject: '{{appName}} Request {{requestId}} Approved by {{foReviewerName}} - Advancing to FAS for Review',
     title: 'Advancing to FAS',
-    intro: '{{submitterName}},<br><br>Your mission-critical travel request has been reviewed and approved by AAS Chief of Staff <strong>{{foReviewerName}}</strong> and is now advancing to the FAS Front Office for review.',
+    intro: '{{submitterName}},<br><br>Your mission-critical travel request has been reviewed and approved by {{orgShort}} Chief of Staff <strong>{{foReviewerName}}</strong> and is now advancing to the FAS Front Office for review.',
     noActionText: 'No action is required from you at this time. You will be notified if additional information is needed or once a final determination is made.',
-    contactText: 'If you have questions in the meantime, please contact <a href="mailto:aastravel@gsa.gov" style="color: #2563EB; text-decoration: none;">aastravel@gsa.gov</a>.',
+    contactText: 'If you have questions in the meantime, please contact <a href="mailto:{{contactEmail}}" style="color: #2563EB; text-decoration: none;">{{contactEmail}}</a>.',
     labels: {
       event: 'Event',
       travelDates: 'Travel Dates',
@@ -590,11 +637,11 @@ const EMAIL_CONTENT = {
 
   // FAS approval notification (overhead travel approved by FAS)
   fasApproval: {
-    subject: 'TRIP Request {{requestId}} - Proceed with Booking Travel',
+    subject: '{{appName}} Request {{requestId}} - Proceed with Booking Travel',
     title: 'Ready to Book',
     intro: '{{submitterName}},<br><br>Your mission-critical travel request has completed the full review process and has been approved by the FAS Front Office.',
     bookingInstructions: 'You may now proceed with making travel arrangements in <a href="https://go.gov" style="color: #2563EB; text-decoration: none;">GO.gov</a> in accordance with applicable policies and procedures.',
-    contactText: 'If you have any further questions regarding this request, please contact <a href="mailto:aastravel@gsa.gov" style="color: #2563EB; text-decoration: none;">aastravel@gsa.gov</a>.',
+    contactText: 'If you have any further questions regarding this request, please contact <a href="mailto:{{contactEmail}}" style="color: #2563EB; text-decoration: none;">{{contactEmail}}</a>.',
     labels: {
       event: 'Event',
       travelDates: 'Travel Dates',
@@ -604,11 +651,11 @@ const EMAIL_CONTENT = {
 
   // Proceed with booking notification (client-paid travel approved at FO)
   proceedWithBooking: {
-    subject: 'TRIP Request {{requestId}} - Proceed with Booking Travel',
+    subject: '{{appName}} Request {{requestId}} - Proceed with Booking Travel',
     title: 'Ready to Book',
-    intro: '{{submitterName}},<br><br>Your mission-critical travel request has been reviewed and approved by AAS Chief of Staff <strong>{{foReviewerName}}</strong>.',
+    intro: '{{submitterName}},<br><br>Your mission-critical travel request has been reviewed and approved by {{orgShort}} Chief of Staff <strong>{{foReviewerName}}</strong>.',
     bookingInstructions: 'You may now proceed with making travel arrangements in <a href="https://go.gov" style="color: #2563EB; text-decoration: none;">GO.gov</a> in accordance with applicable policies and procedures.',
-    contactText: 'If you have any further questions regarding this request, please contact <strong>{{buReviewerName}}</strong> directly. Questions regarding GO.gov may be referred to <a href="mailto:aastravel@gsa.gov" style="color: #2563EB; text-decoration: none;">aastravel@gsa.gov</a>.',
+    contactText: 'If you have any further questions regarding this request, please contact <strong>{{buReviewerName}}</strong> directly. Questions regarding GO.gov may be referred to <a href="mailto:{{contactEmail}}" style="color: #2563EB; text-decoration: none;">{{contactEmail}}</a>.',
     labels: {
       event: 'Event',
       travelDates: 'Travel Dates',
@@ -618,7 +665,7 @@ const EMAIL_CONTENT = {
 
   // Denial notification to submitter
   denialNotification: {
-    subject: 'TRIP Request {{requestId}} - Denied by {{reviewerName}}',
+    subject: '{{appName}} Request {{requestId}} - Denied by {{reviewerName}}',
     title: 'Request Denied',
     intro: '{{submitterName}},<br><br>Your mission-critical travel request has been reviewed by <strong>{{reviewerName}}</strong> and was not approved.',
     labels: {
@@ -633,7 +680,7 @@ const EMAIL_CONTENT = {
 
   // Cancellation notification to submitter
   cancellationNotification: {
-    subject: 'TRIP Request {{requestId}} - Canceled by {{reviewerName}}',
+    subject: '{{appName}} Request {{requestId}} - Canceled by {{reviewerName}}',
     title: 'Request Canceled',
     intro: '{{submitterName}},<br><br>Your mission-critical travel request has been canceled by <strong>{{reviewerName}}</strong> and will no longer move forward in the routing process.',
     labels: {
@@ -648,11 +695,11 @@ const EMAIL_CONTENT = {
 
   // DD confirmation email (initial)
   ddConfirmation: {
-    subject: 'TRIP Request {{requestId}} - Please Review and Confirm Travel Details in AAS TRIP',
+    subject: '{{appName}} Request {{requestId}} - Please Review and Confirm Travel Details in {{appName}}',
     title: 'Confirmation Required',
-    intro: '{{ddName}},<br><br>The staff listed below have been approved to participate in mission-critical travel. After reviewing their Request(s) in <a href="https://go.gov" style="color: #2563EB; text-decoration: none;">GO.gov</a>, please review and confirm travel details for your staff in AAS TRIP.',
-    ctaText: 'Confirm in AAS TRIP',
-    contactText: '<strong>Your approval in AAS TRIP certifies that you have reviewed the Request in GO.gov and verified that the correct line of accounting has been selected for the trip.</strong> Once confirmed, the travel request will be closed out. If you have any questions or require further clarification, please contact <a href="mailto:aastravel@gsa.gov" style="color: #2563EB; text-decoration: none;">aastravel@gsa.gov</a>.',
+    intro: '{{ddName}},<br><br>The staff listed below have been approved to participate in mission-critical travel. After reviewing their Request(s) in <a href="https://go.gov" style="color: #2563EB; text-decoration: none;">GO.gov</a>, please review and confirm travel details for your staff in {{appName}}.',
+    ctaText: 'Confirm in {{appName}}',
+    contactText: '<strong>Your approval in {{appName}} certifies that you have reviewed the Request in GO.gov and verified that the correct line of accounting has been selected for the trip.</strong> Once confirmed, the travel request will be closed out. If you have any questions or require further clarification, please contact <a href="mailto:{{contactEmail}}" style="color: #2563EB; text-decoration: none;">{{contactEmail}}</a>.',
     labels: {
       event: 'Event',
       travelDates: 'Travel Dates',
@@ -662,11 +709,11 @@ const EMAIL_CONTENT = {
 
   // DD re-confirmation email (after correction)
   ddReconfirmation: {
-    subject: 'TRIP Request {{requestId}} - Please Review and Re-confirm Travel Details in AAS TRIP',
+    subject: '{{appName}} Request {{requestId}} - Please Review and Re-confirm Travel Details in {{appName}}',
     title: 'Re-confirmation Required',
-    intro: '{{ddName}},<br><br>The funding information for the staff listed below has been updated. Please review the updated Request(s) in <a href="https://go.gov" style="color: #2563EB; text-decoration: none;">GO.gov</a> and re-confirm travel details for your staff in AAS TRIP.',
-    ctaText: 'Re-confirm in AAS TRIP',
-    contactText: '<strong>Your approval in AAS TRIP certifies that you have reviewed the updated Request in GO.gov and verified that the correct line of accounting has been selected for the trip.</strong> Once confirmed, the travel request will be closed out. If you have any questions or require further clarification, please contact <a href="mailto:aastravel@gsa.gov" style="color: #2563EB; text-decoration: none;">aastravel@gsa.gov</a>.',
+    intro: '{{ddName}},<br><br>The funding information for the staff listed below has been updated. Please review the updated Request(s) in <a href="https://go.gov" style="color: #2563EB; text-decoration: none;">GO.gov</a> and re-confirm travel details for your staff in {{appName}}.',
+    ctaText: 'Re-confirm in {{appName}}',
+    contactText: '<strong>Your approval in {{appName}} certifies that you have reviewed the updated Request in GO.gov and verified that the correct line of accounting has been selected for the trip.</strong> Once confirmed, the travel request will be closed out. If you have any questions or require further clarification, please contact <a href="mailto:{{contactEmail}}" style="color: #2563EB; text-decoration: none;">{{contactEmail}}</a>.',
     labels: {
       event: 'Event',
       travelDates: 'Travel Dates',
@@ -676,9 +723,9 @@ const EMAIL_CONTENT = {
 
   // DD funding issue notification to submitter
   ddFundingIssue: {
-    subject: 'TRIP Request {{requestId}} - Funding Correction Required',
+    subject: '{{appName}} Request {{requestId}} - Funding Correction Required',
     title: 'Funding Correction Required',
-    intro: '{{submitterName}},<br><br><strong>{{ddName}}</strong> has flagged a funding discrepancy for the attendee(s) listed below. Please review and update the funding information in AAS TRIP, then resubmit for confirmation.',
+    intro: '{{submitterName}},<br><br><strong>{{ddName}}</strong> has flagged a funding discrepancy for the attendee(s) listed below. Please review and update the funding information in {{appName}}, then resubmit for confirmation.',
     issueTitle: 'Issue Details',
     flaggedTitle: 'Attendee(s) Requiring Update',
     ctaText: 'Update Funding',
@@ -722,7 +769,7 @@ function _buildAASLogo(centered = false) {
   if (TRAVEL_LOGO_BASE64 && TRAVEL_LOGO_BASE64.length > 0) {
     return `
       <div style="text-align: ${alignment}; margin: ${margin};">
-        <img src="data:image/png;base64,${TRAVEL_LOGO_BASE64}" alt="AAS TRIP" style="max-width: 240px; height: auto; display: block; margin: ${centered ? '0 auto' : '0'};" />
+        <img src="data:image/png;base64,${TRAVEL_LOGO_BASE64}" alt="${_brand().app}" style="max-width: 240px; height: auto; display: block; margin: ${centered ? '0 auto' : '0'};" />
       </div>
     `;
   }
@@ -733,7 +780,7 @@ function _buildAASLogo(centered = false) {
     const imageUrl = `https://drive.google.com/uc?export=view&id=${driveFileId}`;
     return `
       <div style="text-align: ${alignment}; margin: ${margin};">
-        <img src="${imageUrl}" alt="AAS TRIP" style="max-width: 200px; height: auto; display: block; margin: ${centered ? '0 auto' : '0'};" />
+        <img src="${imageUrl}" alt="${_brand().app}" style="max-width: 200px; height: auto; display: block; margin: ${centered ? '0 auto' : '0'};" />
       </div>
     `;
   }
@@ -747,10 +794,10 @@ function _buildAASLogo(centered = false) {
           AAS
         </span>
       </div>
-      <!-- TRIP brand -->
+      <!-- app brand -->
       <div style="margin: 0 0 4px;">
         <span style="font-family: Arial, sans-serif; font-size: 36px; font-weight: bold; color: #004f87; letter-spacing: 3px; text-transform: uppercase;">
-          TRIP
+          ${_brand().app}
         </span>
       </div>
       <!-- Tagline -->
@@ -802,7 +849,41 @@ function _clearTravelLogo() {
  * @param {string} status - Status within stage ('pending', 'approved', 'denied', 'needs_info')
  * @returns {string} HTML for progress tracker
  */
-function _buildProgressTracker(currentStage, status = 'pending', stages = WORKFLOW_STAGES) {
+/**
+ * Renders the stage dots.
+ *
+ * THE BUG THIS FIXES
+ * ------------------
+ * @clolry's submission confirmation showed green checkmarks against Submitted,
+ * SD, BU and AAS FO, with only FAS pending — on a request that had just been
+ * created and reviewed by nobody.
+ *
+ * Cause: sendSubmitterConfirmation passed currentStage = STAGE_MAP[reviewLevel],
+ * and a request routed to FAS resolves to 'fas_submission' — index 4 of 5.
+ * Everything before the current index was then marked COMPLETE.
+ *
+ * The tracker was showing POSITION IN THE SEQUENCE and reading as WORK DONE.
+ *
+ * Two separate wrongs, now both addressed:
+ *
+ *   1. On submission the request is at the START. The confirmation passes
+ *      'submitted' so the first dot is current and nothing is complete.
+ *
+ *   2. Earlier stages are only "complete" if they were VISITED. A request that
+ *      skipped SCD because the submitter is DAC-level did not complete SCD
+ *      review — it bypassed it. Those render as skipped (grey, dashed) rather
+ *      than as approved, because the four workflow variants mean "skipped" and
+ *      "completed" are genuinely different states.
+ *
+ * @param {string} currentStage stage id the request is AT
+ * @param {string} [status]
+ * @param {Array} [stages]
+ * @param {Array<string>} [completedStages] stage ids actually visited. When
+ *        omitted, every stage before the current one is assumed visited —
+ *        correct for a request moving linearly, and the only safe default for
+ *        the many call sites that cannot know the history.
+ */
+function _buildProgressTracker(currentStage, status = 'pending', stages = getWorkflowStagesFull(), completedStages = null) {
   const stageIndex = stages.findIndex(s => s.id === currentStage);
 
   // Build the dots row - compact design with smaller dots
@@ -812,11 +893,23 @@ function _buildProgressTracker(currentStage, status = 'pending', stages = WORKFL
     let icon = '';
     let dotSize = '20px'; // Smaller base size
 
-    if (index < stageIndex) {
+    // A stage before the current one is COMPLETE only if it was visited.
+    // Without an explicit list, assume linear progress — but never claim
+    // completion for a stage the request has not reached.
+    const wasVisited = completedStages
+      ? completedStages.indexOf(stage.id) !== -1
+      : index < stageIndex;
+
+    if (index < stageIndex && wasVisited) {
       // Completed
       bgColor = '#10B981';
       textColor = '#FFFFFF';
       icon = '✓';
+    } else if (index < stageIndex && !wasVisited) {
+      // Skipped by this request's workflow variant. Not an approval.
+      bgColor = '#F3F4F6';
+      textColor = '#9CA3AF';
+      icon = '–';
     } else if (index === stageIndex) {
       // Current
       dotSize = '24px'; // Current stage slightly larger
@@ -925,6 +1018,30 @@ function _buildProgressTracker(currentStage, status = 'pending', stages = WORKFL
  * @param {string} options.ctaUrl - Call to action URL (optional)
  * @returns {string} Complete HTML email
  */
+/**
+ * Expands brand tokens in any email string.
+ *
+ * Applied centrally in _buildEmailTemplate and to subjects/bodies at the send
+ * sites, so a template author writes {{appName}} once and every caller gets
+ * the substitution — rather than 40 call sites each remembering to do it.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function _expandBrandTokens(text) {
+  if (!text) return text;
+  var b = _brand();
+  return String(text)
+    .replace(/\{\{appName\}\}/g, b.app)
+    .replace(/\{\{contactEmail\}\}/g, b.contact)
+    .replace(/\{\{orgShort\}\}/g, b.orgShort)
+    .replace(/\{\{orgLong\}\}/g, b.orgLong)
+    .replace(/\{\{senderName\}\}/g, b.sender)
+    .replace(/\{\{foLabel\}\}/g, getOrgFOLabel())
+    .replace(/\{\{sectorLabel\}\}/g, getReviewLabelSector())
+    .replace(/\{\{buLabel\}\}/g, getReviewLabelBU());
+}
+
 function _buildEmailTemplate(options) {
   const {
     title,
@@ -934,12 +1051,20 @@ function _buildEmailTemplate(options) {
     content,
     ctaText,
     ctaUrl,
-    stages = WORKFLOW_STAGES,
+    stages = getWorkflowStagesFull(),
     hideProgressTracker = false
   } = options;
 
   const logo = _buildAASLogo();
   const progressTracker = hideProgressTracker ? '' : _buildProgressTracker(currentStage, status, stages);
+
+  // Expand brand tokens centrally, so a template writes {{appName}} once and
+  // every caller gets the substitution rather than 40 call sites each
+  // remembering to do it.
+  const brandedTitle = _expandBrandTokens(title);
+  const brandedSubtitle = _expandBrandTokens(subtitle);
+  const brandedContent = _expandBrandTokens(content);
+  const brandedCta = _expandBrandTokens(ctaText);
 
   // Status-driven accent colors
   let accentColor = '#3B82F6'; // default blue
@@ -956,10 +1081,10 @@ function _buildEmailTemplate(options) {
     accentGradient = 'linear-gradient(135deg, #D97706 0%, #F59E0B 100%)';
   }
 
-  const ctaButton = ctaText && ctaUrl ? `
+  const ctaButton = brandedCta && ctaUrl ? `
     <div style="text-align: center; margin: 40px 0 0;">
       <a href="${ctaUrl}" target="_blank" style="display: inline-block; background: ${accentColor}; color: #FFFFFF; text-decoration: none; font-family: Calibri, 'Calibri', Arial, sans-serif; font-size: 15px; font-weight: 600; padding: 14px 32px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.12); letter-spacing: 0.01em;">
-        ${ctaText}
+        ${brandedCta}
       </a>
     </div>
   ` : '';
@@ -971,7 +1096,7 @@ function _buildEmailTemplate(options) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <title>${title}</title>
+  <title>${brandedTitle}</title>
   <!--[if mso]>
   <style type="text/css">
     body, table, td {font-family: Arial, Helvetica, sans-serif !important;}
@@ -998,9 +1123,9 @@ function _buildEmailTemplate(options) {
                   </td>
                   <td style="vertical-align: middle; padding-left: 24px;">
                     <h1 style="margin: 0 0 6px; font-family: Calibri, 'Calibri', Arial, sans-serif; font-size: 34px; font-weight: 700; color: #111827; letter-spacing: -0.02em; line-height: 1.2; text-align: left;">
-                      ${title}
+                      ${brandedTitle}
                     </h1>
-                    ${subtitle ? `<p style="margin: 0; font-family: Calibri, 'Calibri', Arial, sans-serif; font-size: 16px; font-weight: 500; color: #6B7280; line-height: 1.4; text-align: left;">${subtitle}</p>` : ''}
+                    ${brandedSubtitle ? `<p style="margin: 0; font-family: Calibri, 'Calibri', Arial, sans-serif; font-size: 16px; font-weight: 500; color: #6B7280; line-height: 1.4; text-align: left;">${brandedSubtitle}</p>` : ''}
                   </td>
                 </tr>
               </table>
@@ -1019,7 +1144,7 @@ function _buildEmailTemplate(options) {
           <!-- Main Content -->
           <tr>
             <td style="padding: 48px 40px;">
-              ${content}
+              ${brandedContent}
               ${ctaButton}
             </td>
           </tr>
@@ -1031,10 +1156,10 @@ function _buildEmailTemplate(options) {
                 <tr>
                   <td style="text-align: center;">
                     <p style="margin: 0 0 8px; font-family: Calibri, 'Calibri', Arial, sans-serif; font-size: 13px; font-weight: 600; color: #374151; letter-spacing: 0.01em;">
-                      AAS TRIP
+                      ${_brand().sender}
                     </p>
                     <p style="margin: 0; font-family: Calibri, 'Calibri', Arial, sans-serif; font-size: 12px; font-weight: 400; color: #6B7280; line-height: 1.6;">
-                      Questions? Email <a href="mailto:aastravel@gsa.gov" style="color: #2563EB; text-decoration: none;">aastravel@gsa.gov</a>
+                      Questions? Email <a href="mailto:${_brand().contact}" style="color: #2563EB; text-decoration: none;">${_brand().contact}</a>
                     </p>
                     <div style="margin: 16px 0 0; padding-top: 16px; border-top: 1px solid #E5E7EB;">
                       <p style="margin: 0; font-family: Calibri, 'Calibri', Arial, sans-serif; font-size: 10px; color: #9CA3AF; letter-spacing: 0.03em;">
@@ -1351,8 +1476,8 @@ function _describeRoutingDestination(reviewer, reviewLevel, status) {
 
   // No reviewer resolved. Say so plainly rather than implying the request is
   // progressing: an unrouted request will sit until someone notices.
-  return stage + ' — reviewer not yet assigned. Contact aastravel@gsa.gov if ' +
-    'this request does not progress within two business days.';
+  return stage + ' — reviewer not yet assigned. Contact ' + _brand().contact +
+    ' if this request does not progress within two business days.';
 }
 
 /**
@@ -1383,9 +1508,9 @@ function _describeRoutingDestination(reviewer, reviewLevel, status) {
  */
 function describeReviewStage(status, reviewLevel) {
   var STATUS_STAGES = {
-    PENDING_SECTOR: 'Sector Director review',
-    PENDING_BU: 'Business Unit review',
-    PENDING_OSO: 'AAS Front Office review',
+    PENDING_SECTOR: getReviewLabelSector() + ' review',
+    PENDING_BU: getReviewLabelBU() + ' review',
+    PENDING_OSO: getOrgFOLabel() + ' review',
     PENDING_FAS: 'FAS Front Office review',
     PENDING_DD_CONFIRMATION: 'Division Director confirmation',
     PENDING_CORRECTION: 'correction by the submitter',
@@ -1400,11 +1525,14 @@ function describeReviewStage(status, reviewLevel) {
 
   // Fall back to the initial level. Reached when a status is added without
   // being mapped here, which is better than inventing a stage name.
+  // Keys are STORED Initial_Review_Level values and must not change —
+  // 'AAS FO' in particular is data, not a label, and renaming it would need a
+  // migration. The VALUES are configurable labels.
   var LEVEL_LABELS = {
-    'Sector': 'Sector Director review',
-    'BU': 'Business Unit review',
-    'OSO': 'AAS Front Office review',
-    'AAS FO': 'AAS Front Office review',
+    'Sector': getReviewLabelSector() + ' review',
+    'BU': getReviewLabelBU() + ' review',
+    'OSO': getOrgFOLabel() + ' review',
+    'AAS FO': getOrgFOLabel() + ' review',
     'FAS': 'FAS Front Office review'
   };
   if (LEVEL_LABELS[reviewLevel]) return LEVEL_LABELS[reviewLevel];
@@ -1423,8 +1551,20 @@ function sendSubmitterConfirmation(requestId, formData, reviewer, reviewLevel) {
   const tripName = formData.tripName || formData.eventName || 'Travel Request';
   const travelerCount = (formData.travelers || []).length;
   const travelerNames = _getTravelerNames(formData.travelers);
-  const reviewerName = reviewer && reviewer.name ? reviewer.name : 'your assigned reviewer';
-  const currentStage = STAGE_MAP[reviewLevel] || 'bu_review';
+
+  // "your assigned reviewer" told @clolry nothing. Name them, with their email
+  // when it resolved, and say plainly when it did not — an unrouted request
+  // otherwise reads exactly like a normally-progressing one.
+  const reviewerName = (reviewer && reviewer.name)
+    ? (reviewer.email ? reviewer.name + ' (' + reviewer.email + ')' : reviewer.name)
+    : 'a reviewer who has not been assigned yet';
+
+  // The request has just been created and reviewed by nobody, so the tracker
+  // must show the FIRST dot as current. Passing STAGE_MAP[reviewLevel] here is
+  // what put green checkmarks against SD, BU and AAS FO on a brand-new
+  // request: a FAS-routed request resolves to index 4 of 5, and everything
+  // before the current index rendered as complete.
+  const currentStage = 'submitted';
 
   // Determine workflow stages based on funding type
   const _travelers = formData.travelers || [];
@@ -1511,14 +1651,14 @@ function sendSubmitterConfirmation(requestId, formData, reviewer, reviewLevel) {
     content: content,
     ctaText: config.ctaText,
     ctaUrl: getPortalUrl(),
-    stages: _isAllClientPaid ? WORKFLOW_STAGES_NO_FAS : WORKFLOW_STAGES_FULL
+    stages: _isAllClientPaid ? getWorkflowStagesNoFas() : getWorkflowStagesFull()
   });
 
   // Plain text fallback
   const body = `
 ${submitterName},
 
-Your TRIP request has been submitted and is now pending review by ${reviewerName}. You will receive notifications as your request progresses.
+Your {{appName}} request has been submitted and is now pending review by ${reviewerName}. You will receive notifications as your request progresses.
 
 REQUEST DETAILS
 ───────────────
@@ -1529,10 +1669,10 @@ Now with: ${_describeRoutingDestination(reviewer, reviewLevel, formData.status)}
 
 No action is required from you at this time. You will be notified if additional information is needed or once a final determination is made.
 
-If you have questions in the meantime, please contact aastravel@gsa.gov.
+If you have questions in the meantime, please contact {{contactEmail}}.
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim();
 
   return sendTravelEmail({
@@ -1685,14 +1825,14 @@ function sendReviewerNotification(requestId, formData, reviewer, reviewStage) {
     content: content,
     ctaText: config.ctaText,
     ctaUrl: getReviewUrl(requestId),
-    stages: _isAllClientPaid ? WORKFLOW_STAGES_NO_FAS : WORKFLOW_STAGES_FULL
+    stages: _isAllClientPaid ? getWorkflowStagesNoFas() : getWorkflowStagesFull()
   });
 
   // Plain text fallback
   const body = `
 ${reviewerName},
 
-A new mission-critical travel request has been submitted and requires your review. Please review the request at your earliest convenience and take the appropriate action in AAS TRIP.
+A new mission-critical travel request has been submitted and requires your review. Please review the request at your earliest convenience and take the appropriate action in {{appName}}.
 
 REQUEST DETAILS
 ───────────────
@@ -1704,7 +1844,7 @@ Attendee(s): ${travelerNames || `${travelerCount} attendee${travelerCount !== 1 
 If you have any questions, please contact ${submitterName} directly.
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim();
 
   return sendTravelEmail({
@@ -1833,7 +1973,7 @@ function sendNeedsInfoNotification(requestId, request, reviewerName, comments, s
     currentStage: currentStage,
     status: 'needs_info',
     content: content,
-    stages: _isAllClientPaid ? WORKFLOW_STAGES_NO_FAS : WORKFLOW_STAGES_FULL
+    stages: _isAllClientPaid ? getWorkflowStagesNoFas() : getWorkflowStagesFull()
   });
 
   // Plain text fallback
@@ -1852,10 +1992,10 @@ REVIEWER FEEDBACK
 ─────────────────
 ${comments || 'Please review and update your request.'}
 
-Please review the comments above and provide the requested information by updating your submission in AAS TRIP. Once updated, the request will resume routing.
+Please review the comments above and provide the requested information by updating your submission in {{appName}}. Once updated, the request will resume routing.
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim();
 
   const emailOptions = {
@@ -1962,7 +2102,7 @@ function sendApprovalNotification(requestId, request, stage, nextStep, approverI
     content: content,
     ctaText: config.ctaText,
     ctaUrl: getPortalUrl(),
-    stages: isAllClientPaid ? WORKFLOW_STAGES_NO_FAS : WORKFLOW_STAGES_FULL
+    stages: isAllClientPaid ? getWorkflowStagesNoFas() : getWorkflowStagesFull()
   });
 
   // Plain text fallback
@@ -1980,10 +2120,10 @@ Attendee(s): ${travelerNames || `${travelerCount} attendee${travelerCount !== 1 
 
 No action is required from you at this time.
 
-If you have questions, please contact aastravel@gsa.gov.
+If you have questions, please contact {{contactEmail}}.
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim()
     : `
 ${submitterName},
@@ -1998,10 +2138,10 @@ Attendee(s): ${travelerNames || `${travelerCount} attendee${travelerCount !== 1 
 
 No action is required from you at this time. You will be notified if additional information is needed or once a final determination is made.
 
-If you have questions in the meantime, please contact aastravel@gsa.gov.
+If you have questions in the meantime, please contact {{contactEmail}}.
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim();
 
   const emailOptions = {
@@ -2088,7 +2228,7 @@ function sendDenialNotification(requestId, request, reviewerName, reason, review
     currentStage: currentStage,
     status: 'denied',
     content: content,
-    stages: _isAllClientPaid ? WORKFLOW_STAGES_NO_FAS : WORKFLOW_STAGES_FULL
+    stages: _isAllClientPaid ? getWorkflowStagesNoFas() : getWorkflowStagesFull()
   });
 
   // Plain text fallback
@@ -2112,7 +2252,7 @@ This decision concludes the routing process for this request. No further action 
 If you have questions regarding this decision, please contact ${reviewerName} directly.
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim();
 
   return sendTravelEmail({
@@ -2197,7 +2337,7 @@ function sendCancellationNotification(requestId, request, reviewerName, reason, 
     currentStage: currentStage,
     status: 'cancelled',
     content: content,
-    stages: _isAllClientPaid ? WORKFLOW_STAGES_NO_FAS : WORKFLOW_STAGES_FULL
+    stages: _isAllClientPaid ? getWorkflowStagesNoFas() : getWorkflowStagesFull()
   });
 
   // Plain text fallback
@@ -2221,7 +2361,7 @@ This cancellation reflects an internal determination that the travel will not pr
 If you have questions regarding this cancellation, please contact ${reviewerName} directly.
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim();
 
   return sendTravelEmail({
@@ -2336,14 +2476,14 @@ function sendResubmissionNotification(requestId, formData, reviewer, reviewStage
     content: content,
     ctaText: config.ctaText,
     ctaUrl: getReviewUrl(requestId),
-    stages: _isAllClientPaid ? WORKFLOW_STAGES_NO_FAS : WORKFLOW_STAGES_FULL
+    stages: _isAllClientPaid ? getWorkflowStagesNoFas() : getWorkflowStagesFull()
   });
 
   // Plain text fallback
   const body = `
 ${reviewerName},
 
-A previously submitted mission-critical travel request has been revised and now requires your review. Please review the request at your earliest convenience and take the appropriate action in AAS TRIP.
+A previously submitted mission-critical travel request has been revised and now requires your review. Please review the request at your earliest convenience and take the appropriate action in {{appName}}.
 
 REQUEST DETAILS
 ───────────────
@@ -2355,7 +2495,7 @@ Attendee(s): ${travelerNames || `${travelerCount} attendee${travelerCount !== 1 
 If you have any questions, please contact ${submitterName} directly.
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim();
 
   return sendTravelEmail({
@@ -2400,7 +2540,7 @@ function sendReassignmentNotification(params) {
     const baseUrl = _getProductionBaseUrl();
     const reviewUrl = baseUrl ? `${baseUrl}?mode=review&requestId=${encodeURIComponent(requestId)}` : '';
 
-    const subject = `TRIP Request ${requestId} — Reassigned to you for review`;
+    const subject = `${_brand().app} Request ${requestId} — Reassigned to you for review`;
 
     // Body: greeting → context → reason callout → CTA → footer text
     const introText = `${escapeHtml(reviewerName)},<br><br>` +
@@ -2437,7 +2577,7 @@ function sendReassignmentNotification(params) {
         ${reasonCard}
         <p style="font-family: ${EMAIL_STYLES.fonts.family}; font-size: 14px; line-height: 1.6;
                   color: ${EMAIL_STYLES.colors.textSecondary}; margin: 12px 0 0;">
-          Open the request in TRIP to review and take action.
+          Open the request in {{appName}} to review and take action.
         </p>
       `,
       ctaText: 'Review Request',
@@ -2498,7 +2638,7 @@ function sendBulkReassignmentNotification(params) {
     const baseUrl = _getProductionBaseUrl();
     const portalUrl = baseUrl ? `${baseUrl}?mode=travel` : '';
 
-    const subject = `TRIP — ${requests.length} request${requests.length === 1 ? '' : 's'} reassigned to you`;
+    const subject = `${_brand().app} — ${requests.length} request${requests.length === 1 ? '' : 's'} reassigned to you`;
 
     const introText = `${escapeHtml(reviewerName)},<br><br>` +
       `${escapeHtml(adminName)} reassigned <strong>${requests.length} pending review${requests.length === 1 ? '' : 's'}</strong>` +
@@ -2630,7 +2770,7 @@ function sendReviewerApprovalConfirmation(requestId, request, reviewer, nextRevi
     currentStage: currentStage,
     status: 'approved',
     content: content,
-    stages: isAllClientPaid ? WORKFLOW_STAGES_NO_FAS : WORKFLOW_STAGES_FULL
+    stages: isAllClientPaid ? getWorkflowStagesNoFas() : getWorkflowStagesFull()
   });
 
   // Plain text fallback
@@ -2646,7 +2786,7 @@ Travel Dates: ${_getTripTravelDates(request)}
 Attendee(s): ${travelerNames || `${travelerCount} attendee${travelerCount !== 1 ? 's' : ''}`}
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim();
 
   return sendTravelEmail({
@@ -2731,7 +2871,7 @@ function sendAdvancingToFasNotification(requestId, request, foReviewerName) {
   const body = `
 ${submitterName},
 
-Your mission-critical travel request has been reviewed and approved by AAS Chief of Staff ${foReviewerName} and is now advancing to the FAS Front Office for review.
+Your mission-critical travel request has been reviewed and approved by {{orgShort}} Chief of Staff ${foReviewerName} and is now advancing to the FAS Front Office for review.
 
 REQUEST DETAILS
 ───────────────
@@ -2741,10 +2881,10 @@ Attendee(s): ${travelerNames || `${travelerCount} attendee${travelerCount !== 1 
 
 No action is required from you at this time. You will be notified if additional information is needed or once a final determination is made.
 
-If you have questions in the meantime, please contact aastravel@gsa.gov.
+If you have questions in the meantime, please contact {{contactEmail}}.
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim();
 
   return sendTravelEmail({
@@ -2775,10 +2915,11 @@ function sendFasReviewerNotification(requestId, formData, reviewer) {
   const travelerCount = (formData.travelers || []).length;
   const travelerNames = _getTravelerNames(formData.travelers);
 
-  const subject = 'TRIP Request ' + requestId + ' - NEW GSA-Paid Travel Request Pending Your Review';
+  const subject = _brand().app + ' Request ' + requestId +
+    ' - NEW GSA-Paid Travel Request Pending Your Review';
 
   // Build intro with personalization
-  const introText = (reviewerName + ',<br><br>An overhead mission-critical travel request has been approved by AAS leadership and now requires FAS Front Office review. Please review the request at your earliest convenience and take the appropriate action in AAS TRIP.');
+  const introText = (reviewerName + ',<br><br>A GSA-Paid mission-critical travel request has been approved by ${_brand().orgShort} leadership and now requires FAS Front Office review. Please review the request at your earliest convenience and take the appropriate action in ${_brand().app}.');
   const contactText = config.contactText.replace('{{submitterName}}', escapeHtml(submitterName));
 
   // Build attendee pills using helper
@@ -2844,7 +2985,7 @@ function sendFasReviewerNotification(requestId, formData, reviewer) {
     currentStage: 'fas_submission',
     status: 'action_required',
     content: content,
-    ctaText: 'Review TRIP Request',
+    ctaText: 'Review ' + _brand().app + ' Request',
     ctaUrl: getReviewUrl(requestId)
   });
 
@@ -2852,7 +2993,7 @@ function sendFasReviewerNotification(requestId, formData, reviewer) {
   const body = `
 ${reviewerName},
 
-An overhead mission-critical travel request has been approved by AAS leadership and now requires FAS Front Office review.
+An overhead mission-critical travel request has been approved by {{orgShort}} leadership and now requires FAS Front Office review.
 
 REQUEST DETAILS
 ───────────────
@@ -2861,12 +3002,12 @@ Travel Dates: ${_getTripTravelDates(formData)}
 Submitted By: ${submitterName}
 Attendee(s): ${travelerNames || travelerCount + ' attendee' + (travelerCount !== 1 ? 's' : '')}
 
-Please review the request in AAS TRIP and take the appropriate action (approve or deny).
+Please review the request in {{appName}} and take the appropriate action (approve or deny).
 
 If you have any questions, please contact Jennifer C. directly.
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim();
 
   return sendTravelEmail({
@@ -2938,7 +3079,7 @@ function sendFasApprovalNotification(requestId, request, ccString) {
         <td style="vertical-align: top; padding-top: 4px;">
           <p style="margin: 0 0 4px; font-family: ${EMAIL_STYLES.fonts.family}; color: ${EMAIL_STYLES.colors.textHeading}; font-size: 14px; font-weight: 700; line-height: 1.3;">Salesforce Submission</p>
           <p style="margin: 0; font-family: ${EMAIL_STYLES.fonts.family}; color: ${EMAIL_STYLES.colors.textBody}; font-size: 15px; line-height: 1.5;">
-            Please follow the Salesforce Procedures outlined in the <a href="https://docs.google.com/document/d/10-QK4ur6xRCFQJEiRhJa69y-VH6vdImxc23D53pTBMI/edit?tab=t.i0zc0igzda9j" style="color: #2563EB; text-decoration: none;">AAS Travel SOP</a> prior to booking travel.
+            Please follow the Salesforce Procedures outlined in the <a href="https://docs.google.com/document/d/10-QK4ur6xRCFQJEiRhJa69y-VH6vdImxc23D53pTBMI/edit?tab=t.i0zc0igzda9j" style="color: #2563EB; text-decoration: none;">{{orgShort}} Travel SOP</a> prior to booking travel.
           </p>
         </td>
       </tr>
@@ -2976,7 +3117,7 @@ function sendFasApprovalNotification(requestId, request, ccString) {
     subtitle: tripName,
     currentStage: 'fas_submission',
     status: 'complete',
-    stages: WORKFLOW_STAGES_FULL,
+    stages: getWorkflowStagesFull(),
     content: content
   });
 
@@ -2992,12 +3133,12 @@ Event: ${tripName}
 Travel Dates: ${_getTripTravelDates(request)}
 Attendee(s): ${travelerNames || `${travelerCount} attendee${travelerCount !== 1 ? 's' : ''}`}
 
-${hasConferenceType ? 'Salesforce Submission: Please follow the Salesforce Procedures outlined in the AAS Travel SOP prior to booking travel.\nhttps://docs.google.com/document/d/10-QK4ur6xRCFQJEiRhJa69y-VH6vdImxc23D53pTBMI/edit?tab=t.i0zc0igzda9j\n\nGO.gov: Following Salesforce approval, proceed with making travel arrangements in GO.gov in accordance with applicable policies and procedures.' : 'You may now proceed with making travel arrangements in GO.gov in accordance with applicable policies and procedures.'}
+${hasConferenceType ? 'Salesforce Submission: Please follow the Salesforce Procedures outlined in the {{orgShort}} Travel SOP prior to booking travel.\nhttps://docs.google.com/document/d/10-QK4ur6xRCFQJEiRhJa69y-VH6vdImxc23D53pTBMI/edit?tab=t.i0zc0igzda9j\n\nGO.gov: Following Salesforce approval, proceed with making travel arrangements in GO.gov in accordance with applicable policies and procedures.' : 'You may now proceed with making travel arrangements in GO.gov in accordance with applicable policies and procedures.'}
 
-If you have any further questions regarding this request, please contact aastravel@gsa.gov.
+If you have any further questions regarding this request, please contact {{contactEmail}}.
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim();
 
   const emailOptions = {
@@ -3041,7 +3182,7 @@ function sendProceedWithBookingNotification(requestId, request, foReviewerName, 
     .replace('{{foReviewerName}}', escapeHtml(foReviewerName));
 
   // Build contact text with BU reviewer name
-  const contactText = config.contactText.replace('{{buReviewerName}}', escapeHtml(buReviewerName || 'your BU reviewer'));
+  const contactText = config.contactText.replace('{{buReviewerName}}', escapeHtml(buReviewerName || 'your {{buLabel}} reviewer'));
 
   // Build request details using helper
   const attendeeDisplay = travelerNamesList || `${travelerCount} attendee${travelerCount !== 1 ? 's' : ''}`;
@@ -3065,7 +3206,7 @@ function sendProceedWithBookingNotification(requestId, request, foReviewerName, 
         <td style="vertical-align: top; padding-top: 4px;">
           <p style="margin: 0 0 4px; font-family: ${EMAIL_STYLES.fonts.family}; color: ${EMAIL_STYLES.colors.textHeading}; font-size: 14px; font-weight: 700; line-height: 1.3;">Salesforce Submission</p>
           <p style="margin: 0; font-family: ${EMAIL_STYLES.fonts.family}; color: ${EMAIL_STYLES.colors.textBody}; font-size: 15px; line-height: 1.5;">
-            Please follow the Salesforce Procedures outlined in the <a href="https://docs.google.com/document/d/10-QK4ur6xRCFQJEiRhJa69y-VH6vdImxc23D53pTBMI/edit?tab=t.i0zc0igzda9j" style="color: #2563EB; text-decoration: none;">AAS Travel SOP</a> prior to booking travel.
+            Please follow the Salesforce Procedures outlined in the <a href="https://docs.google.com/document/d/10-QK4ur6xRCFQJEiRhJa69y-VH6vdImxc23D53pTBMI/edit?tab=t.i0zc0igzda9j" style="color: #2563EB; text-decoration: none;">{{orgShort}} Travel SOP</a> prior to booking travel.
           </p>
         </td>
       </tr>
@@ -3103,7 +3244,7 @@ function sendProceedWithBookingNotification(requestId, request, foReviewerName, 
     subtitle: tripName,
     currentStage: 'oso_review',
     status: 'complete',
-    stages: WORKFLOW_STAGES_NO_FAS, // Client-paid travel doesn't go to FAS
+    stages: getWorkflowStagesNoFas(), // Client-paid travel doesn't go to FAS
     content: content
     // No CTA button - they should go to GO.gov
   });
@@ -3112,7 +3253,7 @@ function sendProceedWithBookingNotification(requestId, request, foReviewerName, 
   const body = `
 ${submitterName},
 
-Your mission-critical travel request has been reviewed and approved by AAS Chief of Staff ${foReviewerName}.
+Your mission-critical travel request has been reviewed and approved by {{orgShort}} Chief of Staff ${foReviewerName}.
 
 REQUEST DETAILS
 ───────────────
@@ -3120,12 +3261,12 @@ Event: ${tripName}
 Travel Dates: ${_getTripTravelDates(request)}
 Attendee(s): ${travelerNamesList || `${travelerCount} attendee${travelerCount !== 1 ? 's' : ''}`}
 
-${isInternational ? 'Salesforce Submission: Please follow the Salesforce Procedures outlined in the AAS Travel SOP prior to booking travel.\nhttps://docs.google.com/document/d/10-QK4ur6xRCFQJEiRhJa69y-VH6vdImxc23D53pTBMI/edit?tab=t.i0zc0igzda9j\n\nGO.gov: Following Salesforce approval, proceed with making travel arrangements in GO.gov in accordance with applicable policies and procedures.' : 'You may now proceed with making travel arrangements in GO.gov in accordance with applicable policies and procedures.'}
+${isInternational ? 'Salesforce Submission: Please follow the Salesforce Procedures outlined in the {{orgShort}} Travel SOP prior to booking travel.\nhttps://docs.google.com/document/d/10-QK4ur6xRCFQJEiRhJa69y-VH6vdImxc23D53pTBMI/edit?tab=t.i0zc0igzda9j\n\nGO.gov: Following Salesforce approval, proceed with making travel arrangements in GO.gov in accordance with applicable policies and procedures.' : 'You may now proceed with making travel arrangements in GO.gov in accordance with applicable policies and procedures.'}
 
-If you have any further questions regarding this request, please contact ${buReviewerName || 'your BU reviewer'} directly. Questions regarding GO.gov may be referred to aastravel@gsa.gov.
+If you have any further questions regarding this request, please contact ${buReviewerName || ('your ' + getReviewLabelBU() + ' reviewer')} directly. Questions regarding GO.gov may be referred to ${_brand().contact}.
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim();
 
   const emailOptions = {
@@ -3251,19 +3392,19 @@ function sendDDConfirmationEmail(ddGroup, request, confirmUrl) {
   const body = `
 ${ddName},
 
-The staff listed below have been approved to participate in mission-critical travel. After reviewing their Request(s) in GO.gov, please review and confirm travel details for your staff in AAS TRIP.
+The staff listed below have been approved to participate in mission-critical travel. After reviewing their Request(s) in GO.gov, please review and confirm travel details for your staff in {{appName}}.
 
 Event: ${tripName}
 Travel Dates: ${_getTripTravelDates(request)}
 Staff Requiring Confirmation: ${travelerNames}
 
-Please click the link below to confirm in AAS TRIP:
+Please click the link below to confirm in {{appName}}:
 ${ddConfirmUrl}
 
-Your approval in AAS TRIP certifies that you have reviewed the Request in GO.gov and verified that the correct line of accounting has been selected for the trip. Once confirmed, the travel request will be closed out. If you have any questions or require further clarification, please contact aastravel@gsa.gov.
+Your approval in {{appName}} certifies that you have reviewed the Request in GO.gov and verified that the correct line of accounting has been selected for the trip. Once confirmed, the travel request will be closed out. If you have any questions or require further clarification, please contact {{contactEmail}}.
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim();
 
   return sendTravelEmail({
@@ -3381,19 +3522,19 @@ function sendDDReconfirmationEmail(ddGroup, request, confirmUrl) {
   const body = `
 ${ddName},
 
-The funding information for the staff listed below has been updated. Please review the updated Request(s) in GO.gov and re-confirm travel details for your staff in AAS TRIP.
+The funding information for the staff listed below has been updated. Please review the updated Request(s) in GO.gov and re-confirm travel details for your staff in {{appName}}.
 
 Event: ${tripName}
 Travel Dates: ${_getTripTravelDates(request)}
 Updated Staff: ${travelerNames}
 
-Please click the link below to re-confirm in AAS TRIP:
+Please click the link below to re-confirm in {{appName}}:
 ${ddConfirmUrl}
 
-Your approval in AAS TRIP certifies that you have reviewed the updated Request in GO.gov and verified that the correct line of accounting has been selected for the trip. Once confirmed, the travel request will be closed out. If you have any questions or require further clarification, please contact aastravel@gsa.gov.
+Your approval in {{appName}} certifies that you have reviewed the updated Request in GO.gov and verified that the correct line of accounting has been selected for the trip. Once confirmed, the travel request will be closed out. If you have any questions or require further clarification, please contact {{contactEmail}}.
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim();
 
   return sendTravelEmail({
@@ -3514,7 +3655,7 @@ function sendDDFundingIssueEmail(request, reporter, flaggedTravelers, descriptio
   const body = `
 ${submitterName},
 
-${ddName} has flagged a funding discrepancy for the attendee(s) listed below. Please review and update the funding information in AAS TRIP, then resubmit for confirmation.
+${ddName} has flagged a funding discrepancy for the attendee(s) listed below. Please review and update the funding information in {{appName}}, then resubmit for confirmation.
 
 REQUEST DETAILS
 ───────────────
@@ -3530,7 +3671,7 @@ ${description ? `ISSUE DETAILS\n─────────────\n${descr
 If you have questions about this funding issue, please contact ${ddName} directly.
 
 ---
-AAS TRIP
+{{senderName}}
   `.trim();
 
   return sendTravelEmail({
@@ -3588,8 +3729,8 @@ function _testTravelEmailConfig() {
 
   const result = sendTravelEmail({
     to: testEmail,
-    subject: 'AAS Travel Email Test - Delegated Sending',
-    body: `This is a test email from the AAS Travel Request System.
+    subject: _brand().sender + ' Email Test - Delegated Sending',
+    body: `This is a test email from the ${_brand().app} travel request system.
 
 If you received this email FROM: ${senderEmail} (not just reply-to), then delegated sending is working correctly!
 
@@ -3598,7 +3739,7 @@ Check the "From" field in your email client to verify.
 Timestamp: ${new Date().toISOString()}
 
 ---
-AAS Travel Request System`
+${_brand().sender}`
   });
 
   console.log('Test result:', JSON.stringify(result, null, 2));

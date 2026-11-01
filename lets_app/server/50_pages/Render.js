@@ -18,7 +18,7 @@
  * @param {string} [opts.title='Access Restricted']  Card headline
  * @param {string} [opts.subtitle]                   One-line explanation under the headline
  * @param {boolean} [opts.showReturnToPortal=false]  Show the "Return to Portal" button
- * @param {string} [opts.pageTitle='TRIP - Access Restricted']  Browser tab title
+ * @param {string} [opts.pageTitle=getAppName() + ' - Access Restricted']  Browser tab title
  * @returns {HtmlOutput}
  *
  * @server
@@ -27,12 +27,15 @@ function serveAccessRestrictedPage(userEmail, opts) {
   opts = opts || {};
   var template = HtmlService.createTemplateFromFile('client/pages/travelAccessBlockedPage');
   template.userEmail = userEmail || '';
+  // Branding, so a page can render <?= appName ?> rather than a
+  // hardcoded "TRIP". See Props.js getBrandingForClient.
+  _applyBranding(template);
   template.iconClass = opts.iconClass || 'fa-lock';
   template.title = opts.title || 'Access Restricted';
-  template.subtitle = opts.subtitle || 'TRIP is currently limited to authorized AAS personnel.';
+  template.subtitle = opts.subtitle || getAppName() + ' is currently limited to authorized ' + getOrgShortName() + ' personnel.';
   template.showReturnToPortal = !!opts.showReturnToPortal;
   template.scriptUrl = ScriptApp.getService().getUrl();
-  template.pageTitle = opts.pageTitle || 'TRIP - Access Restricted';
+  template.pageTitle = opts.pageTitle || getAppName() + ' - Access Restricted';
   return template
     .evaluate()
     .setFaviconUrl('https://drive.google.com/uc?id=' + TRIP_FAVICON_ID + '&export=download&format=png')
@@ -93,6 +96,9 @@ function serveTravelRequestForm(e) {
 
   var template = HtmlService.createTemplateFromFile('client/pages/travelRequestPage');
   template.userEmail = userEmail;
+  // Branding, so a page can render <?= appName ?> rather than a
+  // hardcoded "TRIP". See Props.js getBrandingForClient.
+  _applyBranding(template);
   template.userName = formattedName;
   template.submitterBU = submitterInfo.buCode || '';
   template.submitterBUName = submitterInfo.buName || '';
@@ -108,7 +114,7 @@ function serveTravelRequestForm(e) {
   var output = template
     .evaluate()
     .setFaviconUrl('https://drive.google.com/uc?id=' + TRIP_FAVICON_ID + '&export=download&format=png')
-    .setTitle('TRIP - New Request')
+    .setTitle(getAppName() + ' - New Request')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   console.timeEnd('serveTravelRequestForm:templateEvaluate');
   console.timeEnd('serveTravelRequestForm');
@@ -130,13 +136,16 @@ function serveTravelPortal(e) {
 
   var template = HtmlService.createTemplateFromFile('client/pages/travelPortalPage');
   template.userEmail = userEmail;
+  // Branding, so a page can render <?= appName ?> rather than a
+  // hardcoded "TRIP". See Props.js getBrandingForClient.
+  _applyBranding(template);
   template.userName = formattedName;
   template.scriptUrl = ScriptApp.getService().getUrl();
 
   return template
     .evaluate()
     .setFaviconUrl('https://drive.google.com/uc?id=' + TRIP_FAVICON_ID + '&export=download&format=png')
-    .setTitle('TRIP - Travel Portal')
+    .setTitle(getAppName() + ' - Travel Portal')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
@@ -159,6 +168,9 @@ function serveTravelReviewPage(e) {
 
   var template = HtmlService.createTemplateFromFile('client/pages/travelReviewPage');
   template.userEmail = userEmail;
+  // Branding, so a page can render <?= appName ?> rather than a
+  // hardcoded "TRIP". See Props.js getBrandingForClient.
+  _applyBranding(template);
   template.userName = formattedName;
   template.requestId = requestId;
   template.viewMode = viewMode;
@@ -167,7 +179,7 @@ function serveTravelReviewPage(e) {
   return template
     .evaluate()
     .setFaviconUrl('https://drive.google.com/uc?id=' + TRIP_FAVICON_ID + '&export=download&format=png')
-    .setTitle('TRIP - Review')
+    .setTitle(getAppName() + ' - Review')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
@@ -188,6 +200,9 @@ function serveDDConfirmPage(e) {
 
   var template = HtmlService.createTemplateFromFile('client/pages/ddConfirmPage');
   template.userEmail = userEmail;
+  // Branding, so a page can render <?= appName ?> rather than a
+  // hardcoded "TRIP". See Props.js getBrandingForClient.
+  _applyBranding(template);
   template.userName = formattedName;
   template.requestId = requestId;
   template.scriptUrl = ScriptApp.getService().getUrl();
@@ -195,7 +210,7 @@ function serveDDConfirmPage(e) {
   return template
     .evaluate()
     .setFaviconUrl('https://drive.google.com/uc?id=' + TRIP_FAVICON_ID + '&export=download&format=png')
-    .setTitle('TRIP - Confirm Travel')
+    .setTitle(getAppName() + ' - Confirm Travel')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
@@ -218,21 +233,24 @@ function serveTravelAdminPage(e) {
     return serveAccessRestrictedPage(userEmail, {
       iconClass: 'fa-shield-halved',
       title: 'Admin Only',
-      subtitle: 'This page is restricted to TRIP administrators.',
+      subtitle: 'This page is restricted to ' + getAppName() + ' administrators.',
       showReturnToPortal: true,
-      pageTitle: 'TRIP - Admin Only'
+      pageTitle: getAppName() + ' - Admin Only'
     });
   }
 
   var template = HtmlService.createTemplateFromFile('client/pages/travelAdminPage');
   template.userEmail = userEmail;
+  // Branding, so a page can render <?= appName ?> rather than a
+  // hardcoded "TRIP". See Props.js getBrandingForClient.
+  _applyBranding(template);
   template.userName = formattedName;
   template.scriptUrl = ScriptApp.getService().getUrl();
 
   return template
     .evaluate()
     .setFaviconUrl('https://drive.google.com/uc?id=' + TRIP_FAVICON_ID + '&export=download&format=png')
-    .setTitle('TRIP - Admin')
+    .setTitle(getAppName() + ' - Admin')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
@@ -279,7 +297,7 @@ function serveReviewerDashboardPage(e) {
     return HtmlService.createHtmlOutput(
       '<script>window.location.href = "' + ScriptApp.getService().getUrl() + '?mode=admin";</script>' +
       '<p>Redirecting to admin dashboard...</p>'
-    ).setTitle('TRIP - Redirecting');
+    ).setTitle(getAppName() + ' - Redirecting');
   }
 
   // Non-reviewers don't see this page at all.
@@ -288,14 +306,17 @@ function serveReviewerDashboardPage(e) {
     return serveAccessRestrictedPage(userEmail, {
       iconClass: 'fa-chart-line',
       title: 'Reviewers Only',
-      subtitle: 'This page is for active TRIP reviewers.',
+      subtitle: 'This page is for active ' + getAppName() + ' reviewers.',
       showReturnToPortal: true,
-      pageTitle: 'TRIP - Reviewers Only'
+      pageTitle: getAppName() + ' - Reviewers Only'
     });
   }
 
   var template = HtmlService.createTemplateFromFile('client/pages/travelReviewerDashboardPage');
   template.userEmail = userEmail;
+  // Branding, so a page can render <?= appName ?> rather than a
+  // hardcoded "TRIP". See Props.js getBrandingForClient.
+  _applyBranding(template);
   template.userName = formattedName;
   template.scriptUrl = ScriptApp.getService().getUrl();
   template.reviewerRole = ctx.role;       // 'oso' | 'bu' | 'sector'
@@ -310,7 +331,7 @@ function serveReviewerDashboardPage(e) {
   return template
     .evaluate()
     .setFaviconUrl('https://drive.google.com/uc?id=' + TRIP_FAVICON_ID + '&export=download&format=png')
-    .setTitle('TRIP - Travel Insights')
+    .setTitle(getAppName() + ' - Travel Insights')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
@@ -327,6 +348,28 @@ function serveReviewerDashboardPage(e) {
  *
  * @server
  */
+/**
+ * Attaches branding values to a page template.
+ *
+ * Called for every served page so a template can write <?= appName ?> instead
+ * of hardcoding "TRIP". The app was inherited from another workgroup and its
+ * name appeared in 69 places; @clolry wants a redeploy for a different group to
+ * be a configuration change, not a code change.
+ *
+ * @param {HtmlTemplate} template
+ */
+function _applyBranding(template) {
+  var b = getBrandingForClient();
+  template.appName = b.appName;
+  template.orgShort = b.orgShort;
+  template.orgLong = b.orgLong;
+  template.foLabel = b.foLabel;
+  template.sectorLabel = b.sectorLabel;
+  template.buLabel = b.buLabel;
+  template.contactEmail = b.contactEmail;
+  return template;
+}
+
 function include(filename) {
   return HtmlService.createTemplateFromFile(filename).evaluate().getContent();
 }
@@ -381,6 +424,9 @@ function serveTravelBudgetDashboardPage(e) {
   var formattedName = formatUserName(userEmail);
   var template = HtmlService.createTemplateFromFile('client/pages/travelBudgetDashboardPage');
   template.userEmail = userEmail;
+  // Branding, so a page can render <?= appName ?> rather than a
+  // hardcoded "TRIP". See Props.js getBrandingForClient.
+  _applyBranding(template);
   template.userName = formattedName;
   template.scriptUrl = ScriptApp.getService().getUrl();
 

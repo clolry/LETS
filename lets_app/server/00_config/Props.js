@@ -36,7 +36,26 @@ const PROPS_KEYS = {
   OTHER_COST_PERCENTAGE:        'other_cost_percentage',
   REPORT_BUILDER_PRESETS:       'report_builder_presets',
   DOD_LAST_SYNC:                'dod_last_sync',
-  DOS_LAST_SYNC:                'dos_last_sync'
+  DOS_LAST_SYNC:                'dos_last_sync',
+
+  // ------------------------------------------------------------------
+  // BRANDING. Configurable so this app can be deployed for another
+  // workgroup without a code change.
+  //
+  // Every user-visible mention of the app name, the owning organisation and
+  // the contact mailbox resolves through these. They were hardcoded as "TRIP",
+  // "AAS" and aastravel@gsa.gov in 136 places, which made the app
+  // indistinguishable from the workgroup it was inherited from.
+  //
+  // Defaults below are THIS deployment's values, so an unset property still
+  // produces correct output here. A different workgroup sets the properties.
+  // ------------------------------------------------------------------
+  APP_NAME:                     'APP_NAME',
+  ORG_SHORT_NAME:               'ORG_SHORT_NAME',
+  ORG_LONG_NAME:                'ORG_LONG_NAME',
+  ORG_FO_LABEL:                 'ORG_FO_LABEL',
+  REVIEW_LABEL_SECTOR:          'REVIEW_LABEL_SECTOR',
+  REVIEW_LABEL_BU:              'REVIEW_LABEL_BU'
 };
 
 // Cache the handle once per execution (cheap; avoids repeated GAS scope lookups).
@@ -140,7 +159,8 @@ function getOtherCostPercentage() {
  * @server
  */
 function getEmailFromAddress() {
-  return _props().getProperty(PROPS_KEYS.EMAIL_FROM_ADDRESS) || 'aastravel@gsa.gov';
+  return _props().getProperty(PROPS_KEYS.EMAIL_FROM_ADDRESS) ||
+    'ASD.Travel-Events@gsa.gov';
 }
 
 /**
@@ -149,7 +169,113 @@ function getEmailFromAddress() {
  * @server
  */
 function getEmailFromName() {
-  return _props().getProperty(PROPS_KEYS.EMAIL_FROM_NAME) || 'AAS Travel';
+  return _props().getProperty(PROPS_KEYS.EMAIL_FROM_NAME) ||
+    (getOrgShortName() + ' Travel & Events');
+}
+
+// ============================================================================
+// GETTERS — BRANDING
+// ============================================================================
+//
+// WHY THESE EXIST
+// ---------------
+// The app was inherited from another workgroup and still called itself TRIP,
+// signed emails as "AAS TRIP", pointed at aastravel@gsa.gov, and labelled a
+// review stage "AAS FO". @clolry: deploying this for another workgroup should
+// not require a code change to rebrand it.
+//
+// Each default is THIS deployment's correct value, so an unset property is not
+// a bug — it is the common case. A different workgroup sets the property.
+
+/**
+ * Application name, e.g. 'LETS'. Appears in page titles, email subjects and
+ * every "Your <app> request" sentence.
+ * @returns {string}
+ * @server
+ */
+function getAppName() {
+  return _props().getProperty(PROPS_KEYS.APP_NAME) || 'LETS';
+}
+
+/**
+ * Owning organisation, short form, e.g. 'ASD'. Used where space is tight —
+ * review-stage labels, the sender name.
+ * @returns {string}
+ * @server
+ */
+function getOrgShortName() {
+  return _props().getProperty(PROPS_KEYS.ORG_SHORT_NAME) || 'ASD';
+}
+
+/**
+ * Owning organisation, long form, for email footers.
+ * @returns {string}
+ * @server
+ */
+function getOrgLongName() {
+  return _props().getProperty(PROPS_KEYS.ORG_LONG_NAME) ||
+    'ACQUISITION SOLUTIONS DEVELOPMENT';
+}
+
+/**
+ * Label for the front-office review stage.
+ *
+ * Separate from ORG_SHORT_NAME because @clolry prefers the fuller
+ * "ASD Travel & Events Team" over "ASD FO" — the two are not derivable from
+ * one another.
+ * @returns {string}
+ * @server
+ */
+function getOrgFOLabel() {
+  return _props().getProperty(PROPS_KEYS.ORG_FO_LABEL) || 'ASD Travel & Events';
+}
+
+/**
+ * Label for the first review stage.
+ *
+ * The inherited code says "SD" for Sector Director. This organisation calls it
+ * Service Center Director, so the label is SCD. The STORED value in
+ * Initial_Review_Level is still 'Sector' — renaming stored data would need a
+ * migration, and this is a wording change.
+ * @returns {string}
+ * @server
+ */
+function getReviewLabelSector() {
+  return _props().getProperty(PROPS_KEYS.REVIEW_LABEL_SECTOR) || 'SCD';
+}
+
+/**
+ * Label for the second review stage.
+ *
+ * The inherited code says "BU" for Business Unit. Here it is the DAC — Deputy
+ * Assistant Commissioner, the SES running each of FCA, FCB and FCC, which is
+ * the same approver the budget-attribution work routes to. The STORED value is
+ * still 'BU'.
+ * @returns {string}
+ * @server
+ */
+function getReviewLabelBU() {
+  return _props().getProperty(PROPS_KEYS.REVIEW_LABEL_BU) || 'DAC';
+}
+
+/**
+ * Every branding value in one call, for the client.
+ *
+ * @returns {Object} { appName, orgShort, orgLong, foLabel, sectorLabel,
+ *                     buLabel, contactEmail, senderName }
+ * @client
+ */
+function getBrandingForClient() {
+  return {
+    appName: getAppName(),
+    orgShort: getOrgShortName(),
+    orgLong: getOrgLongName(),
+    foLabel: getOrgFOLabel(),
+    sectorLabel: getReviewLabelSector(),
+    buLabel: getReviewLabelBU(),
+    contactEmail: getEmailFromAddress(),
+    senderName: getEmailFromName()
+  };
 }
 
 // ============================================================================

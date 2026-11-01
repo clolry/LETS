@@ -174,6 +174,24 @@ function diagEnvironment() {
     // Where email actually goes. Nothing was gating this: the only
     // suppression was a per-tester opt-in keyed on the SENDER, and
     // Test_Submitters was empty — so sandbox was mailing real people.
+    // Branding. Every user-visible app name, org name and stage label resolves
+    // through these, so a wrong value here is visible everywhere at once.
+    console.log('');
+    try {
+      var b = getBrandingForClient();
+      console.log('Branding (set the matching Script Property to change):');
+      console.log('  APP_NAME:            ' + b.appName);
+      console.log('  ORG_SHORT_NAME:      ' + b.orgShort);
+      console.log('  ORG_LONG_NAME:       ' + b.orgLong);
+      console.log('  ORG_FO_LABEL:        ' + b.foLabel);
+      console.log('  REVIEW_LABEL_SECTOR: ' + b.sectorLabel);
+      console.log('  REVIEW_LABEL_BU:     ' + b.buLabel);
+      console.log('  contact mailbox:     ' + b.contactEmail);
+      console.log('  email sender name:   ' + b.senderName);
+    } catch (e) {
+      console.log('Branding: [unavailable: ' + e.message + ']');
+    }
+
     console.log('');
     try {
       var mail = getEmailRoutingStatus();

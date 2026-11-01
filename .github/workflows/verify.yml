@@ -96,6 +96,9 @@ jobs:
       - name: Routing visibility tests
         run: node lets_app/test_routing_visibility.js
 
+      - name: Branding configurability tests
+        run: node lets_app/test_branding.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -197,6 +200,44 @@ jobs:
             exit 1
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
+
+      - name: 'Guard: branding must stay configurable'
+        run: |
+          echo "Checking for hardcoded brand strings..."
+          # The app was inherited from another workgroup and identified as
+          # theirs in 136 places. @clolry wants a redeploy for a different group
+          # to be a configuration change, not a code change.
+          #
+          # Comments and STORED values are permitted: 'AAS FO' is an
+          # Initial_Review_Level value, and TRIP_FAVICON_ID / _buildAASLogo are
+          # identifiers. Display strings are not.
+          BAD=$(grep -rnE "'[^']*\bTRIP\b|\"[^\"]*\bTRIP\b|aastravel@gsa\.gov" \
+                  lets_app/server/30_services/Email.js \
+                  lets_app/server/50_pages/Render.js \
+                  lets_app/client/shared/travelUtils.html \
+                  lets_app/client/controllers/portal/travelPortalController.html \
+                | grep -vE ":[0-9]+:\s*(//|\*|/\*|<!--)" \
+                | grep -vE "TRIP_FAVICON|_buildAASLogo|aas-brand-header|TRAVEL_LOGO" || true)
+          if [ -n "$BAD" ]; then
+            echo "::error::A hardcoded brand string was found. Use getAppName() / getEmailFromAddress() or a {{appName}} token so another workgroup can rebrand without a code change:"
+            echo "$BAD"
+            exit 1
+          fi
+          # The stage labels must resolve from configuration, not literals.
+          for LIT in "label: 'SD'" "label: 'BU'" "label: 'AAS FO'"; do
+            if grep -qF "$LIT" lets_app/server/30_services/Email.js; then
+              echo "::error file=lets_app/server/30_services/Email.js::Workflow stage label \"${LIT}\" is hardcoded. This organisation calls them SCD and DAC; use getReviewLabelSector() / getReviewLabelBU()."
+              exit 1
+            fi
+          done
+          # The submission confirmation must start the tracker at the first
+          # stage. Deriving it from the routed level put green checkmarks on
+          # reviews nobody had done.
+          if ! grep -q "const currentStage = 'submitted';" lets_app/server/30_services/Email.js; then
+            echo "::error file=lets_app/server/30_services/Email.js::sendSubmitterConfirmation no longer starts the progress tracker at 'submitted'. Deriving the stage from the routed review level marks every earlier stage complete on a brand-new request."
+            exit 1
+          fi
+          echo "PASS - branding is configurable."
 
       - name: 'Guard: unrouted requests must be visible'
         run: |

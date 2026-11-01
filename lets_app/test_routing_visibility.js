@@ -45,21 +45,36 @@ console.log('1. the email names the destination');
   const j=src.indexOf('\nfunction sendSubmitterConfirmation');
   const sb={console,String,Object,Array};
   const ctx=vm.createContext(sb);
+  // Stage labels are configurable (SCD / DAC / ASD Travel & Events) rather
+  // than hardcoded, so the branding getters have to exist.
+  vm.runInContext(`
+    function getReviewLabelSector(){ return 'SCD'; }
+    function getReviewLabelBU(){ return 'DAC'; }
+    function getOrgFOLabel(){ return 'ASD Travel & Events'; }
+    function getEmailFromAddress(){ return 'ASD.Travel-Events@gsa.gov'; }
+    function getAppName(){ return 'LETS'; }
+    function getOrgShortName(){ return 'ASD'; }
+    function getEmailFromName(){ return 'ASD Travel & Events'; }
+    var _brandCache=null;
+    function _brand(){ return { app:'LETS', orgShort:'ASD',
+      orgLong:'ACQUISITION SOLUTIONS DEVELOPMENT',
+      contact:'ASD.Travel-Events@gsa.gov', sender:'ASD Travel & Events' }; }
+  `,ctx);
   vm.runInContext(src.slice(i,j),ctx);
   const d=(rev,lvl,st)=>vm.runInContext('_describeRoutingDestination('+
     JSON.stringify(rev)+','+JSON.stringify(lvl)+','+JSON.stringify(st)+')',ctx);
 
   ok('name and email both shown',
-     d({name:'Dee Director',email:'dee@gsa.gov'},'BU','PENDING_BU')==='Dee Director <dee@gsa.gov> — Business Unit review',
+     d({name:'Dee Director',email:'dee@gsa.gov'},'BU','PENDING_BU')==='Dee Director <dee@gsa.gov> — DAC review',
      d({name:'Dee Director',email:'dee@gsa.gov'},'BU','PENDING_BU'));
   ok('name alone still useful',
-     d({name:'Dee Director'},'Sector','PENDING_SECTOR')==='Dee Director — Sector Director review');
+     d({name:'Dee Director'},'Sector','PENDING_SECTOR')==='Dee Director — SCD review');
 
   // THE CASE THAT MATTERS. Routing degrades quietly: the request submits, the
   // confirmation arrives reading normally, and it sits unrouted.
   const none=d(null,'BU','PENDING_BU');
   ok('no reviewer -> says so plainly', /not yet assigned/.test(none), none);
-  ok('and tells the submitter what to do', /aastravel@gsa.gov/.test(none), none);
+  ok('and tells the submitter what to do', /Travel-Events@gsa\.gov/.test(none), none);
   ok('empty reviewer object handled', /not yet assigned/.test(d({},'BU','PENDING_BU')));
 }
 
@@ -70,6 +85,11 @@ console.log('1b. the stage comes from STATUS, not the frozen initial level');
   const j=src.indexOf('\nfunction sendSubmitterConfirmation');
   const sb={console,String,Object};
   const ctx=vm.createContext(sb);
+  vm.runInContext(`
+    function getReviewLabelSector(){ return 'SCD'; }
+    function getReviewLabelBU(){ return 'DAC'; }
+    function getOrgFOLabel(){ return 'ASD Travel & Events'; }
+  `,ctx);
   vm.runInContext(src.slice(i,j),ctx);
   const stage=(st,lvl)=>vm.runInContext('describeReviewStage('+
     JSON.stringify(st)+','+JSON.stringify(lvl)+')',ctx);
@@ -80,20 +100,20 @@ console.log('1b. the stage comes from STATUS, not the frozen initial level');
   // at BU and reached FAS read "FAS reviewer — Business Unit review".
   ok('status wins over a stale initial level',
      stage('PENDING_FAS','BU')==='FAS Front Office review', stage('PENDING_FAS','BU'));
-  ok('BU', stage('PENDING_BU','BU')==='Business Unit review');
-  ok('Sector', stage('PENDING_SECTOR','Sector')==='Sector Director review');
-  ok('OSO', stage('PENDING_OSO','BU')==='AAS Front Office review');
+  ok('DAC', stage('PENDING_BU','BU')==='DAC review');
+  ok('SCD', stage('PENDING_SECTOR','Sector')==='SCD review');
+  ok('front office', stage('PENDING_OSO','BU')==='ASD Travel & Events review');
   ok('DD confirmation', stage('PENDING_DD_CONFIRMATION','BU')==='Division Director confirmation');
   // These are waiting on the SUBMITTER.
   ok('NEEDS_INFO names the submitter',
      /submitter/.test(stage('NEEDS_INFO_BU','BU')), stage('NEEDS_INFO_BU','BU'));
   ok('PENDING_CORRECTION names the submitter',
      /submitter/.test(stage('PENDING_CORRECTION','BU')));
-  ok('lowercase status accepted', stage('pending_bu','BU')==='Business Unit review');
+  ok('lowercase status accepted', stage('pending_bu','BU')==='DAC review');
 
   // An unmapped status must fall back rather than invent a stage name.
   ok('unknown status falls back to the level',
-     stage('SOMETHING_NEW','BU')==='Business Unit review', stage('SOMETHING_NEW','BU'));
+     stage('SOMETHING_NEW','BU')==='DAC review', stage('SOMETHING_NEW','BU'));
   ok('no status and no level still reads sensibly', stage('','')==='review');
   ok('never emits undefined', stage('ODD','ODD').indexOf('undefined')===-1);
 }
@@ -133,6 +153,8 @@ console.log('4. the portal card describes routing, and flags unrouted');
   const sb={console,String,Object,Array,Number,parseFloat,parseInt,isNaN,Math,Date,
     document:{addEventListener(){},getElementById:()=>null}};
   sb.window=sb;
+  sb.window._letsBranding={sectorLabel:'SCD',buLabel:'DAC',
+    foLabel:'ASD Travel & Events',contactEmail:'ASD.Travel-Events@gsa.gov'};
   const ctx=vm.createContext(sb);
   vm.runInContext(utilsJs,ctx);
   vm.runInContext(js,ctx);
@@ -140,13 +162,13 @@ console.log('4. the portal card describes routing, and flags unrouted');
   const d=req=>C._describeRouting(req);
 
   const pending=d({status:'PENDING_BU',currentReviewerName:'Dee Director',initialReviewLevel:'BU'});
-  ok('names the reviewer', pending.text==='With Dee Director — Business Unit review', pending);
+  ok('names the reviewer', pending.text==='With Dee Director — DAC review', pending);
   ok('not flagged', pending.unrouted===false);
 
   // The fix: a request that STARTED at BU and reached FAS must read FAS.
-  const advanced=d({status:'PENDING_FAS',currentReviewerName:'Fas Reviewer',initialReviewLevel:'BU'});
+  const advanced=d({status:'PENDING_FAS',currentReviewerName:'FAS Reviewer',initialReviewLevel:'BU'});
   ok('advanced request shows its CURRENT stage',
-     advanced.text==='With Fas Reviewer — FAS Front Office review', advanced);
+     advanced.text==='With FAS Reviewer — FAS Front Office review', advanced);
 
   // NEEDS_INFO is waiting on the submitter. "With <reviewer>" there actively
   // misleads: the request will not move until the submitter acts.
@@ -160,7 +182,7 @@ console.log('4. the portal card describes routing, and flags unrouted');
   const unrouted=d({status:'PENDING_BU',currentReviewerName:'',initialReviewLevel:'BU'});
   ok('unrouted is flagged', unrouted.unrouted===true, unrouted);
   ok('unrouted explains itself', /No reviewer assigned yet/.test(unrouted.text), unrouted.text);
-  ok('and gives a contact', /aastravel@gsa.gov/.test(unrouted.text));
+  ok('and gives a contact', /Travel-Events@gsa\.gov/.test(unrouted.text));
 
   // "Now with X" is misleading on a finished request, and the badge says so.
   ['COMPLETED','APPROVED','APPROVED_GOGOV','DENIED','CANCELLED','SUBMITTER_CANCELLED','DRAFT'].forEach(st=>{
@@ -179,21 +201,44 @@ console.log('5. the server and client stage maps agree');
   const e=fs.readFileSync('lets_app/server/30_services/Email.js','utf8');
   const u=fs.readFileSync('lets_app/client/shared/travelUtils.html','utf8');
 
-  function stageMap(src){
+  // Labels are now EXPRESSIONS (getReviewLabelSector() + ' review'), not
+  // literals, because they are configurable. So compare the KEY SETS and the
+  // shape of each value rather than the resolved strings — the resolved
+  // values are asserted by evaluating both maps below.
+  function stageKeys(src){
     const i=src.indexOf('STATUS_STAGES = {');
     const block=src.slice(i, src.indexOf('};', i));
-    const out={};
-    for(const m of block.matchAll(/(\w+):\s*'([^']+)'/g)) out[m[1]]=m[2];
-    return out;
+    return [...block.matchAll(/^\s*(\w+):/gm)].map(m=>m[1]);
   }
-  const se=stageMap(e), su=stageMap(u);
-  ok('server map found', Object.keys(se).length>=8, Object.keys(se).length);
-  ok('client map found', Object.keys(su).length>=8, Object.keys(su).length);
-  ok('same statuses mapped',
-     Object.keys(se).sort().join()===Object.keys(su).sort().join(),
-     {server:Object.keys(se).sort(), client:Object.keys(su).sort()});
-  Object.keys(se).forEach(k=>{
-    ok('same label for '+k, se[k]===su[k], {server:se[k], client:su[k]});
+  const se=stageKeys(e), su=stageKeys(u);
+  ok('server map found', se.length>=10, se.length);
+  ok('client map found', su.length>=10, su.length);
+  ok('same statuses mapped', se.sort().join()===su.sort().join(),
+     {server:se.sort(), client:su.sort()});
+
+  // Resolve both for real and compare the output. Two hand-maintained copies
+  // with the same keys can still produce different words.
+  const srvI=e.indexOf('function describeReviewStage');
+  const srvCtx=vm.createContext({console,String,Object});
+  vm.runInContext(`
+    function getReviewLabelSector(){ return 'SCD'; }
+    function getReviewLabelBU(){ return 'DAC'; }
+    function getOrgFOLabel(){ return 'ASD Travel & Events'; }
+  `,srvCtx);
+  vm.runInContext(e.slice(srvI, e.indexOf('\nfunction ', srvI+10)),srvCtx);
+
+  const utilsJs=/<script[^>]*>([\s\S]*)<\/script>/.exec(u)[1];
+  const cliSb={console,String,Object,Array,Number,parseFloat,parseInt,isNaN,Math,Date,
+    document:{addEventListener(){}}};
+  cliSb.window=cliSb;
+  cliSb.window._letsBranding={sectorLabel:'SCD',buLabel:'DAC',foLabel:'ASD Travel & Events'};
+  const cliCtx=vm.createContext(cliSb);
+  vm.runInContext(utilsJs,cliCtx);
+
+  se.forEach(k=>{
+    const sv=vm.runInContext("describeReviewStage("+JSON.stringify(k)+",'')",srvCtx);
+    const cv=vm.runInContext("window.TravelUtils.describeReviewStage("+JSON.stringify(k)+",'')",cliCtx);
+    ok('same label for '+k, sv===cv, {server:sv, client:cv});
   });
 }
 

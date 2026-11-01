@@ -80,6 +80,10 @@ console.log('2. every diag function is reachable and returns nothing');
     function getCityPairFare(){return {success:true,found:false};}
     function getAirportsForCity(){return {success:true,airports:[{code:'DCA',isMetroArea:false}]};}
     function isTravelAdmin(){return true;}
+    function getBrandingForClient(){return {appName:'LETS',orgShort:'ASD',
+      orgLong:'ACQUISITION SOLUTIONS DEVELOPMENT',foLabel:'ASD Travel & Events',
+      sectorLabel:'SCD',buLabel:'DAC',contactEmail:'ASD.Travel-Events@gsa.gov',
+      senderName:'ASD Travel & Events'};}
     function getEmailRoutingStatus(){return {environment:'development',isProduction:false,
       willRedirect:true,redirectTo:'t@gsa.gov',blocked:false,reason:null,
       testSubmitterSuppression:false};}

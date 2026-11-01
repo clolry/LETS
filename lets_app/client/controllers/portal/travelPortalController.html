@@ -1330,7 +1330,9 @@
       const name = String(request.currentReviewerName || '').trim();
       if (name) return { text: 'With ' + name + ' — ' + stage, unrouted: false };
       return {
-        text: 'No reviewer assigned yet (' + stage + ') — contact aastravel@gsa.gov if this does not progress',
+        text: 'No reviewer assigned yet (' + stage + ') — contact ' +
+          ((window._letsBranding && window._letsBranding.contactEmail) || 'ASD.Travel-Events@gsa.gov') +
+          ' if this does not progress',
         unrouted: true
       };
     },
@@ -1496,10 +1498,20 @@
      * Get status display info
      */
     _getStatusDisplay(status) {
+      // Stage labels come from branding, not literals. The inherited code said
+      // "Sector" and "BU"; this organisation calls them SCD (Service Center
+      // Director) and DAC (Deputy Assistant Commissioner, the SES running each
+      // of FCA/FCB/FCC). The STORED status strings are unchanged — renaming
+      // those would need a data migration.
+      const b = window._letsBranding || {};
+      const sectorLabel = b.sectorLabel || 'SCD';
+      const buLabel = b.buLabel || 'DAC';
+      const foLabel = b.foLabel || 'Travel & Events';
+
       const statusMap = {
-        'PENDING_SECTOR': { label: 'Sector Review', class: 'pending', icon: 'fa-clock' },
-        'PENDING_BU': { label: 'BU Review', class: 'pending', icon: 'fa-clock' },
-        'PENDING_OSO': { label: 'FO Review', class: 'pending-oso', icon: 'fa-clock' },
+        'PENDING_SECTOR': { label: sectorLabel + ' Review', class: 'pending', icon: 'fa-clock' },
+        'PENDING_BU': { label: buLabel + ' Review', class: 'pending', icon: 'fa-clock' },
+        'PENDING_OSO': { label: foLabel + ' Review', class: 'pending-oso', icon: 'fa-clock' },
         'PENDING_FAS': { label: 'FAS Review', class: 'pending-oso', icon: 'fa-clock' },
         'APPROVED_GOGOV': { label: 'Approved', class: 'approved', icon: 'fa-check-circle' },
         'COMPLETED': { label: 'Completed', class: 'completed', icon: 'fa-flag-checkered' },

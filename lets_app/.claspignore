@@ -17,6 +17,7 @@ test_fas_tracker_submit.js
 test_email_gate.js
 test_classification.js
 test_routing_visibility.js
+test_branding.js
 preview.html
 node_modules/**
 .git/**

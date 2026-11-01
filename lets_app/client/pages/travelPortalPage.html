@@ -360,6 +360,17 @@
 
       // Set the script URL for navigation
       window._travelScriptUrl = '<?= scriptUrl ?>';
+
+      // Branding. Resolved server-side from Script Properties so a redeploy
+      // for another workgroup is a configuration change, not a code change.
+      window._letsBranding = {
+        appName: '<?= appName ?>',
+        orgShort: '<?= orgShort ?>',
+        foLabel: '<?= foLabel ?>',
+        sectorLabel: '<?= sectorLabel ?>',
+        buLabel: '<?= buLabel ?>',
+        contactEmail: '<?= contactEmail ?>'
+      };
       if (window.TravelPortal) {
         window.TravelPortal._scriptUrl = '<?= scriptUrl ?>';
       }

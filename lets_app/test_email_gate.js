@@ -68,6 +68,17 @@ function build(opts){
     function getTravelEmailAddress(){ return 'aastravel@gsa.gov'; }
     function getTravelEmailName(){ return 'ASD Travel & Events'; }
     function logError(){}
+    // Branding getters live in 00_config/Props.js. Stubbed here rather than
+    // loading that file, which pulls in PropertiesService wiring the gate does
+    // not exercise.
+    function getAppName(){ return 'LETS'; }
+    function getOrgShortName(){ return 'ASD'; }
+    function getOrgLongName(){ return 'ACQUISITION SOLUTIONS DEVELOPMENT'; }
+    function getOrgFOLabel(){ return 'ASD Travel & Events'; }
+    function getReviewLabelSector(){ return 'SCD'; }
+    function getReviewLabelBU(){ return 'DAC'; }
+    function getEmailFromAddress(){ return 'ASD.Travel-Events@gsa.gov'; }
+    function getEmailFromName(){ return 'ASD Travel & Events'; }
     var SHEET_NAMES={TEST_SUBMITTERS:'Test_Submitters'};
     // Stub the DATA, not the function: Email.js defines its own
     // _isTestSubmitter later in the file and would overwrite a stubbed one.
