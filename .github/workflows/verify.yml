@@ -99,6 +99,9 @@ jobs:
       - name: Branding configurability tests
         run: node lets_app/test_branding.js
 
+      - name: Leg city capture tests
+        run: node lets_app/test_leg_city.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -200,6 +203,30 @@ jobs:
             exit 1
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
+
+      - name: 'Guard: a typed leg city must be captured'
+        run: |
+          echo "Checking manual city entry is not conditional..."
+          # leg.city was only written on the SUCCESS branch of the GSA city
+          # lookup, while the failure branch changed the placeholder to
+          # "Type any city..." — inviting input nothing captured. The user got
+          # a field that accepted text and a Continue button that refused,
+          # reporting "Please complete all destination details".
+          #
+          # The API key fixes the success path, not the bug: any GSA outage
+          # reproduces it.
+          if ! grep -q '_bindLegCityManualEntry' lets_app/client/controllers/form/travelRequestItinerary.html; then
+            echo "::error file=lets_app/client/controllers/form/travelRequestItinerary.html::_bindLegCityManualEntry is gone. A typed city will not be captured when the GSA lookup fails, and Continue will block with no way to proceed."
+            exit 1
+          fi
+          # It must be called on BOTH failure branches and unconditionally on
+          # the success path.
+          CALLS=$(grep -c '_bindLegCityManualEntry(legId)' lets_app/client/controllers/form/travelRequestItinerary.html || true)
+          if [ "$CALLS" -lt 3 ]; then
+            echo "::error file=lets_app/client/controllers/form/travelRequestItinerary.html::Expected _bindLegCityManualEntry on the failure branch, the catch branch and the success path (3 calls); found ${CALLS}."
+            exit 1
+          fi
+          echo "PASS - manual city entry is always bound."
 
       - name: 'Guard: branding must stay configurable'
         run: |

@@ -18,6 +18,7 @@ test_email_gate.js
 test_classification.js
 test_routing_visibility.js
 test_branding.js
+test_leg_city.js
 preview.html
 node_modules/**
 .git/**

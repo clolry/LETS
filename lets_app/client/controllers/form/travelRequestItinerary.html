@@ -717,13 +717,68 @@
       if (result.success && result.cities.length > 0) {
         self._setupLegCityAutocomplete(legId, result.cities, result.source);
       } else {
+        // No city list — but the field is still usable. See
+        // _bindLegCityManualEntry for why this matters.
         cityInput.placeholder = 'Type any city...';
+        self._bindLegCityManualEntry(legId);
       }
     } catch (error) {
       if (loadingEl) loadingEl.classList.add('hidden');
       cityInput.placeholder = 'Type any city...';
+      self._bindLegCityManualEntry(legId);
       console.error('Failed to load cities:', error);
     }
+  };
+
+  /**
+   * Writes a typed city into state on blur.
+   *
+   * THE BUG THIS FIXES
+   * ------------------
+   * leg.city was only ever written from inside _setupLegCityAutocomplete, and
+   * that function is only called on the SUCCESS branch of the city lookup. So
+   * when the GSA call failed, the placeholder changed to "Type any city..."
+   * — actively inviting manual entry — and nothing captured what was typed.
+   *
+   * The user then saw: a field that accepted their text, and
+   * "Please complete all destination details (city and dates)" blocking
+   * Continue. @clolry hit exactly this before GSA_PERDIEM_API_KEY was set.
+   *
+   * The API key makes the success path work, but it does not fix this: any GSA
+   * outage, quota exhaustion, or a state with no returned cities reproduces it
+   * identically.
+   *
+   * Idempotent — calling it twice does not double-bind, because
+   * _setupLegCityAutocomplete also calls it and a leg can be re-initialised.
+   */
+  Controller._bindLegCityManualEntry = function(legId) {
+    const self = this;
+    const cityInput = document.getElementById(`legCity_${legId}`);
+    if (!cityInput) return;
+
+    // A DOM property rather than a controller-side set: the input is replaced
+    // when a leg card re-renders, so the flag dies with the node it describes.
+    if (cityInput._letsManualEntryBound) return;
+    cityInput._letsManualEntryBound = true;
+
+    cityInput.addEventListener('blur', function () {
+      const city = this.value.trim();
+      // Only write a non-empty value. Blurring an untouched field must not
+      // clear a city the user already chose from the dropdown.
+      if (!city) return;
+
+      const state = window.TravelRequest.State;
+      const leg = (state.getLegs() || []).find(function (l) { return l.id === legId; });
+      if (leg && leg.city === city) return;   // nothing changed
+
+      state.updateLeg(legId, 'city', city);
+      self._updateItinerarySummary();
+      // A manually-typed city is still a destination, so local-travel has to
+      // be re-evaluated exactly as it is for a dropdown selection.
+      if (Controller._recheckLocalTravelForAllTravelers) {
+        Controller._recheckLocalTravelForAllTravelers();
+      }
+    });
   };
 
   /**
@@ -777,18 +832,16 @@
     if (awInstance) {
       this._autocompleteInstances[`leg_city_${legId}`] = awInstance;
 
-      // Handle blur for manual entry
-      cityInput.addEventListener('blur', function() {
-        const city = this.value.trim();
-        if (city) {
-          window.TravelRequest.State.updateLeg(legId, 'city', city);
-          self._updateItinerarySummary();
-        }
-      });
-
       // Float the dropdown with minimum width for full city names
       this._floatAwesomplete(awInstance, { minWidth: 200 });
     }
+
+    // Manual entry stays available even WITH a dropdown: the GSA list does not
+    // include every city, and a traveller going somewhere unlisted must still
+    // be able to type it. Previously this was bound inside the `if
+    // (awInstance)` block, so a failed Awesomplete construction silently
+    // removed the only way to enter a city.
+    this._bindLegCityManualEntry(legId);
   };
 
   /**
@@ -806,6 +859,9 @@
     // Reset input
     if (cityInput) {
       cityInput.value = '';
+      // The listener is attached to this node and survives a value reset, so
+      // the flag must survive too — clearing it would double-bind on the next
+      // _bindLegCityManualEntry call.
       window.TravelRequest.State.updateLeg(legId, 'city', '');
     }
   };
