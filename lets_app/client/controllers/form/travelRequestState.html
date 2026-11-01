@@ -144,6 +144,11 @@
       // apply". Distinct from missionCriticalTypes, which is its multi-select
       // "type of mission critical travel" — the tracker asks both.
       primaryJustification: '',
+      // Both lists end in "Other:", so the tracker expects free text when it
+      // is chosen. Stored separately and appended at submission, so the
+      // option VALUE stays exactly what the Google Form recognises.
+      primaryJustificationOther: '',
+      missionCriticalOther: '',
 
       // Justification (now part of Step 1)
       bluf: '',
@@ -272,7 +277,26 @@
     },
 
     getFormData() {
-      return JSON.parse(JSON.stringify(this._formData));
+      const data = JSON.parse(JSON.stringify(this._formData));
+
+      // Resolve the tracker-facing values HERE rather than leaving each
+      // consumer to reassemble them. Three things have to happen before this
+      // data is usable by FASTrackerSync, and doing them at the boundary means
+      // a caller cannot forget one:
+      //
+      //   1. the derived Internal Mission Meeting option is folded into
+      //      travelTypes, since the tracker needs it in that multi-select
+      //   2. an "Other" selection carries its free text, because the tracker's
+      //      option is literally "Other:" with a text box
+      //   3. the raw selections are preserved separately so the form can be
+      //      re-rendered from a draft without the derived value becoming a
+      //      checkbox the user never ticked
+      data.travelTypesSelected = (this._formData.travelTypes || []).slice();
+      data.travelTypes = this.getTrackerPurposes();
+      data.missionCriticalTypes = this.getMissionCriticalForTracker();
+      data.missionCriticalTypesSelected = (this._formData.missionCriticalTypes || []).slice();
+      data.primaryJustification = this.getPrimaryJustificationForTracker();
+      return data;
     },
 
     getField(field) {
@@ -1124,6 +1148,81 @@
 
     getGrandTotal() {
       return this.getTravelerTotal() + this.getSharedCostsTotal();
+    },
+
+    /**
+     * The tracker's Purpose of Travel list, with the cost-dependent options
+     * derived rather than asked.
+     *
+     * The FAS tracker splits Internal Mission Meeting at $10,000:
+     *
+     *   "Internal Mission Meeting (all travelers under $10,000)"
+     *   "Internal Mission Meeting (all travelers >= $10,000 and Event Tracker req'd)"
+     *
+     * LETS already knows the grand total, so asking a submitter to classify
+     * their own request against a threshold they have not been shown invites
+     * the wrong answer — and the answer would go stale the moment a cost
+     * changed. Neither option appears as a checkbox; both are computed here.
+     *
+     * Only added when the request is actually an internal management meeting,
+     * which is what the Step 1 Purpose of Travel delegation code says. The two
+     * namespaces are different questions: the Step 1 code drives FAS
+     * delegation tiering, this list is the tracker's own taxonomy.
+     *
+     * @returns {Array<string>} the stored selections plus any derived option
+     */
+    getTrackerPurposes() {
+      const selected = (this._formData.travelTypes || []).slice();
+      const purpose = this._formData.travelPurpose || '';
+
+      // IMM_OVER_10K / IMM_UNDER_10K are the Step 1 delegation codes. The
+      // submitter's own threshold choice there is NOT trusted for the tracker:
+      // the computed total is authoritative, and the two can disagree if costs
+      // changed after Step 1 was filled in.
+      if (purpose === 'IMM_OVER_10K' || purpose === 'IMM_UNDER_10K') {
+        const total = this.getGrandTotal();
+        selected.push(total >= 10000
+          ? "Internal Mission Meeting (all travelers >= $10,000 and Event Tracker req'd)"
+          : 'Internal Mission Meeting (all travelers under $10,000)');
+      }
+      return selected;
+    },
+
+    /**
+     * The derived IMM option, or '' when none applies.
+     *
+     * Exposed separately so the form can TELL the submitter what was added on
+     * their behalf. A value appearing in a submission that the user never
+     * selected is worse than one they had to choose, unless they can see it.
+     */
+    getDerivedTrackerPurpose() {
+      const all = this.getTrackerPurposes();
+      const selected = this._formData.travelTypes || [];
+      const derived = all.filter(function (v) { return selected.indexOf(v) === -1; });
+      return derived.length ? derived[0] : '';
+    },
+
+    /**
+     * Mission-critical types with the "Other" free text appended.
+     *
+     * The tracker's option is literally "Other:" with a text box, so the
+     * description has to travel with the selection. Kept separate in state so
+     * the stored option VALUE stays exactly what the Google Form matches.
+     */
+    getMissionCriticalForTracker() {
+      const types = (this._formData.missionCriticalTypes || []).slice();
+      const other = (this._formData.missionCriticalOther || '').trim();
+      const i = types.indexOf('Other');
+      if (i !== -1 && other) types[i] = 'Other: ' + other;
+      return types;
+    },
+
+    /** Primary justification with "Other" free text appended. */
+    getPrimaryJustificationForTracker() {
+      const value = this._formData.primaryJustification || '';
+      const other = (this._formData.primaryJustificationOther || '').trim();
+      if (value === 'Other' && other) return 'Other: ' + other;
+      return value;
     },
 
     getSharedCosts() {

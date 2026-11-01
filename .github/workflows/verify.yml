@@ -90,6 +90,9 @@ jobs:
       - name: Environment email gate tests
         run: node lets_app/test_email_gate.js
 
+      - name: Step 4 classification tests
+        run: node lets_app/test_classification.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -191,6 +194,41 @@ jobs:
             exit 1
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
+
+      - name: 'Guard: classification options must stay tracker-verbatim'
+        run: |
+          echo "Checking Step 4 options against the FAS tracker..."
+          # These values are written into a GOOGLE FORM. A value it does not
+          # recognise is rejected or lands as free text, so the strings cannot
+          # be tidied — including the tracker's own typo "Oversees Employee".
+          #
+          # The previous lists were the inherited TRIP taxonomy and the prose
+          # from the OAS memo quoted in the tracker's introduction, neither of
+          # which the form matches.
+          if grep -q 'value="Internal Travel"' lets_app/client/pages/travelRequestPage.html; then
+            echo "::error file=lets_app/client/pages/travelRequestPage.html::\"Internal Travel\" is not a FAS tracker option. Step 4 values must match the tracker's own strings verbatim."
+            exit 1
+          fi
+          if grep -q 'Sensitive Compartmented Information Facility' lets_app/client/pages/travelRequestPage.html; then
+            echo "::error file=lets_app/client/pages/travelRequestPage.html::The mission-critical list has reverted to the OAS memo prose. The tracker's option label is \"SCIF or Secure Facility Activities\"."
+            exit 1
+          fi
+          # The tracker's typo must be preserved in the VALUE.
+          if ! grep -q 'value="Oversees Employee (within OCONUS)"' lets_app/client/pages/travelRequestPage.html; then
+            echo "::error file=lets_app/client/pages/travelRequestPage.html::The \"Oversees Employee (within OCONUS)\" value is missing or was spell-corrected. That is the tracker's own spelling and the Google Form matches on it."
+            exit 1
+          fi
+          # The second mission-critical question the form previously lacked.
+          if ! grep -q 'id="primaryJustification"' lets_app/client/pages/travelRequestPage.html; then
+            echo "::error file=lets_app/client/pages/travelRequestPage.html::The primary-justification single-select is missing. The tracker requires it separately from the mission-critical multi-select, and a submission without it is incomplete."
+            exit 1
+          fi
+          # The cost-split options must stay derived, not asked.
+          if grep -q 'type="checkbox" value="Internal Mission Meeting' lets_app/client/pages/travelRequestPage.html; then
+            echo "::error file=lets_app/client/pages/travelRequestPage.html::An Internal Mission Meeting option was added as a checkbox. Both are derived from the computed grand total; asking a submitter to classify against a threshold they have not been shown invites the wrong answer."
+            exit 1
+          fi
+          echo "PASS - Step 4 options match the tracker."
 
       - name: 'Guard: email must be environment-gated and template refs must resolve'
         run: |

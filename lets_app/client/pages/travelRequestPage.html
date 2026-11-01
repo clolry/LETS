@@ -477,30 +477,40 @@
                   <span class="classification-column__required">Required</span>
                 </div>
                 <div class="classification-column__hint">Select all that apply</div>
+                <!--
+                  OPTION VALUES ARE VERBATIM FROM THE FAS EXEMPTION TRACKER.
+
+                  These strings are written into the tracker's "Select Purpose
+                  of Travel (check all that apply)" column, which is a
+                  multi-select on a Google Form. A value the form does not
+                  recognise is rejected or lands as free text, so the text
+                  cannot be tidied, abbreviated or re-worded. The visible label
+                  may differ from the value; the value may not.
+
+                  The previous list was the inherited TRIP taxonomy and
+                  overlapped the tracker's only loosely — "Internal Travel"
+                  and "Vendor Meeting" do not exist in the tracker at all.
+
+                  TWO OPTIONS ARE DELIBERATELY ABSENT. The tracker splits
+                  Internal Mission Meeting at $10,000, and LETS already knows
+                  the grand total — asking a submitter to classify their own
+                  request by a threshold they have not been shown invites the
+                  wrong answer. Those two are derived at submission from the
+                  computed total. See _deriveTrackerPurposes in
+                  travelRequestState.html.
+                -->
                 <div class="classification-column__body">
                   <label class="classification-option">
-                    <input type="checkbox" value="Local Travel">
-                    <span class="classification-option__text">Local Travel</span>
-                  </label>
-                  <label class="classification-option">
-                    <input type="checkbox" value="Internal Travel">
-                    <span class="classification-option__text">Internal Travel</span>
+                    <input type="checkbox" value="Site Visits, Inspections, Acceptance, Delivery">
+                    <span class="classification-option__text">Site Visits / Inspections / Acceptance</span>
                   </label>
                   <label class="classification-option">
                     <input type="checkbox" value="Customer Meeting">
                     <span class="classification-option__text">Customer Meeting</span>
                   </label>
                   <label class="classification-option">
-                    <input type="checkbox" value="Vendor Meeting">
-                    <span class="classification-option__text">Vendor Meeting</span>
-                  </label>
-                  <label class="classification-option">
-                    <input type="checkbox" value="International - Travel Between CONUS and OCONUS">
-                    <span class="classification-option__text">International (CONUS → OCONUS)</span>
-                  </label>
-                  <label class="classification-option">
-                    <input type="checkbox" value="Overseas Employee - Travel within OCONUS">
-                    <span class="classification-option__text">Overseas Employee (within OCONUS)</span>
+                    <input type="checkbox" value="Vendor or Industry Meeting">
+                    <span class="classification-option__text">Vendor or Industry Meeting</span>
                   </label>
                   <label class="classification-option">
                     <input type="checkbox" value="Speaking Engagement">
@@ -511,9 +521,37 @@
                     <span class="classification-option__text">GSA Sponsored Conference</span>
                   </label>
                   <label class="classification-option">
-                    <input type="checkbox" value="Non-GSA Sponsored Conference Attendance (including training)">
-                    <span class="classification-option__text">Non-GSA Conference / Training</span>
+                    <input type="checkbox" value="Non-GSA Sponsored Conference">
+                    <span class="classification-option__text">Non-GSA Sponsored Conference</span>
                   </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Local Travel">
+                    <span class="classification-option__text">Local Travel</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="International">
+                    <span class="classification-option__text">International</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Oversees Employee (within OCONUS)">
+                    <!--
+                      "Oversees" is the tracker's own spelling. Preserved
+                      verbatim in the VALUE because the Google Form matches on
+                      it; the label below is corrected for the reader.
+                    -->
+                    <span class="classification-option__text">Overseas Employee (within OCONUS)</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Training (GSA provided or third party under $7000)">
+                    <span class="classification-option__text">Training (GSA or third party &lt; $7,000)</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Training (third party >= $7000 and CSA required)">
+                    <span class="classification-option__text">Training (third party &ge; $7,000, CSA required)</span>
+                  </label>
+                </div>
+                <div class="classification-column__note" id="travelTypesDerivedNote">
+                  <!-- Filled by the controller when an IMM option is derived. -->
                 </div>
               </div>
 
@@ -525,32 +563,97 @@
                   <span class="classification-column__required">Required</span>
                 </div>
                 <div class="classification-column__hint">Select all that apply</div>
+                <!--
+                  VERBATIM from the tracker's "Type of mission critical travel
+                  (Check all that apply)". The previous list was the prose from
+                  the OAS memo quoted in the tracker's INTRODUCTION, not the
+                  form's own option labels — close in meaning, different
+                  strings, and the Google Form matches on the strings.
+                -->
                 <div class="classification-column__body">
                   <label class="classification-option">
-                    <input type="checkbox" value="Acquisition activities conducted in a Sensitive Compartmented Information Facility (SCIF)">
-                    <span class="classification-option__text">SCIF Acquisition Activities</span>
+                    <input type="checkbox" value="Statutory or Contractual Requirement">
+                    <span class="classification-option__text">Statutory or Contractual Requirement</span>
                   </label>
                   <label class="classification-option">
-                    <input type="checkbox" value="Physical oversight of inventory/deliverables required explicitly by contract, or regulation">
-                    <span class="classification-option__text">Physical Oversight (Inventory/Deliverables)</span>
+                    <input type="checkbox" value="Inspection/Acceptance (e.g., vehicles, manufacturing)">
+                    <span class="classification-option__text">Inspection / Acceptance (vehicles, manufacturing)</span>
                   </label>
                   <label class="classification-option">
-                    <input type="checkbox" value="Physical inspection and acceptance of motor vehicles at manufacturing plants">
-                    <span class="classification-option__text">Vehicle Inspection at Plants</span>
+                    <input type="checkbox" value="SCIF or Secure Facility Activities">
+                    <span class="classification-option__text">SCIF or Secure Facility Activities</span>
                   </label>
                   <label class="classification-option">
-                    <input type="checkbox" value="Oversight of retail operations facilities">
+                    <input type="checkbox" value="Technical Evaluation Board (In-Person Required)">
+                    <span class="classification-option__text">Technical Evaluation Board (in-person required)</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Industry/Customer Engagement Supporting Acquisition">
+                    <span class="classification-option__text">Industry / Customer Engagement Supporting Acquisition</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Mission-Critical Internal Coordination (Not Feasible Virtually)">
+                    <span class="classification-option__text">Mission-Critical Internal Coordination (not feasible virtually)</span>
+                  </label>
+                  <label class="classification-option">
+                    <input type="checkbox" value="Retail Operations Oversight">
                     <span class="classification-option__text">Retail Operations Oversight</span>
                   </label>
-                  <label class="classification-option">
-                    <input type="checkbox" value="Industry engagement related to acquisition activities">
-                    <span class="classification-option__text">Industry Engagement (Acquisitions)</span>
-                  </label>
-                  <label class="classification-option">
-                    <input type="checkbox" value="Technical Evaluation Boards that cannot be conducted virtually">
-                    <span class="classification-option__text">Technical Evaluation Boards</span>
+                  <label class="classification-option classification-option--other">
+                    <input type="checkbox" value="Other" id="missionCriticalOther">
+                    <span class="classification-option__text">Other</span>
                   </label>
                 </div>
+                <div class="classification-column__other" id="missionCriticalOtherWrap" hidden>
+                  <label class="form-label form-label--sm" for="missionCriticalOtherText">
+                    Describe the mission-critical basis
+                  </label>
+                  <input type="text" class="form-control form-control-sm"
+                         id="missionCriticalOtherText" maxlength="200"
+                         placeholder="Required when Other is selected">
+                </div>
+              </div>
+            </div>
+
+            <!--
+              The tracker's SECOND mission-critical question, which the form
+              did not have at all. It is a SINGLE-SELECT: "select the primary
+              reason when multiple reasons apply". Distinct from the
+              multi-select above, and separately required.
+
+              Without it a submission to the tracker is incomplete, which is
+              what validateForFASTracker reports.
+            -->
+            <div class="classification-primary" id="primaryJustificationContainer">
+              <div class="classification-column__header">
+                <i aria-hidden="true" class="fas fa-bullseye"></i>
+                <span>Primary Justification</span>
+                <span class="classification-column__required">Required</span>
+              </div>
+              <div class="classification-column__hint">
+                Select the single primary reason, even when several apply above.
+              </div>
+              <select class="form-select form-select-sm" id="primaryJustification">
+                <option value="">Select the primary reason...</option>
+                <option value="Conference/Event – Speaker / Presenter">Conference/Event &ndash; Speaker / Presenter</option>
+                <option value="Conference/Event – Attendance (Mission-Linked)">Conference/Event &ndash; Attendance (mission-linked)</option>
+                <option value="Customer, vendor, or stakeholder engagement with defined outcome">Customer, vendor or stakeholder engagement with a defined outcome</option>
+                <option value="Contract / Task Order Execution">Contract / Task Order execution</option>
+                <option value="Site inspection, compliance check, requirements validation">Site inspection, compliance check, requirements validation</option>
+                <option value="Contract oversight, performance management, issue resolution">Contract oversight, performance management, issue resolution</option>
+                <option value="Technical work requiring physical presence (e.g., installation, engineering, assessment)">Technical work requiring physical presence</option>
+                <option value="Internal mission coordination critical to delivery (planning, alignment, execution support)">Internal mission coordination critical to delivery</option>
+                <option value="Training required to perform current duties or support an active project">Training required for current duties or an active project</option>
+                <option value="Training or workshop aligned to career development goals">Training or workshop aligned to career development</option>
+                <option value="Other">Other</option>
+              </select>
+              <div class="classification-column__other" id="primaryJustificationOtherWrap" hidden>
+                <label class="form-label form-label--sm" for="primaryJustificationOtherText">
+                  Describe the primary reason
+                </label>
+                <input type="text" class="form-control form-control-sm"
+                       id="primaryJustificationOtherText" maxlength="200"
+                       placeholder="Required when Other is selected">
               </div>
             </div>
 

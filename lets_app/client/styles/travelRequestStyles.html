@@ -6782,4 +6782,67 @@ textarea.focus-expand:focus::placeholder {
     max-width: none;
   }
 }
+
+/* ==========================================================================
+   STEP 4 — PRIMARY JUSTIFICATION AND "OTHER" INPUTS
+   ==========================================================================
+   The FAS exemption tracker asks TWO mission-critical questions: a
+   multi-select "Type of mission critical travel" and a single-select
+   "Justification ... select the primary reason when multiple reasons apply".
+   The form only had the first. The single-select sits BELOW the two-column
+   classification grid because it applies to the whole request rather than to
+   either column.
+   ========================================================================== */
+
+.classification-primary {
+  margin-top: 1rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--color-border, #d7d7d7);
+  border-radius: 6px;
+  background: var(--color-surface-subtle, #fafafa);
+}
+
+.classification-primary .classification-column__header {
+  margin-bottom: 0.25rem;
+}
+
+.classification-primary .form-select {
+  margin-top: 0.4rem;
+}
+
+/* Shown only when "Other" is selected. The tracker's option is literally
+   "Other:" with a text box, so the description is required once chosen —
+   hiding it by default keeps the step uncluttered for the common case. */
+.classification-column__other {
+  margin-top: 0.5rem;
+}
+
+.classification-column__other .form-label {
+  font-size: 0.78rem;
+  margin-bottom: 0.2rem;
+  color: var(--color-text-muted, #666);
+}
+
+.classification-option--other {
+  border-top: 1px solid var(--color-border, #e3e3e3);
+  margin-top: 0.3rem;
+  padding-top: 0.45rem;
+}
+
+/* Tells the submitter which tracker option was added on their behalf. The two
+   Internal Mission Meeting options are derived from the computed grand total
+   rather than asked, and a value appearing in a submission that the user never
+   selected is worse than one they had to choose — unless they can see it. */
+.classification-column__note {
+  margin-top: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 3px;
+  background: rgba(13, 110, 253, 0.07);
+  color: #0a4fa8;
+  font-size: 0.74rem;
+}
+
+.classification-column__note[hidden] {
+  display: none;
+}
 </style>

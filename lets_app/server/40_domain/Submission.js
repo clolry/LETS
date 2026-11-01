@@ -427,6 +427,8 @@ function submitTravelRequestV2(formData) {
 
       // The FAS tracker's single-select primary reason, distinct from the
       // Mission_Critical_Types multi-select above.
+      // Already carries any "Other: <text>" suffix — getFormData resolves that
+      // at the client boundary so no consumer has to reassemble it.
       formData.primaryJustification || '',                         // Primary_Justification
 
       // Distinct traveller org codes. Denormalized onto the request so

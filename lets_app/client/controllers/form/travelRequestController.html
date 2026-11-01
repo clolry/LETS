@@ -409,6 +409,15 @@
         // Step 4: Classification
         travelTypesContainer: document.getElementById('travelTypesContainer'),
         missionCriticalContainer: document.getElementById('missionCriticalContainer'),
+        travelTypesDerivedNote: document.getElementById('travelTypesDerivedNote'),
+        // The tracker's second mission-critical question, a single-select the
+        // form did not previously have.
+        primaryJustification: document.getElementById('primaryJustification'),
+        primaryJustificationOtherWrap: document.getElementById('primaryJustificationOtherWrap'),
+        primaryJustificationOtherText: document.getElementById('primaryJustificationOtherText'),
+        missionCriticalOther: document.getElementById('missionCriticalOther'),
+        missionCriticalOtherWrap: document.getElementById('missionCriticalOtherWrap'),
+        missionCriticalOtherText: document.getElementById('missionCriticalOtherText'),
 
         // Step 5: Shared Costs
         sharedCostsList: document.getElementById('sharedCostsList'),
@@ -561,6 +570,7 @@
           if (e.target.type === 'checkbox') {
             const values = self._collectCheckboxValues('travelTypes', self._elements.travelTypesContainer);
             window.TravelRequest.State.updateField('travelTypes', values);
+            self._updateDerivedPurposeNote();
           }
         });
       }
@@ -571,9 +581,79 @@
           if (e.target.type === 'checkbox') {
             const values = self._collectCheckboxValues('missionCriticalTypes', self._elements.missionCriticalContainer);
             window.TravelRequest.State.updateField('missionCriticalTypes', values);
+            // The tracker's option is literally "Other:" with a text box, so
+            // the description is required once it is chosen.
+            self._toggleOtherInput(
+              self._elements.missionCriticalOtherWrap,
+              values.indexOf('Other') !== -1
+            );
           }
         });
       }
+
+      // "Other" free text for mission critical
+      if (this._elements.missionCriticalOtherText) {
+        this._elements.missionCriticalOtherText.addEventListener('input', function () {
+          window.TravelRequest.State.updateField('missionCriticalOther', this.value);
+        });
+      }
+
+      // Primary justification — the tracker's single-select second question
+      if (this._elements.primaryJustification) {
+        this._elements.primaryJustification.addEventListener('change', function () {
+          window.TravelRequest.State.updateField('primaryJustification', this.value);
+          self._toggleOtherInput(
+            self._elements.primaryJustificationOtherWrap,
+            this.value === 'Other'
+          );
+        });
+      }
+      if (this._elements.primaryJustificationOtherText) {
+        this._elements.primaryJustificationOtherText.addEventListener('input', function () {
+          window.TravelRequest.State.updateField('primaryJustificationOther', this.value);
+        });
+      }
+    },
+
+    /**
+     * Shows or hides an "Other" free-text input.
+     *
+     * Clears the value on hide. Leaving a stale description behind would send
+     * text to the tracker describing an option the submitter has deselected.
+     */
+    _toggleOtherInput(wrap, show) {
+      if (!wrap) return;
+      wrap.hidden = !show;
+      if (!show) {
+        const input = wrap.querySelector('input');
+        if (input && input.value) {
+          input.value = '';
+          const field = input.id === 'missionCriticalOtherText'
+            ? 'missionCriticalOther' : 'primaryJustificationOther';
+          window.TravelRequest.State.updateField(field, '');
+        }
+      }
+    },
+
+    /**
+     * Tells the submitter which tracker option was added on their behalf.
+     *
+     * The two Internal Mission Meeting options are derived from the computed
+     * grand total rather than asked. A value appearing in a submission that
+     * the user never selected is worse than one they had to choose — unless
+     * they can see it.
+     */
+    _updateDerivedPurposeNote() {
+      const el = this._elements.travelTypesDerivedNote;
+      if (!el) return;
+      const derived = window.TravelRequest.State.getDerivedTrackerPurpose();
+      if (!derived) {
+        el.textContent = '';
+        el.hidden = true;
+        return;
+      }
+      el.hidden = false;
+      el.textContent = 'Added automatically from the trip total: "' + derived + '"';
     },
 
     /**
@@ -871,6 +951,11 @@
       const state = window.TravelRequest.State;
       state.setStep(stepNumber);
 
+      // The derived Internal Mission Meeting option depends on the grand
+      // total, which changes in Step 3. Recomputed on entering Step 4 so the
+      // note is never stale.
+      if (stepNumber === 4) this._updateDerivedPurposeNote();
+
       // Get highest step ever completed for navigation
       const highestCompletedStep = state.getHighestCompletedStep();
 
@@ -959,8 +1044,14 @@
           summaryText = `${travelerCount} traveler(s) - ${travelerTotal}`;
           break;
         case 4:
-          const types = formData.travelTypes || [];
-          summaryText = types.length > 0 ? `${types.length} type(s) selected` : 'No types selected';
+          // Counts the DERIVED list, so a request whose only purpose is a
+          // computed Internal Mission Meeting does not read "No types
+          // selected" after being validly completed.
+          const types = state.getTrackerPurposes();
+          const primary = formData.primaryJustification ? ', primary set' : '';
+          summaryText = types.length > 0
+            ? `${types.length} type(s) selected${primary}`
+            : 'No types selected';
           break;
         case 5:
           const sharedTotal = state.formatCurrency(state.getSharedCostsTotal());
@@ -1447,13 +1538,42 @@
       const missionCriticalTypes = state.getField('missionCriticalTypes') || [];
       const stepElement = document.getElementById('accordionStep4');
 
-      if (travelTypes.length === 0) {
+      // getTrackerPurposes may derive an Internal Mission Meeting option from
+      // the Step 1 purpose, so a request can legitimately satisfy the tracker
+      // with no checkbox ticked here.
+      if (travelTypes.length === 0 && state.getTrackerPurposes().length === 0) {
         this._showGeneralError(stepElement, 'Please select at least one Type of Travel');
         return false;
       }
 
       if (missionCriticalTypes.length === 0) {
         this._showGeneralError(stepElement, 'Please select at least one Mission-Critical Travel type');
+        return false;
+      }
+
+      // Both lists end in "Other:" on the tracker, which expects free text.
+      // An "Other" with no description is an incomplete answer to a required
+      // question and would come back to the submitter as a query.
+      if (missionCriticalTypes.indexOf('Other') !== -1 &&
+          !(state.getField('missionCriticalOther') || '').trim()) {
+        this._showGeneralError(stepElement,
+          'Please describe the mission-critical basis you selected as "Other"');
+        return false;
+      }
+
+      // The tracker's second mission-critical question. Separately required,
+      // and the form had no equivalent until now — which is why a submission
+      // would have been rejected as incomplete.
+      const primary = state.getField('primaryJustification') || '';
+      if (!primary) {
+        this._showGeneralError(stepElement,
+          'Please select the primary justification for this travel');
+        return false;
+      }
+      if (primary === 'Other' &&
+          !(state.getField('primaryJustificationOther') || '').trim()) {
+        this._showGeneralError(stepElement,
+          'Please describe the primary justification you selected as "Other"');
         return false;
       }
 
@@ -2225,8 +2345,25 @@
         state.updateField('eventEndDate', formData.eventEndDate || '');
         state.updateField('bluf', formData.bluf || '');
         state.updateField('purpose', formData.purpose || '');
-        state.updateField('travelTypes', formData.travelTypes || []);
-        state.updateField('missionCriticalTypes', formData.missionCriticalTypes || []);
+        // Restore from the *Selected lists, not the tracker-facing ones.
+        // getFormData folds a derived Internal Mission Meeting option into
+        // travelTypes and appends "Other: <text>" to the mission-critical
+        // list; restoring those would turn a computed value into a ticked
+        // checkbox the user never chose, and would leave an un-matchable
+        // "Other: foo" string that no checkbox has.
+        state.updateField('travelTypes',
+          formData.travelTypesSelected || formData.travelTypes || []);
+        state.updateField('missionCriticalTypes',
+          formData.missionCriticalTypesSelected || formData.missionCriticalTypes || []);
+        state.updateField('missionCriticalOther', formData.missionCriticalOther || '');
+        // Strip the "Other: " prefix a submitted value would carry.
+        state.updateField('primaryJustification',
+          String(formData.primaryJustification || '').indexOf('Other: ') === 0
+            ? 'Other' : (formData.primaryJustification || ''));
+        state.updateField('primaryJustificationOther',
+          formData.primaryJustificationOther ||
+          (String(formData.primaryJustification || '').indexOf('Other: ') === 0
+            ? String(formData.primaryJustification).substring(7) : ''));
         state.updateField('draftId', draftId);
 
         // Clear existing legs (from auto-init) before restoring
@@ -2354,19 +2491,42 @@
         this._updateTravelersTotal();
       }
 
-      // Step 4: Classification - check appropriate boxes
-      if (formData.travelTypes && this._elements.travelTypesContainer) {
-        formData.travelTypes.forEach(type => {
+      // Step 4: Classification - check appropriate boxes.
+      // Reads the state, not formData: state has already been normalized back
+      // to the raw selections above, so a derived or "Other: "-prefixed value
+      // cannot be looked up as a checkbox that does not exist.
+      const classificationState = window.TravelRequest.State;
+      const restoredTypes = classificationState.getField('travelTypes') || [];
+      if (this._elements.travelTypesContainer) {
+        restoredTypes.forEach(type => {
           const checkbox = this._elements.travelTypesContainer.querySelector(`input[value="${type}"]`);
           if (checkbox) checkbox.checked = true;
         });
       }
-      if (formData.missionCriticalTypes && this._elements.missionCriticalContainer) {
-        formData.missionCriticalTypes.forEach(type => {
+      const restoredMC = classificationState.getField('missionCriticalTypes') || [];
+      if (this._elements.missionCriticalContainer) {
+        restoredMC.forEach(type => {
           const checkbox = this._elements.missionCriticalContainer.querySelector(`input[value="${type}"]`);
           if (checkbox) checkbox.checked = true;
         });
       }
+      // Both "Other" inputs, and the single-select.
+      if (this._elements.missionCriticalOtherText) {
+        const mcOther = classificationState.getField('missionCriticalOther') || '';
+        this._elements.missionCriticalOtherText.value = mcOther;
+        this._toggleOtherInput(this._elements.missionCriticalOtherWrap,
+          restoredMC.indexOf('Other') !== -1);
+      }
+      if (this._elements.primaryJustification) {
+        const pj = classificationState.getField('primaryJustification') || '';
+        this._elements.primaryJustification.value = pj;
+        if (this._elements.primaryJustificationOtherText) {
+          this._elements.primaryJustificationOtherText.value =
+            classificationState.getField('primaryJustificationOther') || '';
+        }
+        this._toggleOtherInput(this._elements.primaryJustificationOtherWrap, pj === 'Other');
+      }
+      this._updateDerivedPurposeNote();
 
       // Step 5: Shared Costs
       if (formData.sharedCosts && this._elements.sharedCostsList) {
