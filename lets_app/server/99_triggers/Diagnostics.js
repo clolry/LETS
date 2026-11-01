@@ -31,6 +31,7 @@
  *   diagUnresolvedCityNames()   and what GSA calls the ones that do not
  *   diagTripOverviewFields()    whether Trip Overview / budget codes are stored
  *   diagFasTrackerRow()         the exact row LETS would send to the FAS tracker
+ *   diagFasTrackerHeader()      diffs that row's columns against the live sheet
  *
  * The Apps Script editor CANNOT pass arguments — the Run button always calls
  * with none. Everything above therefore takes no parameters. One helper does
@@ -75,6 +76,7 @@ function diagAll() {
   diagDutyStationAirports();
   diagUnresolvedCityNames();
   diagTripOverviewFields();
+  diagFasTrackerHeader();
   diagTriggers();
   diagAccess();
   console.log('================================================================');
@@ -835,6 +837,72 @@ function _columnLetter_(n) {
     n = Math.floor((n - 1) / 26);
   }
   return s;
+}
+
+/**
+ * Compares the live tracker header against FAS_TRACKER_COLUMNS.
+ *
+ * FAS_TRACKER_COLUMNS was transcribed from a paste; nobody on this side has
+ * opened the sheet. diagFasTrackerRow() prints what LETS would send, but
+ * comparing that against a real header BY EYE is unreliable — the live header
+ * contains embedded newlines and at least one trailing space, neither of which
+ * is visible in a log.
+ *
+ * This reads row 1 of whichever sheet the environment gate resolves (the TEST
+ * copy in development) and diffs it cell by cell.
+ *
+ * Read-only.
+ *
+ * @editor
+ */
+function diagFasTrackerHeader() {
+  console.log('');
+  console.log('--- FAS TRACKER HEADER COMPARISON ---');
+  try {
+    if (typeof FASTrackerSync === 'undefined' || !FASTrackerSync.compareTrackerHeader) {
+      console.log('FASTrackerSync is unavailable or does not export compareTrackerHeader.');
+      return;
+    }
+
+    var r = FASTrackerSync.compareTrackerHeader();
+    console.log('Environment: ' + r.environment +
+      (r.isProduction ? '  *** PRODUCTION — this is the OFFICIAL sheet ***' : '  (test copy)'));
+
+    if (!r.success) {
+      console.log('Could not compare: ' + r.message);
+      return;
+    }
+
+    console.log('Target: ' + r.sheetName);
+    console.log('Columns: sheet has ' + r.headerCount + ', LETS expects ' + r.expectedCount);
+    console.log('');
+
+    if (!r.differences.length) {
+      console.log('EXACT MATCH — every column name is byte-identical.');
+    } else {
+      var blocking = r.differences.filter(function (d) {
+        return d.issue !== 'whitespace only (tolerated)' && d.issue !== 'extra column in the sheet';
+      });
+      console.log(r.differences.length + ' difference(s), ' + blocking.length + ' blocking:');
+      r.differences.forEach(function (d) {
+        console.log('');
+        console.log('  ' + d.column + '  ' + d.issue);
+        // JSON-quoted so newlines and trailing spaces are VISIBLE. Printing
+        // them raw is what makes this class of mismatch so hard to spot.
+        console.log('    expected: ' + JSON.stringify(d.expected));
+        console.log('    actual:   ' + JSON.stringify(d.actual));
+      });
+    }
+
+    console.log('');
+    console.log(r.matches
+      ? 'A submission WOULD be allowed — no blocking mismatches.'
+      : 'A submission would be REFUSED. Update FAS_TRACKER_COLUMNS in ' +
+        'server/30_services/FASTrackerSync.gs to match the sheet.');
+
+  } catch (error) {
+    console.log('diagFasTrackerHeader FAILED: ' + error.message);
+  }
 }
 
 /**

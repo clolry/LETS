@@ -84,6 +84,9 @@ jobs:
       - name: Trip Overview field tests
         run: node lets_app/test_trip_overview.js
 
+      - name: FAS tracker test-submission tests
+        run: node lets_app/test_fas_tracker_submit.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -185,6 +188,35 @@ jobs:
             exit 1
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
+
+      - name: 'Guard: FAS tracker writes must refuse production'
+        run: |
+          echo "Checking the FAS test-submission harness refuses production..."
+          # FASTrackerTest.js WRITES to whichever tracker the environment gate
+          # resolves. In production that is the OFFICIAL FAS sheet, owned by the
+          # front office and shared across every portfolio.
+          #
+          # resolveFASTrackerTarget already refuses to resolve production
+          # outside production, but a diagnostic that writes needs its own
+          # refusal — one check failing silently must not be enough.
+          for FN in submitFASTrackerTestRow deleteFASTrackerTestRows; do
+            if ! grep -q "function ${FN}" lets_app/server/91_setup/FASTrackerTest.js; then
+              echo "::error file=lets_app/server/91_setup/FASTrackerTest.js::${FN} is missing."
+              exit 1
+            fi
+          done
+          REFUSALS=$(grep -c 'LETS_IS_PRODUCTION' lets_app/server/91_setup/FASTrackerTest.js || true)
+          if [ "$REFUSALS" -lt 2 ]; then
+            echo "::error file=lets_app/server/91_setup/FASTrackerTest.js::Expected both submitFASTrackerTestRow and deleteFASTrackerTestRows to check LETS_IS_PRODUCTION, found ${REFUSALS} reference(s). Without it a diagnostic can write to or delete from the official FAS tracker."
+            exit 1
+          fi
+          # Cleanup must match on the marker, never on a row number: a stale
+          # index on a shared sheet deletes someone else's request.
+          if ! grep -q 'FAS_TEST_ROW_MARKER' lets_app/server/91_setup/FASTrackerTest.js; then
+            echo "::error file=lets_app/server/91_setup/FASTrackerTest.js::FAS_TEST_ROW_MARKER is gone. Diagnostic rows must be self-identifying so cleanup can find them without relying on row numbers."
+            exit 1
+          fi
+          echo "PASS - FAS tracker writes refuse production and are marked."
 
       - name: 'Guard: submission rows must match their schema width'
         run: |

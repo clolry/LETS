@@ -595,6 +595,120 @@ var FASTrackerSync = (function() {
   }
 
   /**
+   * Reads the resolved tracker's header row and diffs it against
+   * FAS_TRACKER_COLUMNS.
+   *
+   * WHY A PROGRAMMATIC COMPARISON
+   * -----------------------------
+   * FAS_TRACKER_COLUMNS was transcribed from a paste; nobody on this side has
+   * opened the live sheet. The live header contains embedded newlines
+   * ("...Exemption Request\n\nSelect the primary reason...") and at least one
+   * trailing space — differences that are invisible in a log and that a human
+   * comparing two lists will not reliably catch.
+   *
+   * Reports BOTH the normalized comparison (which is what _verifyTrackerHeader
+   * actually enforces) and the exact characters, so a mismatch can be
+   * diagnosed rather than merely detected.
+   *
+   * Read-only.
+   *
+   * @returns {Object} { success, environment, isProduction, sheetName,
+   *                     headerCount, expectedCount, matches, differences[] }
+   */
+  function compareTrackerHeader() {
+    var target = _getTarget();
+    var sheet = _getFASTrackerSheet();
+    if (!sheet) {
+      return {
+        success: false,
+        environment: target.environment,
+        isProduction: target.isProduction,
+        message: 'No FAS tracker target for environment "' + target.environment +
+          '". ' + (target.reason || '')
+      };
+    }
+
+    try {
+      var lastCol = sheet.getLastColumn();
+      var header = lastCol > 0
+        ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h === null || h === undefined ? '' : h); })
+        : [];
+
+      var differences = [];
+      var maxLen = Math.max(header.length, FAS_TRACKER_COLUMNS.length);
+      for (var i = 0; i < maxLen; i++) {
+        var expected = FAS_TRACKER_COLUMNS[i];
+        var actual = header[i];
+        if (expected === undefined) {
+          differences.push({
+            index: i, column: _columnLetterFas_(i + 1),
+            issue: 'extra column in the sheet', expected: null, actual: actual
+          });
+          continue;
+        }
+        if (actual === undefined) {
+          differences.push({
+            index: i, column: _columnLetterFas_(i + 1),
+            issue: 'column missing from the sheet', expected: expected, actual: null
+          });
+          continue;
+        }
+        if (_normalizeHeader(actual) !== _normalizeHeader(expected)) {
+          differences.push({
+            index: i, column: _columnLetterFas_(i + 1),
+            issue: 'name differs', expected: expected, actual: actual
+          });
+        } else if (actual !== expected) {
+          // Normalized match but not byte-identical. Harmless — this is what
+          // _verifyTrackerHeader tolerates — but worth surfacing so the
+          // transcription can be corrected rather than left slightly wrong.
+          differences.push({
+            index: i, column: _columnLetterFas_(i + 1),
+            issue: 'whitespace only (tolerated)', expected: expected, actual: actual
+          });
+        }
+      }
+
+      var blocking = differences.filter(function (d) {
+        return d.issue !== 'whitespace only (tolerated)' &&
+               d.issue !== 'extra column in the sheet';
+      });
+
+      return {
+        success: true,
+        environment: target.environment,
+        isProduction: target.isProduction,
+        sheetName: sheet.getParent().getName() + ' / ' + sheet.getName(),
+        headerCount: header.length,
+        expectedCount: FAS_TRACKER_COLUMNS.length,
+        header: header,
+        differences: differences,
+        // `matches` means a submission would be ALLOWED, not that the
+        // transcription is byte-perfect.
+        matches: blocking.length === 0
+      };
+    } catch (err) {
+      return {
+        success: false,
+        environment: target.environment,
+        isProduction: target.isProduction,
+        message: 'Could not read the tracker header: ' + err.message
+      };
+    }
+  }
+
+  /** 1 -> A, 27 -> AA. Local copy so this module has no external dependency. */
+  function _columnLetterFas_(n) {
+    var out = '';
+    while (n > 0) {
+      var rem = (n - 1) % 26;
+      out = String.fromCharCode(65 + rem) + out;
+      n = Math.floor((n - 1) / 26);
+    }
+    return out;
+  }
+
+  /**
    * Updates an existing row in the FAS Travel Exception Tracker
    * (e.g. to link Salesforce Event Tracker ID or adjust estimated costs)
    *
@@ -675,6 +789,13 @@ var FASTrackerSync = (function() {
     // and so the row can be inspected without writing to a shared sheet.
     validateForFASTracker: validateForFASTracker,
     buildFASTrackerRow: buildFASTrackerRow,
+
+    // Reads row 1 of the resolved target and compares it against
+    // FAS_TRACKER_COLUMNS. Exposed because the column list was transcribed by
+    // hand from a paste, and comparing it against a real header by eye is
+    // exactly the kind of check people get wrong — the live header contains
+    // embedded newlines and trailing spaces that are invisible in a log.
+    compareTrackerHeader: compareTrackerHeader,
     FAS_TRACKER_COLUMNS: FAS_TRACKER_COLUMNS,
     FAS_TRACKER_READONLY_COLUMNS: FAS_TRACKER_READONLY_COLUMNS,
     FAS_PORTFOLIO_CODE: FAS_PORTFOLIO_CODE

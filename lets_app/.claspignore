@@ -13,6 +13,7 @@ test_funding_label.js
 test_ui_fixes.js
 test_fas_tracker_mapping.js
 test_trip_overview.js
+test_fas_tracker_submit.js
 preview.html
 node_modules/**
 .git/**
