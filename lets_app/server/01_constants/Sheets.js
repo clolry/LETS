@@ -114,7 +114,42 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Created_At',
     'Updated_At',
     'Submitted_At',
-    'Version'
+    'Version',
+
+    // ------------------------------------------------------------------
+    // Trip Overview fields. APPENDED AT THE FAR RIGHT — writes are
+    // positional (docs/DATA_DICTIONARY.md §3.9), so never insert above.
+    //
+    // These six inputs have existed in the form since the budget layer was
+    // written and were NEVER STORED. No getElementById call read them and no
+    // column existed to hold them, so every Owning Office, Purpose of Travel
+    // and Set-Aside selection was silently discarded at submission.
+    //
+    // That is why RequestService.createTravelRequest and
+    // BudgetEngine.evaluateBudgetCheck have no callers: the travel form and
+    // the budget engine were two disconnected systems in one project. These
+    // columns are the join.
+    // ------------------------------------------------------------------
+    'Owning_Office',        // FO | OMD | IDV | CM — BudgetConfig.js key
+    'Owning_Org_Code',      // FC | FCA | FCB | FCC — HC_Orgs key
+    'Travel_Purpose',       // FAS delegation code, e.g. FOREIGN_TRAVEL
+    'Travel_Purpose_Label', // human-readable, for the FAS tracker
+    'Set_Aside_Type',       // NONE | DAC_LC | COE_PROGRAM | FO_LC_GAP
+    'Is_Event_Plan_Item',
+    'Is_LC_Travel',
+    'Is_COE_Travel',
+
+    // The tracker's single-select "primary reason when multiple reasons
+    // apply". Separate from Mission_Critical_Types, which is its multi-select
+    // "type of mission critical travel" — the FAS form asks both and the
+    // request form collected neither correctly.
+    'Primary_Justification',
+
+    // Distinct HR org codes across this request's travellers, comma-separated.
+    // Denormalized deliberately: budget attribution is PER TRAVELLER (a
+    // conference can draw from FCA, FCB and FCC at once), and routing needs to
+    // know which DACs must approve without re-reading every traveller row.
+    'Traveler_Org_Codes'
   ],
 
   // Destination/leg info - one row per leg
@@ -188,7 +223,15 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Airfare_Source',          // CITY_PAIR_ESTIMATE | MANUAL
     'Airfare_Origin_Airport',
     'Airfare_Fare_Basis',      // YCA
-    'Airfare_Segments'         // JSON: [{from,to,ycaFare,airline,awardedService}]
+    'Airfare_Segments',        // JSON: [{from,to,ycaFare,airline,awardedService}]
+
+    // Budget attribution. Each traveller is charged to THEIR OWN org, not the
+    // request's owning office: a consolidated conference request can include
+    // people from FCA, FCB and FCC, and each DAC should see only their own
+    // share. Org_Code comes from the traveller's HC position; Office_Code is
+    // the BudgetConfig.js key it maps to via HC_Orgs.
+    'Budget_Org_Code',         // FC | FCA | FCB | FCC
+    'Budget_Office_Code'       // FO | OMD | IDV | CM
   ],
 
   // Per-traveler, per-leg costs - one row per traveler-leg combination

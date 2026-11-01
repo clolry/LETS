@@ -107,9 +107,29 @@
     _formData: {
       // Step 1: Trip Overview
       tripName: '',
-      locationType: '',        // 'conference', 'client-site', 'contractor-site', 'teb', or 'other'
+      locationType: '',        // 'conference', 'client-site', 'contractor-site', 'gsa-site', 'teb', or 'other'
       eventStartDate: '',      // When the event/meeting begins
       eventEndDate: '',        // When the event/meeting ends
+
+      // Budget pool and FAS delegation. These six inputs existed in the form
+      // and were NEVER COLLECTED — no code read them and no column stored
+      // them, so every selection was discarded at submission. That is also
+      // why BudgetEngine has no callers: the form and the budget engine were
+      // disconnected.
+      //
+      // owningOffice is the BudgetConfig.js key (FO/OMD/IDV/CM).
+      // owningOrgCode is the HR code (FC/FCA/FCB/FCC). Both are stored because
+      // they are two namespaces for the same four offices and different
+      // consumers need different ones: budget allocation keys off the office
+      // code, HC and DAC routing off the org code.
+      owningOffice: '',
+      owningOrgCode: '',
+      travelPurpose: '',
+      travelPurposeLabel: '',
+      setAsideType: 'NONE',
+      isEventPlanItem: false,
+      is_LC_Travel: false,
+      is_COE_Travel: false,
 
       // Step 2: Itinerary (array of legs)
       legs: [],
@@ -120,6 +140,10 @@
       // Step 4: Travel Classification
       travelTypes: [],
       missionCriticalTypes: [],
+      // The FAS tracker's single-select "primary reason when multiple reasons
+      // apply". Distinct from missionCriticalTypes, which is its multi-select
+      // "type of mission critical travel" — the tracker asks both.
+      primaryJustification: '',
 
       // Justification (now part of Step 1)
       bluf: '',

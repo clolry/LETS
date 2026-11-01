@@ -373,6 +373,14 @@
         // Step 1: Trip Overview (includes Justification)
         tripName: document.getElementById('tripName'),
         locationType: document.getElementById('locationType'),
+        // Budget pool and FAS delegation. These were rendered but never
+        // cached or read, so their values never left the DOM.
+        owningOffice: document.getElementById('owningOffice'),
+        travelPurpose: document.getElementById('travelPurpose'),
+        setAsideType: document.getElementById('setAsideType'),
+        isEventPlanItem: document.getElementById('isEventPlanItem'),
+        is_LC_Travel: document.getElementById('is_LC_Travel'),
+        is_COE_Travel: document.getElementById('is_COE_Travel'),
         eventStartDate: document.getElementById('eventStartDate'),
         eventEndDate: document.getElementById('eventEndDate'),
         justificationBluf: document.getElementById('justificationBluf'),
@@ -1129,6 +1137,43 @@
       } else {
         state.updateField('locationType', locationType);
       }
+
+      // Owning Office drives budget allocation, so it is required — the label
+      // has always said so, but nothing enforced or stored it.
+      const owningOffice = this._elements.owningOffice?.value;
+      if (!owningOffice) {
+        this._showFieldError(this._elements.owningOffice, 'Please select an owning office');
+        isValid = false;
+      } else {
+        state.updateField('owningOffice', owningOffice);
+        // Store the HR org code alongside the budget office code. They are two
+        // namespaces for the same four offices; HC and DAC routing use one,
+        // BudgetConfig.js the other.
+        state.updateField('owningOrgCode',
+          window.TravelUtils.officeCodeToOrgCode(owningOffice));
+      }
+
+      // Purpose of Travel decides the FAS delegation path, and whether the
+      // request must reach the FAS Travel Exception Tracker at all.
+      const travelPurpose = this._elements.travelPurpose?.value;
+      if (!travelPurpose) {
+        this._showFieldError(this._elements.travelPurpose, 'Please select a purpose of travel');
+        isValid = false;
+      } else {
+        state.updateField('travelPurpose', travelPurpose);
+        // The label is stored too: the FAS tracker wants prose, not a code,
+        // and resolving it server-side would duplicate this option list.
+        const purposeEl = this._elements.travelPurpose;
+        const selected = purposeEl.options[purposeEl.selectedIndex];
+        state.updateField('travelPurposeLabel', selected ? selected.text : travelPurpose);
+      }
+
+      // Optional. Set-aside category is expected to move to the Chief of Staff
+      // approver rather than the requestor, so this is stored but not required.
+      state.updateField('setAsideType', this._elements.setAsideType?.value || 'NONE');
+      state.updateField('isEventPlanItem', !!this._elements.isEventPlanItem?.checked);
+      state.updateField('is_LC_Travel', !!this._elements.is_LC_Travel?.checked);
+      state.updateField('is_COE_Travel', !!this._elements.is_COE_Travel?.checked);
 
       // BLUF required
       const bluf = this._elements.justificationBluf?.value?.trim();

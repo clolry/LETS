@@ -29,6 +29,8 @@
  *
  *   diagDutyStationAirports()   which HC duty stations resolve to an airport
  *   diagUnresolvedCityNames()   and what GSA calls the ones that do not
+ *   diagTripOverviewFields()    whether Trip Overview / budget codes are stored
+ *   diagFasTrackerRow()         the exact row LETS would send to the FAS tracker
  *
  * The Apps Script editor CANNOT pass arguments — the Run button always calls
  * with none. Everything above therefore takes no parameters. One helper does
@@ -72,6 +74,7 @@ function diagAll() {
   diagAirportPrefs();
   diagDutyStationAirports();
   diagUnresolvedCityNames();
+  diagTripOverviewFields();
   diagTriggers();
   diagAccess();
   console.log('================================================================');
@@ -700,6 +703,226 @@ function diagCityNamesForState(stateCode) {
 
   } catch (error) {
     console.log('diagCityNamesForState FAILED: ' + error.message);
+  }
+}
+
+/**
+ * Prints the FAS tracker row LETS would submit, beside the expected columns.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * submitToFASTracker appends to a LIVE sheet owned by the FAS front office and
+ * shared across every FAS portfolio. A misaligned row is an uncorrectable
+ * write to another organisation's system of record.
+ *
+ * The previous implementation wrote 14 values in an order matching nothing —
+ * its comments claimed column D was Portfolio where the real column D is Event
+ * Name. FAS_TRACKER_COLUMNS now fixes the order, but that list was
+ * hand-transcribed from what @clolry pasted, and I have never seen the live
+ * sheet. A transcription error that happens to pass _verifyTrackerHeader is
+ * still possible.
+ *
+ * So: run this, read the pairs, and compare against the real sheet by eye
+ * BEFORE anything is wired up to submit. buildFASTrackerRow and
+ * validateForFASTracker live inside the FASTrackerSync IIFE and both take
+ * arguments, so neither can be run from the editor dropdown — hence this
+ * zero-argument wrapper.
+ *
+ * READ-ONLY. Builds a row in memory and prints it. Nothing is written
+ * anywhere, and the sample request below is fictional.
+ *
+ * @editor
+ */
+function diagFasTrackerRow() {
+  console.log('');
+  console.log('--- FAS TRACKER ROW MAPPING ---');
+  try {
+    if (typeof FASTrackerSync === 'undefined' || !FASTrackerSync.buildFASTrackerRow) {
+      console.log('FASTrackerSync is unavailable or does not export buildFASTrackerRow.');
+      return;
+    }
+
+    console.log('Environment: ' + FASTrackerSync.getEnvironment());
+    console.log('Portfolio code LETS sends: ' + FASTrackerSync.FAS_PORTFOLIO_CODE);
+    console.log('');
+    console.log('NOTE: FCA/FCB/FCC are DIVISIONS within FC. The tracker asks for');
+    console.log('      the portfolio, so it always receives the FC code above.');
+    console.log('      The division codes drive internal DAC routing instead.');
+
+    // Fictional. Deliberately exercises a two-traveller, two-org request,
+    // because that is the case the single-office form could not represent.
+    var sample = {
+      requestId: 'LETS-DIAG',
+      eventName: 'DIAGNOSTIC SAMPLE — not a real request',
+      startDate: '2027-03-15',
+      endDate: '2027-03-17',
+      submitterEmail: (function () {
+        try { return Session.getActiveUser().getEmail() || ''; } catch (e) { return ''; }
+      })(),
+      salesforceLink: '',
+      travelTypes: ['Customer Meeting', 'Site Visits, Inspections, Acceptance, Delivery'],
+      missionCriticalTypes: ['Industry/Customer Engagement Supporting Acquisition'],
+      primaryJustification: 'Customer, vendor, or stakeholder engagement with defined outcome',
+      isInternational: false,
+      isOCONUS: false,
+      sharedTotal: 500,
+      grandTotal: 3224,
+      legs: [{ city: 'CHICAGO', state: 'IL', country: 'United States' }],
+      travelers: [
+        { employeeName: 'Sample Traveler A', orgCode: 'FCA',
+          dutyStationCity: 'WASHINGTON', dutyStationState: 'DC',
+          transportationTotal: 224, lodgingTotal: 900, mieTotal: 300,
+          localTravelTotal: 0, otherTotal: 430 },
+        { employeeName: 'Sample Traveler B', orgCode: 'FCB',
+          dutyStationCity: 'PHILADELPHIA', dutyStationState: 'PA',
+          transportationTotal: 180, lodgingTotal: 600, mieTotal: 200,
+          localTravelTotal: 0, otherTotal: 290 }
+      ]
+    };
+
+    var check = FASTrackerSync.validateForFASTracker(sample);
+    console.log('');
+    console.log('Validation: ' + (check.valid ? 'complete' :
+      'INCOMPLETE — ' + check.missing.join('; ')));
+
+    var row = FASTrackerSync.buildFASTrackerRow(sample);
+    var cols = FASTrackerSync.FAS_TRACKER_COLUMNS;
+    var readonly = FASTrackerSync.FAS_TRACKER_READONLY_COLUMNS || [];
+
+    console.log('');
+    console.log('Row width: ' + row.length + ' (tracker has ' + cols.length + ' columns)');
+    if (row.length !== cols.length) {
+      console.log('  *** WIDTH MISMATCH — do not submit ***');
+    }
+    console.log('');
+    console.log('Column-by-column. Compare the LEFT side against the live sheet header:');
+    for (var i = 0; i < cols.length; i++) {
+      var letter = _columnLetter_(i + 1);
+      var name = String(cols[i]).replace(/\s+/g, ' ').trim();
+      var value = row[i];
+      var shown;
+      if (readonly.indexOf(cols[i]) !== -1) {
+        shown = '[blank — FAS front office owns this column]';
+      } else if (value === '' || value === null || value === undefined) {
+        shown = '[empty]';
+      } else {
+        // Multi-line cells are collapsed for readability; the real cell keeps
+        // its newlines, which is deliberate (option labels contain commas).
+        shown = String(value).replace(/\n/g, ' | ');
+        if (shown.length > 90) shown = shown.substring(0, 87) + '...';
+      }
+      console.log('  ' + letter + '  ' + name);
+      console.log('       -> ' + shown);
+    }
+
+    console.log('');
+    console.log('If any column name above does not match the live sheet, update');
+    console.log('FAS_TRACKER_COLUMNS in server/30_services/FASTrackerSync.gs.');
+    console.log('submitToFASTracker refuses to write when the header disagrees,');
+    console.log('so a mismatch blocks the submission rather than corrupting a row.');
+
+  } catch (error) {
+    console.log('diagFasTrackerRow FAILED: ' + error.message);
+  }
+}
+
+/** 1 -> A, 27 -> AA. For comparing against a spreadsheet by eye. */
+function _columnLetter_(n) {
+  var s = '';
+  while (n > 0) {
+    var rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+/**
+ * Trip Overview and budget-attribution fields on recent requests.
+ *
+ * Six Trip Overview inputs existed in the form for the entire life of the
+ * budget layer and were NEVER STORED — no JS read them and no column held
+ * them, so every Owning Office and Purpose of Travel selection was discarded
+ * at submission. That is also why BudgetEngine has no callers.
+ *
+ * This shows whether the new columns are actually being populated. Expect
+ * blanks on anything submitted before the columns existed; that is correct,
+ * not a bug.
+ *
+ * @editor
+ */
+function diagTripOverviewFields() {
+  console.log('');
+  console.log('--- TRIP OVERVIEW / BUDGET ATTRIBUTION ---');
+  try {
+    if (!TRAVEL_DB_SPREADSHEET_ID) {
+      console.log('TRAVEL_DB_SPREADSHEET_ID unset; skipping.');
+      return;
+    }
+    var ss = SpreadsheetApp.openById(TRAVEL_DB_SPREADSHEET_ID);
+    var sheet = ss.getSheetByName(SHEET_NAMES.REQUESTS);
+    if (!sheet) {
+      console.log('Requests tab missing. Run setupTravelDatabase().');
+      return;
+    }
+
+    var schema = TRAVEL_SHEET_SCHEMAS[SHEET_NAMES.REQUESTS];
+    var width = sheet.getLastColumn();
+    console.log('Requests columns: sheet has ' + width + ', schema expects ' + schema.length);
+    if (width < schema.length) {
+      console.log('  -> run setupTravelDatabase() to widen the header row');
+      return;
+    }
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      console.log('No requests yet.');
+      return;
+    }
+
+    var c = {};
+    schema.forEach(function (h, i) { c[h] = i; });
+    var take = Math.min(5, lastRow - 1);
+    var rows = sheet.getRange(lastRow - take + 1, 1, take, schema.length).getValues();
+
+    console.log('Last ' + take + ' request(s):');
+    rows.forEach(function (r) {
+      console.log('');
+      console.log('  ' + r[c['Request_ID']] + '  ' + r[c['Trip_Name']]);
+      console.log('    Owning_Office:      ' + (r[c['Owning_Office']] || '[empty]'));
+      console.log('    Owning_Org_Code:    ' + (r[c['Owning_Org_Code']] || '[empty]'));
+      console.log('    Travel_Purpose:     ' + (r[c['Travel_Purpose']] || '[empty]'));
+      console.log('    Set_Aside_Type:     ' + (r[c['Set_Aside_Type']] || '[empty]'));
+      console.log('    Primary_Justification: ' + (r[c['Primary_Justification']] || '[empty]'));
+      console.log('    Traveler_Org_Codes: ' + (r[c['Traveler_Org_Codes']] || '[empty]'));
+    });
+
+    // Per-traveller attribution is the point: a consolidated request can draw
+    // on FCA, FCB and FCC at once, and each DAC should see only their share.
+    var tSheet = ss.getSheetByName(SHEET_NAMES.REQUEST_TRAVELERS);
+    if (tSheet && tSheet.getLastRow() > 1) {
+      var tSchema = TRAVEL_SHEET_SCHEMAS[SHEET_NAMES.REQUEST_TRAVELERS];
+      if (tSheet.getLastColumn() >= tSchema.length) {
+        var tc = {};
+        tSchema.forEach(function (h, i) { tc[h] = i; });
+        var tTake = Math.min(8, tSheet.getLastRow() - 1);
+        var tRows = tSheet.getRange(tSheet.getLastRow() - tTake + 1, 1, tTake, tSchema.length).getValues();
+        console.log('');
+        console.log('Last ' + tTake + ' traveller row(s), budget attribution:');
+        tRows.forEach(function (r) {
+          console.log('  ' + (r[tc['Employee_Name']] || '?') +
+            '  org=' + (r[tc['Budget_Org_Code']] || '[empty]') +
+            '  office=' + (r[tc['Budget_Office_Code']] || '[empty]') +
+            '  subtotal=' + (r[tc['Subtotal']] || 0));
+        });
+      } else {
+        console.log('');
+        console.log('Request_Travelers is narrower than its schema; run setupTravelDatabase().');
+      }
+    }
+
+  } catch (error) {
+    console.log('diagTripOverviewFields FAILED: ' + error.message);
   }
 }
 

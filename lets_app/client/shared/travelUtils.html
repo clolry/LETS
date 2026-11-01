@@ -125,6 +125,32 @@ window.TravelUtils = (function() {
     // and without it a reviewer sees only a city.
     LOCATION_TYPES_WITH_SITE: ['client-site', 'contractor-site', 'gsa-site'],
 
+    /**
+     * Budget office code -> HR org code, and the display names for both.
+     *
+     * Two namespaces for the same four offices, confirmed with @clolry:
+     *
+     *   FC  = Front Office / AC   -> budget key FO
+     *   FCA = OMD DAC             -> budget key OMD
+     *   FCB = IDV DAC             -> budget key IDV
+     *   FCC = CM DAC              -> budget key CM
+     *
+     * Both are stored on a request because different consumers need different
+     * ones: BudgetConfig.js allocates against the OFFICE code, while HC_Orgs,
+     * HC positions and DAC approval routing all key off the ORG code.
+     *
+     * Note the FAS Travel Exception Tracker wants NEITHER — its Portfolio
+     * field is portfolio-level ('FC - Office of Acquisition Solutions
+     * Development (CREATE)'), and FCA/FCB/FCC are divisions within it. See
+     * FAS_PORTFOLIO_CODE in FASTrackerSync.js.
+     */
+    OFFICES: [
+      { officeCode: 'FO',  orgCode: 'FC',  name: 'Front Office / AC' },
+      { officeCode: 'OMD', orgCode: 'FCA', name: 'OMD DAC' },
+      { officeCode: 'IDV', orgCode: 'FCB', name: 'IDV DAC' },
+      { officeCode: 'CM',  orgCode: 'FCC', name: 'CM DAC' }
+    ],
+
     // Character limits
     CHAR_LIMITS: {
       BLUF: 500,
@@ -300,6 +326,38 @@ window.TravelUtils = (function() {
   // ==========================================================================
   // EXPORTS
   // ==========================================================================
+  /**
+   * HR org code for a budget office code, or '' when unknown.
+   * Deliberately NOT a fallback to the input: a wrong org code would attribute
+   * budget to the wrong DAC, which is worse than an empty one.
+   */
+  function officeCodeToOrgCode(officeCode) {
+    var code = String(officeCode || '').trim().toUpperCase();
+    for (var i = 0; i < TRAVEL_CONFIG.OFFICES.length; i++) {
+      if (TRAVEL_CONFIG.OFFICES[i].officeCode === code) return TRAVEL_CONFIG.OFFICES[i].orgCode;
+    }
+    return '';
+  }
+
+  /** Budget office code for an HR org code, or '' when unknown. */
+  function orgCodeToOfficeCode(orgCode) {
+    var code = String(orgCode || '').trim().toUpperCase();
+    for (var i = 0; i < TRAVEL_CONFIG.OFFICES.length; i++) {
+      if (TRAVEL_CONFIG.OFFICES[i].orgCode === code) return TRAVEL_CONFIG.OFFICES[i].officeCode;
+    }
+    return '';
+  }
+
+  /** Display name for either code form, or '' when unknown. */
+  function officeDisplayName(code) {
+    var c = String(code || '').trim().toUpperCase();
+    for (var i = 0; i < TRAVEL_CONFIG.OFFICES.length; i++) {
+      var o = TRAVEL_CONFIG.OFFICES[i];
+      if (o.officeCode === c || o.orgCode === c) return o.name;
+    }
+    return '';
+  }
+
 
   return {
     // Configuration
@@ -330,7 +388,12 @@ window.TravelUtils = (function() {
     showToast,
 
     // Status helpers
-    getStatusInfo
+    getStatusInfo,
+
+    // Office / org code mapping (FO<->FC, OMD<->FCA, IDV<->FCB, CM<->FCC)
+    officeCodeToOrgCode,
+    orgCodeToOfficeCode,
+    officeDisplayName
   };
 })();
 </script>

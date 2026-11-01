@@ -147,10 +147,18 @@
                       <label class="form-label required">Owning Office (Primary Budget Pool)</label>
                       <select class="form-select form-select-sm" id="owningOffice" required onchange="onLetsOfficeChange(this.value)">
                         <option value="">Select Owning Office...</option>
-                        <option value="OMD">OMD DAC</option>
-                        <option value="IDV">IDV DAC</option>
-                        <option value="CM">CM DAC</option>
-                        <option value="FO">Front Office / AC</option>
+                        <!--
+                          The VALUE is the BudgetConfig.js office key; the label
+                          shows the HR org code alongside it because that is
+                          what appears in HC_Positions and on the org chart.
+                          Two namespaces for the same four offices, confirmed
+                          with @clolry: FC=Front Office, FCA=OMD, FCB=IDV,
+                          FCC=CM. TravelUtils.OFFICES is the single mapping.
+                        -->
+                        <option value="OMD">FCA &mdash; OMD DAC</option>
+                        <option value="IDV">FCB &mdash; IDV DAC</option>
+                        <option value="CM">FCC &mdash; CM DAC</option>
+                        <option value="FO">FC &mdash; Front Office / AC</option>
                       </select>
                     </div>
                     <div class="col-md-7">

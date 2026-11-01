@@ -81,6 +81,9 @@ jobs:
       - name: FAS tracker column mapping tests
         run: node lets_app/test_fas_tracker_mapping.js
 
+      - name: Trip Overview field tests
+        run: node lets_app/test_trip_overview.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -182,6 +185,43 @@ jobs:
             exit 1
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
+
+      - name: 'Guard: submission rows must match their schema width'
+        run: |
+          echo "Checking positional row widths against the schemas..."
+          # Sheet writes are POSITIONAL (docs/DATA_DICTIONARY.md 3.9). A row one
+          # value short shifts every column after it, silently.
+          #
+          # This already happened: Submission.js wrote 38 values into a
+          # 40-column Request_Travelers schema because DD_Confirmed and
+          # DD_Confirmed_At were omitted. It was benign ONLY because the two
+          # missing columns happened to be last — appending anything after them
+          # would have put every new value in the wrong cell.
+          node -e "
+            const fs=require('fs'), vm=require('vm');
+            const ctx=vm.createContext({console});
+            vm.runInContext(fs.readFileSync('lets_app/server/01_constants/Sheets.js','utf8'),ctx);
+            const S=vm.runInContext('TRAVEL_SHEET_SCHEMAS',ctx);
+            const s=fs.readFileSync('lets_app/server/40_domain/Submission.js','utf8');
+            function count(open,close){
+              const i=s.indexOf(open), j=s.indexOf(close,i);
+              const b=s.slice(i+open.length,j).split('\n').map(l=>l.replace(/\/\/.*\$/,'')).join('\n');
+              let d=0,n=1;
+              for(const ch of b){ if('([{'.includes(ch))d++; else if(')]}'.includes(ch))d--; else if(ch===','&&d===0)n++; }
+              return n;
+            }
+            const a=count('const requestRow = [','\n    ];');
+            const b=count('travelerRows.push([','      ]);');
+            let bad=false;
+            if(a!==S.Requests.length){ console.error('requestRow has '+a+' values, Requests schema has '+S.Requests.length); bad=true; }
+            if(b!==S.Request_Travelers.length){ console.error('travelerRow has '+b+' values, Request_Travelers schema has '+S.Request_Travelers.length); bad=true; }
+            if(bad) process.exit(1);
+            console.log('requestRow '+a+'/'+S.Requests.length+', travelerRow '+b+'/'+S.Request_Travelers.length);
+          " || {
+            echo "::error file=lets_app/server/40_domain/Submission.js::A submission row does not match its schema width. Writes are positional, so every column after the gap is written to the wrong cell."
+            exit 1
+          }
+          echo "PASS - row widths match."
 
       - name: 'Guard: FAS tracker row must be built from the column list'
         run: |

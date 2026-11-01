@@ -142,7 +142,22 @@ function getRequestForReview(requestId, db) {
       createdAt: formatDateValue(requestRow[reqIndex['Created_At']]),
       updatedAt: formatDateValue(requestRow[reqIndex['Updated_At']]),
       submittedAt: formatDateValue(requestRow[reqIndex['Submitted_At']]),
-      version: parseInt(requestRow[reqIndex['Version']]) || 1
+      version: parseInt(requestRow[reqIndex['Version']]) || 1,
+
+      // Trip Overview. Blank on any request submitted before these columns
+      // existed — which is every request so far, because the form never
+      // stored them.
+      owningOffice: requestRow[reqIndex['Owning_Office']] || '',
+      owningOrgCode: requestRow[reqIndex['Owning_Org_Code']] || '',
+      travelPurpose: requestRow[reqIndex['Travel_Purpose']] || '',
+      travelPurposeLabel: requestRow[reqIndex['Travel_Purpose_Label']] || '',
+      setAsideType: requestRow[reqIndex['Set_Aside_Type']] || 'NONE',
+      isEventPlanItem: requestRow[reqIndex['Is_Event_Plan_Item']] === true,
+      is_LC_Travel: requestRow[reqIndex['Is_LC_Travel']] === true,
+      is_COE_Travel: requestRow[reqIndex['Is_COE_Travel']] === true,
+      primaryJustification: requestRow[reqIndex['Primary_Justification']] || '',
+      travelerOrgCodes: String(requestRow[reqIndex['Traveler_Org_Codes']] || '')
+        .split(',').map(function (c) { return c.trim(); }).filter(Boolean)
     };
 
     // ========== Load Legs ==========
@@ -244,7 +259,14 @@ function getRequestForReview(requestId, db) {
                 (travelersRows[i][travelerIndex['Traveler_ID']] || '?'));
               return [];
             }
-          })(travelersRows[i][travelerIndex['Airfare_Segments']])
+          })(travelersRows[i][travelerIndex['Airfare_Segments']]),
+
+          // Budget attribution. Rows submitted before these columns existed
+          // have no values; they fall back to blank rather than to the
+          // request's owning office, so a reviewer can see that the
+          // attribution was never recorded instead of being shown a guess.
+          budgetOrgCode: travelersRows[i][travelerIndex['Budget_Org_Code']] || '',
+          budgetOfficeCode: travelersRows[i][travelerIndex['Budget_Office_Code']] || ''
         });
       }
     }

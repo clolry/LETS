@@ -215,6 +215,77 @@ function determineInitialRouting(submitterEmail, sectorDirector, buReviewer, tra
  * @returns {Object} successResponse({ requestId, grandTotal, attachmentsFolder, message }) or errorResponse(msg)
  * @client
  */
+// ============================================================================
+// OFFICE / ORG CODE MAPPING
+// ============================================================================
+//
+// Two namespaces for the same four offices, confirmed with @clolry:
+//
+//   FC  = Front Office / AC   -> budget key FO
+//   FCA = OMD DAC             -> budget key OMD
+//   FCB = IDV DAC             -> budget key IDV
+//   FCC = CM DAC              -> budget key CM
+//
+// Mirrors TravelUtils.OFFICES on the client. Duplicated deliberately rather
+// than shared: a submission must produce a complete row even if the client
+// omits the derived field, and a server that trusts the client to map its own
+// budget codes can be sent any value at all.
+//
+// Note the FAS Travel Exception Tracker wants NEITHER form — its Portfolio
+// field is portfolio-level ('FC - Office of Acquisition Solutions Development
+// (CREATE)') and FCA/FCB/FCC are divisions within it. See FAS_PORTFOLIO_CODE.
+
+var LETS_OFFICE_MAP = [
+  { officeCode: 'FO',  orgCode: 'FC' },
+  { officeCode: 'OMD', orgCode: 'FCA' },
+  { officeCode: 'IDV', orgCode: 'FCB' },
+  { officeCode: 'CM',  orgCode: 'FCC' }
+];
+
+/**
+ * HR org code for a budget office code, or '' when unrecognised.
+ *
+ * Returns '' rather than echoing the input: a wrong org code attributes budget
+ * to the wrong DAC, which is worse than an empty one that shows up as missing.
+ */
+function _officeCodeToOrgCode_(officeCode) {
+  var code = String(officeCode || '').trim().toUpperCase();
+  for (var i = 0; i < LETS_OFFICE_MAP.length; i++) {
+    if (LETS_OFFICE_MAP[i].officeCode === code) return LETS_OFFICE_MAP[i].orgCode;
+  }
+  return '';
+}
+
+/** Budget office code for an HR org code, or '' when unrecognised. */
+function _orgCodeToOfficeCode_(orgCode) {
+  var code = String(orgCode || '').trim().toUpperCase();
+  for (var i = 0; i < LETS_OFFICE_MAP.length; i++) {
+    if (LETS_OFFICE_MAP[i].orgCode === code) return LETS_OFFICE_MAP[i].officeCode;
+  }
+  return '';
+}
+
+/**
+ * Distinct HR org codes across a traveller list, in first-seen order.
+ *
+ * Denormalized onto the request row so DAC routing can determine which
+ * approvals are needed without re-reading every traveller row. @clolry: a
+ * request only needs the DAC of an org if someone from that org is travelling,
+ * and multiple DACs approve in parallel.
+ */
+function _distinctTravelerOrgCodes_(travelers) {
+  var seen = {};
+  var out = [];
+  (travelers || []).forEach(function (t) {
+    var code = String((t && t.orgCode) || '').trim().toUpperCase();
+    if (!code || seen[code]) return;
+    seen[code] = true;
+    out.push(code);
+  });
+  return out;
+}
+
+
 function submitTravelRequestV2(formData) {
   try {
     // Validate required data
@@ -335,7 +406,34 @@ function submitTravelRequestV2(formData) {
       now,                                                         // Created_At (native Date)
       now,                                                         // Updated_At (native Date)
       now,                                                         // Submitted_At (native Date)
-      1                                                            // Version
+      1,                                                           // Version
+
+      // ----- Trip Overview. Previously DISCARDED at submission -----
+      // These six inputs existed in the form, were never read by any JS, and
+      // had no column to land in. Owning Office is labelled required and
+      // drives budget allocation; it was silently dropped on every request.
+      formData.owningOffice || '',                                 // Owning_Office
+      // Both code forms are stored. BudgetConfig.js allocates against the
+      // office code; HC_Orgs, HC positions and DAC routing use the org code.
+      // Derived server-side as well as client-side so a client that omits it
+      // still produces a complete row.
+      formData.owningOrgCode || _officeCodeToOrgCode_(formData.owningOffice), // Owning_Org_Code
+      formData.travelPurpose || '',                                // Travel_Purpose
+      formData.travelPurposeLabel || '',                           // Travel_Purpose_Label
+      formData.setAsideType || 'NONE',                             // Set_Aside_Type
+      Boolean(formData.isEventPlanItem),                           // Is_Event_Plan_Item
+      Boolean(formData.is_LC_Travel),                              // Is_LC_Travel
+      Boolean(formData.is_COE_Travel),                             // Is_COE_Travel
+
+      // The FAS tracker's single-select primary reason, distinct from the
+      // Mission_Critical_Types multi-select above.
+      formData.primaryJustification || '',                         // Primary_Justification
+
+      // Distinct traveller org codes. Denormalized onto the request so
+      // routing can tell which DACs must approve without re-reading every
+      // traveller row — a consolidated conference can draw on FCA, FCB and
+      // FCC at once.
+      _distinctTravelerOrgCodes_(formData.travelers).join(',')     // Traveler_Org_Codes
     ];
 
     // Write request row
@@ -515,7 +613,18 @@ function submitTravelRequestV2(formData) {
             console.warn('Submission: could not serialize airfareSegments: ' + e.message);
             return '';
           }
-        })()
+        })(),
+
+        // ----- Budget attribution, PER TRAVELLER -----
+        // Each person is charged to their own org, not the request's owning
+        // office. A consolidated conference request can include people from
+        // FCA, FCB and FCC, and each DAC should see only their own share.
+        //
+        // Falls back to the request's owning org when a traveller has no HC
+        // org code — better to attribute somewhere reviewable than nowhere.
+        traveler.orgCode || formData.owningOrgCode ||
+          _officeCodeToOrgCode_(formData.owningOffice) || '',       // Budget_Org_Code
+        _orgCodeToOfficeCode_(traveler.orgCode) || formData.owningOffice || '' // Budget_Office_Code
       ]);
     });
 

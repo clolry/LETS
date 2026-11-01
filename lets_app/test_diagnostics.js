@@ -82,11 +82,19 @@ console.log('2. every diag function is reachable and returns nothing');
     function isTravelAdmin(){return true;}
     function getAccessInventory(){return {success:true,hcDerivedEnabled:true,
       roleHolders:[],hcSupervisors:[],buLeads:[]};}
+    var FASTrackerSync={
+      getEnvironment:()=>'development',
+      FAS_PORTFOLIO_CODE:'FC - Office of Acquisition Solutions Development (CREATE)',
+      FAS_TRACKER_COLUMNS:['Timestamp','Portfolio','Status:'],
+      FAS_TRACKER_READONLY_COLUMNS:['Status:'],
+      validateForFASTracker:()=>({valid:true,missing:[]}),
+      buildFASTrackerRow:()=>['11/01/2026','FC',''] };
   `,ctx);
   vm.runInContext(fs.readFileSync(SRC,'utf8'),ctx,{filename:'Diagnostics.js'});
 
   ['diagEnvironment','diagCityPairs','diagHcData','diagAirportPrefs','diagTriggers',
-   'diagDutyStationAirports','diagUnresolvedCityNames','diagAccess','diagAll']
+   'diagDutyStationAirports','diagUnresolvedCityNames','diagTripOverviewFields',
+   'diagFasTrackerRow','diagAccess','diagAll']
     .forEach(fn=>{
       let threw=null,ret;
       try{ ret=vm.runInContext(fn+'()',ctx); }catch(e){ threw=e; }
