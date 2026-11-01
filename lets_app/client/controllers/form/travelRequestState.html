@@ -138,6 +138,11 @@
       travelers: [],
 
       // Step 4: Travel Classification
+      //
+      // travelTypes is NO LONGER ASKED. The tracker's "Purpose of Travel"
+      // list is derived in getTrackerPurposes() from the Step 1 delegation
+      // code plus computed itinerary flags. The field is retained only so a
+      // draft saved before that change still loads without error.
       travelTypes: [],
       missionCriticalTypes: [],
       // The FAS tracker's single-select "primary reason when multiple reasons
@@ -291,7 +296,9 @@
       //   3. the raw selections are preserved separately so the form can be
       //      re-rendered from a draft without the derived value becoming a
       //      checkbox the user never ticked
-      data.travelTypesSelected = (this._formData.travelTypes || []).slice();
+      // travelTypes is fully derived now, so there is no raw selection to
+      // preserve — but the key is kept for draft-format compatibility.
+      data.travelTypesSelected = [];
       data.travelTypes = this.getTrackerPurposes();
       data.missionCriticalTypes = this.getMissionCriticalForTracker();
       data.missionCriticalTypesSelected = (this._formData.missionCriticalTypes || []).slice();
@@ -1151,55 +1158,161 @@
     },
 
     /**
-     * The tracker's Purpose of Travel list, with the cost-dependent options
-     * derived rather than asked.
+     * The tracker's "Select Purpose of Travel (check all that apply)" list,
+     * derived ENTIRELY from data the form already holds.
      *
-     * The FAS tracker splits Internal Mission Meeting at $10,000:
+     * WHY THIS IS NOT A CHECKBOX LIST ANY MORE
+     * ----------------------------------------
+     * Step 4 previously asked the submitter to pick these, duplicating a
+     * question Step 1 had already asked in different words. @clolry's example:
+     * for an internal management meeting he could not tell what Type of Travel
+     * to choose — because he had already said IMM_UNDER_10K in Step 1 and the
+     * form was asking again.
      *
-     *   "Internal Mission Meeting (all travelers under $10,000)"
-     *   "Internal Mission Meeting (all travelers >= $10,000 and Event Tracker req'd)"
+     * Every one of the tracker's 13 options is knowable without asking:
      *
-     * LETS already knows the grand total, so asking a submitter to classify
-     * their own request against a threshold they have not been shown invites
-     * the wrong answer — and the answer would go stale the moment a cost
-     * changed. Neither option appears as a checkbox; both are computed here.
+     *   nine     map 1:1 from the Step 1 FAS delegation code
+     *   two      Internal Mission Meeting, split by the COMPUTED total
+     *   one      Training, split by the Step 1 threshold code
+     *   one      Local Travel, from the per-leg isLocalTravel flag
+     *   one      Oversees Employee, from isOCONUS on an attended leg
      *
-     * Only added when the request is actually an internal management meeting,
-     * which is what the Step 1 Purpose of Travel delegation code says. The two
-     * namespaces are different questions: the Step 1 code drives FAS
-     * delegation tiering, this list is the tracker's own taxonomy.
+     * so the column was removed. A derived answer is also more reliable than
+     * an asked one here: the IMM and Training splits are thresholds the
+     * submitter has not been shown, and the local/OCONUS flags are computed
+     * from distance and state.
      *
-     * @returns {Array<string>} the stored selections plus any derived option
+     * THREE STEP 1 CODES SEND NOTHING. HAE_PARTICIPATION, NON_FED_FUNDED and
+     * CLIENT_PAID have no tracker equivalent. Per @clolry: only data the
+     * tracker asks for goes to the tracker, so these stay internal to LETS and
+     * contribute no purpose. They still drive delegation tiering and the
+     * Step 1 banner.
+     *
+     * @returns {Array<string>} tracker-recognised purpose strings
      */
     getTrackerPurposes() {
-      const selected = (this._formData.travelTypes || []).slice();
       const purpose = this._formData.travelPurpose || '';
+      const out = [];
+      const add = function (v) { if (out.indexOf(v) === -1) out.push(v); };
 
-      // IMM_OVER_10K / IMM_UNDER_10K are the Step 1 delegation codes. The
-      // submitter's own threshold choice there is NOT trusted for the tracker:
-      // the computed total is authoritative, and the two can disagree if costs
-      // changed after Step 1 was filled in.
+      // --- 1:1 delegation-code mappings ---------------------------------
+      // Keys are the Step 1 option values; values are the tracker's exact
+      // option strings. The tracker is a Google Form and rejects anything it
+      // does not recognise, so these cannot be re-worded.
+      const DIRECT = {
+        COMPLIANCE_SITE_VISIT: 'Site Visits, Inspections, Acceptance, Delivery',
+        CUSTOMER_ENGAGEMENT: 'Customer Meeting',
+        VENDOR_ENGAGEMENT: 'Vendor or Industry Meeting',
+        SPEAKING_ROLE: 'Speaking Engagement',
+        GSA_SPONSORED: 'GSA Sponsored Conference',
+        NON_GSA_CONFERENCE: 'Non-GSA Sponsored Conference',
+        FOREIGN_TRAVEL: 'International',
+        TRAINING_UNDER_7K: 'Training (GSA provided or third party under $7000)',
+        TRAINING_OVER_7K: 'Training (third party >= $7000 and CSA required)'
+      };
+      if (DIRECT[purpose]) add(DIRECT[purpose]);
+
+      // --- Internal Mission Meeting, split by the COMPUTED total ---------
+      // The submitter's own Step 1 threshold choice is deliberately NOT
+      // trusted: costs change in Step 3 after Step 1 is filled in, and the
+      // computed total is authoritative.
       if (purpose === 'IMM_OVER_10K' || purpose === 'IMM_UNDER_10K') {
-        const total = this.getGrandTotal();
-        selected.push(total >= 10000
+        add(this.getGrandTotal() >= 10000
           ? "Internal Mission Meeting (all travelers >= $10,000 and Event Tracker req'd)"
           : 'Internal Mission Meeting (all travelers under $10,000)');
       }
-      return selected;
+
+      // --- flags computed from the itinerary and travellers --------------
+      // These are additive: a customer meeting can also be international, and
+      // the tracker's question is "check all that apply".
+      if (this._anyLegIsInternational()) add('International');
+      if (this._anyLegIsLocalTravel()) add('Local Travel');
+      if (this._anyTravelerIsOCONUSBased()) add('Oversees Employee (within OCONUS)');
+
+      return out;
+    },
+
+    /** True when any leg is outside the United States. */
+    _anyLegIsInternational() {
+      return (this._formData.legs || []).some(function (leg) {
+        return leg.isInternational === true ||
+               (leg.country && leg.country !== 'United States');
+      });
     },
 
     /**
-     * The derived IMM option, or '' when none applies.
+     * True when any traveller has a leg flagged as local travel.
      *
-     * Exposed separately so the form can TELL the submitter what was added on
-     * their behalf. A value appearing in a submission that the user never
-     * selected is worse than one they had to choose, unless they can see it.
+     * Read from legCosts rather than the leg itself: local travel is a
+     * per-traveller determination (distance from THEIR duty station), so the
+     * same leg can be local for one person and not another.
      */
-    getDerivedTrackerPurpose() {
-      const all = this.getTrackerPurposes();
-      const selected = this._formData.travelTypes || [];
-      const derived = all.filter(function (v) { return selected.indexOf(v) === -1; });
-      return derived.length ? derived[0] : '';
+    _anyLegIsLocalTravel() {
+      return (this._formData.travelers || []).some(function (t) {
+        const costs = t.legCosts || {};
+        return Object.keys(costs).some(function (legId) {
+          return costs[legId] && costs[legId].isLocalTravel === true;
+        });
+      });
+    },
+
+    /**
+     * True when a traveller is based OCONUS.
+     *
+     * The tracker's option is "Oversees Employee (within OCONUS)" — travel BY
+     * someone stationed outside the continental US, not travel TO such a
+     * place. So this checks duty stations, not destinations.
+     */
+    _anyTravelerIsOCONUSBased() {
+      const isOCONUS = (window.TravelUtils && window.TravelUtils.isOCONUS)
+        ? window.TravelUtils.isOCONUS
+        : function () { return false; };
+      return (this._formData.travelers || []).some(function (t) {
+        return !!t.dutyStationState && isOCONUS(t.dutyStationState);
+      });
+    },
+
+    /**
+     * Human-readable explanation of each derived purpose.
+     *
+     * Step 4 no longer asks for these, so the submitter must be able to see
+     * what is being sent on their behalf and why. A value appearing in a
+     * submission that nobody chose is only acceptable if it is visible and
+     * attributable.
+     *
+     * @returns {Array<{value: string, reason: string}>}
+     */
+    getTrackerPurposeExplanations() {
+      const purpose = this._formData.travelPurpose || '';
+      const label = (function (sel) {
+        const el = document.getElementById('travelPurpose');
+        if (!el) return sel;
+        for (let i = 0; i < el.options.length; i++) {
+          if (el.options[i].value === sel) return el.options[i].text;
+        }
+        return sel;
+      })(purpose);
+
+      const out = [];
+      const purposes = this.getTrackerPurposes();
+
+      purposes.forEach((value) => {
+        let reason;
+        if (/^Internal Mission Meeting/.test(value)) {
+          reason = 'Purpose of Travel is "' + label + '" and the trip total is ' +
+                   this.formatCurrency(this.getGrandTotal());
+        } else if (value === 'Local Travel') {
+          reason = 'at least one traveller has a leg within the local-travel radius';
+        } else if (value === 'Oversees Employee (within OCONUS)') {
+          reason = 'at least one traveller is based outside the continental US';
+        } else if (value === 'International' && this._anyLegIsInternational()) {
+          reason = 'at least one leg is outside the United States';
+        } else {
+          reason = 'Purpose of Travel is "' + label + '"';
+        }
+        out.push({ value: value, reason: reason });
+      });
+      return out;
     },
 
     /**

@@ -6845,4 +6845,69 @@ textarea.focus-expand:focus::placeholder {
 .classification-column__note[hidden] {
   display: none;
 }
+
+/* ==========================================================================
+   STEP 4 — DERIVED PURPOSE OF TRAVEL
+   ==========================================================================
+   Purpose of Travel is no longer asked. It is derived from the Step 1 FAS
+   delegation code plus computed itinerary flags, so this column DISPLAYS what
+   will be sent rather than collecting it.
+
+   Styled as read-only information, not as an input: no borders suggesting
+   editability, no hover states. A submitter who tries to click these should
+   get no affordance back.
+   ========================================================================== */
+
+.classification-column__derived {
+  margin-left: auto;
+  padding: 0.1rem 0.4rem;
+  border-radius: 10px;
+  background: rgba(13, 110, 253, 0.1);
+  color: #0a4fa8;
+  font-size: 0.66rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.classification-derived {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.35rem 0;
+}
+
+.classification-derived + .classification-derived {
+  border-top: 1px solid var(--color-border, #eee);
+}
+
+.classification-derived__icon {
+  margin-top: 0.15rem;
+  color: #146c43;
+  font-size: 0.7rem;
+}
+
+.classification-derived__value {
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+/* Each derived value names the input it came from. A value appearing in a
+   submission that nobody chose is only acceptable if it is attributable. */
+.classification-derived__reason {
+  font-size: 0.72rem;
+  color: var(--color-text-muted, #777);
+  line-height: 1.3;
+}
+
+/* Three Step 1 codes have no tracker equivalent, so an empty list is a valid
+   state rather than an error — but it needs explaining. */
+.classification-derived__empty {
+  padding: 0.4rem 0;
+  font-size: 0.76rem;
+  color: var(--color-text-muted, #777);
+  line-height: 1.4;
+}
 </style>

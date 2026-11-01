@@ -98,20 +98,16 @@ function valuesIn(containerId){
   return [...block.matchAll(/<input type="checkbox" value="([^"]+)"/g)].map(m=>m[1]);
 }
 
-console.log('1. Type of Travel options are the tracker\'s, verbatim');
+console.log('1. Purpose of Travel is derived, not asked');
 {
-  const got=valuesIn('travelTypesContainer');
-  got.forEach(v=>ok('tracker recognises "'+v.slice(0,40)+'"', TRACKER_PURPOSES.indexOf(v)>-1, v));
-  // The two cost-split options are DERIVED, not asked: LETS knows the total,
-  // and asking a submitter to classify against a threshold they have not been
-  // shown invites the wrong answer.
-  ok('IMM options are not checkboxes',
-     !got.some(v=>/Internal Mission Meeting/.test(v)), got.filter(v=>/Internal/.test(v)));
-  ok('11 of the 13 offered', got.length===11, got.length);
-  // Inherited TRIP values the tracker does not have.
-  ok('no "Internal Travel"', got.indexOf('Internal Travel')===-1);
-  ok('no "Vendor Meeting"', got.indexOf('Vendor Meeting')===-1);
-  ok('no CONUS/OCONUS phrasing', !got.some(v=>/CONUS and OCONUS/.test(v)));
+  // The checkbox column was removed. @clolry could not tell what to pick for
+  // an internal management meeting, because Step 1 had already asked.
+  ok('no travel-types checkbox column', page.indexOf('id="travelTypesContainer"')===-1);
+  ok('derived panel present instead', page.indexOf('id="derivedPurposeList"')>-1);
+  ok('labelled as automatic', /Determined automatically/.test(page));
+  // Nothing in the page should offer these as choices any more.
+  ok('no Customer Meeting checkbox', page.indexOf('type="checkbox" value="Customer Meeting"')===-1);
+  ok('no Local Travel checkbox', page.indexOf('type="checkbox" value="Local Travel"')===-1);
 }
 
 console.log('2. Mission-critical options are the tracker\'s, verbatim');
@@ -137,39 +133,84 @@ console.log('3. Primary justification exists and matches the tracker');
   ok('en-dash preserved', opts.some(v=>v.indexOf('\u2013')>-1), opts[0]);
 }
 
-console.log('4. derived IMM option follows the computed total');
+console.log('4. all 13 tracker purposes derive from data the form already has');
 {
   const src=fs.readFileSync('lets_app/client/controllers/form/travelRequestState.html','utf8');
   const js=/<script[^>]*>([\s\S]*)<\/script>/.exec(src)[1];
   function state(formData){
-    const sb={console,JSON,Object,Array,String,Number,parseFloat,parseInt,isNaN,Math,Date};
+    const sb={console,JSON,Object,Array,String,Number,parseFloat,parseInt,isNaN,Math,Date,
+      document:{getElementById:()=>null}};
     sb.window=sb;
     const ctx=vm.createContext(sb);
-    // travelRequestState reads TravelUtils at load time for mileage rates.
-    vm.runInContext('var TravelUtils={TRAVEL_CONFIG:{MILEAGE_RATES:{PRIVATE:0.70,GOVERNMENT:0.22},OTHER_COST_PERCENTAGE_FALLBACK:30}};window.TravelUtils=TravelUtils;',ctx);
+    vm.runInContext('var TravelUtils={TRAVEL_CONFIG:{MILEAGE_RATES:{PRIVATE:0.70,GOVERNMENT:0.22},OTHER_COST_PERCENTAGE_FALLBACK:30},isOCONUS:function(s){return ["HI","AK","PR","GU","VI","AS","MP"].indexOf(String(s||"").toUpperCase())>-1;}};window.TravelUtils=TravelUtils;',ctx);
     vm.runInContext('window.TravelRequest={getOtherCostPercentage:()=>30};',ctx);
     vm.runInContext(js,ctx);
     const S=vm.runInContext('window.TravelRequest.State',ctx);
-    Object.assign(S._formData, formData);
+    const base={legs:[],travelers:[],
+      sharedCosts:{facilities:{amount:0},audioVisual:{amount:0},logistics:{amount:0},other:{amount:0}}};
+    Object.assign(S._formData, base, formData);
     return S;
   }
-  const under=state({travelPurpose:'IMM_UNDER_10K',travelTypes:['Customer Meeting'],
-    travelers:[{subtotal:4000}],sharedCosts:{facilities:{amount:0},audioVisual:{amount:0},logistics:{amount:0},other:{amount:0}}});
-  ok('under 10k picks the under option',
-     under.getTrackerPurposes().some(v=>/under \$10,000/.test(v)), under.getTrackerPurposes());
-  const over=state({travelPurpose:'IMM_UNDER_10K',travelTypes:['Customer Meeting'],
-    travelers:[{subtotal:12000}],sharedCosts:{facilities:{amount:0},audioVisual:{amount:0},logistics:{amount:0},other:{amount:0}}});
-  // The submitter's own Step 1 threshold choice is NOT trusted: costs can
-  // change after Step 1 is filled in, and the computed total is authoritative.
-  ok('computed total overrides the Step 1 choice',
+
+  // Nine 1:1 mappings from the Step 1 delegation code.
+  const DIRECT={
+    COMPLIANCE_SITE_VISIT:'Site Visits, Inspections, Acceptance, Delivery',
+    CUSTOMER_ENGAGEMENT:'Customer Meeting',
+    VENDOR_ENGAGEMENT:'Vendor or Industry Meeting',
+    SPEAKING_ROLE:'Speaking Engagement',
+    GSA_SPONSORED:'GSA Sponsored Conference',
+    NON_GSA_CONFERENCE:'Non-GSA Sponsored Conference',
+    FOREIGN_TRAVEL:'International',
+    TRAINING_UNDER_7K:'Training (GSA provided or third party under $7000)',
+    TRAINING_OVER_7K:'Training (third party >= $7000 and CSA required)'};
+  Object.keys(DIRECT).forEach(code=>{
+    const got=state({travelPurpose:code}).getTrackerPurposes();
+    ok(code+' -> '+DIRECT[code].slice(0,30), got.indexOf(DIRECT[code])>-1, got);
+    ok(code+' is recognised by the tracker', TRACKER_PURPOSES.indexOf(DIRECT[code])>-1);
+  });
+
+  // IMM split by the COMPUTED total, not the submitter's Step 1 guess.
+  const under=state({travelPurpose:'IMM_UNDER_10K',travelers:[{subtotal:4000}]});
+  ok('IMM under 10k', under.getTrackerPurposes().some(v=>/under \$10,000/.test(v)), under.getTrackerPurposes());
+  const over=state({travelPurpose:'IMM_UNDER_10K',travelers:[{subtotal:12000}]});
+  ok('computed total overrides the Step 1 threshold choice',
      over.getTrackerPurposes().some(v=>/>= \$10,000/.test(v)), over.getTrackerPurposes());
-  const none=state({travelPurpose:'CUSTOMER_ENGAGEMENT',travelTypes:['Customer Meeting'],
-    travelers:[{subtotal:12000}],sharedCosts:{facilities:{amount:0},audioVisual:{amount:0},logistics:{amount:0},other:{amount:0}}});
-  ok('no IMM option when not an internal meeting',
-     !none.getTrackerPurposes().some(v=>/Internal Mission/.test(v)), none.getTrackerPurposes());
-  ok('derived value is reportable to the user',
-     over.getDerivedTrackerPurpose().indexOf('Internal Mission')>-1, over.getDerivedTrackerPurpose());
-  ok('nothing derived reports empty', none.getDerivedTrackerPurpose()==='');
+
+  // Computed itinerary and duty-station flags, additive to the purpose.
+  const intl=state({travelPurpose:'CUSTOMER_ENGAGEMENT',
+    legs:[{city:'LONDON',country:'United Kingdom',isInternational:true}]});
+  ok('international leg adds International', intl.getTrackerPurposes().indexOf('International')>-1, intl.getTrackerPurposes());
+  ok('and keeps the mapped purpose', intl.getTrackerPurposes().indexOf('Customer Meeting')>-1);
+
+  const local=state({travelPurpose:'CUSTOMER_ENGAGEMENT',
+    travelers:[{subtotal:100,legCosts:{L1:{isLocalTravel:true}}}]});
+  ok('local travel flag adds Local Travel', local.getTrackerPurposes().indexOf('Local Travel')>-1, local.getTrackerPurposes());
+
+  const oconus=state({travelPurpose:'CUSTOMER_ENGAGEMENT',
+    travelers:[{subtotal:100,dutyStationState:'HI'}]});
+  // The tracker's option is travel BY an OCONUS-based employee, not travel TO
+  // an OCONUS place — so this reads duty stations, not destinations.
+  ok('OCONUS duty station adds Oversees Employee',
+     oconus.getTrackerPurposes().indexOf('Oversees Employee (within OCONUS)')>-1, oconus.getTrackerPurposes());
+  const conus=state({travelPurpose:'CUSTOMER_ENGAGEMENT',
+    travelers:[{subtotal:100,dutyStationState:'DC'}]});
+  ok('CONUS duty station does not', conus.getTrackerPurposes().indexOf('Oversees Employee (within OCONUS)')===-1);
+
+  // Three Step 1 codes have no tracker equivalent, by decision: only data the
+  // tracker asks for goes to the tracker.
+  ['HAE_PARTICIPATION','NON_FED_FUNDED','CLIENT_PAID'].forEach(code=>{
+    ok(code+' sends no purpose', state({travelPurpose:code}).getTrackerPurposes().length===0,
+       state({travelPurpose:code}).getTrackerPurposes());
+  });
+  ok('no purpose at all with nothing selected', state({}).getTrackerPurposes().length===0);
+
+  // Every derived value must be explainable, since nobody chose it.
+  const expl=over.getTrackerPurposeExplanations();
+  ok('explanations provided', expl.length>0, expl);
+  ok('each has a value and a reason', expl.every(e=>e.value&&e.reason), expl);
+  ok('IMM reason cites the total', expl.some(e=>/trip total/.test(e.reason)), expl);
+  ok('derived values never exceed the tracker list',
+     over.getTrackerPurposes().every(v=>TRACKER_PURPOSES.indexOf(v)>-1), over.getTrackerPurposes());
 }
 
 console.log('5. "Other" carries its free text to the tracker');
@@ -218,17 +259,18 @@ console.log('6. getFormData resolves tracker values but preserves raw selections
   vm.runInContext(js,ctx);
   const S=vm.runInContext('window.TravelRequest.State',ctx);
   S._formData.travelPurpose='IMM_OVER_10K';
-  S._formData.travelTypes=['Customer Meeting'];
   S._formData.travelers=[{subtotal:15000}];
+  S._formData.legs=[];
   S._formData.missionCriticalTypes=['Other'];
   S._formData.missionCriticalOther='Site emergency';
   const d=S.getFormData();
   ok('travelTypes includes the derived option',
      d.travelTypes.some(v=>/Internal Mission/.test(v)), d.travelTypes);
-  // Restoring a draft from the tracker-facing list would turn a computed value
-  // into a ticked checkbox the user never chose.
-  ok('raw selections preserved separately',
-     d.travelTypesSelected.length===1 && d.travelTypesSelected[0]==='Customer Meeting',
+  // travelTypes is now FULLY derived, so there is no raw selection to
+  // preserve. The key remains only so a draft saved before the column was
+  // removed still loads.
+  ok('no raw travel-type selections to keep',
+     Array.isArray(d.travelTypesSelected) && d.travelTypesSelected.length===0,
      d.travelTypesSelected);
   ok('mission critical carries Other text',
      d.missionCriticalTypes[0]==='Other: Site emergency', d.missionCriticalTypes);
@@ -236,16 +278,37 @@ console.log('6. getFormData resolves tracker values but preserves raw selections
      d.missionCriticalTypesSelected[0]==='Other', d.missionCriticalTypesSelected);
 }
 
-console.log('7. validation requires the new fields');
+console.log('7. validation requires what the user must still answer');
 {
   const c=fs.readFileSync('lets_app/client/controllers/form/travelRequestController.html','utf8');
   ok('primary justification required', /primary justification for this travel/.test(c));
   ok('Other description required for mission critical', /describe the mission-critical basis/.test(c));
   ok('Other description required for primary', /describe the primary justification/.test(c));
-  // A derived IMM option can satisfy the tracker with no checkbox ticked.
-  ok('derived purposes count toward the type requirement',
-     /getTrackerPurposes\(\)\.length === 0/.test(c), 'validation does not consider derived');
-  ok('derived note is shown to the user', /_updateDerivedPurposeNote/.test(c));
+  // Purpose of Travel is derived and three Step 1 codes map to nothing, so
+  // blocking on an empty derived list would strand the submitter on a step
+  // where the problem cannot be fixed.
+  ok('does not block on derived purposes', !/at least one Type of Travel/.test(c));
+  ok('derived panel is rendered', /_updateDerivedPurposeNote/.test(c));
+  ok('primary justification is suggested from mission-critical',
+     /_suggestPrimaryJustification/.test(c));
+}
+
+console.log('8. the primary-justification suggestion never overwrites a choice');
+{
+  const c=fs.readFileSync('lets_app/client/controllers/form/travelRequestController.html','utf8');
+  const i=c.indexOf('_suggestPrimaryJustification(missionCriticalValues)');
+  const body=c.slice(i, c.indexOf('\n    },', i));
+  // Overwriting a deliberate choice because a checkbox changed would be worse
+  // than not suggesting at all — the mapping is a heuristic and the tracker
+  // lists do not correspond one-to-one.
+  ok('returns early when already set', /if \(!select \|\| select\.value\) return;/.test(body), body.slice(0,200));
+  // A typo in the map would otherwise silently blank the select.
+  ok('verifies the option exists', /select\.value !== suggested/.test(body));
+  // Suggestions must themselves be real tracker values.
+  const suggested=[...body.matchAll(/:\s*\n?\s*'([^']{20,})'/g)].map(m=>m[1]);
+  ok('found suggestions to check', suggested.length>=5, suggested.length);
+  suggested.forEach(v=>ok('suggestion is a tracker value: '+v.slice(0,34),
+    TRACKER_PRIMARY.indexOf(v)>-1, v));
 }
 console.log(fails?('\n'+fails+' FAILURE(S)'):'\nALL ASSERTIONS PASSED!');
 process.exit(fails?1:0);

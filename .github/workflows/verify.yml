@@ -205,17 +205,25 @@ jobs:
           # The previous lists were the inherited TRIP taxonomy and the prose
           # from the OAS memo quoted in the tracker's introduction, neither of
           # which the form matches.
-          if grep -q 'value="Internal Travel"' lets_app/client/pages/travelRequestPage.html; then
-            echo "::error file=lets_app/client/pages/travelRequestPage.html::\"Internal Travel\" is not a FAS tracker option. Step 4 values must match the tracker's own strings verbatim."
+          # Any purpose string that reaches the tracker must be one of its own.
+          # "Internal Travel" was the inherited TRIP wording and does not exist
+          # in the tracker.
+          if grep -q "'Internal Travel'" lets_app/client/controllers/form/travelRequestState.html; then
+            echo "::error file=lets_app/client/controllers/form/travelRequestState.html::\"Internal Travel\" is not a FAS tracker option. getTrackerPurposes() must only emit the tracker's own strings."
             exit 1
           fi
           if grep -q 'Sensitive Compartmented Information Facility' lets_app/client/pages/travelRequestPage.html; then
             echo "::error file=lets_app/client/pages/travelRequestPage.html::The mission-critical list has reverted to the OAS memo prose. The tracker's option label is \"SCIF or Secure Facility Activities\"."
             exit 1
           fi
-          # The tracker's typo must be preserved in the VALUE.
-          if ! grep -q 'value="Oversees Employee (within OCONUS)"' lets_app/client/pages/travelRequestPage.html; then
-            echo "::error file=lets_app/client/pages/travelRequestPage.html::The \"Oversees Employee (within OCONUS)\" value is missing or was spell-corrected. That is the tracker's own spelling and the Google Form matches on it."
+          # The tracker's typo must be preserved. The string now lives in
+          # getTrackerPurposes() rather than the page, because Purpose of
+          # Travel is derived — but it is still the value the Google Form
+          # matches on, and spell-correcting it is the obvious well-meant
+          # change that would break submission.
+          if ! grep -q "Oversees Employee (within OCONUS)" \
+               lets_app/client/controllers/form/travelRequestState.html; then
+            echo "::error file=lets_app/client/controllers/form/travelRequestState.html::The \"Oversees Employee (within OCONUS)\" value is missing or was spell-corrected in getTrackerPurposes(). That is the tracker's own spelling and the Google Form matches on it."
             exit 1
           fi
           # The second mission-critical question the form previously lacked.
@@ -223,9 +231,17 @@ jobs:
             echo "::error file=lets_app/client/pages/travelRequestPage.html::The primary-justification single-select is missing. The tracker requires it separately from the mission-critical multi-select, and a submission without it is incomplete."
             exit 1
           fi
-          # The cost-split options must stay derived, not asked.
-          if grep -q 'type="checkbox" value="Internal Mission Meeting' lets_app/client/pages/travelRequestPage.html; then
-            echo "::error file=lets_app/client/pages/travelRequestPage.html::An Internal Mission Meeting option was added as a checkbox. Both are derived from the computed grand total; asking a submitter to classify against a threshold they have not been shown invites the wrong answer."
+          # Purpose of Travel must stay DERIVED. It duplicated Step 1's
+          # Purpose of Travel in different words, and @clolry could not tell
+          # what to pick for an internal management meeting because he had
+          # already said so in Step 1. All 13 tracker options are knowable from
+          # the Step 1 delegation code plus computed itinerary flags.
+          if grep -q 'id="travelTypesContainer"' lets_app/client/pages/travelRequestPage.html; then
+            echo "::error file=lets_app/client/pages/travelRequestPage.html::The Type of Travel checkbox column is back. Purpose of Travel is derived in getTrackerPurposes() from Step 1 and the trip details; asking again duplicates a question the submitter has already answered."
+            exit 1
+          fi
+          if ! grep -q 'id="derivedPurposeList"' lets_app/client/pages/travelRequestPage.html; then
+            echo "::error file=lets_app/client/pages/travelRequestPage.html::The derived Purpose of Travel panel is missing. A value sent to the tracker that nobody selected must be visible and attributable to the submitter."
             exit 1
           fi
           echo "PASS - Step 4 options match the tracker."

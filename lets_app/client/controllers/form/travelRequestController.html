@@ -407,9 +407,9 @@
         travelersTotal: document.getElementById('travelersTotal'),
 
         // Step 4: Classification
-        travelTypesContainer: document.getElementById('travelTypesContainer'),
+        // travelTypesContainer is gone: Purpose of Travel is derived, not asked.
         missionCriticalContainer: document.getElementById('missionCriticalContainer'),
-        travelTypesDerivedNote: document.getElementById('travelTypesDerivedNote'),
+        derivedPurposeList: document.getElementById('derivedPurposeList'),
         // The tracker's second mission-critical question, a single-select the
         // form did not previously have.
         primaryJustification: document.getElementById('primaryJustification'),
@@ -564,16 +564,8 @@
     _bindClassificationEvents() {
       const self = this;
 
-      // Travel types
-      if (this._elements.travelTypesContainer) {
-        this._elements.travelTypesContainer.addEventListener('change', (e) => {
-          if (e.target.type === 'checkbox') {
-            const values = self._collectCheckboxValues('travelTypes', self._elements.travelTypesContainer);
-            window.TravelRequest.State.updateField('travelTypes', values);
-            self._updateDerivedPurposeNote();
-          }
-        });
-      }
+      // No travel-types handler: Purpose of Travel is derived from Step 1 and
+      // the trip details, so there is nothing to collect here.
 
       // Mission critical
       if (this._elements.missionCriticalContainer) {
@@ -587,6 +579,7 @@
               self._elements.missionCriticalOtherWrap,
               values.indexOf('Other') !== -1
             );
+            self._suggestPrimaryJustification(values);
           }
         });
       }
@@ -636,24 +629,100 @@
     },
 
     /**
-     * Tells the submitter which tracker option was added on their behalf.
+     * Shows every derived Purpose of Travel value and WHY it was derived.
      *
-     * The two Internal Mission Meeting options are derived from the computed
-     * grand total rather than asked. A value appearing in a submission that
-     * the user never selected is worse than one they had to choose — unless
-     * they can see it.
+     * Step 4 no longer asks for these. A value appearing in a submission that
+     * nobody chose is only acceptable if it is visible and attributable, so
+     * each line names the input it came from — the Step 1 purpose, the trip
+     * total, or a computed itinerary flag.
+     *
+     * Also warns when nothing resolves. Three Step 1 codes
+     * (HAE_PARTICIPATION, NON_FED_FUNDED, CLIENT_PAID) have no tracker
+     * equivalent by design, so a request can legitimately send no purpose —
+     * but the submitter should know that rather than discover it later.
      */
     _updateDerivedPurposeNote() {
-      const el = this._elements.travelTypesDerivedNote;
+      const el = this._elements.derivedPurposeList;
       if (!el) return;
-      const derived = window.TravelRequest.State.getDerivedTrackerPurpose();
-      if (!derived) {
-        el.textContent = '';
-        el.hidden = true;
+
+      const state = window.TravelRequest.State;
+      const explained = state.getTrackerPurposeExplanations();
+
+      if (!explained.length) {
+        const purpose = state.getField('travelPurpose');
+        el.innerHTML = '<div class="classification-derived__empty">' +
+          (purpose
+            ? 'This Purpose of Travel has no FAS tracker equivalent, so no ' +
+              'purpose will be sent. That is expected for Highly Attended ' +
+              'Events, Non-Federal Funded events and Client-Paid travel.'
+            : 'Select a Purpose of Travel in Step 1 and this will fill in ' +
+              'automatically.') +
+          '</div>';
         return;
       }
-      el.hidden = false;
-      el.textContent = 'Added automatically from the trip total: "' + derived + '"';
+
+      el.innerHTML = explained.map(function (item) {
+        return '<div class="classification-derived">' +
+          '<i aria-hidden="true" class="fas fa-check classification-derived__icon"></i>' +
+          '<div>' +
+            '<div class="classification-derived__value">' + escapeHtml(item.value) + '</div>' +
+            '<div class="classification-derived__reason">' + escapeHtml(item.reason) + '</div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    },
+
+    /**
+     * Pre-selects a likely Primary Justification from the mission-critical
+     * choice, if the user has not already chosen one.
+     *
+     * @clolry asked whether the two are duplicative. They are not — the
+     * tracker requires both and they ask different questions: mission-critical
+     * is which POLICY EXEMPTION applies under the travel suspension, primary
+     * justification is the BUSINESS REASON for the trip. But the wording
+     * overlaps enough that a suggestion saves real work.
+     *
+     * Only ever suggests into an EMPTY field. Overwriting a deliberate choice
+     * because a checkbox changed would be worse than not suggesting at all,
+     * and the mapping is a heuristic — the tracker lists do not correspond
+     * one-to-one.
+     */
+    _suggestPrimaryJustification(missionCriticalValues) {
+      const select = this._elements.primaryJustification;
+      if (!select || select.value) return;
+
+      // Heuristic, not a mapping. Several mission-critical types have no
+      // obvious primary reason, and those are deliberately absent so the
+      // submitter chooses rather than accepting a poor guess.
+      const SUGGESTIONS = {
+        'Inspection/Acceptance (e.g., vehicles, manufacturing)':
+          'Site inspection, compliance check, requirements validation',
+        'Industry/Customer Engagement Supporting Acquisition':
+          'Customer, vendor, or stakeholder engagement with defined outcome',
+        'Mission-Critical Internal Coordination (Not Feasible Virtually)':
+          'Internal mission coordination critical to delivery (planning, alignment, execution support)',
+        'Technical Evaluation Board (In-Person Required)':
+          'Technical work requiring physical presence (e.g., installation, engineering, assessment)',
+        'Retail Operations Oversight':
+          'Contract oversight, performance management, issue resolution',
+        'Statutory or Contractual Requirement':
+          'Contract / Task Order Execution'
+      };
+
+      for (let i = 0; i < (missionCriticalValues || []).length; i++) {
+        const suggested = SUGGESTIONS[missionCriticalValues[i]];
+        if (!suggested) continue;
+        select.value = suggested;
+        // Only accept it if the option actually exists — a typo in the map
+        // would otherwise silently blank the select.
+        if (select.value !== suggested) {
+          select.value = '';
+          continue;
+        }
+        window.TravelRequest.State.updateField('primaryJustification', suggested);
+        this._toggleOtherInput(this._elements.primaryJustificationOtherWrap, false);
+        return;
+      }
     },
 
     /**
@@ -1534,17 +1603,13 @@
      */
     _validateClassification() {
       const state = window.TravelRequest.State;
-      const travelTypes = state.getField('travelTypes') || [];
       const missionCriticalTypes = state.getField('missionCriticalTypes') || [];
       const stepElement = document.getElementById('accordionStep4');
 
-      // getTrackerPurposes may derive an Internal Mission Meeting option from
-      // the Step 1 purpose, so a request can legitimately satisfy the tracker
-      // with no checkbox ticked here.
-      if (travelTypes.length === 0 && state.getTrackerPurposes().length === 0) {
-        this._showGeneralError(stepElement, 'Please select at least one Type of Travel');
-        return false;
-      }
+      // Purpose of Travel is NOT validated here. It is derived from Step 1 and
+      // the trip details, and three Step 1 codes legitimately map to nothing —
+      // so an empty derived list is not a user error and cannot be fixed on
+      // this step. Blocking on it would strand the submitter.
 
       if (missionCriticalTypes.length === 0) {
         this._showGeneralError(stepElement, 'Please select at least one Mission-Critical Travel type');
@@ -2351,8 +2416,7 @@
         // list; restoring those would turn a computed value into a ticked
         // checkbox the user never chose, and would leave an un-matchable
         // "Other: foo" string that no checkbox has.
-        state.updateField('travelTypes',
-          formData.travelTypesSelected || formData.travelTypes || []);
+        // travelTypes is derived, so a draft's stored value is ignored.
         state.updateField('missionCriticalTypes',
           formData.missionCriticalTypesSelected || formData.missionCriticalTypes || []);
         state.updateField('missionCriticalOther', formData.missionCriticalOther || '');
@@ -2496,13 +2560,7 @@
       // to the raw selections above, so a derived or "Other: "-prefixed value
       // cannot be looked up as a checkbox that does not exist.
       const classificationState = window.TravelRequest.State;
-      const restoredTypes = classificationState.getField('travelTypes') || [];
-      if (this._elements.travelTypesContainer) {
-        restoredTypes.forEach(type => {
-          const checkbox = this._elements.travelTypesContainer.querySelector(`input[value="${type}"]`);
-          if (checkbox) checkbox.checked = true;
-        });
-      }
+      // No travel-types checkboxes to restore: Purpose of Travel is derived.
       const restoredMC = classificationState.getField('missionCriticalTypes') || [];
       if (this._elements.missionCriticalContainer) {
         restoredMC.forEach(type => {
