@@ -1945,4 +1945,37 @@ body {
   background: #fef2f2;
   color: #dc2626;
 }
+
+/* ==========================================================================
+   REQUEST CARD — ROUTING DESTINATION
+   ==========================================================================
+   @clolry submitted a request, received the confirmation, and had no way to
+   tell where it went: the card showed a status badge and nothing else.
+
+   The WARN variant is the important one. Routing degrades quietly — if HC
+   cannot resolve a Sector Director or no BU Reviewer is configured, the
+   request submits, shows a normal pending badge, and sits unrouted. An empty
+   reviewer name is the only evidence, so it is styled as a caution rather
+   than hidden.
+   ========================================================================== */
+
+.request-card__routing {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #666);
+  line-height: 1.35;
+}
+
+.request-card__routing i {
+  font-size: 0.7rem;
+  flex: 0 0 auto;
+}
+
+.request-card__routing--warn {
+  color: #92400e;
+  font-weight: 500;
+}
 </style>

@@ -1253,6 +1253,7 @@
       const total = this._formatCurrency(request.grandTotal || 0);
       const dateRange = TravelDateService.formatDateRangeCompact(request.eventStartDate, request.eventEndDate);
       const lastUpdated = this._formatRelativeTime(request.updatedAt);
+      const routedTo = this._describeRouting(request);
 
       return `
         <div class="request-card" data-request-id="${request.requestId}">
@@ -1268,6 +1269,10 @@
               ${dateRange ? `<span><i aria-hidden="true" class="fas fa-calendar"></i> ${dateRange}</span>` : ''}
               <span class="request-card__total">${total}</span>
             </div>
+            ${routedTo ? `<div class="request-card__routing ${routedTo.unrouted ? 'request-card__routing--warn' : ''}">
+              <i aria-hidden="true" class="fas ${routedTo.unrouted ? 'fa-exclamation-triangle' : 'fa-user-check'}"></i>
+              ${this._escapeHtml(routedTo.text)}
+            </div>` : ''}
           </div>
           <div class="request-card__actions">
             <span class="request-card__date"><i aria-hidden="true" class="fas fa-clock"></i> ${lastUpdated}</span>
@@ -1283,6 +1288,44 @@
           </div>
         </div>
       `;
+    },
+
+    /**
+     * Describes who currently holds a request, for the portal card.
+     *
+     * Returns null for terminal states: "now with X" is misleading on a
+     * request that is finished, and the status badge already says so.
+     *
+     * The UNROUTED case is the reason this exists. Routing degrades quietly —
+     * if HC cannot resolve a Sector Director or no BU Reviewer is configured,
+     * the request submits, shows a normal pending badge, and sits. An empty
+     * reviewer name is the only evidence, so it is surfaced as a warning
+     * rather than omitted.
+     *
+     * @param {Object} request
+     * @returns {{text: string, unrouted: boolean}|null}
+     */
+    _describeRouting(request) {
+      const TERMINAL = ['COMPLETED', 'APPROVED_GOGOV', 'DENIED', 'CANCELLED', 'DRAFT'];
+      const status = String(request.status || '').toUpperCase();
+      if (TERMINAL.indexOf(status) !== -1) return null;
+
+      const LEVEL_LABELS = {
+        'Sector': 'Sector Director review',
+        'BU': 'Business Unit review',
+        'OSO': 'AAS Front Office review',
+        'AAS FO': 'AAS Front Office review',
+        'FAS': 'FAS Front Office review'
+      };
+      const level = request.initialReviewLevel || '';
+      const stage = LEVEL_LABELS[level] || (level ? level + ' review' : 'review');
+      const name = String(request.currentReviewerName || '').trim();
+
+      if (name) return { text: 'With ' + name + ' — ' + stage, unrouted: false };
+      return {
+        text: 'No reviewer assigned yet (' + stage + ') — contact aastravel@gsa.gov if this does not progress',
+        unrouted: true
+      };
     },
 
     /**

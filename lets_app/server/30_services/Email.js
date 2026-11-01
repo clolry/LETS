@@ -1319,6 +1319,52 @@ function _buildStageCcList(params) {
  * @param {Object} reviewer - The assigned reviewer (optional)
  * @param {string} reviewLevel - 'Sector', 'BU', or 'OSO' (from smart routing)
  */
+/**
+ * Human-readable description of where a request has just been routed.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * @clolry: "I received an email confirmation about the submission. I don't
+ * know who it was routed to." The reviewer's name appeared once, inside a
+ * prose sentence, and their email address appeared nowhere — so a submitter
+ * could not follow up, and could not tell whether routing had resolved at all.
+ *
+ * Routing failing to resolve is the case that matters most. getSubmitterInfo
+ * and the reviewer lookups degrade quietly: if HC cannot resolve a Sector
+ * Director or no BU Reviewer is configured, the request still submits and the
+ * confirmation still arrives, reading exactly as though everything worked. The
+ * explicit "not yet assigned" wording below is the only signal a submitter
+ * gets that their request is sitting unrouted.
+ *
+ * @param {Object|null} reviewer { name, email } from smart routing
+ * @param {string} reviewLevel 'Sector' | 'BU' | 'OSO' | 'AAS FO' | 'FAS'
+ * @returns {string} plain text, safe for both the HTML and text bodies
+ */
+function _describeRoutingDestination(reviewer, reviewLevel) {
+  // Deliberately NOT reusing STAGE_MAP: that maps to progress-tracker stage
+  // keys, which are internal identifiers. These are the words a submitter
+  // should read.
+  var LEVEL_LABELS = {
+    'Sector': 'Sector Director review',
+    'BU': 'Business Unit review',
+    'OSO': 'AAS Front Office review',
+    'AAS FO': 'AAS Front Office review',
+    'FAS': 'FAS Front Office review'
+  };
+  var stage = LEVEL_LABELS[reviewLevel] || (reviewLevel ? reviewLevel + ' review' : 'review');
+
+  var name = reviewer && reviewer.name ? String(reviewer.name).trim() : '';
+  var email = reviewer && reviewer.email ? String(reviewer.email).trim() : '';
+
+  if (name && email) return name + ' <' + email + '> — ' + stage;
+  if (name) return name + ' — ' + stage;
+
+  // No reviewer resolved. Say so plainly rather than implying the request is
+  // progressing: an unrouted request will sit until someone notices.
+  return stage + ' — reviewer not yet assigned. Contact aastravel@gsa.gov if ' +
+    'this request does not progress within two business days.';
+}
+
 function sendSubmitterConfirmation(requestId, formData, reviewer, reviewLevel) {
   const config = EMAIL_CONTENT.submitterConfirmation;
 
@@ -1375,12 +1421,29 @@ function sendSubmitterConfirmation(requestId, formData, reviewer, reviewLevel) {
       </tr>
       <!-- Row 2: Attendees (full width, pills) -->
       <tr>
-        <td colspan="2" style="padding: 12px 20px;">
+        <td colspan="2" style="padding: 12px 20px; border-bottom: 1px solid ${EMAIL_STYLES.colors.border};">
           <div style="font-size: 10px; font-weight: bold; color: ${EMAIL_STYLES.colors.textMuted}; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; font-family: ${EMAIL_STYLES.fonts.family};">
             ${config.labels.attendees}
           </div>
           <div style="line-height: 1.6;">
             ${travelerPills || `<span style="font-family: ${EMAIL_STYLES.fonts.family}; font-size: 14px; color: ${EMAIL_STYLES.colors.textSecondary};">${travelerCount} attendee${travelerCount !== 1 ? 's' : ''}</span>`}
+          </div>
+        </td>
+      </tr>
+      <!--
+        Row 3: WHERE IT WENT.
+        @clolry: "I received an email confirmation about the submission. I
+        don't know who it was routed to." The reviewer's name was buried in a
+        prose sentence and their email was nowhere, so a submitter had no way
+        to follow up or to tell whether routing had resolved at all.
+      -->
+      <tr>
+        <td colspan="2" style="padding: 12px 20px;">
+          <div style="font-size: 10px; font-weight: bold; color: ${EMAIL_STYLES.colors.textMuted}; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; font-family: ${EMAIL_STYLES.fonts.family};">
+            Now with
+          </div>
+          <div style="font-family: ${EMAIL_STYLES.fonts.family}; font-size: 14px; color: ${EMAIL_STYLES.colors.textBody};">
+            ${escapeHtml(_describeRoutingDestination(reviewer, reviewLevel))}
           </div>
         </td>
       </tr>
@@ -1416,6 +1479,7 @@ REQUEST DETAILS
 Event: ${tripName}
 Travel Dates: ${_getTripTravelDates(formData)}
 Attendee(s): ${travelerNames || `${travelerCount} attendee${travelerCount !== 1 ? 's' : ''}`}
+Now with: ${_describeRoutingDestination(reviewer, reviewLevel)}
 
 No action is required from you at this time. You will be notified if additional information is needed or once a final determination is made.
 

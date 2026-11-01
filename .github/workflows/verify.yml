@@ -93,6 +93,9 @@ jobs:
       - name: Step 4 classification tests
         run: node lets_app/test_classification.js
 
+      - name: Routing visibility tests
+        run: node lets_app/test_routing_visibility.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -194,6 +197,34 @@ jobs:
             exit 1
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
+
+      - name: 'Guard: unrouted requests must be visible'
+        run: |
+          echo "Checking routing destination is surfaced..."
+          # Routing degrades QUIETLY. If HC cannot resolve a Sector Director or
+          # no BU Reviewer is configured, the request submits, the confirmation
+          # reads normally, and the portal shows a normal pending badge — while
+          # the request sits unrouted indefinitely.
+          #
+          # An empty reviewer name is the only evidence, so both surfaces must
+          # say so explicitly rather than omitting the line.
+          if ! grep -q '_describeRoutingDestination' lets_app/server/30_services/Email.js; then
+            echo "::error file=lets_app/server/30_services/Email.js::The confirmation email no longer names where the request was routed. A submitter cannot tell whether routing resolved."
+            exit 1
+          fi
+          if ! grep -q 'not yet assigned' lets_app/server/30_services/Email.js; then
+            echo "::error file=lets_app/server/30_services/Email.js::The unrouted case no longer says so. An unrouted request reads as a normal pending one and sits until someone notices."
+            exit 1
+          fi
+          if ! grep -q '_describeRouting' lets_app/client/controllers/portal/travelPortalController.html; then
+            echo "::error file=lets_app/client/controllers/portal/travelPortalController.html::The portal card no longer shows who holds the request."
+            exit 1
+          fi
+          if ! grep -q 'No reviewer assigned yet' lets_app/client/controllers/portal/travelPortalController.html; then
+            echo "::error file=lets_app/client/controllers/portal/travelPortalController.html::The portal no longer flags unrouted requests."
+            exit 1
+          fi
+          echo "PASS - routing destination is visible on both surfaces."
 
       - name: 'Guard: classification options must stay tracker-verbatim'
         run: |

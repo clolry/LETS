@@ -704,7 +704,21 @@ function getMyTravelRequests(sharedDb) {
         submitterName: String(row[headerIndex['Submitter_Name']] || ''),
         submitterEmail: String(submitterEmail),
         submittedAt: submittedAtStr,
-        updatedAt: updatedAtStr
+        updatedAt: updatedAtStr,
+
+        // WHO HAS IT NOW. @clolry submitted a request, received the
+        // confirmation, and had no way to tell where it went — the portal card
+        // showed a status badge and nothing else.
+        //
+        // This matters most when routing FAILED to resolve. getSubmitterInfo
+        // and the reviewer lookups degrade quietly: if HC cannot resolve a
+        // Sector Director or no BU Reviewer is configured, the request still
+        // submits and still shows a normal "pending" badge while sitting
+        // unrouted. An empty reviewer name is the only signal, so it has to
+        // reach the UI.
+        currentReviewerName: String(row[headerIndex['Current_Reviewer_Name']] || ''),
+        currentReviewerEmail: String(currentReviewerEmail),
+        initialReviewLevel: String(row[headerIndex['Initial_Review_Level']] || '')
       };
 
       // User's own requests
