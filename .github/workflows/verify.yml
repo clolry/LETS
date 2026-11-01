@@ -237,6 +237,20 @@ jobs:
             echo "::error file=lets_app/server/30_services/Email.js::sendSubmitterConfirmation no longer starts the progress tracker at 'submitted'. Deriving the stage from the routed review level marks every earlier stage complete on a brand-new request."
             exit 1
           fi
+          # Every review surface must read ONE label source. Four status maps
+          # plus the help modal each hardcoded 'AAS FO' and 'BU'
+          # independently; a property change has to move all of them or the
+          # help text contradicts the status badge beside it.
+          for FILE in lets_app/client/controllers/review/travelReviewController.html \
+                      lets_app/client/controllers/admin/travelAdminController.html \
+                      lets_app/client/controllers/admin/travelReviewerDashboardController.html \
+                      lets_app/client/controllers/admin/travelUsersController.html \
+                      lets_app/client/controllers/portal/travelPortalController.html; do
+            if ! grep -q 'stageLabels()' "$FILE"; then
+              echo "::error file=${FILE}::This surface no longer reads TravelUtils.stageLabels(). Hardcoded stage labels mean a REVIEW_LABEL_BU change leaves this screen showing the old name."
+              exit 1
+            fi
+          done
           echo "PASS - branding is configurable."
 
       - name: 'Guard: unrouted requests must be visible'

@@ -961,7 +961,7 @@
                 <div style="width:26px;height:26px;border-radius:6px;background:#dbeafe;color:#3b82f6;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;"><i aria-hidden="true" class="fas fa-clipboard-check"></i></div>
                 <div style="flex:1;min-width:0;">
                   <div style="font-size:10.5px;font-weight:600;color:var(--color-slate-700);">Annual Planning Meeting</div>
-                  <div style="font-size:9.5px;color:var(--color-slate-400);">BU Review &bull; Submitted by: J. Smith</div>
+                  <div style="font-size:9.5px;color:var(--color-slate-400);"><span data-help-stage="bu">Review</span> &bull; Submitted by: J. Smith</div>
                 </div>
                 <div style="font-size:9px;color:var(--color-slate-400);">2 days</div>
                 <div style="padding:3px 10px;background:var(--color-primary);color:#fff;font-size:9.5px;font-weight:600;border-radius:4px;">Review</div>
@@ -989,7 +989,7 @@
                 <span style="padding:2px 8px;background:var(--color-slate-100);color:var(--color-slate-500);font-size:9px;border-radius:10px;">Completed</span>
               </div>
               <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--color-slate-50);border-radius:5px;margin-bottom:4px;">
-                <span class="help-status-badge" style="background:var(--status-pending-bg);color:var(--status-pending);font-size:8.5px;padding:1px 7px;">BU Review</span>
+                <span class="help-status-badge" style="background:var(--status-pending-bg);color:var(--status-pending);font-size:8.5px;padding:1px 7px;" data-help-stage="bu">Review</span>
                 <div style="flex:1;font-size:10.5px;font-weight:500;color:var(--color-slate-600);">Q3 Training &mdash; Chicago</div>
                 <div style="padding:3px 8px;border:1px solid var(--color-slate-200);color:var(--color-slate-500);font-size:9px;border-radius:4px;">View</div>
               </div>
@@ -1195,17 +1195,26 @@
            ============================================================ -->
       <div id="help-section-approval-flow" class="help-section">
         <h2>The Approval Flow</h2>
-        <p>Every travel request moves through a series of review stages. The exact path depends on whether the travel is overhead-funded or client-paid.</p>
+        <p>Every travel request moves through a series of review stages. The exact path depends on whether the travel is GSA-paid or client-paid.</p>
 
         <h3>Standard Flow</h3>
+        <!--
+          Stage labels come from branding (window._letsBranding), set from
+          Script Properties, so a redeploy for another workgroup does not need
+          this prose rewritten. Filled by _applyHelpBranding() below.
+
+          NOTE: this describes the INHERITED routing, which is still what the
+          system does. @clolry has deferred redesigning the approval chain, so
+          the only change here is the terminology.
+        -->
         <div class="help-flow">
           <span class="help-flow__step help-flow__step--start"><i aria-hidden="true" class="fas fa-paper-plane"></i> Submitted</span>
           <span class="help-flow__arrow"><i aria-hidden="true" class="fas fa-chevron-right"></i></span>
-          <span class="help-flow__step">Sector Review</span>
+          <span class="help-flow__step" data-help-stage="sector">Review</span>
           <span class="help-flow__arrow"><i aria-hidden="true" class="fas fa-chevron-right"></i></span>
-          <span class="help-flow__step">BU Review</span>
+          <span class="help-flow__step" data-help-stage="bu">Review</span>
           <span class="help-flow__arrow"><i aria-hidden="true" class="fas fa-chevron-right"></i></span>
-          <span class="help-flow__step">AAS FO Review</span>
+          <span class="help-flow__step" data-help-stage="fo">Review</span>
           <span class="help-flow__arrow"><i aria-hidden="true" class="fas fa-chevron-right"></i></span>
           <span class="help-flow__step help-flow__step--optional">FAS Review*</span>
           <span class="help-flow__arrow"><i aria-hidden="true" class="fas fa-chevron-right"></i></span>
@@ -1215,21 +1224,21 @@
           <span class="help-flow__arrow"><i aria-hidden="true" class="fas fa-chevron-right"></i></span>
           <span class="help-flow__step help-flow__step--end"><i aria-hidden="true" class="fas fa-flag-checkered"></i> Complete</span>
         </div>
-        <p style="font-size:11.5px;color:var(--color-slate-400);margin-top:-8px;">*FAS Review only applies to overhead-funded travel.</p>
+        <p style="font-size:11.5px;color:var(--color-slate-400);margin-top:-8px;">*FAS Review only applies to GSA-paid travel.</p>
 
         <h3>What Happens at Each Stage</h3>
         <ul>
-          <li><strong>Sector Review</strong> &mdash; Your sector leadership reviews the request and confirms it aligns with organizational priorities.</li>
-          <li><strong>BU Review</strong> &mdash; Your Business Unit reviewer checks budget availability and travel details.</li>
-          <li><strong>AAS FO Review</strong> &mdash; The AAS Front Office reviews and verifies the request.</li>
-          <li><strong>FAS Review</strong> &mdash; Only for overhead-funded travel. FAS leadership makes the final budget authorization.</li>
+          <li><strong data-help-stage="sector">Review</strong> &mdash; Your Service Center Director reviews the request and confirms it aligns with organizational priorities.</li>
+          <li><strong data-help-stage="bu">Review</strong> &mdash; The Deputy Assistant Commissioner for your org checks budget availability and travel details.</li>
+          <li><strong data-help-stage="fo">Review</strong> &mdash; The travel and events team reviews and verifies the request.</li>
+          <li><strong>FAS Review</strong> &mdash; Only for GSA-paid travel. FAS leadership makes the final budget authorization.</li>
           <li><strong>Approved</strong> &mdash; The request is authorized. You'll receive an email confirmation with booking instructions.</li>
           <li><strong>DD Confirmation</strong> &mdash; Division Directors confirm the travelers on the approved trip and flag any funding concerns.</li>
           <li><strong>Complete</strong> &mdash; All confirmations are done. The trip is fully authorized and recorded.</li>
         </ul>
 
         <h3>GSA-Paid vs. Client-Paid Path</h3>
-        <p>If all travelers on the request are <strong>client-paid</strong>, the request skips FAS Review and moves directly from AAS FO Review to Approved status. If there's a mix of overhead and client-paid travelers, the request goes through FAS Review for the overhead portion.</p>
+        <p>If all travelers on the request are <strong>client-paid</strong>, the request skips FAS Review and moves directly from the <span data-help-stage="fo">review</span> stage to Approved. If there's a mix of GSA-paid and client-paid travelers, the request goes through FAS Review for the GSA-paid portion.</p>
 
         <div class="help-tip">
           <strong>Tip:</strong> At any review stage, the reviewer may send the request back to you for more information. Check the <em>When Changes Are Needed</em> section for details on that process.
@@ -1250,16 +1259,16 @@
           </thead>
           <tbody>
             <tr>
-              <td><span class="help-status-badge" style="background:var(--status-pending-bg);color:var(--status-pending);">Sector Review</span></td>
+              <td><span class="help-status-badge" style="background:var(--status-pending-bg);color:var(--status-pending);" data-help-stage="sector">Review</span></td>
               <td>Awaiting sector leadership review</td>
             </tr>
             <tr>
-              <td><span class="help-status-badge" style="background:var(--status-pending-bg);color:var(--status-pending);">BU Review</span></td>
+              <td><span class="help-status-badge" style="background:var(--status-pending-bg);color:var(--status-pending);" data-help-stage="bu">Review</span></td>
               <td>Awaiting Business Unit review</td>
             </tr>
             <tr>
-              <td><span class="help-status-badge" style="background:var(--status-pending-oso-bg);color:var(--status-pending-oso);">AAS FO Review</span></td>
-              <td>Awaiting AAS Front Office review</td>
+              <td><span class="help-status-badge" style="background:var(--status-pending-oso-bg);color:var(--status-pending-oso);" data-help-stage="fo">Review</span></td>
+              <td>Awaiting <span data-help-stage="fo">review</span></td>
             </tr>
             <tr>
               <td><span class="help-status-badge" style="background:var(--status-pending-oso-bg);color:var(--status-pending-oso);">FAS Review</span></td>
@@ -1401,7 +1410,7 @@
            ============================================================ -->
       <div id="help-section-reviewing" class="help-section">
         <h2>Reviewing Requests</h2>
-        <p>If you're assigned as a reviewer (Sector, BU, or AAS FO level), requests will appear in your <strong>Action Required</strong> section when they're ready for your review.</p>
+        <p>If you're assigned as a reviewer (<span data-help-stage="sector">any</span>, <span data-help-stage="bu">any</span>, or <span data-help-stage="fo">any</span> level), requests will appear in your <strong>Action Required</strong> section when they're ready for your review.</p>
 
         <!-- Annotated UI Recreation: Review Page -->
         <div class="help-ui-mockup">
@@ -1491,7 +1500,7 @@
            ============================================================ -->
       <div id="help-section-fas-decisions" class="help-section">
         <h2>FAS Decisions</h2>
-        <p>FAS leadership makes the final budget authorization decision for <strong>overhead-funded travel</strong>. This step only applies to requests with at least one overhead-funded traveler.</p>
+        <p>FAS leadership makes the final budget authorization decision for <strong>GSA-paid travel</strong>. This step only applies to requests with at least one GSA-paid traveler.</p>
 
         <h3>Approving from the Portal</h3>
         <p>FAS decisions can be made directly from the portal. When a request reaches FAS Review, it appears in your <strong>Action Required</strong> section. Click <strong>FAS Decision</strong> to open this compact modal:</p>
@@ -1602,13 +1611,13 @@
         <h2>Managing Reviewers</h2>
         <p>The Reviewers tab has two sub-tabs: <strong>Reviewers</strong> (manages who reviews at each stage) and <strong>Admin Access</strong> (manages who can access the admin console).</p>
 
-        <h3>AAS FO Reviewers &amp; Delegation</h3>
-        <p>AAS Front Office reviewers are displayed as cards grouped by role. The <strong>Delegation toggle</strong> at the top lets you switch between the primary AAS FO reviewer and a delegate. When delegation is active, the delegate receives review assignments instead of the primary reviewer.</p>
+        <h3><span data-help-stage="fo">Front Office</span> Reviewers &amp; Delegation</h3>
+        <p>Front office reviewers are displayed as cards grouped by role. The <strong>Delegation toggle</strong> at the top lets you switch between the primary reviewer and a delegate. When delegation is active, the delegate receives review assignments instead of the primary reviewer.</p>
 
-        <h3>BU Reviewers</h3>
-        <p>BU reviewers are listed below the AAS FO section. Each BU reviewer is assigned to a specific Business Unit.</p>
+        <h3><span data-help-stage="bu">Reviewers</span></h3>
+        <p>Org reviewers are listed below the front office section. Each is assigned to a specific org.</p>
         <ul>
-          <li><strong>Add</strong> &mdash; Click "Add BU Reviewer" to open the form. Search for an employee using the typeahead, select their BU, and save.</li>
+          <li><strong>Add</strong> &mdash; Click the add-reviewer button to open the form. Search for an employee using the typeahead, select their org, and save.</li>
           <li><strong>Edit</strong> &mdash; Click the edit icon on a BU reviewer card. Change the assigned email, and the system will offer to reassign any pending requests.</li>
           <li><strong>Delete</strong> &mdash; Click the delete icon. If the reviewer has pending requests, you'll be prompted to reassign them first.</li>
         </ul>
@@ -1845,5 +1854,57 @@
       TravelHelp.closeDropdown();
     }
   });
+})();
+</script>
+
+<script>
+/**
+ * Fills stage labels in the help modal from branding.
+ *
+ * The modal is static HTML, so stage names were hardcoded as "Sector", "BU"
+ * and "AAS FO" in prose, mock screenshots and a status table. Marking them
+ * with data-help-stage and substituting at runtime means a
+ * REVIEW_LABEL_BU property change updates the documentation too — otherwise
+ * the help text contradicts every other surface.
+ *
+ * Runs on DOMContentLoaded and again when the modal opens, because the modal
+ * may be injected after first paint.
+ */
+(function () {
+  function applyHelpBranding() {
+    var L = (window.TravelUtils && window.TravelUtils.stageLabels)
+      ? window.TravelUtils.stageLabels()
+      : { sector: 'SCD', bu: 'DAC', fo: 'ASD Travel & Events', fas: 'FAS' };
+
+    var nodes = document.querySelectorAll('[data-help-stage]');
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      var key = el.getAttribute('data-help-stage');
+      var label = L[key];
+      if (!label) continue;
+      // The element's own text is the SUFFIX ("Review", "Reviewers", "any"),
+      // so the label is prepended rather than replacing the content — that
+      // keeps the markup readable and the suffix translatable.
+      var suffix = el.getAttribute('data-help-suffix');
+      if (suffix === null) {
+        suffix = el.textContent.trim();
+        el.setAttribute('data-help-suffix', suffix);
+      }
+      el.textContent = (suffix && suffix !== 'any') ? (label + ' ' + suffix) : label;
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', applyHelpBranding);
+  } else {
+    applyHelpBranding();
+  }
+  // Re-apply when the modal is shown, in case it was injected late.
+  document.addEventListener('click', function (e) {
+    if (e.target && e.target.closest && e.target.closest('[data-action="help"], #helpButton')) {
+      setTimeout(applyHelpBranding, 50);
+    }
+  });
+  window.applyHelpBranding = applyHelpBranding;
 })();
 </script>

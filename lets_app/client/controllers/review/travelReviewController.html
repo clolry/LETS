@@ -420,7 +420,9 @@
      */
     _renderReviewerInfoSection(logEntry) {
       const stage = logEntry.action.includes('OSO') ? 'OSO' : 'BU';
-      const stageLabel = stage === 'OSO' ? 'OSO' : 'BU';
+      // 'OSO' and 'BU' are stored action fragments; the label is configurable.
+      const _L = window.TravelUtils.stageLabels();
+      const stageLabel = stage === 'OSO' ? _L.fo : _L.bu;
 
       // Update heading with badge
       const heading = document.querySelector('.review-sidebar__section:first-child .review-sidebar__heading');
@@ -8055,16 +8057,21 @@
     },
 
     _formatAction(action) {
+      // Stage labels from branding. The KEYS are stored Approval_Log action
+      // values and must not change; only the display text is configurable.
+      // This organisation calls them SCD (Service Center Director) and DAC
+      // (Deputy Assistant Commissioner).
+      const L = window.TravelUtils.stageLabels();
       const actions = {
         // Workflow actions
         'Submitted': 'Request Submitted',
         'Resubmitted': 'Request Resubmitted',
-        'Sector_Approved': 'Approved by Sector Director',
-        'Sector_Needs_Info': 'Returned for More Info (SD)',
-        'BU_Approved': 'Approved by BU Reviewer',
-        'BU_Needs_Info': 'Returned for More Info (BU)',
-        'OSO_Approved': 'Approved by AAS FO',
-        'OSO_Needs_Info': 'Returned for More Info (AAS FO)',
+        'Sector_Approved': 'Approved by ' + L.sector,
+        'Sector_Needs_Info': 'Returned for More Info (' + L.sector + ')',
+        'BU_Approved': 'Approved by ' + L.bu,
+        'BU_Needs_Info': 'Returned for More Info (' + L.bu + ')',
+        'OSO_Approved': 'Approved by ' + L.fo,
+        'OSO_Needs_Info': 'Returned for More Info (' + L.fo + ')',
         'FAS_Approved': 'Approved by FAS',
         'FAS_Denied': 'Denied by FAS',
         'Denied': 'Request Denied',
@@ -8082,13 +8089,15 @@
     },
 
     _getStatusInfo(status) {
+      // Keys are stored Status values; only the labels are configurable.
+      const L = window.TravelUtils.stageLabels();
       const statuses = {
-        'PENDING_SECTOR': { label: 'Pending Sector Review', class: 'pending' },
-        'NEEDS_INFO_SECTOR': { label: 'Needs Info (Sector)', class: 'needs-info' },
-        'PENDING_BU': { label: 'Pending BU Review', class: 'pending' },
-        'NEEDS_INFO_BU': { label: 'Needs Info (BU)', class: 'needs-info' },
-        'PENDING_OSO': { label: 'Pending AAS FO Review', class: 'pending' },
-        'NEEDS_INFO_OSO': { label: 'Needs Info (AAS FO)', class: 'needs-info' },
+        'PENDING_SECTOR': { label: 'Pending ' + L.sector + ' Review', class: 'pending' },
+        'NEEDS_INFO_SECTOR': { label: 'Needs Info (' + L.sector + ')', class: 'needs-info' },
+        'PENDING_BU': { label: 'Pending ' + L.bu + ' Review', class: 'pending' },
+        'NEEDS_INFO_BU': { label: 'Needs Info (' + L.bu + ')', class: 'needs-info' },
+        'PENDING_OSO': { label: 'Pending ' + L.fo + ' Review', class: 'pending' },
+        'NEEDS_INFO_OSO': { label: 'Needs Info (' + L.fo + ')', class: 'needs-info' },
         'PENDING_FAS': { label: 'Pending FAS', class: 'pending' },
         'APPROVED_GOGOV': { label: 'Approved (Go.gov)', class: 'approved' },
         'COMPLETED': { label: 'Completed', class: 'approved' },

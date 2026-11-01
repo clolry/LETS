@@ -1,4 +1,20 @@
 <script>
+  /**
+   * Stage labels from branding.
+   *
+   * Four status maps across this controller hardcoded 'AAS FO' and 'BU'
+   * independently. They now read one source, so a REVIEW_LABEL_BU property
+   * change moves every surface at once.
+   *
+   * Short local name because it appears inside object literals where a long
+   * call would wrap badly.
+   */
+  function _L() {
+    return (window.TravelUtils && window.TravelUtils.stageLabels)
+      ? window.TravelUtils.stageLabels()
+      : { sector: 'SCD', bu: 'DAC', fo: 'ASD Travel & Events', fas: 'FAS' };
+  }
+
 /**
  * TravelUsers.Controller — admin Users page (Phase 5)
  *
@@ -47,7 +63,7 @@
                           hint: 'Reviews requests at the front-office stage.' },
     'fas_fo_reviewer':  { displayLong: 'FAS-FO Reviewer', hasScope: false, grantable: true,
                           hint: 'Reviews overhead-funded requests at the FAS Front Office stage.' },
-    'bu_reviewer':      { displayLong: 'BU Reviewer',     hasScope: true,  grantable: true,
+    'bu_reviewer':      { displayLong: _L().bu + ' Reviewer', hasScope: true,  grantable: true,
                           hint: 'Reviews requests for a specific business unit.' },
     'sector_override':  { displayLong: 'Sector Reviewer', hasScope: true,  grantable: true,
                           hint: 'Overrides the synced sector director for a specific sector.' },
@@ -983,11 +999,11 @@
       html += '<div class="users-routing__body">';
 
       // ---- Front Office pairs (AAS FO, FAS FO) ----
-      html += this._routingRowHtml('aasFo', 'AAS FO', data.aasFo.primary, data.aasFo.backup, {
+      html += this._routingRowHtml('aasFo', _L().fo, data.aasFo.primary, data.aasFo.backup, {
         showBackupSlot: true,
         roleType: 'aas_fo_reviewer',
         scope: '',
-        contextLabel: 'AAS FO'
+        contextLabel: _L().fo
       });
       html += this._routingRowHtml('fasFo', 'FAS FO', data.fasFo.primary, null, {
         showBackupSlot: false,
@@ -1684,7 +1700,7 @@
       switch (role.roleType) {
         case 'admin':            return 'Admin';
         case 'approved_user':    return 'Site Access';
-        case 'aas_fo_reviewer':  return withPos('AAS FO');
+        case 'aas_fo_reviewer':  return withPos(_L().fo);
         case 'fas_fo_reviewer':  return withPos('FAS FO');
         case 'bu_reviewer':      return withPos((role.scope || 'BU') + ' Reviewer');
         case 'sector_override':  return (role.scope || 'Sector') + ' Reviewer';

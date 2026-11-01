@@ -378,6 +378,32 @@ window.TravelUtils = (function() {
   }
 
   /**
+   * Short stage labels, for status badges and audit-log lines.
+   *
+   * describeReviewStage returns prose ("DAC review"); these are the bare
+   * labels for places that add their own wording ("Pending DAC Review",
+   * "Returned for More Info (DAC)").
+   *
+   * Both read the same branding, so a property change moves every surface at
+   * once — which is the point. Four separate status maps across the portal,
+   * review controller and two dashboards had hardcoded 'SD', 'BU' and
+   * 'AAS FO' independently.
+   *
+   * @returns {{sector: string, bu: string, fo: string, fas: string}}
+   */
+  function stageLabels() {
+    const b = (typeof window !== 'undefined' && window._letsBranding) || {};
+    return {
+      sector: b.sectorLabel || 'SCD',
+      bu: b.buLabel || 'DAC',
+      fo: b.foLabel || 'ASD Travel & Events',
+      // Not configurable: FAS is the Federal Acquisition Service, a fixed
+      // external body, not this workgroup's own naming.
+      fas: 'FAS'
+    };
+  }
+
+  /**
    * True when a status means the submitter must act.
    *
    * NEEDS_INFO and PENDING_CORRECTION are not "waiting on a reviewer" — they
@@ -457,6 +483,7 @@ window.TravelUtils = (function() {
     // Status helpers
     getStatusInfo,
     describeReviewStage,
+    stageLabels,
     isAwaitingSubmitter,
 
     // Office / org code mapping (FO<->FC, OMD<->FCA, IDV<->FCB, CM<->FCC)

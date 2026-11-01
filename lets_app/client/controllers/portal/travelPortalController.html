@@ -1503,10 +1503,10 @@
       // Director) and DAC (Deputy Assistant Commissioner, the SES running each
       // of FCA/FCB/FCC). The STORED status strings are unchanged — renaming
       // those would need a data migration.
-      const b = window._letsBranding || {};
-      const sectorLabel = b.sectorLabel || 'SCD';
-      const buLabel = b.buLabel || 'DAC';
-      const foLabel = b.foLabel || 'Travel & Events';
+      const L = window.TravelUtils.stageLabels();
+      const sectorLabel = L.sector;
+      const buLabel = L.bu;
+      const foLabel = L.fo;
 
       const statusMap = {
         'PENDING_SECTOR': { label: sectorLabel + ' Review', class: 'pending', icon: 'fa-clock' },

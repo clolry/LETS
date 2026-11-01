@@ -1,4 +1,20 @@
 <script>
+  /**
+   * Stage labels from branding.
+   *
+   * Four status maps across this controller hardcoded 'AAS FO' and 'BU'
+   * independently. They now read one source, so a REVIEW_LABEL_BU property
+   * change moves every surface at once.
+   *
+   * Short local name because it appears inside object literals where a long
+   * call would wrap badly.
+   */
+  function _L() {
+    return (window.TravelUtils && window.TravelUtils.stageLabels)
+      ? window.TravelUtils.stageLabels()
+      : { sector: 'SCD', bu: 'DAC', fo: 'ASD Travel & Events', fas: 'FAS' };
+  }
+
 /**
  * TravelReviewerDashboardController
  * Client controller for ?mode=reviewer-dashboard.
@@ -556,7 +572,7 @@
       var stages = [
         { key: 'sector', label: 'Sector', cssClass: 'pending', status: 'PENDING_SECTOR' },
         { key: 'bu', label: 'BU', cssClass: 'pending', status: 'PENDING_BU' },
-        { key: 'oso', label: 'AAS FO', cssClass: 'oso', status: 'PENDING_OSO' },
+        { key: 'oso', label: _L().fo, cssClass: 'oso', status: 'PENDING_OSO' },
         { key: 'fas', label: 'FAS', cssClass: 'oso', status: 'PENDING_FAS' },
         { key: 'approved', label: 'Approved', cssClass: 'approved', status: 'APPROVED_GOGOV' }
       ];
@@ -772,7 +788,7 @@
       var stages = [
         { key: 'sector', label: 'Sector', color: '#004f87' },
         { key: 'bu', label: 'BU', color: '#1B7CAC' },
-        { key: 'oso', label: 'AAS FO', color: '#CF4817' },
+        { key: 'oso', label: _L().fo, color: '#CF4817' },
         { key: 'fas', label: 'FAS', color: '#286D3B' }
       ];
 
@@ -913,9 +929,9 @@
 
     _getStatusDisplay(status) {
       var map = {
-        'PENDING_SECTOR': { label: 'Sector Review', class: 'pending' },
-        'PENDING_BU': { label: 'BU Review', class: 'pending' },
-        'PENDING_OSO': { label: 'AAS FO Review', class: 'pending-oso' },
+        'PENDING_SECTOR': { label: _L().sector + ' Review', class: 'pending' },
+        'PENDING_BU': { label: _L().bu + ' Review', class: 'pending' },
+        'PENDING_OSO': { label: _L().fo + ' Review', class: 'pending-oso' },
         'PENDING_FAS': { label: 'FAS Review', class: 'pending-oso' },
         'NEEDS_INFO_SECTOR': { label: 'Needs Info', class: 'needs-info' },
         'NEEDS_INFO_BU': { label: 'Needs Info', class: 'needs-info' },
@@ -1019,7 +1035,7 @@
         { items: [
           { key: 'PENDING_SECTOR', label: 'Sector' },
           { key: 'PENDING_BU', label: 'BU' },
-          { key: 'PENDING_OSO', label: 'AAS FO' },
+          { key: 'PENDING_OSO', label: _L().fo },
           { key: 'PENDING_FAS', label: 'FAS' }
         ]},
         { items: [
@@ -1718,9 +1734,9 @@
       var isClientPaid = data.allClientPaid === true;
 
       var stages = [
-        { status: 'PENDING_SECTOR', label: 'Sector Review' },
-        { status: 'PENDING_BU', label: 'BU Review' },
-        { status: 'PENDING_OSO', label: 'AAS FO Review' }
+        { status: 'PENDING_SECTOR', label: _L().sector + ' Review' },
+        { status: 'PENDING_BU', label: _L().bu + ' Review' },
+        { status: 'PENDING_OSO', label: _L().fo + ' Review' }
       ];
       if (!isClientPaid) stages.push({ status: 'PENDING_FAS', label: 'FAS Review' });
 

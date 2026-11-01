@@ -37,6 +37,18 @@
 </head>
 
 <body class="admin-body">
+  <script>
+    // Branding, resolved server-side. See Props.js getBrandingForClient.
+    window._letsBranding = {
+      appName: '<?= appName ?>',
+      orgShort: '<?= orgShort ?>',
+      foLabel: '<?= foLabel ?>',
+      sectorLabel: '<?= sectorLabel ?>',
+      buLabel: '<?= buLabel ?>',
+      contactEmail: '<?= contactEmail ?>'
+    };
+  </script>
+
   <!-- Skip Link for Accessibility -->
   <a href="#adminMain" class="skip-link">Skip to main content</a>
 

@@ -162,5 +162,57 @@ console.log('6. stage labels resolve from configuration');
   ok("no 'BU' stage literal", !/label: 'BU'/.test(e));
   ok("no 'AAS FO' stage literal", !/label: 'AAS FO'/.test(e));
 }
+console.log('7. every review surface reads one label source');
+{
+  // Four status maps plus the help modal each hardcoded 'AAS FO' and 'BU'
+  // independently. A REVIEW_LABEL_BU change has to move all of them, or the
+  // help text contradicts the status badge next to it.
+  const surfaces = [
+    'lets_app/client/controllers/review/travelReviewController.html',
+    'lets_app/client/controllers/admin/travelAdminController.html',
+    'lets_app/client/controllers/admin/travelReviewerDashboardController.html',
+    'lets_app/client/controllers/admin/travelUsersController.html',
+    'lets_app/client/controllers/portal/travelPortalController.html'
+  ];
+  surfaces.forEach(f => {
+    const src = fs.readFileSync(f, 'utf8');
+    const code = src.split('\n').filter(l => !/^\s*(\/\/|\*|<!--)/.test(l)).join('\n');
+    // Permit stored values and CSS classes; reject display labels.
+    const bad = code.split('\n').filter(l =>
+      /label:\s*'[^']*AAS FO|displayLong:\s*'[^']*BU |label:\s*'(Pending )?(BU|Sector) /.test(l));
+    ok('no hardcoded stage label in ' + f.split('/').pop(), bad.length === 0, bad.slice(0, 2));
+    ok('reads stageLabels in ' + f.split('/').pop(),
+       /stageLabels\(\)/.test(code), 'does not use the shared source');
+  });
+
+  // Help documentation must follow the same source, or it describes a
+  // workflow using names no other screen shows.
+  const help = fs.readFileSync('lets_app/client/shared/travelHelpModal.html', 'utf8');
+  ok('help modal marks stages for substitution', (help.match(/data-help-stage/g) || []).length >= 10,
+     (help.match(/data-help-stage/g) || []).length);
+  ok('help modal applies branding at runtime', /applyHelpBranding/.test(help));
+  const helpCode = help.split('\n').filter(l => !/^\s*(\/\/|\*|<!--)/.test(l)).join('\n');
+  ok('no "AAS" left in help text', !/\bAAS\b/.test(helpCode),
+     (helpCode.match(/.{0,40}\bAAS\b.{0,40}/) || [])[0]);
+  ok('no "overhead-funded" left in help text', !/overhead-funded/.test(helpCode));
+}
+
+console.log('8. all four page templates publish branding to the client');
+{
+  // A page that does not set window._letsBranding falls back to hardcoded
+  // defaults, which works for THIS deployment and silently breaks rebranding
+  // for the next one.
+  ['travelPortalPage','travelReviewPage','travelAdminPage','travelReviewerDashboardPage']
+    .forEach(page => {
+      const src = fs.readFileSync('lets_app/client/pages/' + page + '.html', 'utf8');
+      ok(page + ' publishes branding', /window\._letsBranding/.test(src));
+      ok(page + ' passes appName', /appName: '<\?= appName \?>'/.test(src));
+    });
+  // And the server must supply it to every served page.
+  const r = fs.readFileSync('lets_app/server/50_pages/Render.js', 'utf8');
+  ok('Render applies branding to templates', (r.match(/_applyBranding\(template\)/g) || []).length >= 8,
+     (r.match(/_applyBranding\(template\)/g) || []).length);
+}
+
 console.log(fails?('\n'+fails+' FAILURE(S)'):'\nALL ASSERTIONS PASSED!');
 process.exit(fails?1:0);
