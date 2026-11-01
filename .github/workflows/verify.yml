@@ -102,6 +102,9 @@ jobs:
       - name: Leg city capture tests
         run: node lets_app/test_leg_city.js
 
+      - name: HC roster editor tests
+        run: node lets_app/test_hc_admin.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -203,6 +206,38 @@ jobs:
             exit 1
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
+
+      - name: 'Guard: HR roster writes must be admin-guarded and validated'
+        run: |
+          echo "Checking the HC roster editor's guards..."
+          # Apps Script makes every top-level function browser-callable
+          # (G-001), so the admin page's gate protects the PAGE, not these
+          # functions. Each must guard independently.
+          for FN in getHCAdminData saveHCPosition deactivateHCPosition refreshHCAdminData; do
+            if ! grep -q "function ${FN}" lets_app/server/40_domain/HCAdmin.js; then
+              echo "::error file=lets_app/server/40_domain/HCAdmin.js::${FN} is missing."
+              exit 1
+            fi
+          done
+          GUARDS=$(grep -c '_hcAdminGuard_()' lets_app/server/40_domain/HCAdmin.js || true)
+          if [ "$GUARDS" -lt 5 ]; then
+            echo "::error file=lets_app/server/40_domain/HCAdmin.js::Expected every entry point to call _hcAdminGuard_() (4 callers plus the definition); found ${GUARDS}. An unguarded entry point lets any authenticated user edit HR data."
+            exit 1
+          fi
+          # A half-applied edit to HR data produces exactly the dangling
+          # references and cycles this editor exists to prevent.
+          if ! grep -q 'if (problems.length) {' lets_app/server/40_domain/HCAdmin.js; then
+            echo "::error file=lets_app/server/40_domain/HCAdmin.js::saveHCPosition no longer refuses an invalid write before touching the sheet."
+            exit 1
+          fi
+          # The bundle caches for six hours; without invalidation an edit is
+          # invisible long enough to look like the save failed.
+          INVAL=$(grep -c 'hcCacheInvalidateAll()' lets_app/server/40_domain/HCAdmin.js || true)
+          if [ "$INVAL" -lt 3 ]; then
+            echo "::error file=lets_app/server/40_domain/HCAdmin.js::Expected hcCacheInvalidateAll() after each write (save, deactivate, refresh); found ${INVAL}. An edit would be invisible for up to six hours."
+            exit 1
+          fi
+          echo "PASS - roster writes are guarded, validated and invalidate the cache."
 
       - name: 'Guard: a typed leg city must be captured'
         run: |

@@ -240,7 +240,8 @@
         'dashboard': 'dashboardView',
         'requests': 'requestsView',
         'reports': 'reportsView',
-        'users': 'usersView'
+        'users': 'usersView',
+        'roster': 'rosterView'
       };
 
       var viewEl = document.getElementById(viewMap[view]);
@@ -269,6 +270,13 @@
         case 'users':
           if (window.TravelUsers && window.TravelUsers.Controller) {
             window.TravelUsers.Controller.activate();
+          }
+          break;
+        case 'roster':
+          // Loads on first activation only; the module tracks that itself so
+          // re-entering the tab does not re-fetch the whole roster.
+          if (window.TravelRoster && window.TravelRoster.Controller) {
+            window.TravelRoster.Controller.activate();
           }
           break;
       }

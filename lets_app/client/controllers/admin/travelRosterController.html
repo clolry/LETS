@@ -1,0 +1,430 @@
+<script>
+/**
+ * travelRosterController.html
+ * HR roster editor for the admin page.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * HC_Positions and HC_Orgs back the HC namespace that 28 call sites depend on:
+ * traveller lookup, duty station, GS-15 Division Director routing, and two of
+ * the three site-access paths in canAccessTrip.
+ *
+ * They were hand-edited in the spreadsheet. That is how three defects get
+ * introduced, and all three fail SILENTLY:
+ *
+ *   1. Grade losing its leading zero. A cell holding 07 becomes the number 7,
+ *      and String(7) !== '07', so a GS-07 fails every grade comparison in the
+ *      system. docs/GAP_CONSOLIDATION_PASS6.md VT-03 predicted this.
+ *   2. An unexpected Supervisory_Status. That one value grants LETS access
+ *      with no role row and no audit entry (G-008).
+ *   3. A supervisor cycle. Without the visited-set in hcWalkSupervisorChain
+ *      that is an infinite loop inside a web request — a hung page.
+ *
+ * So this editor's job is not convenience. It is to make those three
+ * impossible to introduce, which is why Grade is a SELECT rather than a text
+ * field, Supervisory_Status offers only the meaningful value, and Reports To is
+ * a dropdown of existing positions.
+ *
+ * Validation happens on the SERVER (HCAdmin.validateHCPosition) because a
+ * client-side check protects nobody — these functions are browser-reachable.
+ * The client renders the server's problem list.
+ */
+(function () {
+  'use strict';
+
+  window.TravelRoster = window.TravelRoster || {};
+
+  var Controller = {
+    _positions: [],
+    _orgs: [],
+    _offices: [],
+    _problems: [],
+    _filter: '',
+    _editing: null,       // position number being edited, or null for a new row
+    _loaded: false,
+    _modal: null,
+
+    /** Called by the admin controller when the HR Roster tab is opened. */
+    activate: function () {
+      this._bindOnce();
+      if (!this._loaded) this.load();
+    },
+
+    _bindOnce: function () {
+      if (this._bound) return;
+      this._bound = true;
+      var self = this;
+
+      var addBtn = document.getElementById('rosterAddBtn');
+      if (addBtn) addBtn.addEventListener('click', function () { self.openEditor(null); });
+
+      var refreshBtn = document.getElementById('rosterRefreshBtn');
+      if (refreshBtn) {
+        refreshBtn.addEventListener('click', function () { self.load(true); });
+      }
+
+      var search = document.getElementById('rosterSearch');
+      if (search) {
+        search.addEventListener('input', function () {
+          self._filter = this.value.trim().toLowerCase();
+          self._renderTable();
+        });
+      }
+
+      var saveBtn = document.getElementById('rosterSaveBtn');
+      if (saveBtn) saveBtn.addEventListener('click', function () { self.save(); });
+
+      // Delegated, because rows are rebuilt on every render.
+      var body = document.getElementById('rosterTableBody');
+      if (body) {
+        body.addEventListener('click', function (e) {
+          var btn = e.target.closest('[data-roster-action]');
+          if (!btn) return;
+          var pn = btn.getAttribute('data-position');
+          if (btn.getAttribute('data-roster-action') === 'edit') self.openEditor(pn);
+          if (btn.getAttribute('data-roster-action') === 'deactivate') self.deactivate(pn);
+        });
+      }
+    },
+
+    /**
+     * Loads the roster.
+     *
+     * @param {boolean} [bypassCache] when true, calls the server's refresh
+     *        variant. The bundle caches for six hours, so someone who edited
+     *        the sheet directly otherwise waits that long to see it — @clolry
+     *        hit exactly that confusion twice.
+     */
+    load: function (bypassCache) {
+      var self = this;
+      var loading = document.getElementById('rosterLoading');
+      var table = document.getElementById('rosterTable');
+      if (loading) loading.classList.remove('hidden');
+      if (table) table.hidden = true;
+
+      serverCall(bypassCache ? 'refreshHCAdminData' : 'getHCAdminData')
+        .then(function (res) {
+          if (loading) loading.classList.add('hidden');
+          if (!res || !res.success) {
+            self._showProblems([(res && res.error) || 'Could not load the roster.']);
+            return;
+          }
+          self._positions = res.positions || [];
+          self._orgs = res.orgs || [];
+          self._offices = res.offices || [];
+          self._problems = res.problems || [];
+          self._loaded = true;
+          self._showProblems(self._problems);
+          self._renderTable();
+        })
+        .catch(function (err) {
+          if (loading) loading.classList.add('hidden');
+          self._showProblems(['Could not load the roster: ' + (err && err.message)]);
+        });
+    },
+
+    /**
+     * Shows problems found in the EXISTING data.
+     *
+     * Rendered before anyone edits, so a defect introduced by an earlier
+     * hand-edit is visible rather than silently inherited.
+     */
+    _showProblems: function (problems) {
+      var el = document.getElementById('rosterProblems');
+      if (!el) return;
+      if (!problems || !problems.length) {
+        el.classList.add('hidden');
+        el.innerHTML = '';
+        return;
+      }
+      el.classList.remove('hidden');
+      el.innerHTML =
+        '<div class="roster-problems__head">' +
+          '<i aria-hidden="true" class="fas fa-triangle-exclamation"></i> ' +
+          problems.length + ' problem' + (problems.length === 1 ? '' : 's') +
+          ' in the current roster' +
+        '</div><ul>' +
+        problems.map(function (p) { return '<li>' + escapeHtml(p) + '</li>'; }).join('') +
+        '</ul>';
+    },
+
+    _renderTable: function () {
+      var body = document.getElementById('rosterTableBody');
+      var table = document.getElementById('rosterTable');
+      var count = document.getElementById('rosterCount');
+      if (!body) return;
+
+      var rows = this._positions.filter(function (p) {
+        if (!Controller._filter) return true;
+        var hay = [p.positionNumber, p.employeeName, p.officeTitle, p.orgCode,
+                   p.emailAddress, p.dutyStationCity].join(' ').toLowerCase();
+        return hay.indexOf(Controller._filter) !== -1;
+      });
+
+      if (count) {
+        count.textContent = rows.length === this._positions.length
+          ? this._positions.length + ' position(s)'
+          : rows.length + ' of ' + this._positions.length;
+      }
+
+      body.innerHTML = rows.map(function (p) {
+        var vacant = String(p.occupancyStatus || '').toUpperCase() === 'VACANT';
+        // A supervisor can access LETS with no role row, so flag it in the
+        // grid rather than only in the editor.
+        var isSupervisor = String(p.supervisoryStatus) === '2' && !vacant;
+        return '<tr' + (vacant ? ' class="roster-row--vacant"' : '') + '>' +
+          '<td><code>' + escapeHtml(p.positionNumber) + '</code></td>' +
+          '<td>' + (vacant ? '<em>vacant</em>' : escapeHtml(p.employeeName || '')) +
+            (isSupervisor ? ' <span class="roster-badge" title="Supervisory_Status 2 grants LETS access with no role row">sup</span>' : '') +
+            '</td>' +
+          '<td>' + escapeHtml(p.orgCode || '') + '</td>' +
+          '<td>' + escapeHtml(p.officeTitle || '') + '</td>' +
+          '<td>' + escapeHtml(p.grade || '') + '</td>' +
+          '<td>' + escapeHtml(p.supervisoryStatus || '') + '</td>' +
+          '<td>' + (p.reportsToPositionNumber
+            ? '<code>' + escapeHtml(p.reportsToPositionNumber) + '</code>' : '—') + '</td>' +
+          '<td>' + escapeHtml([p.location && p.location.city, p.location && p.location.state]
+            .filter(Boolean).join(', ')) + '</td>' +
+          '<td>' + escapeHtml(p.occupancyStatus || '') + '</td>' +
+          '<td class="roster-actions">' +
+            '<button type="button" class="btn btn-sm btn-outline-secondary" ' +
+              'data-roster-action="edit" data-position="' + escapeHtml(p.positionNumber) + '">Edit</button> ' +
+            '<button type="button" class="btn btn-sm btn-outline-danger" ' +
+              'data-roster-action="deactivate" data-position="' + escapeHtml(p.positionNumber) + '">Deactivate</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('');
+
+      if (table) table.hidden = false;
+    },
+
+    /**
+     * Opens the editor.
+     *
+     * @param {string|null} positionNumber null to create
+     */
+    openEditor: function (positionNumber) {
+      this._editing = positionNumber || null;
+      var p = positionNumber
+        ? this._positions.filter(function (x) { return x.positionNumber === positionNumber; })[0]
+        : null;
+
+      this._populateOrgSelect(p ? p.orgCode : '');
+      this._populateGradeSelect(p ? p.grade : '');
+      this._populateReportsToSelect(p ? p.reportsToPositionNumber : '', positionNumber);
+
+      var set = function (id, v) {
+        var el = document.getElementById(id);
+        if (el) el.value = v === null || v === undefined ? '' : v;
+      };
+      set('rfPositionNumber', p ? p.positionNumber : '');
+      set('rfEmployeeName', p ? p.employeeName : '');
+      set('rfEmailAddress', p ? p.emailAddress : '');
+      set('rfEmployeeId', p ? p.employeeId : '');
+      set('rfOfficeTitle', p ? p.officeTitle : '');
+      set('rfSupervisoryStatus', p ? p.supervisoryStatus : '');
+      set('rfOccupancyStatus', p ? (p.occupancyStatus || 'FILLED') : 'FILLED');
+      set('rfLcat', p ? p.lcat : '');
+      set('rfLocationCode', p ? p.locationCode : '');
+      set('rfDutyStationAddress', p && p.location ? p.location.address1 : '');
+      set('rfDutyStationCity', p && p.location ? p.location.city : '');
+      set('rfDutyStationState', p && p.location ? p.location.state : '');
+
+      var title = document.getElementById('rosterEditTitle');
+      if (title) title.textContent = p ? ('Edit ' + p.positionNumber) : 'Add Position';
+
+      this._clearFormErrors();
+
+      // The position number is the join key for the whole supervisor tree.
+      // Editing it on an existing row would orphan everything reporting to it,
+      // so it is read-only once set — reassigning dependents first is the
+      // correct path.
+      var pnInput = document.getElementById('rfPositionNumber');
+      if (pnInput) pnInput.readOnly = !!positionNumber;
+
+      this._openModal();
+    },
+
+    _openModal: function () {
+      var el = document.getElementById('rosterEditModal');
+      if (!el) return;
+      if (window.bootstrap && window.bootstrap.Modal) {
+        this._modal = window.bootstrap.Modal.getOrCreateInstance(el);
+        this._modal.show();
+      } else {
+        el.classList.add('show');
+        el.style.display = 'block';
+      }
+    },
+
+    _closeModal: function () {
+      if (this._modal) { this._modal.hide(); return; }
+      var el = document.getElementById('rosterEditModal');
+      if (el) { el.classList.remove('show'); el.style.display = 'none'; }
+    },
+
+    _populateOrgSelect: function (selected) {
+      var el = document.getElementById('rfOrgCode');
+      if (!el) return;
+      // Shows both namespaces exactly as the request form does: FCA is the HR
+      // org code, OMD is the BudgetConfig.js allocation key.
+      el.innerHTML = '<option value="">(none)</option>' +
+        this._offices.map(function (o) {
+          return '<option value="' + o.orgCode + '"' +
+            (o.orgCode === selected ? ' selected' : '') + '>' +
+            escapeHtml(o.orgCode + ' — ' + o.name) + '</option>';
+        }).join('');
+    },
+
+    /**
+     * Grade as a SELECT, not a text field.
+     *
+     * This is the VT-03 defect made impossible: a free-text field accepts "7",
+     * Sheets stores the number 7, and String(7) !== '07' so the person fails
+     * every grade comparison including the GS-15 Division Director lookup.
+     * Offering only zero-padded values removes the opportunity.
+     */
+    _populateGradeSelect: function (selected) {
+      var el = document.getElementById('rfGrade');
+      if (!el) return;
+      var grades = ['', 'SES', 'ES'];
+      for (var i = 1; i <= 15; i++) {
+        grades.push(i < 10 ? '0' + i : String(i));
+      }
+      el.innerHTML = grades.map(function (g) {
+        return '<option value="' + g + '"' + (g === selected ? ' selected' : '') + '>' +
+          (g === '' ? '(none)' : g) + '</option>';
+      }).join('');
+    },
+
+    /**
+     * Reports To as a dropdown of existing positions.
+     *
+     * A free-text field accepts a position number that does not exist, and
+     * approval routing then finds no Division Director — silently. The current
+     * row is excluded so a position cannot be set to report to itself; deeper
+     * cycles are caught server-side, because only the server has the full
+     * roster at write time.
+     */
+    _populateReportsToSelect: function (selected, excludePositionNumber) {
+      var el = document.getElementById('rfReportsTo');
+      if (!el) return;
+      var options = this._positions
+        .filter(function (p) { return p.positionNumber !== excludePositionNumber; })
+        .sort(function (a, b) { return a.positionNumber.localeCompare(b.positionNumber); })
+        .map(function (p) {
+          var label = p.positionNumber +
+            (p.employeeName ? ' — ' + p.employeeName : ' — (vacant)') +
+            (p.officeTitle ? ', ' + p.officeTitle : '');
+          return '<option value="' + escapeHtml(p.positionNumber) + '"' +
+            (p.positionNumber === selected ? ' selected' : '') + '>' +
+            escapeHtml(label) + '</option>';
+        });
+      el.innerHTML = '<option value="">(top of the tree)</option>' + options.join('');
+    },
+
+    _clearFormErrors: function () {
+      var el = document.getElementById('rosterFormErrors');
+      if (el) { el.classList.add('hidden'); el.innerHTML = ''; }
+    },
+
+    _showFormErrors: function (problems) {
+      var el = document.getElementById('rosterFormErrors');
+      if (!el) return;
+      el.classList.remove('hidden');
+      el.innerHTML = '<ul>' + problems.map(function (p) {
+        return '<li>' + escapeHtml(p) + '</li>';
+      }).join('') + '</ul>';
+      el.scrollIntoView({ block: 'nearest' });
+    },
+
+    save: function () {
+      var self = this;
+      var val = function (id) {
+        var el = document.getElementById(id);
+        return el ? el.value : '';
+      };
+
+      var position = {
+        positionNumber: val('rfPositionNumber'),
+        reportsToPositionNumber: val('rfReportsTo'),
+        employeeName: val('rfEmployeeName'),
+        emailAddress: val('rfEmailAddress'),
+        employeeId: val('rfEmployeeId'),
+        orgCode: val('rfOrgCode'),
+        officeTitle: val('rfOfficeTitle'),
+        grade: val('rfGrade'),
+        supervisoryStatus: val('rfSupervisoryStatus'),
+        occupancyStatus: val('rfOccupancyStatus'),
+        lcat: val('rfLcat'),
+        locationCode: val('rfLocationCode'),
+        dutyStationAddress: val('rfDutyStationAddress'),
+        dutyStationCity: val('rfDutyStationCity'),
+        dutyStationState: val('rfDutyStationState')
+      };
+
+      this._clearFormErrors();
+      var btn = document.getElementById('rosterSaveBtn');
+      if (btn) btn.disabled = true;
+
+      serverCall('saveHCPosition', position, this._editing)
+        .then(function (res) {
+          if (btn) btn.disabled = false;
+          if (!res || !res.success) {
+            // The server returns the FULL problem list, so the user fixes
+            // everything in one pass rather than resubmitting per error.
+            self._showFormErrors((res && res.problems) ||
+              [(res && res.error) || 'Save failed.']);
+            return;
+          }
+          self._closeModal();
+          if (window.TravelAdmin && window.TravelAdmin.Controller &&
+              window.TravelAdmin.Controller.showToast) {
+            window.TravelAdmin.Controller.showToast(
+              (res.created ? 'Added ' : 'Updated ') + res.positionNumber, 'success');
+          }
+          // Reload rather than patching the local array: the server may have
+          // normalized values, and the problem list has to be recomputed.
+          self.load();
+        })
+        .catch(function (err) {
+          if (btn) btn.disabled = false;
+          self._showFormErrors(['Save failed: ' + (err && err.message)]);
+        });
+    },
+
+    /**
+     * Deactivates rather than deletes.
+     *
+     * Request_Travelers rows carry Budget_Org_Code and the approval log
+     * references positions by number, so removing a row turns a past request's
+     * attribution into a dangling reference. Is_Active=false removes the person
+     * from the bundle while preserving history.
+     */
+    deactivate: function (positionNumber) {
+      var self = this;
+      if (!positionNumber) return;
+      if (!window.confirm('Deactivate ' + positionNumber + '?\n\n' +
+          'The row is kept so past requests keep their attribution, but the ' +
+          'person is removed from lookups, routing and the org chart.')) {
+        return;
+      }
+
+      serverCall('deactivateHCPosition', positionNumber)
+        .then(function (res) {
+          if (!res || !res.success) {
+            self._showProblems((res && res.problems) ||
+              [(res && res.error) || 'Could not deactivate.']);
+            return;
+          }
+          self.load();
+        })
+        .catch(function (err) {
+          self._showProblems(['Could not deactivate: ' + (err && err.message)]);
+        });
+    }
+  };
+
+  window.TravelRoster.Controller = Controller;
+})();
+</script>

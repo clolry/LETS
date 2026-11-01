@@ -5051,4 +5051,213 @@ input.typeahead-loading {
 .feedback-loading .spinner {
   margin: 0 auto 8px;
 }
+
+/* ==========================================================================
+   HR ROSTER EDITOR
+   ==========================================================================
+   HC_Positions was hand-edited in the spreadsheet, which is how three
+   silent-failure defects get introduced: a Grade losing its leading zero, an
+   unexpected Supervisory_Status (which grants LETS access on its own), and a
+   supervisor cycle that hangs any page walking the chain.
+
+   The styling reflects that. The problem banner is prominent because it
+   reports defects in data that is ALREADY live, and the supervisor badge is
+   visible in the grid because that one value is an access grant.
+   ========================================================================== */
+
+.roster-page {
+  padding-bottom: 2rem;
+}
+
+/* Problems found in EXISTING data, shown before anyone edits. Deliberately
+   loud: these are live defects, not form validation. */
+.roster-problems {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #f0c36d;
+  border-left: 4px solid #92400e;
+  border-radius: 4px;
+  background: #fef9ec;
+  color: #7a3e0b;
+  font-size: 0.82rem;
+}
+
+.roster-problems__head {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.roster-problems ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.roster-problems li {
+  margin: 0.15rem 0;
+  line-height: 1.4;
+}
+
+.roster-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.roster-search {
+  max-width: 360px;
+}
+
+.roster-count {
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #6b7280);
+}
+
+.roster-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem 0;
+  color: var(--color-text-muted, #6b7280);
+  font-size: 0.85rem;
+}
+
+.roster-loading.hidden { display: none; }
+
+.roster-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 6px;
+}
+
+.roster-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.roster-table th {
+  position: sticky;
+  top: 0;
+  background: #f9fafb;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted, #6b7280);
+  white-space: nowrap;
+}
+
+.roster-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+
+.roster-table code {
+  font-size: 0.76rem;
+  color: #374151;
+  background: #f3f4f6;
+  padding: 0.05rem 0.25rem;
+  border-radius: 3px;
+}
+
+/* A vacant seat is skipped by routing and omitted from the org chart, so it
+   should not read like a staffed one. */
+.roster-row--vacant td {
+  color: var(--color-text-muted, #9ca3af);
+  font-style: italic;
+}
+
+/* Supervisory_Status 2 grants LETS access with no role row and no audit
+   entry (G-008). Visible in the grid, not only in the editor. */
+.roster-badge {
+  display: inline-block;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  background: rgba(13, 110, 253, 0.1);
+  color: #0a4fa8;
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+}
+
+.roster-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.roster-actions .btn {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+}
+
+/* ---- editor ---- */
+
+.roster-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.roster-field--wide {
+  grid-column: 1 / -1;
+}
+
+.roster-field .form-label {
+  font-size: 0.78rem;
+  margin-bottom: 0.2rem;
+}
+
+/* Each field explains what breaks if it is wrong. These are not decorative:
+   the three silent-failure modes are not guessable from the field name. */
+.roster-field__hint {
+  margin-top: 0.2rem;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--color-text-muted, #6b7280);
+}
+
+/* Server-side validation problems, listed in full rather than one at a time. */
+.roster-form-errors {
+  margin-bottom: 1rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid #f5c2c7;
+  border-left: 4px solid #b02a37;
+  border-radius: 4px;
+  background: #fdf2f3;
+  color: #842029;
+  font-size: 0.8rem;
+}
+
+.roster-form-errors ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.roster-form-errors li {
+  margin: 0.15rem 0;
+  line-height: 1.4;
+}
+
+.roster-problems.hidden,
+.roster-form-errors.hidden {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .roster-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .roster-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .roster-search { max-width: none; }
+}
 </style>

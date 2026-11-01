@@ -68,6 +68,16 @@
           <i aria-hidden="true" class="fas fa-users-gear"></i>
           <span>Users</span>
         </button>
+        <!--
+          HR roster editor. HC_Positions and HC_Orgs were hand-edited in the
+          spreadsheet, which is how a numeric Supervisory_Status, a GS-07
+          losing its leading zero, or a supervisor cycle get introduced — all
+          three fail silently. See 40_domain/HCAdmin.js.
+        -->
+        <button class="admin-nav__item" data-view="roster">
+          <i aria-hidden="true" class="fas fa-sitemap"></i>
+          <span>HR Roster</span>
+        </button>
         <button class="admin-nav__item" data-view="reports">
           <i aria-hidden="true" class="fas fa-chart-bar"></i>
           <span>Reports</span>
@@ -620,6 +630,181 @@
       <!-- Replaces the legacy Reviewers tab. All scoped CSS lives in       -->
       <!-- travelUsersStyles.html under the .users-* prefix.               -->
       <!-- ============================================================== -->
+      <!-- ============================================================== -->
+      <!-- HR ROSTER (HC_Positions)                                        -->
+      <!-- ============================================================== -->
+      <!--
+        HC_Positions and HC_Orgs back the HC namespace that 28 call sites
+        depend on: traveller lookup, duty station, GS-15 Division Director
+        routing, and two of three site-access paths.
+
+        They were hand-edited in the spreadsheet, which is how three
+        silent-failure defects get introduced — a numeric Supervisory_Status, a
+        GS-07 losing its leading zero, and a supervisor cycle that hangs any
+        page walking the chain. Every save here validates against all three and
+        refuses the whole write rather than applying a partial one.
+      -->
+      <div class="admin-view admin-view--scroll-body hidden" id="rosterView">
+        <div class="admin-view-header">
+          <h2><i aria-hidden="true" class="fas fa-sitemap"></i> HR Roster</h2>
+          <div class="admin-view-header__actions">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="rosterRefreshBtn"
+                    title="Re-read from the spreadsheet, bypassing the 6-hour cache">
+              <i aria-hidden="true" class="fas fa-rotate me-1"></i>Refresh
+            </button>
+            <button type="button" class="btn btn-sm btn-primary" id="rosterAddBtn">
+              <i aria-hidden="true" class="fas fa-plus me-1"></i>Add Position
+            </button>
+          </div>
+        </div>
+
+        <div class="admin-view-body roster-page">
+          <!--
+            Problems found in the EXISTING data, from validateHCData. Shown
+            before anyone edits, so a defect introduced by an earlier
+            hand-edit is visible rather than inherited silently.
+          -->
+          <div class="roster-problems hidden" id="rosterProblems"></div>
+
+          <div class="roster-toolbar">
+            <input type="search" class="form-control form-control-sm roster-search"
+                   id="rosterSearch" placeholder="Filter by name, position number, title or org">
+            <span class="roster-count" id="rosterCount"></span>
+          </div>
+
+          <div class="roster-loading" id="rosterLoading">
+            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            Loading roster&hellip;
+          </div>
+
+          <div class="roster-table-wrap">
+            <table class="roster-table" id="rosterTable" hidden>
+              <thead>
+                <tr>
+                  <th>Position</th>
+                  <th>Name</th>
+                  <th>Org</th>
+                  <th>Title</th>
+                  <th>Grade</th>
+                  <th>Sup</th>
+                  <th>Reports To</th>
+                  <th>Duty Station</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="rosterTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Position editor -->
+      <div class="modal fade" id="rosterEditModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+          <div class="modal-content admin-modal">
+            <div class="admin-modal__header">
+              <h5 id="rosterEditTitle">Edit Position</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="admin-modal__body">
+              <!--
+                Validation problems from the server, listed in full rather than
+                one at a time — a form that reports one error per submit makes
+                the user resubmit repeatedly to discover the rest.
+              -->
+              <div class="roster-form-errors hidden" id="rosterFormErrors"></div>
+
+              <div class="roster-form-grid">
+                <div class="roster-field">
+                  <label class="form-label required" for="rfPositionNumber">Position Number</label>
+                  <input type="text" class="form-control form-control-sm" id="rfPositionNumber" maxlength="40">
+                  <div class="roster-field__hint">The key the supervisor chain joins on. May contain leading zeros.</div>
+                </div>
+                <div class="roster-field">
+                  <label class="form-label" for="rfReportsTo">Reports To</label>
+                  <select class="form-select form-select-sm" id="rfReportsTo"></select>
+                  <div class="roster-field__hint">Blank for the top of the tree.</div>
+                </div>
+                <div class="roster-field">
+                  <label class="form-label" for="rfEmployeeName">Employee Name</label>
+                  <input type="text" class="form-control form-control-sm" id="rfEmployeeName" maxlength="120">
+                </div>
+                <div class="roster-field">
+                  <label class="form-label" for="rfEmailAddress">Email Address</label>
+                  <input type="email" class="form-control form-control-sm" id="rfEmailAddress" maxlength="120">
+                  <div class="roster-field__hint">Required for a staffed seat — it is how the person is notified and matched for access.</div>
+                </div>
+                <div class="roster-field">
+                  <label class="form-label" for="rfEmployeeId">Employee ID</label>
+                  <input type="text" class="form-control form-control-sm" id="rfEmployeeId" maxlength="40">
+                  <div class="roster-field__hint">May contain leading zeros.</div>
+                </div>
+                <div class="roster-field">
+                  <label class="form-label" for="rfOrgCode">Org</label>
+                  <select class="form-select form-select-sm" id="rfOrgCode"></select>
+                </div>
+                <div class="roster-field roster-field--wide">
+                  <label class="form-label" for="rfOfficeTitle">Office Title</label>
+                  <input type="text" class="form-control form-control-sm" id="rfOfficeTitle" maxlength="120">
+                  <div class="roster-field__hint">Site access matches "chief of staff" and "client executive" in this field.</div>
+                </div>
+                <div class="roster-field">
+                  <label class="form-label" for="rfGrade">Grade</label>
+                  <select class="form-select form-select-sm" id="rfGrade"></select>
+                  <div class="roster-field__hint">Zero-padded. A single digit fails every grade check, including the GS-15 Division Director lookup.</div>
+                </div>
+                <div class="roster-field">
+                  <label class="form-label" for="rfSupervisoryStatus">Supervisory Status</label>
+                  <select class="form-select form-select-sm" id="rfSupervisoryStatus">
+                    <option value="">(not a supervisor)</option>
+                    <option value="2">2 — Supervisor</option>
+                  </select>
+                  <div class="roster-field__hint">Grants LETS access on its own, with no role row and no audit entry.</div>
+                </div>
+                <div class="roster-field">
+                  <label class="form-label" for="rfOccupancyStatus">Occupancy</label>
+                  <select class="form-select form-select-sm" id="rfOccupancyStatus">
+                    <option value="FILLED">FILLED</option>
+                    <option value="VACANT">VACANT</option>
+                    <option value="OBLIGATED">OBLIGATED</option>
+                  </select>
+                  <div class="roster-field__hint">A VACANT seat is skipped by routing and omitted from the org chart.</div>
+                </div>
+                <div class="roster-field">
+                  <label class="form-label" for="rfLcat">LCAT</label>
+                  <input type="text" class="form-control form-control-sm" id="rfLcat" maxlength="80">
+                </div>
+                <div class="roster-field">
+                  <label class="form-label" for="rfLocationCode">Location Code</label>
+                  <input type="text" class="form-control form-control-sm" id="rfLocationCode" maxlength="40">
+                </div>
+                <div class="roster-field roster-field--wide">
+                  <label class="form-label" for="rfDutyStationAddress">Duty Station Address</label>
+                  <input type="text" class="form-control form-control-sm" id="rfDutyStationAddress" maxlength="160">
+                </div>
+                <div class="roster-field">
+                  <label class="form-label" for="rfDutyStationCity">Duty Station City</label>
+                  <input type="text" class="form-control form-control-sm" id="rfDutyStationCity" maxlength="80">
+                  <div class="roster-field__hint">Drives the airfare origin airport.</div>
+                </div>
+                <div class="roster-field">
+                  <label class="form-label" for="rfDutyStationState">Duty Station State</label>
+                  <input type="text" class="form-control form-control-sm" id="rfDutyStationState" maxlength="2"
+                         style="text-transform: uppercase;">
+                </div>
+              </div>
+            </div>
+            <div class="admin-modal__footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="button" class="btn btn-primary" id="rosterSaveBtn">
+                <i aria-hidden="true" class="fas fa-save me-1"></i>Save
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="admin-view hidden" id="usersView">
         <!-- Sticky page header — matches the dashboard / requests pattern -->
         <div class="admin-view-header">
@@ -908,6 +1093,9 @@
 
   <!-- Users module (Phase 5 — replaces legacy Reviewers tab) -->
   <?!= include('client/controllers/admin/travelUsersController'); ?>
+
+  <!-- HR roster editor -->
+  <?!= include('client/controllers/admin/travelRosterController'); ?>
 
   <!-- Document Viewer -->
   <?!= include('client/components/documentViewer'); ?>
