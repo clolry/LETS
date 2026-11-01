@@ -80,6 +80,9 @@ console.log('2. every diag function is reachable and returns nothing');
     function getCityPairFare(){return {success:true,found:false};}
     function getAirportsForCity(){return {success:true,airports:[{code:'DCA',isMetroArea:false}]};}
     function isTravelAdmin(){return true;}
+    function getEmailRoutingStatus(){return {environment:'development',isProduction:false,
+      willRedirect:true,redirectTo:'t@gsa.gov',blocked:false,reason:null,
+      testSubmitterSuppression:false};}
     function getAccessInventory(){return {success:true,hcDerivedEnabled:true,
       roleHolders:[],hcSupervisors:[],buLeads:[]};}
     var FASTrackerSync={
@@ -145,6 +148,9 @@ console.log('3. diagAccess refuses a non-admin');
   vm.runInContext(fs.readFileSync('lets_app/server/01_constants/Sheets.js','utf8'),ctx);
   vm.runInContext(`var AIRPORT_PREF_PROMOTION_THRESHOLD=2;
     function isTravelAdmin(){return false;}
+    function getEmailRoutingStatus(){throw new Error('config not loaded');}
+    function getEmailRoutingStatus(){return {environment:'development',blocked:true,
+      reason:'no redirect',willRedirect:false,testSubmitterSuppression:false};}
     function getAccessInventory(){throw new Error('must not be reached');}`,ctx);
   vm.runInContext(fs.readFileSync(SRC,'utf8'),ctx);
   let threw=null;

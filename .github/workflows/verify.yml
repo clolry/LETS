@@ -87,6 +87,9 @@ jobs:
       - name: FAS tracker test-submission tests
         run: node lets_app/test_fas_tracker_submit.js
 
+      - name: Environment email gate tests
+        run: node lets_app/test_email_gate.js
+
       # --- Regression guards -------------------------------------------------
       # These encode the fixes in this change so they cannot silently regress
       # later (AGENTS.md §12.3).
@@ -188,6 +191,65 @@ jobs:
             exit 1
           fi
           echo "PASS - access decisions are logged and the kill switch is present."
+
+      - name: 'Guard: email must be environment-gated and template refs must resolve'
+        run: |
+          echo "Checking the environment email gate..."
+          # Nothing was stopping the sandbox from emailing real people. The only
+          # suppression was a per-tester opt-in keyed on the SENDER, and
+          # Test_Submitters was empty.
+          if ! grep -q '_resolveEmailRecipients' lets_app/server/30_services/Email.js; then
+            echo "::error file=lets_app/server/30_services/Email.js::The environment email gate is gone. Non-production environments will send travel notifications to real recipients."
+            exit 1
+          fi
+          # Both the GmailApp path and the MailApp fallback must use the routed
+          # recipients, not the raw options.
+          if grep -qE 'GmailApp\.sendEmail\(options\.to' lets_app/server/30_services/Email.js; then
+            echo "::error file=lets_app/server/30_services/Email.js::GmailApp.sendEmail is using options.to, bypassing the environment gate."
+            exit 1
+          fi
+          # Scoped to the MailApp call. _resolveEmailRecipients legitimately
+          # returns `to: options.to` on its production pass-through branch, and
+          # a file-wide grep matched that — a guard that trips on correct code
+          # is one people delete.
+          if awk '/MailApp\.sendEmail\(\{/,/\}\);/' lets_app/server/30_services/Email.js \
+               | grep -qE 'to: options\.to'; then
+            echo "::error file=lets_app/server/30_services/Email.js::The MailApp fallback is using options.to, bypassing the environment gate."
+            exit 1
+          fi
+          echo "PASS - email sends go through the environment gate."
+          echo "Checking template file references resolve..."
+          # clasp strips ONE .html extension, so a file named x.html.html is
+          # reachable as 'x.html' and NOT as 'x'. Four files were named that
+          # way; one of them broke the entire admin page.
+          if find lets_app -name '*.html.html' | grep . ; then
+            echo "::error::A file ends in .html.html. clasp strips one extension, so include('...') cannot resolve it. Rename it."
+            exit 1
+          fi
+          node -e "
+            const fs=require('fs'), path=require('path');
+            const files=[];
+            (function walk(d){ for(const e of fs.readdirSync(d,{withFileTypes:true})){
+              const p=path.join(d,e.name);
+              if(e.isDirectory())walk(p); else files.push(p);
+            }})('lets_app');
+            const refs=new Set();
+            for(const f of files){
+              if(!/\.(html|js)\$/.test(f)) continue;
+              const s=fs.readFileSync(f,'utf8');
+              for(const m of s.matchAll(/(?:include|createTemplateFromFile|createHtmlOutputFromFile)\(\s*'([^']+)'/g)){
+                if(m[1]==='...') continue;
+                refs.add(m[1]);
+              }
+            }
+            const missing=[...refs].filter(r=>!fs.existsSync('lets_app/'+r+'.html'));
+            if(missing.length){ console.error('Unresolved template references: '+missing.join(', ')); process.exit(1); }
+            console.log(refs.size+' template references all resolve.');
+          " || {
+            echo "::error::An include() or createTemplateFromFile() target does not exist. The page will throw at render time."
+            exit 1
+          }
+          echo "PASS - every template reference resolves."
 
       - name: 'Guard: FAS tracker writes must refuse production'
         run: |

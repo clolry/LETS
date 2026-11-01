@@ -120,6 +120,199 @@ function initTravelEmailConfig() {
 // _formatEmailDateRange → formatDateRange (which has its own TBD handling)
 
 // ============================================================================
+// ENVIRONMENT EMAIL GATE
+// ============================================================================
+//
+// WHY THIS EXISTS
+// ---------------
+// Nothing was preventing the sandbox from emailing real people. The only
+// suppression was _isTestSubmitter(), which checks whether the ACTIVE USER has
+// Suppress_Emails=TRUE in the Test_Submitters sheet — a per-tester opt-in,
+// keyed on the sender, not gated on the environment at all.
+//
+// @clolry confirmed Test_Submitters is EMPTY. So every sandbox submission has
+// been sending real notifications, and any Sector Director or BU Reviewer that
+// HC resolved received them. That is pre-existing inherited behaviour, not
+// something introduced by recent work, and it is why he declined to supply real
+// approver addresses for the routing work.
+//
+// HOW IT WORKS
+// ------------
+// Outside production, every recipient is replaced with ONE safe address and the
+// intended recipients are listed at the top of the body. Nothing is silently
+// dropped: a redirected email still arrives, so a tester can confirm content
+// and routing without anyone else being notified.
+//
+// FAIL CLOSED. If the environment cannot be determined, or no safe address can
+// be resolved, the send is BLOCKED rather than allowed through. The cost of a
+// blocked test email is a confusing log line; the cost of a wrongly-allowed one
+// is a real person receiving a fabricated travel notification.
+//
+// Mirrors the FAS_TRACKER_TARGET gate in 00_config/TripConfig.js: the
+// production decision is made in exactly one place and a non-production project
+// cannot reach the real destination even if the properties are misconfigured.
+
+/**
+ * Where a non-production email should actually go.
+ *
+ * Precedence:
+ *   1. TEST_EMAIL_REDIRECT Script Property, if set
+ *   2. the active user's own address
+ *
+ * Returns null when neither is available, which blocks the send.
+ *
+ * @returns {string|null}
+ */
+function _getTestEmailRedirect() {
+  try {
+    var configured = PropertiesService.getScriptProperties()
+      .getProperty('TEST_EMAIL_REDIRECT');
+    if (configured && String(configured).trim()) return String(configured).trim();
+  } catch (e) {
+    console.warn('_getTestEmailRedirect: property read failed: ' + e.message);
+  }
+  try {
+    // Falling back to the active user means a developer testing in sandbox
+    // gets their own mail with no configuration at all. In a TRIGGER context
+    // there is no active user, which is why this can return null.
+    var active = Session.getActiveUser().getEmail();
+    if (active && String(active).trim()) return String(active).trim();
+  } catch (e) {
+    console.warn('_getTestEmailRedirect: no active user: ' + e.message);
+  }
+  return null;
+}
+
+/**
+ * Applies the environment gate to one outgoing email.
+ *
+ * In production this is a pass-through. Outside production it rewrites the
+ * recipients and prepends a banner naming the intended ones.
+ *
+ * @param {Object} options as passed to sendTravelEmail
+ * @returns {Object} { to, cc, bcc, subject, body, htmlBody,
+ *                     redirected, originalTo, blocked, reason }
+ */
+function _resolveEmailRecipients(options) {
+  var isProduction;
+  try {
+    // LETS_IS_PRODUCTION is a module-level const computed at file-evaluation
+    // time in 00_config/TripConfig.js.
+    isProduction = (typeof LETS_IS_PRODUCTION !== 'undefined') ? LETS_IS_PRODUCTION : null;
+  } catch (e) {
+    isProduction = null;
+  }
+
+  // Fail closed. An unknown environment must not be treated as production.
+  if (isProduction === null || isProduction === undefined) {
+    return {
+      blocked: true,
+      reason: 'the environment could not be determined (00_config/TripConfig.js ' +
+        'did not load), so LETS cannot tell whether this email is safe to send'
+    };
+  }
+
+  if (isProduction === true) {
+    return {
+      to: options.to,
+      cc: options.cc,
+      bcc: options.bcc,
+      subject: options.subject,
+      body: options.body,
+      htmlBody: options.htmlBody,
+      redirected: false,
+      originalTo: options.to,
+      blocked: false
+    };
+  }
+
+  var redirect = _getTestEmailRedirect();
+  if (!redirect) {
+    return {
+      blocked: true,
+      reason: 'this is a non-production environment and no safe recipient could ' +
+        'be resolved. Set the TEST_EMAIL_REDIRECT Script Property (a trigger ' +
+        'has no active user to fall back to)'
+    };
+  }
+
+  var intended = [];
+  if (options.to) intended.push('To: ' + options.to);
+  if (options.cc) intended.push('Cc: ' + options.cc);
+  if (options.bcc) intended.push('Bcc: ' + options.bcc);
+  var intendedText = intended.length ? intended.join('\n') : 'To: (none specified)';
+
+  var envLabel = (typeof LETS_ENV !== 'undefined') ? LETS_ENV : 'non-production';
+
+  // The subject is prefixed so a redirected email is unmistakable in an inbox
+  // even before it is opened.
+  var subject = '[' + String(envLabel).toUpperCase() + ' TEST] ' + options.subject;
+
+  var banner =
+    '*** ' + String(envLabel).toUpperCase() + ' ENVIRONMENT — NOT SENT TO THE REAL RECIPIENTS ***\n\n' +
+    'This message was redirected to you because LETS is not running in\n' +
+    'production. In production it would have been sent to:\n\n' +
+    intendedText + '\n\n' +
+    '----------------------------------------------------------------------\n\n';
+
+  var htmlBanner =
+    '<div style="border:2px solid #92400e;background:#fef3c7;color:#92400e;' +
+    'padding:12px;margin-bottom:16px;font-family:sans-serif;font-size:13px;">' +
+    '<strong>' + _escapeForEmailBanner(String(envLabel).toUpperCase()) +
+    ' ENVIRONMENT — NOT SENT TO THE REAL RECIPIENTS</strong><br><br>' +
+    'This message was redirected to you because LETS is not running in ' +
+    'production. In production it would have been sent to:<br><br>' +
+    '<code>' + _escapeForEmailBanner(intendedText).replace(/\n/g, '<br>') + '</code>' +
+    '</div>';
+
+  return {
+    // Cc and bcc are DROPPED, not redirected. Copying them to the same
+    // address would send the tester duplicates of every message.
+    to: redirect,
+    cc: '',
+    bcc: '',
+    subject: subject,
+    body: banner + (options.body || ''),
+    htmlBody: options.htmlBody ? (htmlBanner + options.htmlBody) : undefined,
+    redirected: true,
+    originalTo: options.to,
+    blocked: false
+  };
+}
+
+/** Minimal escaping for text interpolated into the HTML banner. */
+function _escapeForEmailBanner(text) {
+  return String(text === null || text === undefined ? '' : text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/**
+ * Reports how email is currently being routed, without sending anything.
+ *
+ * @returns {Object} { environment, isProduction, willRedirect, redirectTo,
+ *                     blocked, reason }
+ * @server
+ */
+function getEmailRoutingStatus() {
+  var probe = _resolveEmailRecipients({
+    to: 'intended@example.gov',
+    subject: 'probe',
+    body: 'probe'
+  });
+  return {
+    environment: (typeof LETS_ENV !== 'undefined') ? LETS_ENV : 'unknown',
+    isProduction: (typeof LETS_IS_PRODUCTION !== 'undefined') ? LETS_IS_PRODUCTION : null,
+    willRedirect: probe.redirected === true,
+    redirectTo: probe.redirected ? probe.to : null,
+    blocked: probe.blocked === true,
+    reason: probe.reason || null,
+    testSubmitterSuppression: _isTestSubmitter()
+  };
+}
+
+// ============================================================================
 // CORE EMAIL FUNCTION
 // ============================================================================
 
@@ -148,6 +341,11 @@ function sendTravelEmail(options) {
     // Test-mode bypass: if the active user has Suppress_Emails=TRUE in the
     // Test_Submitters sheet, drop the email entirely. Lets a tester
     // submit, review, deny, etc. without flooding real inboxes.
+    //
+    // NOTE: this checks the SENDER, not the recipients, and is not gated on
+    // the environment. It is a per-tester opt-in, which is why the
+    // environment redirect below exists as well — Test_Submitters was empty
+    // in sandbox, so every notification was reaching real mailboxes.
     if (_isTestSubmitter()) {
       console.log('sendTravelEmail: active user is a test submitter, skipping send (subject="' + options.subject + '")');
       return { success: true, suppressed: true, reason: 'test-submitter' };
@@ -156,37 +354,59 @@ function sendTravelEmail(options) {
     const senderEmail = getTravelEmailAddress();
     const senderName = getTravelEmailName();
 
+    // Environment gate. Outside production, every recipient is replaced with
+    // a single safe address and the intended ones are listed in the body.
+    const routed = _resolveEmailRecipients(options);
+    if (routed.blocked) {
+      console.warn('sendTravelEmail: BLOCKED — ' + routed.reason +
+        ' (subject="' + options.subject + '")');
+      return { success: false, blocked: true, reason: routed.reason };
+    }
+
     // Try GmailApp first (supports send-as alias)
     try {
-      GmailApp.sendEmail(options.to, options.subject, options.body, {
+      GmailApp.sendEmail(routed.to, routed.subject, routed.body, {
         name: senderName,
         from: senderEmail,
         replyTo: senderEmail,
-        htmlBody: options.htmlBody,
-        cc: options.cc,
-        bcc: options.bcc
+        htmlBody: routed.htmlBody,
+        cc: routed.cc,
+        bcc: routed.bcc
       });
 
-      console.log(`Email sent via GmailApp to ${options.to} from ${senderEmail}`);
-      return { success: true, method: 'GmailApp' };
+      console.log(`Email sent via GmailApp to ${routed.to} from ${senderEmail}` +
+        (routed.redirected ? ' [REDIRECTED from: ' + routed.originalTo + ']' : ''));
+      return {
+        success: true,
+        method: 'GmailApp',
+        redirected: routed.redirected,
+        originalTo: routed.originalTo
+      };
 
     } catch (gmailAppError) {
       console.warn('GmailApp failed, trying MailApp fallback:', gmailAppError.message);
 
       // Fallback to MailApp (sends with reply-to only)
       MailApp.sendEmail({
-        to: options.to,
-        subject: options.subject,
-        body: options.body,
+        to: routed.to,
+        subject: routed.subject,
+        body: routed.body,
         name: senderName,
         replyTo: senderEmail,
-        htmlBody: options.htmlBody,
-        cc: options.cc,
-        bcc: options.bcc
+        htmlBody: routed.htmlBody,
+        cc: routed.cc,
+        bcc: routed.bcc
       });
 
-      console.log(`Email sent via MailApp to ${options.to} (fallback - reply-to: ${senderEmail})`);
-      return { success: true, method: 'MailApp', fallback: true };
+      console.log(`Email sent via MailApp to ${routed.to} (fallback - reply-to: ${senderEmail})` +
+        (routed.redirected ? ' [REDIRECTED from: ' + routed.originalTo + ']' : ''));
+      return {
+        success: true,
+        method: 'MailApp',
+        fallback: true,
+        redirected: routed.redirected,
+        originalTo: routed.originalTo
+      };
     }
 
   } catch (error) {

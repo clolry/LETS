@@ -171,6 +171,29 @@ function diagEnvironment() {
       console.log('  ' + k + ': ' + shown);
     });
 
+    // Where email actually goes. Nothing was gating this: the only
+    // suppression was a per-tester opt-in keyed on the SENDER, and
+    // Test_Submitters was empty — so sandbox was mailing real people.
+    console.log('');
+    try {
+      var mail = getEmailRoutingStatus();
+      console.log('Email routing:');
+      console.log('  environment:        ' + mail.environment);
+      if (mail.blocked) {
+        console.log('  *** BLOCKED: ' + mail.reason);
+        console.log('      No email will send. Set TEST_EMAIL_REDIRECT.');
+      } else if (mail.willRedirect) {
+        console.log('  redirecting all mail to: ' + mail.redirectTo);
+        console.log('  real recipients are listed in each message body');
+      } else {
+        console.log('  *** LIVE — mail goes to real recipients ***');
+      }
+      console.log('  Test_Submitters suppression for you: ' +
+        (mail.testSubmitterSuppression ? 'ON (nothing sends)' : 'off'));
+    } catch (e) {
+      console.log('Email routing: [unavailable: ' + e.message + ']');
+    }
+
     console.log('');
     try {
       console.log('Cache key versions (bump on a result-shape change):');
