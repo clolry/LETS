@@ -1340,18 +1340,8 @@ function _buildStageCcList(params) {
  * @param {string} reviewLevel 'Sector' | 'BU' | 'OSO' | 'AAS FO' | 'FAS'
  * @returns {string} plain text, safe for both the HTML and text bodies
  */
-function _describeRoutingDestination(reviewer, reviewLevel) {
-  // Deliberately NOT reusing STAGE_MAP: that maps to progress-tracker stage
-  // keys, which are internal identifiers. These are the words a submitter
-  // should read.
-  var LEVEL_LABELS = {
-    'Sector': 'Sector Director review',
-    'BU': 'Business Unit review',
-    'OSO': 'AAS Front Office review',
-    'AAS FO': 'AAS Front Office review',
-    'FAS': 'FAS Front Office review'
-  };
-  var stage = LEVEL_LABELS[reviewLevel] || (reviewLevel ? reviewLevel + ' review' : 'review');
+function _describeRoutingDestination(reviewer, reviewLevel, status) {
+  var stage = describeReviewStage(status, reviewLevel);
 
   var name = reviewer && reviewer.name ? String(reviewer.name).trim() : '';
   var email = reviewer && reviewer.email ? String(reviewer.email).trim() : '';
@@ -1363,6 +1353,62 @@ function _describeRoutingDestination(reviewer, reviewLevel) {
   // progressing: an unrouted request will sit until someone notices.
   return stage + ' — reviewer not yet assigned. Contact aastravel@gsa.gov if ' +
     'this request does not progress within two business days.';
+}
+
+/**
+ * The CURRENT review stage, derived from status where possible.
+ *
+ * WHY STATUS AND NOT Initial_Review_Level
+ * ---------------------------------------
+ * Initial_Review_Level records where a request STARTED and never advances,
+ * while Current_Reviewer_Name does. Pairing them meant a request past its
+ * first stage showed the current reviewer against the stage it began at —
+ * correct on submission, progressively wrong afterwards.
+ *
+ * Status advances with the request, so it is the better source. The review
+ * level is kept only as a fallback for a status this does not recognise.
+ *
+ * Deliberately NOT reusing STAGE_MAP: that maps to progress-tracker stage
+ * keys ('bu_review'), which are internal identifiers. These are the words a
+ * submitter should read.
+ *
+ * Shared by the email and mirrored on the client in travelUtils, because one
+ * feeds notifications and the other the portal card. A test asserts the two
+ * agree — a submitter seeing different wording in each would reasonably think
+ * they were different things.
+ *
+ * @param {string} status Requests.Status
+ * @param {string} [reviewLevel] Initial_Review_Level, used only as a fallback
+ * @returns {string}
+ */
+function describeReviewStage(status, reviewLevel) {
+  var STATUS_STAGES = {
+    PENDING_SECTOR: 'Sector Director review',
+    PENDING_BU: 'Business Unit review',
+    PENDING_OSO: 'AAS Front Office review',
+    PENDING_FAS: 'FAS Front Office review',
+    PENDING_DD_CONFIRMATION: 'Division Director confirmation',
+    PENDING_CORRECTION: 'correction by the submitter',
+    NEEDS_INFO: 'more information from the submitter',
+    NEEDS_INFO_SECTOR: 'more information from the submitter',
+    NEEDS_INFO_BU: 'more information from the submitter',
+    NEEDS_INFO_OSO: 'more information from the submitter'
+  };
+
+  var key = String(status || '').toUpperCase().trim();
+  if (STATUS_STAGES[key]) return STATUS_STAGES[key];
+
+  // Fall back to the initial level. Reached when a status is added without
+  // being mapped here, which is better than inventing a stage name.
+  var LEVEL_LABELS = {
+    'Sector': 'Sector Director review',
+    'BU': 'Business Unit review',
+    'OSO': 'AAS Front Office review',
+    'AAS FO': 'AAS Front Office review',
+    'FAS': 'FAS Front Office review'
+  };
+  if (LEVEL_LABELS[reviewLevel]) return LEVEL_LABELS[reviewLevel];
+  return reviewLevel ? reviewLevel + ' review' : 'review';
 }
 
 function sendSubmitterConfirmation(requestId, formData, reviewer, reviewLevel) {
@@ -1443,7 +1489,7 @@ function sendSubmitterConfirmation(requestId, formData, reviewer, reviewLevel) {
             Now with
           </div>
           <div style="font-family: ${EMAIL_STYLES.fonts.family}; font-size: 14px; color: ${EMAIL_STYLES.colors.textBody};">
-            ${escapeHtml(_describeRoutingDestination(reviewer, reviewLevel))}
+            ${escapeHtml(_describeRoutingDestination(reviewer, reviewLevel, formData.status))}
           </div>
         </td>
       </tr>
@@ -1479,7 +1525,7 @@ REQUEST DETAILS
 Event: ${tripName}
 Travel Dates: ${_getTripTravelDates(formData)}
 Attendee(s): ${travelerNames || `${travelerCount} attendee${travelerCount !== 1 ? 's' : ''}`}
-Now with: ${_describeRoutingDestination(reviewer, reviewLevel)}
+Now with: ${_describeRoutingDestination(reviewer, reviewLevel, formData.status)}
 
 No action is required from you at this time. You will be notified if additional information is needed or once a final determination is made.
 

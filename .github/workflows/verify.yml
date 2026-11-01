@@ -224,6 +224,23 @@ jobs:
             echo "::error file=lets_app/client/controllers/portal/travelPortalController.html::The portal no longer flags unrouted requests."
             exit 1
           fi
+          # The stage must derive from STATUS, not Initial_Review_Level. That
+          # column records where a request STARTED and never advances, so
+          # pairing it with the current reviewer showed the right person
+          # against the wrong stage once a request progressed.
+          for FILE in lets_app/server/30_services/Email.js \
+                      lets_app/client/shared/travelUtils.html; do
+            if ! grep -q 'STATUS_STAGES' "$FILE"; then
+              echo "::error file=${FILE}::describeReviewStage no longer derives the stage from status. A request past its first stage will show the current reviewer against the stage it started at."
+              exit 1
+            fi
+          done
+          # NEEDS_INFO and PENDING_CORRECTION wait on the SUBMITTER. Showing
+          # "with <reviewer>" there is actively wrong.
+          if ! grep -q 'isAwaitingSubmitter' lets_app/client/shared/travelUtils.html; then
+            echo "::error file=lets_app/client/shared/travelUtils.html::isAwaitingSubmitter is gone. A needs-info request will read as waiting on a reviewer when it is waiting on the submitter."
+            exit 1
+          fi
           echo "PASS - routing destination is visible on both surfaces."
 
       - name: 'Guard: classification options must stay tracker-verbatim'

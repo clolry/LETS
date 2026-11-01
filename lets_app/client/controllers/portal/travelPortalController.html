@@ -1269,8 +1269,8 @@
               ${dateRange ? `<span><i aria-hidden="true" class="fas fa-calendar"></i> ${dateRange}</span>` : ''}
               <span class="request-card__total">${total}</span>
             </div>
-            ${routedTo ? `<div class="request-card__routing ${routedTo.unrouted ? 'request-card__routing--warn' : ''}">
-              <i aria-hidden="true" class="fas ${routedTo.unrouted ? 'fa-exclamation-triangle' : 'fa-user-check'}"></i>
+            ${routedTo ? `<div class="request-card__routing ${routedTo.unrouted ? 'request-card__routing--warn' : ''}${routedTo.actionable ? ' request-card__routing--action' : ''}">
+              <i aria-hidden="true" class="fas ${routedTo.unrouted ? 'fa-exclamation-triangle' : (routedTo.actionable ? 'fa-reply' : 'fa-user-check')}"></i>
               ${this._escapeHtml(routedTo.text)}
             </div>` : ''}
           </div>
@@ -1306,21 +1306,28 @@
      * @returns {{text: string, unrouted: boolean}|null}
      */
     _describeRouting(request) {
-      const TERMINAL = ['COMPLETED', 'APPROVED_GOGOV', 'DENIED', 'CANCELLED', 'DRAFT'];
+      // Terminal statuses show nothing: "now with X" is misleading on a
+      // finished request, and the status badge already says what happened.
+      const TERMINAL = ['COMPLETED', 'APPROVED', 'APPROVED_GOGOV', 'DENIED',
+                        'CANCELLED', 'SUBMITTER_CANCELLED', 'DRAFT'];
       const status = String(request.status || '').toUpperCase();
       if (TERMINAL.indexOf(status) !== -1) return null;
 
-      const LEVEL_LABELS = {
-        'Sector': 'Sector Director review',
-        'BU': 'Business Unit review',
-        'OSO': 'AAS Front Office review',
-        'AAS FO': 'AAS Front Office review',
-        'FAS': 'FAS Front Office review'
-      };
-      const level = request.initialReviewLevel || '';
-      const stage = LEVEL_LABELS[level] || (level ? level + ' review' : 'review');
-      const name = String(request.currentReviewerName || '').trim();
+      // Stage comes from STATUS, which advances with the request.
+      // initialReviewLevel records where it STARTED and never moves, so
+      // pairing it with the current reviewer showed the right person against
+      // the wrong stage once a request progressed.
+      const stage = window.TravelUtils.describeReviewStage(
+        status, request.initialReviewLevel || '');
 
+      // NEEDS_INFO and PENDING_CORRECTION are waiting on the SUBMITTER, not a
+      // reviewer. Saying "with <reviewer>" there actively misleads — the
+      // request will not move until the submitter acts.
+      if (window.TravelUtils.isAwaitingSubmitter(status)) {
+        return { text: 'Waiting on you — ' + stage, unrouted: false, actionable: true };
+      }
+
+      const name = String(request.currentReviewerName || '').trim();
       if (name) return { text: 'With ' + name + ' — ' + stage, unrouted: false };
       return {
         text: 'No reviewer assigned yet (' + stage + ') — contact aastravel@gsa.gov if this does not progress',

@@ -323,6 +323,63 @@ window.TravelUtils = (function() {
     return STATUS_MAP[status] || { label: status, color: 'secondary', icon: 'question-circle' };
   }
 
+  /**
+   * The CURRENT review stage, derived from status where possible.
+   *
+   * Mirrors describeReviewStage in server/30_services/Email.js. Duplicated
+   * because one feeds notifications and the other the portal card, and a
+   * submitter seeing different wording in each would reasonably think they
+   * were different things — test_routing_visibility asserts the two agree.
+   *
+   * WHY STATUS AND NOT Initial_Review_Level: that column records where a
+   * request STARTED and never advances, while Current_Reviewer_Name does.
+   * Pairing them showed the current reviewer against the stage the request
+   * began at — correct on submission, progressively wrong afterwards.
+   *
+   * @param {string} status Requests.Status
+   * @param {string} [reviewLevel] fallback for an unmapped status
+   * @returns {string}
+   */
+  function describeReviewStage(status, reviewLevel) {
+    const STATUS_STAGES = {
+      PENDING_SECTOR: 'Sector Director review',
+      PENDING_BU: 'Business Unit review',
+      PENDING_OSO: 'AAS Front Office review',
+      PENDING_FAS: 'FAS Front Office review',
+      PENDING_DD_CONFIRMATION: 'Division Director confirmation',
+      PENDING_CORRECTION: 'correction by the submitter',
+      NEEDS_INFO: 'more information from the submitter',
+      NEEDS_INFO_SECTOR: 'more information from the submitter',
+      NEEDS_INFO_BU: 'more information from the submitter',
+      NEEDS_INFO_OSO: 'more information from the submitter'
+    };
+    const key = String(status || '').toUpperCase().trim();
+    if (STATUS_STAGES[key]) return STATUS_STAGES[key];
+
+    const LEVEL_LABELS = {
+      'Sector': 'Sector Director review',
+      'BU': 'Business Unit review',
+      'OSO': 'AAS Front Office review',
+      'AAS FO': 'AAS Front Office review',
+      'FAS': 'FAS Front Office review'
+    };
+    if (LEVEL_LABELS[reviewLevel]) return LEVEL_LABELS[reviewLevel];
+    return reviewLevel ? reviewLevel + ' review' : 'review';
+  }
+
+  /**
+   * True when a status means the submitter must act.
+   *
+   * NEEDS_INFO and PENDING_CORRECTION are not "waiting on a reviewer" — they
+   * are waiting on the SUBMITTER, and showing "with <reviewer>" on one of
+   * those actively misleads: the request will not move until the submitter
+   * does something.
+   */
+  function isAwaitingSubmitter(status) {
+    const key = String(status || '').toUpperCase().trim();
+    return key.indexOf('NEEDS_INFO') === 0 || key === 'PENDING_CORRECTION';
+  }
+
   // ==========================================================================
   // EXPORTS
   // ==========================================================================
@@ -389,6 +446,8 @@ window.TravelUtils = (function() {
 
     // Status helpers
     getStatusInfo,
+    describeReviewStage,
+    isAwaitingSubmitter,
 
     // Office / org code mapping (FO<->FC, OMD<->FCA, IDV<->FCB, CM<->FCC)
     officeCodeToOrgCode,

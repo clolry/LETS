@@ -822,7 +822,11 @@ function submitTravelRequestV2(formData) {
       name: routing.currentReviewerName,
       email: routing.currentReviewerEmail
     };
-    sendSubmissionNotification(requestId, formData, currentReviewer, routing.initialLevel);
+    // Pass the routed STATUS through: the confirmation derives the review
+    // stage from it rather than from initialLevel, which never advances.
+    sendSubmissionNotification(requestId,
+      Object.assign({}, formData, { status: routing.status }),
+      currentReviewer, routing.initialLevel);
 
     // Invalidate + re-warm cached sheets that were written to.
     // REQUEST_LEGS + TRAVELER_LEG_COSTS were missing from this list — bug
