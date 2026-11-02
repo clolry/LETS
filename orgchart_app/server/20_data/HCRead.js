@@ -375,9 +375,27 @@ var HCRead = (function () {
     var rawOrgs = _readTab_(ss, TABS.ORGS);
 
     if (!rawPositions.length) {
+      // Name what WAS found. @clolry's first run pointed at a spreadsheet
+      // called "Copy of FAS Travel Exemption Request (Responses)" and the
+      // error said only "HC_Positions is empty or missing", which reads like
+      // a problem with the LETS database rather than a pointer at the wrong
+      // file. The spreadsheet's own name is the fastest way to see that.
+      var found = [];
+      try {
+        found = ss.getSheets().map(function (sh) { return sh.getName(); });
+      } catch (e2) {
+        found = [];
+      }
       return {
         success: false,
-        error: TABS.POSITIONS + ' is empty or missing in that spreadsheet.',
+        error: TABS.POSITIONS + ' was not found in "' + ss.getName() + '". ' +
+               (found.length
+                 ? 'That spreadsheet contains: ' + found.slice(0, 8).join(', ') +
+                   (found.length > 8 ? ', …' : '') + '. '
+                 : '') +
+               'HC_SPREADSHEET_ID must point at the LETS travel database — the ' +
+               'spreadsheet holding Requests and the HC tabs. Copy it from the ' +
+               "LETS project's TRAVEL_DB_SPREADSHEET_ID property.",
         roots: [], count: 0, orgCount: 0, warnings: []
       };
     }

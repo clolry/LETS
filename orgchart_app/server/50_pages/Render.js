@@ -91,8 +91,39 @@ function checkOrgChartSetup() {
     var ss = SpreadsheetApp.openById(id);
     console.log('opens OK:          ' + ss.getName());
     var tabs = ss.getSheets().map(function (s) { return s.getName(); });
-    console.log('HC_Positions:      ' + (tabs.indexOf('HC_Positions') > -1 ? 'present' : 'MISSING'));
-    console.log('HC_Orgs:           ' + (tabs.indexOf('HC_Orgs') > -1 ? 'present' : 'MISSING'));
+    var hasPos = tabs.indexOf(TABS.POSITIONS) > -1;
+    var hasOrgs = tabs.indexOf(TABS.ORGS) > -1;
+    console.log(TABS.POSITIONS + ':      ' + (hasPos ? 'present' : 'MISSING'));
+    console.log(TABS.ORGS + ':           ' + (hasOrgs ? 'present' : 'MISSING'));
+
+    // LIST WHAT IS ACTUALLY THERE when a tab is missing.
+    //
+    // @clolry's first run reported both tabs MISSING against a spreadsheet
+    // named "Copy of FAS Travel Exemption Request (Responses)" — the wrong
+    // spreadsheet entirely. The check printed the NAME and the word MISSING
+    // but not the tab list, so it looked like a setup problem in the LETS
+    // database rather than a pointer at the wrong file.
+    //
+    // A diagnostic that reports a symptom it already has the evidence to
+    // explain is a diagnostic that costs a round trip.
+    if (!hasPos || !hasOrgs) {
+      console.log('');
+      console.log('tabs actually present (' + tabs.length + '):');
+      tabs.forEach(function (t) { console.log('  - ' + t); });
+      console.log('');
+      console.log('  -> This looks like the WRONG SPREADSHEET. HC_SPREADSHEET_ID must');
+      console.log('     point at the LETS TRAVEL DATABASE — the one holding Requests,');
+      console.log('     Travel_Users and the HC tabs — not at a Google Form responses');
+      console.log('     sheet or the FAS Exemption Tracker.');
+      console.log('');
+      console.log('     Find it: open the LETS project -> Project Settings ->');
+      console.log('     Script Properties -> TRAVEL_DB_SPREADSHEET_ID, and use that');
+      console.log('     exact value here.');
+      console.log('');
+      console.log('     If the ID is right and the tabs are genuinely absent, run');
+      console.log('     setupTravelDatabase() in the LETS project to create them.');
+      return;
+    }
   } catch (e) {
     console.log('FAILED to open:    ' + e.message);
     console.log('  -> the deploying account must be able to READ that spreadsheet');

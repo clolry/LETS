@@ -227,6 +227,22 @@ console.log('1. configuration comes from Script Properties, never from source');
   ok('and names the property to set', /HC_SPREADSHEET_ID/.test(r.error), r.error);
   ok('and says where to set it', /Script Propert/i.test(r.error), r.error);
 
+  // POINTING AT THE WRONG SPREADSHEET. @clolry's first run opened "Copy of
+  // FAS Travel Exemption Request (Responses)" — a Google Form responses sheet
+  // — and the error said only "HC_Positions is empty or missing", which reads
+  // like the LETS database needs setting up rather than like the ID is wrong.
+  //
+  // A diagnostic that reports a symptom it already has the evidence to
+  // explain costs a round trip, and this one cost @clolry a deploy cycle.
+  const wrongSheet = loadOC([], [], { props: { HC_SPREADSHEET_ID: 'OTHER_FILE' } });
+  const w = wrongSheet.run('HCRead.buildTree()');
+  ok('an empty HC_Positions names the spreadsheet it opened',
+     w.success === false && /Copy of FAS|LETS DB/.test(w.error), w.error);
+  ok('and says which property to copy the right ID from',
+     /TRAVEL_DB_SPREADSHEET_ID/.test(w.error), w.error);
+  ok('and lists the tabs it did find',
+     /contains:/.test(w.error), w.error);
+
   // A wrong ID and a permissions failure look identical from here, and the
   // likelier cause is permissions — the deploying account must be able to
   // read the LETS database. Saying only "not found" sends the reader to the

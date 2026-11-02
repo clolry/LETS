@@ -8,6 +8,15 @@ A read-only web app showing the ASD reporting structure, built from the same
 1. Push: `cd orgchart_app && clasp push`
 2. In the Apps Script editor: **Project Settings → Script Properties**, add
    `HC_SPREADSHEET_ID` = the LETS travel database spreadsheet ID.
+
+   > **Get this value from the LETS project**, not from a Drive URL you
+   > happen to have open. Open LETS → Project Settings → Script Properties →
+   > `TRAVEL_DB_SPREADSHEET_ID` and copy it exactly.
+   >
+   > The travel database is the spreadsheet holding `Requests`,
+   > `Travel_Users` and the `HC_` tabs. It is **not** the FAS Travel Exemption
+   > Tracker and **not** a Google Form responses sheet — those are separate
+   > files and will report both HC tabs as missing.
 3. Run `checkOrgChartSetup()` from the editor. It reports whether the
    spreadsheet opens, whether both tabs are present, how many people and org
    codes it found, and any problems in the data.
