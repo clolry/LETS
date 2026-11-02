@@ -179,7 +179,7 @@ Severity is **consequence × reachability**. Both axes are needed: a catastrophi
 | 22 | **G-015** | **The LETS layer is unwired.** Zero references from any entry point; `apiGetInitialData` and `apiSubmitRequest` do not exist, so the single-page UI cannot load or submit | C2/R4 | LETS | open | M-3, R-5 |
 | 23 | **G-017** | **Four broken `include()` targets**, including the `.html.html` names that make `?mode=reviewer-dashboard` throw | C2/R4 | TRIP | open | R-1, M-4 |
 | 24 | **G-022** | **The intake form tells users their request will sync to the FAS tracker. It does not.** | C2/R4 | Shared | open | R-C4 |
-| 25 | **G-016** | **The LETS layer is structurally unreachable, not merely unwired.** All four LETS modules are UMD/IIFE factories exposing zero top-level declarations, and Apps Script exposes only top-level declarations to `google.script.run` | C2/R1 | LETS | open | Pass 6 |
+| 25 | **G-016** | **The LETS layer is structurally unreachable, not merely unwired.** All four LETS modules are UMD/IIFE factories exposing zero top-level declarations, and Apps Script exposes only top-level declarations to `google.script.run` | C2/R1 | LETS | open — **worse than rated**, see §6.12 | Pass 6 |
 
 ### Medium — 33 findings
 
@@ -269,6 +269,45 @@ Every finding resolves to a measurement script, a deliverable section, or both. 
 | G-001, G-002, G-003, G-004, G-005, G-030, G-067 | `pass5_guard_census.js`, `pass6_write_surface_census.js` — the guard census and the write surface |
 | G-011, G-015, G-017, G-025, G-026 | `pass6_client_call_census.js`, `pass6_component_map.js` — the RPC census and the include graph |
 | G-006, G-020, G-021, G-048, G-064, G-065, G-072, G-073 | `pass6_deployment_census.js` — manifest, clasp targets, Script Properties, CI guards |
+---
+
+## §6.12 G-016 is worse than "unreachable": its status vocabulary does not exist
+
+**Found while wiring the budget dashboard to live data**, 2026-11. This section records it because the measurement changes what closing **G-016** would involve.
+
+`BudgetEngine.js` is 339 lines of correct budget arithmetic. The obvious way to make the dashboard real was to expose it. **That would have produced confidently wrong numbers.**
+
+`BudgetEngine.calculateSpendAndCommitments` filters requests by status, using `CONFIG.requestStatus` from `BudgetConfig.js`:
+
+| `BudgetEngine` expects | The `Requests` tab stores |
+|---|---|
+| `Submitted - Pending Budget Check` | `PENDING_SECTOR` |
+| `Budget Check Passed` | `PENDING_BU` |
+| `Approved` | `APPROVED_GOGOV` |
+| `Reconciled / Actuals Posted` | `COMPLETED` |
+
+**The intersection of the two vocabularies is EMPTY** `[VERIFIED]` — measured in `test_budget_dashboard.js` §1, which loads `STATUS_CODES` and `CONFIG.requestStatus` and compares them.
+
+### Why that matters more than unreachability
+
+An unreachable module is a known quantity: nothing calls it, so nothing is wrong. A reachable module with a vocabulary that matches nothing is **worse**, because every status test returns false and the arithmetic completes normally:
+
+- `pendingEstimates` = 0
+- `postedActuals` = 0
+- `remainingDiscretionaryBalance` = the full baseline
+
+So each DAC would report its entire allocation as available, with no commitments. **That is a plausible reading of a fiscal year that has just opened**, and there is no visual tell. A DAC would spend against it.
+
+> **The implication for closing G-016.** Making these modules reachable is the smaller half of the job. The larger half is reconciling `BudgetConfig.requestStatus` with `STATUS_CODES` — and that is not a rename, because the two models disagree about process. `BudgetEngine` expects a `RECONCILED` state carrying a post-travel actual; LETS has no reconciliation step at all, and `COMPLETED` carries the approved estimate. Any translation has to decide what to do about an actual that does not exist.
+>
+> `40_domain/BudgetDashboard.js` therefore reads `STATUS_GROUPS` directly rather than reusing `BudgetEngine`, and labels completed travel as "at approved estimate" rather than as a posted actual. The duplication is deliberate and documented in that file's header.
+
+### A second finding from the same work
+
+The dashboard page carried **34 hardcoded dollar figures and made no server calls** `[VERIFIED]`. @clolry had been reading those numbers as live. They are now computed, and a CI guard rejects any three-digit-plus currency literal in that page's markup — the defect is cheap to reintroduce and invisible once present.
+
+---
+
 | G-012, G-013, G-014, G-040, G-041, G-042, G-044, G-045, G-057, G-058, G-059 | `pass6_schema_census.js` — schemas, the alignment test, key generators |
 | G-016, G-043 | `pass6_component_map.js` §[5] — the two-way reachability test |
 | G-018, G-019, G-029, G-031, G-032, G-038, G-049, G-054, G-055, G-069, G-070, G-071 | `pass6_rule_census.js` — the state machine, reachability, the fail-open test |

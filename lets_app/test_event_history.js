@@ -189,20 +189,52 @@ console.log('\n3. recurrence is INFERRED, and refuses to over-claim');
   ok('and a next date in the future', annual.nextExpected === '2026-05',
      annual.nextExpected);
 
-  // BIENNIAL. @clolry's NCMA World Congress: July 2024 and July 2026, same
-  // month, 24 months apart. Labelling that 'irregular' while also reporting
-  // high confidence in the month is self-contradictory, and a DAC reading
-  // "irregular" would not reserve for it.
-  const biennial = infer([{ month: '2024-07', attendees: 25 },
+  // A SKIPPED YEAR IS NOT A CADENCE. @clolry's correction:
+  //
+  //   "NCMA is not biennial we just were under a restriction in 2025 where we
+  //    couldn't send anyone to attend 2025."
+  //
+  // July 2024 and July 2026 is a 24-month gap, which I first reported as
+  // 'biennial' with a next date of July 2028. The conference is annual; ASD
+  // was barred from going in 2025. A DAC reading "next Jul 2028" does not
+  // reserve for July 2027 and misses it.
+  const skipped = infer([{ month: '2024-07', attendees: 25 },
                           { month: '2026-07', attendees: 23 }], '2026-08-15');
-  ok('a two-year cadence is labelled biennial', biennial.pattern === 'biennial',
-     biennial.pattern);
-  ok('the month is still high confidence', biennial.confidence === 'high');
-  // Stepped by the observed cadence, not by a hardcoded year. Predicting 2027
-  // would have money reserved for a conference that is not happening.
-  ok('and the next date steps two years, not one',
-     biennial.nextExpected === '2028-07', biennial.nextExpected);
-  ok('the note states the cadence', /two years apart/.test(biennial.note), biennial.note);
+  ok('a restricted skip does NOT become a two-year cadence',
+     skipped.pattern === 'annual', skipped.pattern);
+  ok('the month stays high confidence', skipped.confidence === 'high');
+  ok('and the next date is one year out, not two',
+     skipped.nextExpected === '2027-07', skipped.nextExpected);
+  ok('the skipped year is named', 
+     (skipped.skippedDueToRestriction || []).join(',') === '2025-07',
+     skipped.skippedDueToRestriction);
+  ok('and the note says it was a skipped year, not a cadence change',
+     /skipped year, not a change in how often/.test(skipped.restrictionNote || ''),
+     skipped.restrictionNote);
+
+  // A GENUINELY BIENNIAL EVENT MUST STILL BE RECOGNISED. The fix must not
+  // simply delete the concept — two occurrences four years apart, where the
+  // skipped anniversaries were NOT restricted, really is a longer cycle.
+  const trulyBiennial = infer([{ month: '2021-03', attendees: 10 },
+                               { month: '2023-03', attendees: 12 }], '2023-08-15');
+  ok('an unrestricted two-year gap is still biennial',
+     trulyBiennial.pattern === 'biennial', trulyBiennial.pattern);
+  ok('and steps two years', trulyBiennial.nextExpected === '2025-03',
+     trulyBiennial.nextExpected);
+  ok('with no restriction claimed',
+     trulyBiennial.affectedByRestriction === false);
+
+  // DRIFT MUST NOT BE READ AS A SKIP. @clolry's CGP Spring Conference ran May
+  // 2024, June 2025, May 2026. A strict same-month anniversary test counts May
+  // 2025 as skipped, subtracts a year from a 13-month gap, and turns a plainly
+  // annual event into 'irregular'. The conference happened; it moved a month.
+  const drifted = infer([{ month: '2024-05', attendees: 20 },
+                         { month: '2025-06', attendees: 3 }], '2026-08-15');
+  ok('a one-month drift is the same cycle, not a skipped one',
+     drifted.pattern === 'annual', drifted.pattern);
+  ok('and no skipped year is claimed',
+     (drifted.skippedDueToRestriction || []).length === 0,
+     drifted.skippedDueToRestriction);
 
   // DRIFT. @clolry's CGP Spring Conference: May 2024, June 2025, May 2026.
   // 'Usually May' is true; 'every May' is not, and the difference matters to
@@ -278,19 +310,105 @@ console.log('\n4. zero and UNKNOWN are different answers');
   ok('the summary counts events lacking org detail',
      r.data.summary.eventsWithoutOrgDetail === 10,
      r.data.summary.eventsWithoutOrgDetail);
-  ok('and the payload states the scope caveat in words',
-     /not comparable and are never summed/.test(r.data.summary.sourceNote));
+  ok('and the payload states that org detail was never recorded',
+     /that detail was never recorded/.test(r.data.summary.sourceNote),
+     r.data.summary.sourceNote);
+  // @clolry: "start fresh with collecting that history going forward."
+  ok('and that it is being collected from now on',
+     /being collected from here on/.test(r.data.summary.sourceNote));
 }
 
 // ---------------------------------------------------------------------------
-console.log('\n5. the two sources are never summed');
+console.log('\n4b. the restriction is separated from real demand');
 {
-  // @clolry supplied both an attendance table and a FAS tracker summary, and
-  // they disagree: CGP Spring Conference is 24 travellers in one and 4 in the
-  // other. Different populations — ASD-wide versus FAS-exception-only.
+  // @clolry: "most of 2026 were severely limited for travel and events due to
+  // the current administration's restrictions."
   //
-  // Averaging or adding them produces a number that describes neither, so the
-  // two lists stay separate on the same event.
+  // Attendance inside the window averages 5.2 against 17.9 outside it. I had
+  // been reporting that as declining interest. It is a policy ceiling, and a
+  // ceiling lifts — a DAC told "attendance is down 95%" plans for one
+  // traveller next May, which is the wrong plan.
+  const r = E.run('EventHistory.getEventHistory({ now: new Date("2026-08-15") })');
+
+  const cgp = r.data.events.find(e => e.eventName === 'CGP Spring Conference');
+  ok('the raw decline is still reported honestly',
+     cgp.trend.percentChange === -95, cgp.trend.percentChange);
+  ok('but flagged as explained by the restriction',
+     cgp.trend.declineExplainedByRestriction === true);
+
+  // THE FIGURE A DAC SHOULD RESERVE AGAINST: the last unrestricted reading,
+  // not the last reading.
+  ok('the planning baseline is the last UNRESTRICTED year',
+     cgp.trend.planningBaseline === 20 &&
+     cgp.trend.planningBaselineMonth === '2024-05', cgp.trend);
+  ok('and is marked as unrestricted',
+     cgp.trend.planningBaselineIsRestricted === false);
+  ok('the restricted readings are named',
+     cgp.trend.restrictedOccurrences.join(',') === '2025-06,2026-05',
+     cgp.trend.restrictedOccurrences);
+
+  // Individual occurrences carry the flag, so the UI can mark the reading
+  // rather than only the event. "1 attendee in May 2026" is not a
+  // measurement of demand.
+  const may26 = cgp.historical.find(o => o.eventMonth === '2026-05');
+  ok('an occurrence inside the window is labelled',
+     may26.restriction === 'Administration travel restrictions', may26.restriction);
+  const may24 = cgp.historical.find(o => o.eventMonth === '2024-05');
+  ok('and one outside it is not', may24.restriction === null);
+
+  // NCMA's July 2026 occurrence came back at 23 against 25 in 2024 — which is
+  // how the window's end month was chosen. If the window swallowed it, that
+  // near-full attendance would be mislabelled as ban-suppressed.
+  const ncma = r.data.events.find(e => e.eventName === 'NCMA World Congress');
+  ok('July 2026 is OUTSIDE the window',
+     ncma.historical.find(o => o.eventMonth === '2026-07').restriction === null,
+     'attendance recovered to 23 of 25, so it was not restricted');
+  ok('so its decline is NOT explained away',
+     ncma.trend.declineExplainedByRestriction === false);
+  ok('and its baseline is the recent year, not the old one',
+     ncma.trend.planningBaseline === 23 &&
+     ncma.trend.planningBaselineMonth === '2026-07', ncma.trend);
+
+  // Trend across unrestricted readings only, where there are two of them.
+  ok('an unrestricted-only trend is computed when possible',
+     ncma.trend.unrestrictedTrend !== null &&
+     ncma.trend.unrestrictedTrend.firstAttendees === 25 &&
+     ncma.trend.unrestrictedTrend.lastAttendees === 23,
+     ncma.trend.unrestrictedTrend);
+  ok('and is null when there is only one normal year',
+     cgp.trend.unrestrictedTrend === null,
+     'one point is not a direction');
+
+  ok('the summary counts affected events',
+     r.data.summary.eventsAffectedByRestriction === 1,
+     r.data.summary.eventsAffectedByRestriction);
+  ok('and publishes the window so the UI need not hardcode it',
+     r.data.summary.restrictionWindows.length === 1 &&
+     r.data.summary.restrictionWindows[0].startMonth === '2025-01' &&
+     r.data.summary.restrictionWindows[0].endMonth === '2026-06',
+     r.data.summary.restrictionWindows);
+
+  // The boundaries themselves. An off-by-one month here silently relabels a
+  // real reading as ban-era or the reverse.
+  const rf = m => E.run('EventHistory.restrictionFor(' + JSON.stringify(m) + ')');
+  ok('Dec 2024 is outside', rf('2024-12') === null);
+  ok('Jan 2025 is inside', rf('2025-01') !== null);
+  ok('Jun 2026 is inside', rf('2026-06') !== null);
+  ok('Jul 2026 is outside', rf('2026-07') === null);
+}
+
+console.log('\n5. the two lists are never summed');
+{
+  // @clolry: "Lets use my table rather than the FAS tracker - while there may
+  // have only been 4 or 5 entries, there were likely multiple people
+  // associated with each row."
+  //
+  // So the FAS tracker is NOT a source: it counts REQUESTS where the
+  // attendance table counts PEOPLE. They were never two measurements of one
+  // quantity.
+  //
+  // The seed and LETS lists are still kept apart, because the seed ends where
+  // LETS begins and summing them would double-count any overlap.
   const headers = ['Request_ID', 'Status', 'Trip_Name', 'Event_Start_Date',
                    'Traveler_Count', 'Traveler_Org_Codes', 'Grand_Total',
                    'Owning_Org_Code'];
@@ -473,11 +591,21 @@ console.log('\n8. the dashboard section is actually wired up');
   ok('a failed call shows an error', /id="ehError"/.test(page) &&
      /function showError/.test(page));
 
-  // THE HONESTY REQUIREMENT. A reader who sees real numbers in this section
-  // will reasonably assume the KPI cards above are live too. They are not.
-  ok('the page states that the figures above are placeholders',
-     /placeholders and are not yet wired to live data/.test(page),
-     'real data beside mockup data, unlabelled, is worse than mockup alone');
+  // The KPI cards above are now live too (see test_budget_dashboard.js), so
+  // the "these figures are placeholders" warning is gone. What must remain is
+  // the statement about BLANK org history — @clolry: "Let's leave the history
+  // blank rather than 0 and start fresh with collecting that history going
+  // forward." Blanks must read as a known starting point, not a broken
+  // feature.
+  ok('the page explains why org history is blank',
+     /never recorded before/.test(page) && /left blank rather than shown as zero/.test(page),
+     page.indexOf('never recorded') > -1);
+  // Matched on the collapsed string, because the sentence is built from
+  // concatenated JS literals and wraps mid-phrase.
+  ok('and that it accrues from now on',
+     /Org detail builds\s*'?\s*\+?\s*'?\s*up from here/.test(page) ||
+     /builds up from here/.test(page.replace(/'\s*\+\s*'/g, '')),
+     'the footer must say the blanks fill in over time');
 
   // The stub button must stop claiming it worked.
   ok('the FAS sync button no longer claims success',

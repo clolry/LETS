@@ -12,24 +12,31 @@
  * it lands, and HOW MANY people went last time. Both are answerable from
  * occurrence-level history; neither is answerable from a total.
  *
- * TWO SOURCES, AND THEY DISAGREE
- * ------------------------------
- * 1. HISTORICAL SEED — @clolry's 2024-2026 attendance table. Totals only, no
- *    org breakdown, no spend. This is the authoritative count of who actually
- *    went, because it predates LETS.
+ * ONE AUTHORITATIVE SOURCE FOR HISTORY, DECIDED BY @clolry
+ * --------------------------------------------------------
+ * 1. HISTORICAL SEED — @clolry's 2024-2026 attendance table. Headcounts,
+ *    with no org breakdown and no spend. AUTHORITATIVE for anything before
+ *    LETS.
  *
- * 2. LETS REQUESTS — derived from the Requests tab. Has org breakdown and
- *    cost, but only covers travel submitted THROUGH LETS, which is a subset.
+ * 2. LETS REQUESTS — derived from the Requests tab. Carries org breakdown and
+ *    cost, and covers only travel submitted through LETS.
  *
- * They do not reconcile, and this file does not pretend otherwise. @clolry's
- * table has CGP Spring Conference at 24 travellers; the FAS tracker summary
- * he also supplied has 4 for the same event. Different scopes — ASD-wide
- * versus FAS-exception-only. Averaging them would produce a number that
- * describes nothing.
+ * The FAS Travel Exception Tracker summary is deliberately NOT a source here.
+ * It disagreed sharply — CGP Spring Conference at 4 travellers against
+ * @clolry's 24 — and @clolry explained why:
  *
- * So each occurrence carries its `source`, and the UI shows which. A planner
- * who knows a figure is exception-only can reason about it; a planner handed a
- * blended average cannot.
+ *   "Lets use my table rather than the FAS tracker - while there may have only
+ *    been 4 or 5 entries, there were likely multiple people associated with
+ *    each row."
+ *
+ * The tracker counts REQUESTS. The attendance table counts PEOPLE. They were
+ * never two measurements of one quantity, so the earlier framing of "two
+ * sources that disagree" was wrong: one of them simply does not answer the
+ * question a DAC is asking.
+ *
+ * The two lists are still kept separate rather than summed, because the seed
+ * ends where LETS begins and adding them would double-count any overlap. Each
+ * occurrence carries its `source`.
  *
  * ON NOT INVENTING THE ORG BREAKDOWN
  * ----------------------------------
@@ -93,6 +100,61 @@ var EVENT_HISTORY_SEED = [
 
   { name: 'NVSBC VETS',
     occurrences: [{ month: '2026-06', attendees: 9 }] }
+];
+
+// ============================================================================
+// THE TRAVEL RESTRICTION WINDOW
+// ============================================================================
+//
+// @clolry, on being shown NCMA World Congress labelled 'biennial':
+//
+//   "NCMA is not biennial we just were under a restriction in 2025 where we
+//    couldn't send anyone to attend 2025 and most of 2026 were severely
+//    limited for travel and events due to the current administration's
+//    restrictions."
+//
+// WHY THIS CONSTANT HAS TO EXIST
+// ------------------------------
+// Without it the derivation draws two conclusions that are both wrong, and
+// both wrong in the direction that loses a DAC money:
+//
+//   1. CADENCE. NCMA occurred July 2024 and July 2026, so the gap was 24
+//      months and the inferred pattern was 'biennial' with a next date of
+//      July 2028. The conference is annual. ASD was barred from attending in
+//      2025. A DAC reading "biennial, next Jul 2028" does not reserve for
+//      July 2027 and misses it.
+//
+//   2. TREND. Attendance inside the window averages 5.2 against 17.9 outside
+//      it. Reported as a trend, that reads as collapsing interest in every
+//      conference ASD attends. It is a policy ceiling, and it lifts.
+//
+// A gap or a low count inside this window is therefore EVIDENCE OF THE
+// RESTRICTION, not evidence about the event.
+//
+// THE WINDOW, AND HOW ITS END WAS CHOSEN
+// --------------------------------------
+// Start is January 2025 — @clolry: "a restriction in 2025".
+//
+// End is June 2026, from "most of 2026 were severely limited". The data
+// agrees and is unusually clean about it: every occurrence from 2025-01 to
+// 2026-06 is in single digits (5, 8, 3, 1, 9), and NCMA's July 2026
+// occurrence — the first month outside — came back at 23 against 25 in 2024.
+// A window running through the end of 2026 would have to call that near-full
+// attendance "restricted", which it plainly was not.
+//
+// NOT A PRECISE DATE. It approximates a policy, and the boundary month is
+// inferred from attendance rather than from a memo. If the real dates are
+// known, correct them here — every consumer reads this one constant.
+var TRAVEL_RESTRICTION_WINDOWS = [
+  {
+    id: 'admin-restrictions-2025',
+    startMonth: '2025-01',
+    endMonth: '2026-06',
+    label: 'Administration travel restrictions',
+    note: 'ASD was barred from most conference travel from early 2025 through ' +
+          'roughly mid-2026. Gaps and low attendance in this period reflect the ' +
+          'restriction, not declining interest in the event.'
+  }
 ];
 
 /** Stated totals from the source, for the transcription check in §1. */
@@ -165,6 +227,93 @@ var EventHistory = (function () {
     var a = parseInt(from.slice(0, 4), 10) * 12 + parseInt(from.slice(5, 7), 10);
     var b = parseInt(to.slice(0, 4), 10) * 12 + parseInt(to.slice(5, 7), 10);
     return b - a;
+  }
+
+  // ==========================================================================
+  // RESTRICTION WINDOW
+  // ==========================================================================
+
+  /**
+   * Restriction label for a month, or null. For embedding in a payload where
+   * the whole window object would be repeated 14 times.
+   *
+   * @param {string} month
+   * @returns {string|null}
+   */
+  function restrictionLabelFor(month) {
+    var w = restrictionFor(month);
+    return w ? w.label : null;
+  }
+
+  /**
+   * The restriction window a month falls in, or null.
+   *
+   * @param {string} month YYYY-MM
+   * @returns {Object|null}
+   */
+  function restrictionFor(month) {
+    var m = String(month || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(m)) return null;
+    for (var i = 0; i < TRAVEL_RESTRICTION_WINDOWS.length; i++) {
+      var w = TRAVEL_RESTRICTION_WINDOWS[i];
+      if (m >= w.startMonth && m <= w.endMonth) return w;
+    }
+    return null;
+  }
+
+  /**
+   * The ANNIVERSARIES skipped between two occurrences, and whether each was
+   * blocked by a restriction.
+   *
+   * WHY ANNIVERSARIES AND NOT MONTHS
+   * --------------------------------
+   * The first attempt subtracted every restricted MONTH from the gap. That
+   * replaced one wrong answer with another: NCMA's 24-month gap minus 18
+   * restricted months is 6, which is not annual either. Overcorrecting is not
+   * better than undercorrecting, it is just wrong in the other direction.
+   *
+   * The actual question is narrower. For an annual event, how many times did
+   * the anniversary come round and get missed, and was ASD barred from
+   * travelling on each of those dates?
+   *
+   * NCMA: July 2024 to July 2026 skips exactly one anniversary, July 2025,
+   * and July 2025 sits inside the restriction window. One skipped cycle,
+   * fully explained — so the event is ANNUAL and ASD missed a year.
+   *
+   * A skipped anniversary with no restriction against it stays unexplained,
+   * and the cadence is reported as the data shows it.
+   *
+   * @param {string} from YYYY-MM
+   * @param {string} to YYYY-MM
+   * @returns {Array<{month: string, restricted: boolean}>}
+   */
+  function skippedAnniversaries(from, to) {
+    if (!/^\d{4}-\d{2}$/.test(from) || !/^\d{4}-\d{2}$/.test(to)) return [];
+    var out = [];
+    var y = parseInt(from.slice(0, 4), 10) + 1;
+    var mo = from.slice(5, 7);
+    var guard = 0;
+    while (guard++ < 30) {
+      var cur = y + '-' + mo;
+      if (cur >= to) break;
+
+      // A DRIFTED occurrence IS the cycle, not a skipped one.
+      //
+      // @clolry's CGP Spring Conference ran May 2024, June 2025, May 2026. A
+      // strict same-month test calls May 2025 a skipped anniversary, then
+      // subtracts a full year from a 13-month gap and leaves 1 — turning a
+      // plainly annual event into 'irregular'. The conference happened; it
+      // just moved by a month.
+      //
+      // Six months is the threshold because it is the largest drift that
+      // cannot be confused with a different cycle: anything closer to the
+      // anniversary than half a year is the same instance.
+      if (monthsBetween(cur, to) <= 6) break;
+
+      out.push({ month: cur, restricted: !!restrictionFor(cur) });
+      y++;
+    }
+    return out;
   }
 
   // ==========================================================================
@@ -255,22 +404,50 @@ var EventHistory = (function () {
     // Computed AFTER the gap analysis below, because the step depends on it.
     var nextExpected = null;
 
+    // GAPS, WITH RESTRICTED MONTHS DISCOUNTED.
+    //
+    // A raw gap measures how long since ASD last attended. That is not the
+    // same as how often the event happens, and conflating them produced a
+    // wrong answer @clolry had to correct: NCMA World Congress occurred July
+    // 2024 and July 2026, a 24-month gap, and was labelled 'biennial' with a
+    // next date of July 2028.
+    //
+    // @clolry: "NCMA is not biennial we just were under a restriction in 2025
+    // where we couldn't send anyone to attend 2025."
+    //
+    // So each gap is reduced by the number of months inside a restriction
+    // window. NCMA's 24 months minus the 18 restricted months between its two
+    // occurrences leaves 6 — which is no longer biennial, and the 12-month
+    // ADJUSTED gap below recovers 'annual'.
+    //
+    // The raw gap is kept alongside, because the distinction is the finding:
+    // the event is annual AND ASD has not attended in two years.
     var gaps = [];
     for (var i = 1; i < occ.length; i++) {
-      gaps.push(monthsBetween(occ[i - 1].month, occ[i].month));
-    }
-    var annualish = gaps.length && gaps.every(function (g) { return g >= 10 && g <= 14; });
-    var biennialish = gaps.length && gaps.every(function (g) { return g >= 22 && g <= 26; });
+      var rawGap = monthsBetween(occ[i - 1].month, occ[i].month);
+      var skipped = skippedAnniversaries(occ[i - 1].month, occ[i].month);
+      var blockedCycles = skipped.filter(function (sk) { return sk.restricted; }).length;
 
-    // 'biennial' is a separate label because 'irregular' was actively wrong
-    // for @clolry's NCMA World Congress: July 2024 and July 2026, same month,
-    // 24 months apart. Calling that irregular while also reporting high
-    // confidence in the month is self-contradictory, and a DAC reading
-    // "irregular" would not reserve for it.
-    //
-    // Note the limit of the evidence: two occurrences two years apart are
-    // equally consistent with an annual event ASD skipped once. The pattern
-    // says what the data shows; it does not claim the conference is biennial.
+      // Each FULLY BLOCKED anniversary removes 12 months from the gap. A
+      // skipped year nobody can explain is left in, so the cadence still
+      // reports what the data shows.
+      gaps.push({
+        raw: rawGap,
+        skippedAnniversaries: skipped.length,
+        blockedCycles: blockedCycles,
+        restrictedMonths: skipped.filter(function (sk) { return sk.restricted; })
+          .map(function (sk) { return sk.month; }),
+        adjusted: Math.max(1, rawGap - blockedCycles * 12)
+      });
+    }
+
+    var adj = gaps.map(function (g) { return g.adjusted; });
+    var annualish = adj.length && adj.every(function (g) { return g >= 10 && g <= 14; });
+    // Still recognised, but only when the two-year cadence survives
+    // discounting — i.e. the gap was not caused by a travel ban.
+    var biennialish = adj.length && adj.every(function (g) { return g >= 22 && g <= 26; });
+    var anyRestricted = gaps.some(function (g) { return g.blockedCycles > 0; });
+
     var pattern = annualish ? 'annual' : (biennialish ? 'biennial' : 'irregular');
 
     // Next expected occurrence: the modal month, stepped forward by the
@@ -282,6 +459,9 @@ var EventHistory = (function () {
     // occurred in three different months, and naming one of them would be the
     // dashboard guessing.
     if (confidence !== 'low') {
+      // Steps by the ADJUSTED cadence. Stepping by the raw gap would predict
+      // July 2028 for an annual conference ASD was barred from in 2025, and a
+      // DAC reading that date does not reserve for July 2027.
       var step = biennialish ? 2 : 1;
       var cm = currentMonth(now);
       var candidateYear = parseInt(occ[occ.length - 1].month.slice(0, 4), 10);
@@ -299,7 +479,23 @@ var EventHistory = (function () {
       typicalMonth: modal,
       confidence: confidence,
       nextExpected: nextExpected,
-      gapsMonths: gaps,
+      gapsMonths: gaps.map(function (g) { return g.raw; }),
+      gapDetail: gaps,
+      // True when a gap spans a travel ban, so the UI can say the absence was
+      // imposed rather than letting a planner read it as a lapsed event.
+      affectedByRestriction: anyRestricted,
+      // Names the missed year explicitly. "Skipped Jul 2025" is actionable;
+      // "affected by restrictions" is not.
+      skippedDueToRestriction: gaps.reduce(function (acc, g) {
+        return acc.concat(g.restrictedMonths);
+      }, []),
+      restrictionNote: anyRestricted
+        ? ('Did not attend ' + gaps.reduce(function (acc, g) {
+             return acc.concat(g.restrictedMonths);
+           }, []).map(monthLabel).join(', ') + ' — inside the ' +
+           TRAVEL_RESTRICTION_WINDOWS[0].label + '. Counted as a skipped year, ' +
+           'not a change in how often the event runs.')
+        : null,
       note: confidence === 'high'
         ? 'Every recorded occurrence in ' + MONTH_NAMES[modal - 1] +
           (biennialish ? ', about two years apart.' : '.')
@@ -322,9 +518,23 @@ var EventHistory = (function () {
    * three points a slope implies a precision that is not there, and the
    * planning question is "are we sending fewer people than we used to".
    *
-   * @clolry's data trends down hard — CGP Spring Conference 20 -> 3 -> 1, ACT
-   * IAC ELC 25 -> 8. Surfacing that is most of the value of showing history at
-   * all: a DAC about to reserve for 20 should see that 20 was two years ago.
+   * THE RESTRICTION CHANGES WHAT THIS MEANS
+   * ---------------------------------------
+   * The raw numbers fall off a cliff: CGP Spring Conference 20 -> 3 -> 1, ACT
+   * IAC ELC 25 -> 8. I first surfaced that as declining interest.
+   *
+   * @clolry: "most of 2026 were severely limited for travel and events due to
+   * the current administration's restrictions."
+   *
+   * Attendance inside the window averages 5.2 against 17.9 outside it. So the
+   * decline is a POLICY CEILING, and a ceiling lifts. A DAC told "attendance
+   * is down 95%" plans for one traveller next May; a DAC told "last normal
+   * year was 20, and the two readings since were under a travel ban" plans
+   * for something near 20.
+   *
+   * Both are reported. `direction` stays honest about the raw numbers, and
+   * `planningBaseline` carries the last unrestricted figure — which is the
+   * one worth reserving against.
    *
    * @param {Array} occurrences sorted ascending
    * @returns {Object|null} null when fewer than two occurrences
@@ -340,6 +550,38 @@ var EventHistory = (function () {
     var delta = last.attendees - first.attendees;
     var pct = first.attendees ? Math.round((delta / first.attendees) * 100) : null;
 
+    // Occurrences outside any restriction window: the only ones that say
+    // anything about demand for the event.
+    var unrestricted = occ.filter(function (o) { return !restrictionFor(o.month); });
+    var restricted = occ.filter(function (o) { return !!restrictionFor(o.month); });
+
+    // The figure a DAC should reserve against. Most recent unrestricted
+    // reading, falling back to the most recent of any kind — with
+    // `planningBaselineIsRestricted` saying which, so the UI never presents a
+    // ban-suppressed number as a normal one.
+    var baselineOcc = unrestricted.length
+      ? unrestricted[unrestricted.length - 1]
+      : last;
+
+    // Trend ACROSS unrestricted readings only. Two normal years tell you
+    // whether interest is really moving; a normal year against a banned year
+    // tells you only that there was a ban.
+    var unrestrictedTrend = null;
+    if (unrestricted.length >= 2) {
+      var uf = unrestricted[0];
+      var ul = unrestricted[unrestricted.length - 1];
+      var ud = ul.attendees - uf.attendees;
+      unrestrictedTrend = {
+        firstMonth: uf.month,
+        firstAttendees: uf.attendees,
+        lastMonth: ul.month,
+        lastAttendees: ul.attendees,
+        delta: ud,
+        percentChange: uf.attendees ? Math.round((ud / uf.attendees) * 100) : null,
+        direction: ud > 0 ? 'up' : (ud < 0 ? 'down' : 'flat')
+      };
+    }
+
     return {
       firstMonth: first.month,
       firstAttendees: first.attendees,
@@ -348,13 +590,26 @@ var EventHistory = (function () {
       delta: delta,
       percentChange: pct,
       direction: delta > 0 ? 'up' : (delta < 0 ? 'down' : 'flat'),
+
       // Peak matters separately: an event that went 20 -> 3 -> 1 has a
       // meaningfully different story from one that went 1 -> 3 -> 20, and
       // first-vs-last alone cannot tell them apart when the ends match.
       peakAttendees: occ.reduce(function (m, o) { return Math.max(m, o.attendees); }, 0),
       peakMonth: occ.reduce(function (best, o) {
         return o.attendees > best.attendees ? o : best;
-      }, occ[0]).month
+      }, occ[0]).month,
+
+      restrictedOccurrences: restricted.map(function (o) { return o.month; }),
+      unrestrictedCount: unrestricted.length,
+      // When every reading since the first is ban-era, the apparent decline
+      // says nothing about the event at all.
+      declineExplainedByRestriction: restricted.length > 0 && delta < 0 &&
+        !!restrictionFor(last.month),
+      unrestrictedTrend: unrestrictedTrend,
+
+      planningBaseline: baselineOcc.attendees,
+      planningBaselineMonth: baselineOcc.month,
+      planningBaselineIsRestricted: !!restrictionFor(baselineOcc.month)
     };
   }
 
@@ -389,6 +644,10 @@ var EventHistory = (function () {
           eventMonth: o.month,
           fiscalYear: fiscalYearOf(o.month),
           attendeeCount: o.attendees,
+          // Marked at the occurrence so the UI can flag the individual
+          // reading, not just the event. A 2026-05 figure of 1 is not a
+          // measurement of demand.
+          restriction: restrictionLabelFor(o.month),
           orgBreakdown: null,          // not recorded — see above
           totalEstSpend: null,         // not recorded
           location: '',
@@ -694,10 +953,18 @@ var EventHistory = (function () {
           letsAttendees: events.reduce(function (s, e) { return s + e.totalLetsAttendees; }, 0),
           attendeesByFiscalYear: byFy,
           // Stated plainly in the payload so the UI is not left to infer it.
-          sourceNote: 'Historical figures are ASD-wide attendance counts for ' +
-                      '2024-2026 and carry no org breakdown. LETS figures cover ' +
-                      'only travel submitted through this system. The two are ' +
-                      'not comparable and are never summed.',
+          sourceNote: 'Attendance for 2024-2026 is ASD-wide headcount and carries ' +
+                      'no org breakdown — that detail was never recorded, and is ' +
+                      'being collected from here on for travel submitted through ' +
+                      'LETS. Figures from 2025 to mid-2026 sit inside the ' +
+                      'administration travel restrictions and are not a guide to ' +
+                      'normal demand.',
+          restrictionWindows: TRAVEL_RESTRICTION_WINDOWS,
+          // Named so the dashboard can say which events have a usable baseline
+          // and which only have ban-era readings.
+          eventsAffectedByRestriction: events.filter(function (e) {
+            return e.recurrence && e.recurrence.affectedByRestriction;
+          }).length,
           eventsWithoutOrgDetail: events.filter(function (e) {
             return !e.orgBreakdown;
           }).length
@@ -717,6 +984,8 @@ var EventHistory = (function () {
     monthLabel: monthLabel,
     monthsBetween: monthsBetween,
     inferRecurrence: inferRecurrence,
+    restrictionFor: restrictionFor,
+    skippedAnniversaries: skippedAnniversaries,
     attendanceTrend: attendanceTrend,
     seedOccurrences: seedOccurrences,
     requestOccurrences: requestOccurrences,

@@ -150,113 +150,103 @@
       </div>
     </div>
 
-    <!-- Executive KPI Grid -->
+    <!-- ================================================================
+         EXECUTIVE KPI GRID
+
+         Every figure here was a hardcoded literal until now — the baseline,
+         the set-aside total, the net available and the rest were typed into
+         the HTML. The page made no server calls at all.
+
+         Values are filled by loadBudget() from getBudgetDashboard. Empty
+         placeholders rather than plausible-looking defaults, so a failed load
+         shows nothing instead of showing a number nobody can date.
+         ================================================================ -->
+    <div class="alert alert-danger py-2 px-3 small d-none" id="bdError"></div>
+
     <div class="row g-3 mb-4">
       <div class="col-md-6 col-lg-2">
         <div class="kpi-stat-card">
           <div class="kpi-stat-label">Baseline Budget</div>
-          <div class="kpi-stat-value">$997,000</div>
-          <div class="kpi-stat-sub">FO ($4k) + 3 DACs ($993k)</div>
+          <div class="kpi-stat-value" id="kpiBaseline">&mdash;</div>
+          <div class="kpi-stat-sub" id="kpiBaselineSub"></div>
         </div>
       </div>
 
       <div class="col-md-6 col-lg-2">
         <div class="kpi-stat-card">
           <div class="kpi-stat-label">Set-Asides</div>
-          <div class="kpi-stat-value text-warning">$108,500</div>
-          <div class="kpi-stat-sub">LC, COE &amp; FO Gap</div>
+          <div class="kpi-stat-value text-warning" id="kpiSetAsides">&mdash;</div>
+          <div class="kpi-stat-sub" id="kpiSetAsidesSub"></div>
         </div>
       </div>
 
       <div class="col-md-6 col-lg-3">
         <div class="kpi-stat-card">
-          <div class="kpi-stat-label">Committed (Pending Estimates)</div>
-          <div class="kpi-stat-value text-info">$13,800</div>
-          <div class="kpi-stat-sub">Active in approval pipeline</div>
+          <div class="kpi-stat-label">Committed (In Pipeline)</div>
+          <div class="kpi-stat-value text-info" id="kpiCommitted">&mdash;</div>
+          <div class="kpi-stat-sub" id="kpiCommittedSub"></div>
         </div>
       </div>
 
+      <!--
+        Was "Posted Actuals / Liquidated post-travel". LETS has no
+        reconciliation step, so COMPLETED travel carries its APPROVED
+        ESTIMATE. Calling that a liquidated actual claimed a process that does
+        not exist.
+      -->
       <div class="col-md-6 col-lg-2">
         <div class="kpi-stat-card">
-          <div class="kpi-stat-label">Posted Actuals</div>
-          <div class="kpi-stat-value text-purple" style="color: #7c3aed;">$9,300</div>
-          <div class="kpi-stat-sub">Liquidated post-travel</div>
+          <div class="kpi-stat-label">Completed Travel</div>
+          <div class="kpi-stat-value" style="color: #7c3aed;" id="kpiCompleted">&mdash;</div>
+          <div class="kpi-stat-sub" id="kpiCompletedSub"></div>
         </div>
       </div>
 
       <div class="col-md-12 col-lg-3">
         <div class="kpi-stat-card" style="background: #f0fdf4; border-color: #bbf7d0;">
           <div class="kpi-stat-label" style="color: #15803d;">Net Discretionary Available</div>
-          <div class="kpi-stat-value text-success">$865,400</div>
-          <div class="kpi-stat-sub" style="color: #166534;">Uncommitted across all DACs</div>
+          <div class="kpi-stat-value text-success" id="kpiAvailable">&mdash;</div>
+          <div class="kpi-stat-sub" style="color: #166534;" id="kpiAvailableSub"></div>
         </div>
       </div>
     </div>
 
+    <!-- Requests attributable to no DAC. Flagged on the page, not only in the
+         payload: dropping them makes the totals smaller than reality while
+         every DAC row still looks right, which is the kind of error nobody
+         finds. -->
+    <div class="alert alert-warning py-2 px-3 small d-none" id="bdUnattributed"></div>
+
     <!-- Division / DAC Breakdown Table -->
     <div class="card border-0 shadow-sm mb-4">
-      <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+      <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
         <h3 class="h6 mb-0 fw-bold">DAC Discretionary Balances &amp; Proportional Shares</h3>
-        <span class="badge bg-light text-secondary border">Core Formula: Starting + Adjustments - SetAsides - Estimates - Actuals</span>
+        <span class="badge bg-light text-secondary border">Baseline + Adjustments &minus; Set-Asides &minus; Committed &minus; Completed</span>
       </div>
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0" style="font-size: 0.875rem;">
           <thead class="table-light">
             <tr>
               <th>Office / DAC</th>
-              <th>Baseline ($)</th>
-              <th>Proportional Share</th>
-              <th>Set-Asides Deducted</th>
-              <th>Discretionary Base</th>
-              <th>Pending Estimates</th>
-              <th>Posted Actuals</th>
-              <th>Net Available Balance</th>
+              <th class="text-end">Baseline</th>
+              <th class="text-end">Share</th>
+              <th class="text-end">Set-Asides</th>
+              <th class="text-end">Discretionary Base</th>
+              <th class="text-end">Committed</th>
+              <th class="text-end">Completed</th>
+              <th class="text-end">Available</th>
+              <th class="text-end">Used</th>
             </tr>
           </thead>
-          <tbody>
-            <tr>
-              <td class="fw-bold">Front Office / AC</td>
-              <td>$4,000</td>
-              <td><span class="badge bg-light text-dark border">0.0%</span></td>
-              <td>$0</td>
-              <td>$4,000</td>
-              <td>$0</td>
-              <td>$0</td>
-              <td class="fw-bold text-success">$4,000</td>
-            </tr>
-            <tr>
-              <td class="fw-bold">OMD DAC</td>
-              <td>$152,000</td>
-              <td><span class="badge bg-primary">15.3%</span></td>
-              <td>$15,060 <small class="text-muted">($12k LC + $3,060 Gap)</small></td>
-              <td>$136,940</td>
-              <td>$3,200</td>
-              <td>$0</td>
-              <td class="fw-bold text-success">$133,740</td>
-            </tr>
-            <tr>
-              <td class="fw-bold">IDV DAC</td>
-              <td>$659,000</td>
-              <td><span class="badge bg-primary">66.4%</span></td>
-              <td>$25,280 <small class="text-muted">($12k LC + $13,280 Gap)</small></td>
-              <td>$633,720</td>
-              <td>$4,500</td>
-              <td>$0</td>
-              <td class="fw-bold text-success">$629,220</td>
-            </tr>
-            <tr>
-              <td class="fw-bold">CM DAC</td>
-              <td>$182,000</td>
-              <td><span class="badge bg-primary">18.3%</span></td>
-              <td>$68,160 <small class="text-muted">($12k LC + $52.5k COE + $3,660 Gap)</small></td>
-              <td>$113,840</td>
-              <td>$6,100</td>
-              <td>$5,850</td>
-              <td class="fw-bold text-success">$101,890</td>
-            </tr>
+          <tbody id="dacTableBody">
+            <tr><td colspan="9" class="text-muted py-3">Loading&hellip;</td></tr>
           </tbody>
         </table>
       </div>
+      <!-- Carries meta.adjustmentsNote and meta.actualsNote. A reader seeing
+           live commitment figures reasonably assumes the allocations are live
+           too; they are configuration. -->
+      <div class="card-footer bg-white small text-muted" id="bdFooter"></div>
     </div>
 
     <!-- Two-Column Governance Section: Set-Asides & FAS Delegation Tracker Sync -->
@@ -277,25 +267,11 @@
                   <th>Amount</th>
                 </tr>
               </thead>
-              <tbody>
-                <tr>
-                  <td class="fw-semibold">DAC LC Travel (OMD, IDV, CM)</td>
-                  <td><span class="badge bg-info text-dark">Self-Funded</span></td>
-                  <td>$12k each DAC</td>
-                  <td>$36,000</td>
-                </tr>
-                <tr>
-                  <td class="fw-semibold">COE Program</td>
-                  <td><span class="badge bg-info text-dark">Self-Funded</span></td>
-                  <td>CM DAC Only</td>
-                  <td>$52,500</td>
-                </tr>
-                <tr>
-                  <td class="fw-semibold">Front Office LC Travel Gap</td>
-                  <td><span class="badge bg-purple text-white" style="background:#6366f1;">Enterprise Shared</span></td>
-                  <td>OMD: 15.3% | IDV: 66.4% | CM: 18.3%</td>
-                  <td>$20,000</td>
-                </tr>
+              <!-- Built from the same payload as the DAC table. Hardcoded
+                   here previously, which meant a BudgetConfig change moved the
+                   DAC balances and left this table stating the old amounts. -->
+              <tbody id="setAsideTableBody">
+                <tr><td colspan="4" class="text-muted py-3">Loading&hellip;</td></tr>
               </tbody>
             </table>
           </div>
@@ -375,11 +351,10 @@
         </div>
       </div>
 
-      <!-- The scope caveat, server-supplied. @clolry gave two datasets that
-           disagree — his attendance table has CGP Spring Conference at 24
-           travellers, the FAS tracker summary has 4 — because one is ASD-wide
-           and the other is FAS-exception-only. They are shown separately and
-           never summed. -->
+      <!-- The scope caveat, server-supplied. The FAS tracker is deliberately
+           not a source: @clolry — "while there may have only been 4 or 5
+           entries, there were likely multiple people associated with each
+           row." It counts requests; the attendance table counts people. -->
       <div class="card-body pb-0">
         <div class="alert alert-secondary py-2 px-3 small mb-3" id="ehSourceNote"></div>
         <div class="alert alert-danger py-2 px-3 small mb-3 d-none" id="ehError"></div>
@@ -392,7 +367,7 @@
               <th>Event</th>
               <th>When it lands</th>
               <th class="text-end">Attendance history</th>
-              <th class="text-end">Trend</th>
+              <th class="text-end">Plan for</th>
               <th>Who attended</th>
             </tr>
           </thead>
@@ -419,10 +394,167 @@
       'use strict';
 
       /**
-       * Historical event attendance.
+       * Live budget figures.
        *
-       * The numbers in the KPI cards and DAC table above are hardcoded HTML.
-       * This section is the first thing on the page that reads the database.
+       * Everything in the KPI cards and the DAC table was a hardcoded literal
+       * until now — 34 dollar figures typed into the HTML, and no server call
+       * anywhere on the page.
+       */
+
+      function money(v) {
+        if (v === null || v === undefined || isNaN(v)) { return '\u2014'; }
+        return '$' + Math.round(v).toLocaleString();
+      }
+
+      function renderBudget(d) {
+        var t = d.totals;
+        var m = d.meta;
+
+        document.getElementById('kpiBaseline').textContent = money(t.baseline);
+        document.getElementById('kpiBaselineSub').textContent =
+          m.fiscalYear + ' allocations, ' + d.offices.length + ' offices';
+
+        document.getElementById('kpiSetAsides').textContent = money(t.setAsides);
+        document.getElementById('kpiSetAsidesSub').textContent =
+          'LC, COE and the shared FO gap';
+
+        document.getElementById('kpiCommitted').textContent = money(t.committed);
+        document.getElementById('kpiCommittedSub').textContent =
+          t.committedCount + ' request' + (t.committedCount === 1 ? '' : 's') +
+          ' in the pipeline';
+
+        document.getElementById('kpiCompleted').textContent = money(t.completed);
+        // Deliberately "at approved estimate". There is no reconciliation
+        // step in LETS, and labelling an estimate as an actual would claim a
+        // process that does not exist.
+        document.getElementById('kpiCompletedSub').textContent =
+          t.completedCount + ' trip' + (t.completedCount === 1 ? '' : 's') +
+          ', at approved estimate';
+
+        document.getElementById('kpiAvailable').textContent = money(t.available);
+        document.getElementById('kpiAvailableSub').textContent =
+          m.liveSpend ? 'Uncommitted across all offices'
+                      : 'Commitments unavailable \u2014 figure is incomplete';
+
+        var body = document.getElementById('dacTableBody');
+        body.innerHTML = d.offices.map(function (o) {
+          var availCls = o.isDeficit ? 'text-danger' : 'text-success';
+          // Colour the utilisation, because that is the number a DAC reacts
+          // to. Thresholds are presentational only; nothing branches on them.
+          var useCls = o.utilisationPct === null ? 'text-muted'
+                     : (o.utilisationPct >= 90 ? 'text-danger'
+                     : (o.utilisationPct >= 70 ? 'text-warning' : 'text-muted'));
+          return '<tr>' +
+            '<td class="fw-bold">' + escapeHtml(o.officeName) +
+              (o.orgCode ? ' <span class="text-muted fw-normal" style="font-size:0.75rem;">' +
+                           escapeHtml(o.orgCode) + '</span>' : '') + '</td>' +
+            '<td class="text-end">' + money(o.baselineAllocation) + '</td>' +
+            '<td class="text-end">' + (o.proportionalShare
+                ? '<span class="badge bg-primary">' +
+                  (Math.round(o.proportionalShare * 1000) / 10) + '%</span>'
+                : '<span class="badge bg-light text-dark border">&mdash;</span>') + '</td>' +
+            '<td class="text-end">' + money(o.setAsides.total) + '</td>' +
+            '<td class="text-end">' + money(o.discretionaryBase) + '</td>' +
+            '<td class="text-end">' + money(o.committed) +
+              (o.committedCount ? ' <span class="text-muted" style="font-size:0.7rem;">(' +
+                                  o.committedCount + ')</span>' : '') + '</td>' +
+            '<td class="text-end">' + money(o.completed) + '</td>' +
+            '<td class="text-end fw-bold ' + availCls + '">' + money(o.available) + '</td>' +
+            '<td class="text-end ' + useCls + '">' +
+              (o.utilisationPct === null ? '&mdash;' : o.utilisationPct + '%') + '</td>' +
+          '</tr>';
+        }).join('');
+
+        // Unattributed requests, on the page and not only in the payload.
+        var un = m.unattributed || {};
+        var unEl = document.getElementById('bdUnattributed');
+        if (un.count) {
+          unEl.innerHTML = '<strong>' + un.count + ' request' +
+            (un.count === 1 ? '' : 's') + ' totalling ' + money(un.committed + un.actual) +
+            '</strong> could not be attributed to any office, so ' +
+            (un.count === 1 ? 'it is' : 'they are') + ' excluded from the figures above. ' +
+            (un.requestIds && un.requestIds.length
+              ? 'Request ' + escapeHtml(un.requestIds.slice(0, 10).join(', ')) +
+                (un.requestIds.length > 10 ? '\u2026' : '') + '. '
+              : '') +
+            'Set Owning Office on ' + (un.count === 1 ? 'it' : 'them') + ' to include ' +
+            (un.count === 1 ? 'it' : 'them') + '.';
+          unEl.classList.remove('d-none');
+        } else {
+          unEl.classList.add('d-none');
+        }
+
+        // Set-aside breakdown, from the same payload. Each office carries its
+        // own lines, so the enterprise-shared row is summed back up to the
+        // full amount for display rather than shown three times.
+        var saBody = document.getElementById('setAsideTableBody');
+        if (saBody) {
+          var byTitle = {};
+          d.offices.forEach(function (o) {
+            (o.setAsides.lines || []).forEach(function (ln) {
+              if (!byTitle[ln.title]) {
+                byTitle[ln.title] = { title: ln.title, type: ln.type, amount: 0, offices: [] };
+              }
+              byTitle[ln.title].amount += ln.amount;
+              byTitle[ln.title].offices.push(o.officeCode);
+            });
+          });
+          var titles = Object.keys(byTitle);
+          saBody.innerHTML = titles.length
+            ? titles.map(function (k) {
+                var ln = byTitle[k];
+                var badge = ln.type === 'ENTERPRISE_SHARED'
+                  ? '<span class="badge text-white" style="background:#6366f1;">Enterprise Shared</span>'
+                  : '<span class="badge bg-info text-dark">Self-Funded</span>';
+                return '<tr>' +
+                  '<td class="fw-semibold">' + escapeHtml(ln.title) + '</td>' +
+                  '<td>' + badge + '</td>' +
+                  '<td class="text-muted" style="font-size:0.75rem;">' +
+                    escapeHtml(ln.offices.join(', ')) + '</td>' +
+                  '<td class="text-end">' + money(ln.amount) + '</td>' +
+                '</tr>';
+              }).join('')
+            : '<tr><td colspan="4" class="text-muted py-3">None configured.</td></tr>';
+        }
+
+        var footer = document.getElementById('bdFooter');
+        footer.innerHTML =
+          escapeHtml(m.adjustmentsNote || '') + ' ' +
+          escapeHtml(m.actualsNote || '') + ' ' +
+          escapeHtml(m.baselineSource || '') +
+          (m.liveSpend
+            ? ' Read ' + m.requestsRead + ' request' + (m.requestsRead === 1 ? '' : 's') + '.'
+            : ' <span class="text-danger">Commitments could not be read: ' +
+              escapeHtml(m.spendError || 'unknown error') + '</span>');
+      }
+
+      function loadBudget() {
+        serverCall('getBudgetDashboard')
+          .then(function (res) {
+            if (!res || !res.success) {
+              showBudgetError((res && res.error) || 'Could not load budget figures.');
+              return;
+            }
+            document.getElementById('bdError').classList.add('d-none');
+            renderBudget(res.data);
+          })
+          .catch(function (err) {
+            showBudgetError((err && err.message) || 'The server call failed.');
+          });
+      }
+
+      function showBudgetError(msg) {
+        // The KPI placeholders stay as em-dashes rather than becoming zeros.
+        // A zero balance is a claim; an unknown balance is not.
+        var el = document.getElementById('bdError');
+        el.textContent = msg;
+        el.classList.remove('d-none');
+        document.getElementById('dacTableBody').innerHTML =
+          '<tr><td colspan="9" class="text-muted py-3">No data.</td></tr>';
+      }
+
+      /**
+       * Historical event attendance.
        */
 
       var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -466,6 +598,14 @@
           bits.push('<div class="text-muted" style="font-size:0.7rem;">' +
                     escapeHtml(r.note) + '</div>');
         }
+        // A year missed because of the travel ban, named. Without this, NCMA's
+        // two-year gap reads as a lapsed event rather than a skipped one —
+        // which is exactly the wrong conclusion @clolry had to correct.
+        if (r.restrictionNote) {
+          bits.push('<div class="text-warning-emphasis" style="font-size:0.7rem;">' +
+                    '<i class="fas fa-ban me-1" style="font-size:0.6rem;"></i>' +
+                    escapeHtml(r.restrictionNote) + '</div>');
+        }
         return bits.join('');
       }
 
@@ -487,9 +627,22 @@
         var out = '';
         if (hist.length) {
           out += '<div>' + hist.map(function (o) {
-            return '<span class="badge bg-light text-dark border me-1 mb-1">' +
+            // A reading taken under the travel ban is greyed and marked.
+            // @clolry: "most of 2026 were severely limited for travel and
+            // events due to the current administration's restrictions."
+            // Showing "1 attendee" in the same style as "20 attendees"
+            // presents a policy ceiling as a measurement of demand.
+            var restricted = !!o.restriction;
+            var cls = restricted
+              ? 'badge bg-body-secondary text-secondary border border-warning me-1 mb-1'
+              : 'badge bg-light text-dark border me-1 mb-1';
+            return '<span class="' + cls + '"' +
+                   (restricted ? ' title="' + escapeHtml(o.restriction) +
+                                 ' — not a guide to normal demand"' : '') + '>' +
                    escapeHtml(monthLabel(o.eventMonth)) + ': <strong>' +
-                   o.attendeeCount + '</strong></span>';
+                   o.attendeeCount + '</strong>' +
+                   (restricted ? ' <i class="fas fa-ban" style="font-size:0.6rem;"></i>' : '') +
+                   '</span>';
           }).join('') + '</div>';
           out += '<div class="text-muted" style="font-size:0.7rem;">' +
                  ev.totalHistoricalAttendees + ' total, ASD-wide</div>';
@@ -516,24 +669,61 @@
        * that twenty was two years ago, which is most of the point of showing
        * history at all.
        */
+      /**
+       * The number to plan against — not the raw trend.
+       *
+       * THIS COLUMN CHANGED MEANING AFTER @clolry'S CORRECTION.
+       *
+       * It used to show first-versus-last headcount, which read as collapsing
+       * interest: CGP Spring Conference 20 -> 1, a 95% fall. Both of the later
+       * readings were taken under the administration travel restrictions.
+       *
+       * A DAC shown "down 95%" reserves for one traveller next May. The
+       * answer they need is the last NORMAL year — 20 — with the ban-era
+       * readings set aside. The raw decline is still shown underneath, because
+       * hiding it would be its own distortion.
+       */
       function trendCell(ev) {
         var t = ev.trend;
-        if (!t) { return '<span class="text-muted">&mdash;</span>'; }
+        if (!t) {
+          // One occurrence: the single figure IS the baseline, such as it is.
+          var only = (ev.historical || [])[0];
+          if (!only) { return '<span class="text-muted">&mdash;</span>'; }
+          return '<span class="fw-bold">' + only.attendeeCount + '</span>' +
+                 '<div class="text-muted" style="font-size:0.7rem;">' +
+                 'one occurrence only</div>';
+        }
 
+        var out = '<span class="fw-bold fs-6">' + t.planningBaseline + '</span>';
+        out += '<div class="text-muted" style="font-size:0.7rem;">' +
+               escapeHtml(monthLabel(t.planningBaselineMonth)) +
+               (t.planningBaselineIsRestricted
+                 ? ' <span class="text-warning">(restricted — no normal year on record)</span>'
+                 : '') +
+               '</div>';
+
+        // The raw movement, below and quieter. Flagged when the restriction
+        // accounts for it, so nobody reads a ban as a trend.
         var cls = t.direction === 'down' ? 'text-danger'
                 : (t.direction === 'up' ? 'text-success' : 'text-muted');
         var arrow = t.direction === 'down' ? '&darr;'
                   : (t.direction === 'up' ? '&uarr;' : '&rarr;');
 
-        var out = '<span class="fw-bold ' + cls + '">' + arrow + ' ' +
-                  t.firstAttendees + ' &rarr; ' + t.lastAttendees + '</span>';
-        if (t.percentChange !== null && t.percentChange !== undefined) {
-          out += '<div class="' + cls + '" style="font-size:0.72rem;">' +
-                 (t.percentChange > 0 ? '+' : '') + t.percentChange + '%</div>';
+        if (t.declineExplainedByRestriction) {
+          out += '<div class="text-muted" style="font-size:0.68rem;">' +
+                 'raw ' + t.firstAttendees + ' &rarr; ' + t.lastAttendees +
+                 ', under travel restrictions</div>';
+        } else {
+          out += '<div class="' + cls + '" style="font-size:0.68rem;">' + arrow + ' ' +
+                 t.firstAttendees + ' &rarr; ' + t.lastAttendees +
+                 (t.percentChange !== null && t.percentChange !== undefined
+                   ? ' (' + (t.percentChange > 0 ? '+' : '') + t.percentChange + '%)'
+                   : '') + '</div>';
         }
+
         // 20->3->1 and 1->3->20 can share endpoints; the peak separates them.
         if (t.peakAttendees > t.firstAttendees && t.peakAttendees > t.lastAttendees) {
-          out += '<div class="text-muted" style="font-size:0.7rem;">peak ' +
+          out += '<div class="text-muted" style="font-size:0.68rem;">peak ' +
                  t.peakAttendees + ' in ' + escapeHtml(monthLabel(t.peakMonth)) + '</div>';
         }
         return out;
@@ -611,12 +801,18 @@
         // Said plainly. The figures above this section are mockup, and a
         // reader who has just seen real numbers here would reasonably assume
         // the rest is live too.
+        // @clolry: "Let's leave the history blank rather than 0 and start fresh
+        // with collecting that history going forward." Stated plainly, so the
+        // blanks read as a known starting point rather than a broken feature.
         footer.innerHTML =
           '<strong>' + (s.eventsWithoutOrgDetail || 0) + ' of ' + (s.eventCount || 0) +
-          '</strong> events have no org breakdown recorded. ' +
-          'Org detail exists only for travel submitted through LETS. ' +
-          '<span class="text-danger">The budget figures above this section are ' +
-          'placeholders and are not yet wired to live data.</span>';
+          '</strong> events have no org breakdown — it was never recorded before ' +
+          'LETS, and is left blank rather than shown as zero. Org detail builds ' +
+          'up from here as requests are submitted.' +
+          ((s.eventsAffectedByRestriction || 0)
+            ? ' <span class="text-warning-emphasis">' + s.eventsAffectedByRestriction +
+              ' event(s) skipped a year under the travel restrictions.</span>'
+            : '');
       }
 
       function load() {
@@ -659,8 +855,12 @@
         if (timer) { clearTimeout(timer); }
         timer = setTimeout(function () { state.filter = v; render(); }, 120);
       });
-      document.getElementById('ehRefreshBtn').addEventListener('click', load);
+      document.getElementById('ehRefreshBtn').addEventListener('click', function () {
+        loadBudget();
+        load();
+      });
 
+      loadBudget();
       load();
     })();
   </script>

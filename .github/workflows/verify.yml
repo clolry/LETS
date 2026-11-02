@@ -102,6 +102,13 @@ jobs:
       - name: Feedback pipeline tests
         run: node lets_app/test_feedback.js
 
+      - name: Budget dashboard tests
+        # §1 records why BudgetEngine.js could not simply be wired up: its
+        # status vocabulary has an EMPTY intersection with what the Requests
+        # tab stores, so it would report every DAC at full baseline with zero
+        # commitments — plausible, and false.
+        run: node lets_app/test_budget_dashboard.js
+
       - name: Event history tests
         # §1 re-derives every row and column total from @clolry's attendance
         # table rather than trusting the transcription: 187 attendees typed in
@@ -116,6 +123,25 @@ jobs:
         # rejected because LETS exists in its current form precisely BECAUSE
         # the inherited HC library became unreachable.
         run: node orgchart_app/test_orgchart.js
+
+      - name: Guard - the budget dashboard must not hardcode dollar figures
+        run: |
+          echo "Checking the budget dashboard for hardcoded currency..."
+          # This page WAS a mockup: 34 literal dollar figures and no server
+          # calls at all. @clolry read those numbers as live for weeks.
+          #
+          # A stale literal sitting beside a live figure is worse than an
+          # all-mockup page, because nothing distinguishes them.
+          PAGE=lets_app/client/pages/travelBudgetDashboardPage.html
+          # Three-digit-plus amounts only: $0 and single digits appear in
+          # explanatory prose and are not balances.
+          HITS=$(grep -nE '\$[0-9][0-9,]{2,}' "$PAGE" | grep -v 'toLocaleString' || true)
+          if [ -n "$HITS" ]; then
+            echo "::error file=$PAGE::Hardcoded dollar figures found. Budget values must come from getBudgetDashboard, not from the markup:"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "PASS - no hardcoded currency on the budget dashboard."
 
       - name: Guard - every test file is excluded from the clasp push
         run: |
