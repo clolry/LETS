@@ -102,6 +102,13 @@ jobs:
       - name: Feedback pipeline tests
         run: node lets_app/test_feedback.js
 
+      - name: Event history tests
+        # §1 re-derives every row and column total from @clolry's attendance
+        # table rather than trusting the transcription: 187 attendees typed in
+        # by hand, where a wrong digit is invisible in the UI and a DAC would
+        # reserve money against it.
+        run: node lets_app/test_event_history.js
+
       - name: Org chart tests
         # Includes the cross-project agreement check: orgchart_app/HCRead.js is
         # a deliberate SECOND implementation of lets_app HCData.js, so both are

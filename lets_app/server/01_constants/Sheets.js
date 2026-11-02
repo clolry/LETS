@@ -64,6 +64,10 @@ const SHEET_NAMES = {
   // the Feedback schema below.
   FEEDBACK:           'Feedback',
 
+  // Event planning. One row per event OCCURRENCE, and one per DAC set-aside.
+  HISTORICAL_EVENTS:  'Historical_Events',
+  EVENT_SET_ASIDES:   'Event_Set_Asides',
+
   // Learned per-traveler airport preferences. See 30_services/AirportPrefs.js.
   TRAVELER_AIRPORT_PREFS: 'Traveler_Airport_Prefs'
 };
@@ -474,6 +478,90 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Business_Fare',             // 0 = NOT AWARDED on this route, not free
     'Effective_Date',
     'Expiration_Date'
+  ],
+
+  // ==========================================================================
+  // HISTORICAL EVENT ATTENDANCE
+  // ==========================================================================
+  //
+  // One row per EVENT OCCURRENCE, not per event. "NCMA World Congress" is two
+  // rows: July 2024 with 25 attendees and July 2026 with 23.
+  //
+  // WHY OCCURRENCE-LEVEL
+  // --------------------
+  // A DAC planning next year's budget needs to know WHEN a conference lands
+  // and HOW MANY people went last time. An event-level row holding a total
+  // answers neither: @clolry's data has NCMA World Congress at 48 total,
+  // which is two trips of ~24 and not one trip of 48.
+  //
+  // Recurrence is DERIVED from the occurrence months rather than stored as a
+  // schedule. A stored "annual in July" would be a claim nobody maintains;
+  // two July occurrences two years apart are evidence.
+  //
+  // THE ORG BREAKDOWN IS SPARSE, DELIBERATELY
+  // -----------------------------------------
+  // @clolry asked to see "how many people from which orgs have attended".
+  // The 2024-2026 attendance figures he supplied are TOTALS with no org
+  // breakdown — that detail does not exist in the source.
+  //
+  // So Org_Breakdown is blank on every seeded row and populated only from
+  // LETS's own Requests data, where Traveler_Org_Codes is captured per
+  // request. The UI must therefore distinguish "no one from FCB attended"
+  // from "we do not know who attended", because those are different answers
+  // and conflating them would invent data.
+  Historical_Events: [
+    'Occurrence_ID',          // PK. evt_<slug>_<YYYY-MM>
+    'Event_Name',             // canonical name, used to group occurrences
+    'Event_Month',            // YYYY-MM. Day is not known for seeded rows
+    'Fiscal_Year',            // FY2024.. Oct-Sep. Derived, stored for filtering
+    'Attendee_Count',
+    'Org_Breakdown',          // JSON {orgCode: count}. BLANK when unknown
+    'Total_Est_Spend',        // blank unless known
+    'Location',
+    'Primary_Purpose',
+    'Source',                 // 'historical-seed' | 'lets-requests' | 'manual'
+    'Request_IDs',            // comma-separated, when derived from LETS
+    'Notes',
+    'Is_Active',
+    'Created_By',
+    'Created_At',
+    'Updated_By',
+    'Updated_At'
+  ],
+
+  // ==========================================================================
+  // DAC EVENT SET-ASIDES
+  // ==========================================================================
+  //
+  // NOT YET WRITTEN TO BY ANY CODE PATH. Declared now because the schema is
+  // the part worth agreeing before the UI exists, and because a tab with no
+  // schema is the defect that lost every bug report (see Feedback above).
+  //
+  // @clolry: "if the FCB DAC knows that they want to send 10 people to a
+  // conference next May then I want to give her a way to setaside the funds
+  // so they don't get spent on something else or forgotten."
+  //
+  // Distinct from LetsDB's Set_Asides, which holds the four standing
+  // enterprise set-asides (LC travel, COE, the FO gap). These are
+  // event-specific, DAC-owned, and expire.
+  Event_Set_Asides: [
+    'Set_Aside_ID',           // PK
+    'Event_Name',             // free text; matched to Historical_Events by name
+    'Event_Month',            // YYYY-MM the money is being reserved for
+    'Fiscal_Year',
+    'Org_Code',               // the DAC reserving it: FCA | FCB | FCC | FC
+    'Office_Code',            // budget key: OMD | IDV | CM | FO
+    'Planned_Travelers',
+    'Amount',                 // dollars reserved
+    'Basis',                  // how the amount was arrived at
+    'Status',                 // PLANNED | COMMITTED | RELEASED | EXPIRED
+    'Consumed_Amount',        // drawn down as requests are approved
+    'Linked_Request_IDs',
+    'Notes',
+    'Created_By',
+    'Created_At',
+    'Updated_By',
+    'Updated_At'
   ],
 
   // ==========================================================================

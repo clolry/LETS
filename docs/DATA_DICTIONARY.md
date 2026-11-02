@@ -641,6 +641,55 @@ A handled rejection needs care here: `errorResponse()` is a **returned value**, 
 
 **VT-15 still stands.** If a `Feedback` tab already exists in the live database with different headers, **the live tab wins** — the new schema only applies to a tab created from scratch. Check row 1 before relying on the reconstruction above.
 
+### 3.5.2a `Historical_Events` — 17 columns, one row per OCCURRENCE
+
+New. Holds the event-attendance history @clolry asked to see on the budget dashboard.
+
+**One row per occurrence, not per event.** "NCMA World Congress" is two rows — July 2024 with 25 attendees, July 2026 with 23. The source table states a total of 48, which is two trips of about 24 and not one trip of 48. A DAC planning one trip needs 24.
+
+| Decision | Why |
+|---|---|
+| `Event_Month` is `YYYY-MM`, not a date | The 2024–2026 source gives month only. A fabricated day would be a claim nobody made |
+| Recurrence is **derived**, not stored | A stored "annual in July" is a claim somebody must keep true. Two July occurrences are evidence, and evidence does not go stale silently |
+| `Fiscal_Year` is stored despite being derivable | It is the filter a DAC thinks in, and a DAC's money expires on 30 September. Deriving it per query would mean reimplementing the Oct–Sep roll-over at every call site — which is how **G-049** happened |
+| `Org_Breakdown` is **blank on every seeded row** | See below. This is the important one |
+
+#### `Org_Breakdown`: blank means UNKNOWN, not zero
+
+@clolry asked for attendance "from which orgs". **The 2024–2026 figures have no org breakdown — that detail does not exist in the source.**
+
+So the column is blank on all 14 seeded occurrences, and `EventHistory.js` returns `null` rather than `{}`. The dashboard renders that as *"Not recorded"*.
+
+> **This is not pedantry.** `{}` renders as "no attendees from any org", so a DAC looking at an event they have sent people to for three years would conclude they have no history at it — and plan accordingly. "We did not record it" and "nobody went" are different answers to @clolry's question.
+>
+> `test_event_history.js` §4 asserts the distinction end to end, and §9 confirms it by patching `null` to `{}` and watching §4 fail.
+
+Org detail is populated **only** from `Requests.Traveler_Org_Codes`, which covers travel submitted through LETS — a subset of the history.
+
+#### Two sources that disagree, kept separate
+
+@clolry supplied an attendance table *and* a FAS tracker summary. They do not reconcile:
+
+| Event | Attendance table | FAS tracker summary |
+|---|---|---|
+| CGP Spring Conference | 24 travellers | 4 travellers |
+| NCMA World Congress | 48 travellers | 5 travellers |
+
+Different populations — ASD-wide versus FAS-exception-only. **Neither is wrong and they are not summed.** Every row carries `Source`, the event payload keeps `historical` and `letsDerived` in separate lists, and the dashboard shows both with their scope labelled. A blended average would describe neither population.
+
+### 3.5.2b `Event_Set_Asides` — 17 columns, **declared but not yet written**
+
+@clolry: *"if the FCB DAC knows that they want to send 10 people to a conference next May then I want to give her a way to setaside the funds so they don't get spent on something else or forgotten."*
+
+**No code path writes this tab yet.** The schema is declared now for two reasons:
+
+1. The column order is the part worth agreeing before a UI exists — writes are positional (§3.9), so getting it wrong later costs a migration.
+2. **A tab with no schema is precisely the defect that lost every bug report** (§3.5.2.1). Declaring it means `setupTravelDatabase` creates it, and `test_feedback.js` §1 — which rejects any `SHEET_NAMES` entry without a schema — covers it from the start.
+
+Distinct from `LetsDB`'s `Set_Asides`, which holds the four **standing** enterprise set-asides (LC travel, COE, the FO gap). These are **event-specific, DAC-owned and expiring**, with `Status` moving `PLANNED → COMMITTED → RELEASED → EXPIRED` and `Consumed_Amount` drawn down as requests are approved.
+
+> **The blocker is not this schema.** The budget dashboard is a layout mockup — 34 hardcoded dollar figures, and until this change, zero server calls. A set-aside feature needs a page that knows a DAC's real balance before it can meaningfully reserve against it.
+
 ### 3.5.3 `File_Queue` — a phantom
 
 `SHEET_NAMES.FILE_QUEUE = 'File_Queue'` `[VERIFIED]` `Sheets.js:38`. **That line is the only occurrence of the name or the string anywhere in the codebase** `[VERIFIED]` — measured directly: 1 literal reference, 0 uses via the registry key.

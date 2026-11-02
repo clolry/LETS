@@ -21,6 +21,18 @@
   <?!= include('client/styles/travelBaseStyles'); ?>
   <?!= include('client/styles/travelPortalStyles'); ?>
 
+  <!--
+    First real server plumbing on this page.
+
+    Everything above the Historical Event Attendance section is STILL
+    hardcoded: 34 literal dollar figures, zero server calls. It was built as a
+    layout mockup and never wired up. Those numbers are not live, and the
+    section banner below says so rather than leaving a reader to assume
+    otherwise.
+  -->
+  <?!= include('client/shared/escapeHtml'); ?>
+  <?!= include('client/shared/serverCall'); ?>
+
   <style>
     .kpi-stat-card {
       background: #ffffff;
@@ -336,12 +348,321 @@
       </div>
     </div>
 
+    <!-- ================================================================
+         HISTORICAL EVENT ATTENDANCE
+
+         @clolry: "I want to add a section about historical attendance at
+         events (showing when they are and how many people from which orgs
+         have attended in the past)."
+
+         This is the ONLY section on the page reading real data. Everything
+         above it is hardcoded mockup, which the banner states outright —
+         leaving a reader to assume otherwise is worse than admitting it.
+         ================================================================ -->
+    <div class="card border-0 shadow-sm mt-4" id="eventHistoryCard">
+      <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+          <h3 class="h6 mb-0 fw-bold">Historical Event Attendance</h3>
+          <p class="text-muted small mb-0" id="ehSubtitle">Loading&hellip;</p>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <input type="search" class="form-control form-control-sm" id="ehSearch"
+                 placeholder="Filter events&hellip;" style="width: 14rem;"
+                 aria-label="Filter events">
+          <button class="btn btn-sm btn-outline-secondary" id="ehRefreshBtn">
+            <i class="fas fa-rotate me-1"></i>Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- The scope caveat, server-supplied. @clolry gave two datasets that
+           disagree — his attendance table has CGP Spring Conference at 24
+           travellers, the FAS tracker summary has 4 — because one is ASD-wide
+           and the other is FAS-exception-only. They are shown separately and
+           never summed. -->
+      <div class="card-body pb-0">
+        <div class="alert alert-secondary py-2 px-3 small mb-3" id="ehSourceNote"></div>
+        <div class="alert alert-danger py-2 px-3 small mb-3 d-none" id="ehError"></div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size: 0.8125rem;">
+          <thead class="table-light">
+            <tr>
+              <th>Event</th>
+              <th>When it lands</th>
+              <th class="text-end">Attendance history</th>
+              <th class="text-end">Trend</th>
+              <th>Who attended</th>
+            </tr>
+          </thead>
+          <tbody id="ehBody">
+            <tr><td colspan="5" class="text-muted py-3">Loading&hellip;</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card-footer bg-white small text-muted" id="ehFooter"></div>
+    </div>
+
   </main>
 
   <script>
     function syncFASTrackerNow() {
-      alert('Scanning FAS Travel Exception Tracker Google Sheet... Sync complete.');
+      // STILL A STUB. The button has always done this; left visible because
+      // removing a control @clolry has used would be a surprise, but it is
+      // labelled below so nobody trusts it.
+      alert('Not yet implemented. This button has never triggered a sync — ' +
+            'the FAS tracker poller runs on its own schedule.');
     }
+
+    (function () {
+      'use strict';
+
+      /**
+       * Historical event attendance.
+       *
+       * The numbers in the KPI cards and DAC table above are hardcoded HTML.
+       * This section is the first thing on the page that reads the database.
+       */
+
+      var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+      var state = { events: [], summary: null, filter: '' };
+
+      function monthLabel(m) {
+        if (!/^\d{4}-\d{2}$/.test(String(m || ''))) { return String(m || ''); }
+        return MONTHS[parseInt(m.slice(5, 7), 10) - 1] + ' ' + m.slice(0, 4);
+      }
+
+      /**
+       * Recurrence, phrased by CONFIDENCE.
+       *
+       * A date is shown only when the month actually repeats. The server
+       * returns null for a single occurrence and for an event that has moved
+       * around, and this must not fill that in — a DAC reserving money against
+       * an invented date is the specific harm.
+       */
+      function whenCell(ev) {
+        var r = ev.recurrence || {};
+        var bits = [];
+
+        if (r.nextExpected) {
+          var cls = r.confidence === 'high' ? 'bg-success' : 'bg-warning text-dark';
+          bits.push('<span class="badge ' + cls + '">Next: ' +
+                    escapeHtml(monthLabel(r.nextExpected)) + '</span>');
+        } else {
+          bits.push('<span class="badge bg-light text-secondary border">No reliable date</span>');
+        }
+
+        if (r.pattern && r.pattern !== 'none') {
+          bits.push('<div class="text-muted mt-1" style="font-size:0.72rem;">' +
+                    escapeHtml(r.pattern) +
+                    (r.confidence && r.confidence !== 'none'
+                      ? ' &middot; ' + escapeHtml(r.confidence) + ' confidence' : '') +
+                    '</div>');
+        }
+        if (r.note) {
+          bits.push('<div class="text-muted" style="font-size:0.7rem;">' +
+                    escapeHtml(r.note) + '</div>');
+        }
+        return bits.join('');
+      }
+
+      /**
+       * Each occurrence as month and headcount.
+       *
+       * Every occurrence, not a total. @clolry's NCMA World Congress is 48
+       * total, which is two trips of about 24 — and a DAC planning one trip
+       * needs 24, not 48.
+       */
+      function historyCell(ev) {
+        var hist = ev.historical || [];
+        var lets = ev.letsDerived || [];
+
+        if (!hist.length && !lets.length) {
+          return '<span class="text-muted">Tracked, never attended</span>';
+        }
+
+        var out = '';
+        if (hist.length) {
+          out += '<div>' + hist.map(function (o) {
+            return '<span class="badge bg-light text-dark border me-1 mb-1">' +
+                   escapeHtml(monthLabel(o.eventMonth)) + ': <strong>' +
+                   o.attendeeCount + '</strong></span>';
+          }).join('') + '</div>';
+          out += '<div class="text-muted" style="font-size:0.7rem;">' +
+                 ev.totalHistoricalAttendees + ' total, ASD-wide</div>';
+        }
+        // Kept separate from the historical row, never added to it: the two
+        // count different populations.
+        if (lets.length) {
+          out += '<div class="mt-1">' + lets.map(function (o) {
+            return '<span class="badge bg-primary-subtle text-primary-emphasis border me-1 mb-1">' +
+                   escapeHtml(monthLabel(o.eventMonth)) + ': <strong>' +
+                   o.attendeeCount + '</strong></span>';
+          }).join('') + '</div>';
+          out += '<div class="text-muted" style="font-size:0.7rem;">' +
+                 ev.totalLetsAttendees + ' via LETS requests</div>';
+        }
+        return out;
+      }
+
+      /**
+       * Trend, with the peak shown separately.
+       *
+       * @clolry's data falls off a cliff — CGP Spring Conference 20 to 1, ACT
+       * IAC ELC 25 to 8. A DAC about to reserve for twenty people should see
+       * that twenty was two years ago, which is most of the point of showing
+       * history at all.
+       */
+      function trendCell(ev) {
+        var t = ev.trend;
+        if (!t) { return '<span class="text-muted">&mdash;</span>'; }
+
+        var cls = t.direction === 'down' ? 'text-danger'
+                : (t.direction === 'up' ? 'text-success' : 'text-muted');
+        var arrow = t.direction === 'down' ? '&darr;'
+                  : (t.direction === 'up' ? '&uarr;' : '&rarr;');
+
+        var out = '<span class="fw-bold ' + cls + '">' + arrow + ' ' +
+                  t.firstAttendees + ' &rarr; ' + t.lastAttendees + '</span>';
+        if (t.percentChange !== null && t.percentChange !== undefined) {
+          out += '<div class="' + cls + '" style="font-size:0.72rem;">' +
+                 (t.percentChange > 0 ? '+' : '') + t.percentChange + '%</div>';
+        }
+        // 20->3->1 and 1->3->20 can share endpoints; the peak separates them.
+        if (t.peakAttendees > t.firstAttendees && t.peakAttendees > t.lastAttendees) {
+          out += '<div class="text-muted" style="font-size:0.7rem;">peak ' +
+                 t.peakAttendees + ' in ' + escapeHtml(monthLabel(t.peakMonth)) + '</div>';
+        }
+        return out;
+      }
+
+      /**
+       * Org breakdown — or an explicit statement that it is not recorded.
+       *
+       * THE DISTINCTION THIS CELL EXISTS FOR.
+       *
+       * @clolry asked for attendance "from which orgs". The 2024-2026 figures
+       * have no org detail; it does not exist in the source. The server sends
+       * null rather than {} for exactly this reason, and rendering null as "0
+       * from everywhere" would tell a DAC they have no history at an event
+       * they have been attending for three years.
+       *
+       * "Not recorded" and "nobody went" are different answers.
+       */
+      function orgCell(ev) {
+        if (!ev.orgBreakdown) {
+          return '<span class="text-muted" style="font-size:0.72rem;">' +
+                 '<i class="fas fa-circle-question me-1"></i>Not recorded' +
+                 '<div>Pre-LETS attendance was counted in total only.</div></span>';
+        }
+        var codes = Object.keys(ev.orgBreakdown).sort(function (a, b) {
+          return ev.orgBreakdown[b] - ev.orgBreakdown[a];
+        });
+        return codes.map(function (c) {
+          return '<span class="badge bg-info-subtle text-info-emphasis border me-1 mb-1">' +
+                 escapeHtml(c) + ': ' + ev.orgBreakdown[c] + '</span>';
+        }).join('') +
+        '<div class="text-muted" style="font-size:0.68rem;">from LETS requests only</div>';
+      }
+
+      function render() {
+        var body = document.getElementById('ehBody');
+        var q = state.filter;
+        var rows = state.events.filter(function (ev) {
+          return !q || ev.eventName.toLowerCase().indexOf(q) > -1;
+        });
+
+        if (!rows.length) {
+          body.innerHTML = '<tr><td colspan="5" class="text-muted py-3">' +
+                           (q ? 'No events match that filter.' : 'No event history yet.') +
+                           '</td></tr>';
+          return;
+        }
+
+        body.innerHTML = rows.map(function (ev) {
+          return '<tr>' +
+            '<td class="fw-semibold">' + escapeHtml(ev.eventName) + '</td>' +
+            '<td>' + whenCell(ev) + '</td>' +
+            '<td class="text-end">' + historyCell(ev) + '</td>' +
+            '<td class="text-end">' + trendCell(ev) + '</td>' +
+            '<td>' + orgCell(ev) + '</td>' +
+          '</tr>';
+        }).join('');
+      }
+
+      function renderChrome() {
+        var s = state.summary || {};
+        var sub = document.getElementById('ehSubtitle');
+        var fy = s.attendeesByFiscalYear || {};
+        var fyBits = Object.keys(fy).sort().map(function (k) {
+          return k + ': ' + fy[k];
+        });
+        sub.textContent = (s.eventCount || 0) + ' events \u00b7 ' +
+          (s.historicalAttendees || 0) + ' recorded attendees' +
+          (fyBits.length ? ' \u00b7 ' + fyBits.join('  ') : '');
+
+        document.getElementById('ehSourceNote').innerHTML =
+          '<i class="fas fa-circle-info me-1"></i>' + escapeHtml(s.sourceNote || '');
+
+        var footer = document.getElementById('ehFooter');
+        // Said plainly. The figures above this section are mockup, and a
+        // reader who has just seen real numbers here would reasonably assume
+        // the rest is live too.
+        footer.innerHTML =
+          '<strong>' + (s.eventsWithoutOrgDetail || 0) + ' of ' + (s.eventCount || 0) +
+          '</strong> events have no org breakdown recorded. ' +
+          'Org detail exists only for travel submitted through LETS. ' +
+          '<span class="text-danger">The budget figures above this section are ' +
+          'placeholders and are not yet wired to live data.</span>';
+      }
+
+      function load() {
+        var btn = document.getElementById('ehRefreshBtn');
+        btn.disabled = true;
+        serverCall('getTravelEventHistory')
+          .then(function (res) {
+            btn.disabled = false;
+            if (!res || !res.success) {
+              showError((res && res.error) || 'Could not load event history.');
+              return;
+            }
+            document.getElementById('ehError').classList.add('d-none');
+            state.events = res.data.events || [];
+            state.summary = res.data.summary || null;
+            renderChrome();
+            render();
+          })
+          .catch(function (err) {
+            btn.disabled = false;
+            showError((err && err.message) || 'The server call failed.');
+          });
+      }
+
+      function showError(msg) {
+        // Surfaced, not swallowed. This page has never made a server call
+        // before, so a silent failure would read as "the feature was not
+        // built" rather than "the call failed".
+        var el = document.getElementById('ehError');
+        el.textContent = msg;
+        el.classList.remove('d-none');
+        document.getElementById('ehBody').innerHTML =
+          '<tr><td colspan="5" class="text-muted py-3">No data.</td></tr>';
+        document.getElementById('ehSubtitle').textContent = 'Could not load';
+      }
+
+      var timer = null;
+      document.getElementById('ehSearch').addEventListener('input', function () {
+        var v = this.value.trim().toLowerCase();
+        if (timer) { clearTimeout(timer); }
+        timer = setTimeout(function () { state.filter = v; render(); }, 120);
+      });
+      document.getElementById('ehRefreshBtn').addEventListener('click', load);
+
+      load();
+    })();
   </script>
 </body>
 </html>

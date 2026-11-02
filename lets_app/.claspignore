@@ -21,6 +21,7 @@ test_branding.js
 test_leg_city.js
 test_hc_admin.js
 test_feedback.js
+test_event_history.js
 preview.html
 node_modules/**
 .git/**
