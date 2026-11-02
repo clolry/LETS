@@ -102,6 +102,14 @@ jobs:
       - name: Feedback pipeline tests
         run: node lets_app/test_feedback.js
 
+      - name: Org chart tests
+        # Includes the cross-project agreement check: orgchart_app/HCRead.js is
+        # a deliberate SECOND implementation of lets_app HCData.js, so both are
+        # loaded and compared on all 137 real org codes. A library binding was
+        # rejected because LETS exists in its current form precisely BECAUSE
+        # the inherited HC library became unreachable.
+        run: node orgchart_app/test_orgchart.js
+
       - name: Guard - every test file is excluded from the clasp push
         run: |
           echo "Checking .claspignore covers every test_*.js..."
@@ -113,25 +121,30 @@ jobs:
           # suite and forgetting the .claspignore line is invisible locally —
           # nothing fails until a deploy.
           MISSING=""
-          for f in lets_app/test_*.js; do
-            b=$(basename "$f")
-            grep -qxF "$b" lets_app/.claspignore || MISSING="$MISSING $b"
+          for d in lets_app orgchart_app; do
+            for f in "$d"/test_*.js; do
+              [ -e "$f" ] || continue
+              b=$(basename "$f")
+              grep -qxF "$b" "$d/.claspignore" || MISSING="$MISSING $d/$b"
+            done
           done
           if [ -n "$MISSING" ]; then
-            echo "::error::Test files missing from lets_app/.claspignore:$MISSING — they would be pushed to Apps Script, where require() does not exist."
+            echo "::error::Test files missing from .claspignore:$MISSING — they would be pushed to Apps Script, where require() does not exist."
             exit 1
           fi
           # And the converse: a stale entry means a renamed suite is silently
           # no longer excluded.
           STALE=""
-          while IFS= read -r line; do
-            case "$line" in
-              test_*.js)
-                [ -f "lets_app/$line" ] || STALE="$STALE $line" ;;
-            esac
-          done < lets_app/.claspignore
+          for d in lets_app orgchart_app; do
+            while IFS= read -r line; do
+              case "$line" in
+                test_*.js)
+                  [ -f "$d/$line" ] || STALE="$STALE $d/$line" ;;
+              esac
+            done < "$d/.claspignore"
+          done
           if [ -n "$STALE" ]; then
-            echo "::error::lets_app/.claspignore lists test files that no longer exist:$STALE"
+            echo "::error::A .claspignore lists test files that no longer exist:$STALE"
             exit 1
           fi
           echo "PASS - all test files are excluded from the push."
@@ -912,8 +925,8 @@ jobs:
           # Sheets IDs are 44 chars and Apps Script IDs are 57; the 40-char
           # floor catches both. `-a` is required because one source file trips
           # grep's binary heuristic on high-byte UTF-8 characters.
-          if grep -raEn "['\"]1[A-Za-z0-9_-]{39,}['\"]" lets_app/server/; then
-            echo "::error::A spreadsheet or script ID literal appears in lets_app/server/. Move it to a Script Property and read it via 00_config."
+          if grep -raEn "['\"]1[A-Za-z0-9_-]{39,}['\"]" lets_app/server/ orgchart_app/server/; then
+            echo "::error::A spreadsheet or script ID literal appears in server source. Move it to a Script Property and read it via the project's config module."
             exit 1
           fi
           echo "PASS - no hardcoded spreadsheet or script IDs in application source."

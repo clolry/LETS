@@ -1,0 +1,9 @@
+# Node test suites: require() and process.exit do not exist in Apps Script.
+# A pushed test file is dead weight at best and a load-time error at worst.
+test_orgchart.js
+
+# Repo tooling that is not part of the Apps Script project.
+node_modules/**
+.git/**
+*.log
+README.md

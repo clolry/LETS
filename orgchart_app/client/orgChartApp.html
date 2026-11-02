@@ -1,0 +1,351 @@
+<script>
+(function () {
+  'use strict';
+
+  /**
+   * Org chart UI.
+   *
+   * Receives the tree already built and already reduced by the server — no
+   * email, no grade, no position number. The browser never assembles the
+   * tree, because the position numbers that would require are the join keys
+   * for the whole reporting structure.
+   */
+
+  // --------------------------------------------------------------------------
+  // escaping
+  // --------------------------------------------------------------------------
+
+  /**
+   * HTML-escapes a string.
+   *
+   * Every name, title and org label goes through this. They come from a
+   * hand-maintained spreadsheet, so "O'Brien" and "Research & Development"
+   * are routine, and an ampersand that is not escaped breaks the row it is
+   * in. The quote cases matter because some of these land in attributes.
+   */
+  function esc(v) {
+    return String(v === null || v === undefined ? '' : v)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  // --------------------------------------------------------------------------
+  // state
+  // --------------------------------------------------------------------------
+
+  var state = {
+    data: window.__ORGCHART__ || null,
+    // node id -> true when collapsed. Keyed by a render-time index rather
+    // than a position number, because position numbers deliberately never
+    // reach the browser.
+    collapsed: {},
+    nodes: [],       // flat list, parallel to the DOM, for search
+    query: ''
+  };
+
+  var el = {
+    tree: document.getElementById('ocTree'),
+    summary: document.getElementById('ocSummary'),
+    warnings: document.getElementById('ocWarnings'),
+    error: document.getElementById('ocError'),
+    empty: document.getElementById('ocEmpty'),
+    search: document.getElementById('ocSearch'),
+    searchHint: document.getElementById('ocSearchHint'),
+    expandBtn: document.getElementById('ocExpandBtn'),
+    collapseBtn: document.getElementById('ocCollapseBtn'),
+    refreshBtn: document.getElementById('ocRefreshBtn')
+  };
+
+  // --------------------------------------------------------------------------
+  // render
+  // --------------------------------------------------------------------------
+
+  /**
+   * Builds the whole tree as one HTML string.
+   *
+   * One innerHTML assignment rather than per-node createElement. With a
+   * thousand-odd people the difference is a visible pause versus none, and
+   * there is no event wiring per node to lose — clicks are delegated.
+   *
+   * Flattens into state.nodes as it goes, so search does not re-walk the
+   * tree.
+   */
+  function renderTree(roots) {
+    state.nodes = [];
+    var html = roots.map(function (r) { return renderNode(r, 0, null); }).join('');
+    el.tree.innerHTML = html;
+  }
+
+  /**
+   * @param {Object} node
+   * @param {number} depth
+   * @param {number|null} parentId index into state.nodes, or null for a root
+   */
+  function renderNode(node, depth, parentId) {
+    // Reserve this node's index BEFORE recursing. Children take the indices
+    // after it, so a parent's id is always lower than its children's and the
+    // upward walk in applySearch terminates.
+    var id = state.nodes.length;
+
+    // Searchable text, built once at render rather than per keystroke.
+    var haystack = ((node.name || '') + ' ' + (node.title || '') + ' ' +
+                    (node.org || '') + ' ' + (node.orgCode || '')).toLowerCase();
+
+    state.nodes.push({
+      id: id,
+      depth: depth,
+      haystack: haystack,
+      hasChildren: !!(node.children && node.children.length),
+      parentId: (parentId === undefined ? null : parentId)
+    });
+    var record = state.nodes[id];
+
+    // Passes `id` down rather than patching parentId afterwards. The earlier
+    // version tried to find each child's index by counting descendants after
+    // the fact and set the wrong element — which broke the ancestor walk in
+    // search, the one thing parentId exists for.
+    var kids = (node.children || []).map(function (c) {
+      return renderNode(c, depth + 1, id);
+    }).join('');
+
+    // Collapse deep branches by default. An expand-everything default on a
+    // six-level chart renders a thousand rows and buries the structure; the
+    // top three levels are what someone orienting themselves needs.
+    var collapsedByDefault = depth >= 2 && record.hasChildren;
+    if (collapsedByDefault && !(id in state.collapsed)) state.collapsed[id] = true;
+
+    var isCollapsed = state.collapsed[id] === true;
+
+    var cls = 'oc-node' + (isCollapsed ? ' oc-node--collapsed' : '');
+    var toggleCls = 'oc-toggle' + (record.hasChildren ? '' : ' oc-toggle--leaf');
+
+    return '' +
+      '<div class="' + cls + '" data-oc-id="' + id + '" role="treeitem"' +
+        (record.hasChildren ? ' aria-expanded="' + (!isCollapsed) + '"' : '') + '>' +
+        '<div class="oc-row">' +
+          '<button type="button" class="' + toggleCls + '" data-oc-toggle="' + id + '"' +
+            ' aria-label="' + (isCollapsed ? 'Expand' : 'Collapse') + ' ' + esc(node.name) + '"' +
+            (record.hasChildren ? '' : ' tabindex="-1" aria-hidden="true"') + '>' +
+            (record.hasChildren ? (isCollapsed ? '+' : '&minus;') : '') +
+          '</button>' +
+          '<span class="oc-name">' + esc(node.name) + '</span>' +
+          (node.title ? '<span class="oc-title">' + esc(node.title) + '</span>' : '') +
+          (node.org ? '<span class="oc-org">' + esc(node.org) + '</span>' : '') +
+          (node.location ? '<span class="oc-loc">' + esc(node.location) + '</span>' : '') +
+          (node.reportCount ? '<span class="oc-count">' + node.reportCount + '</span>' : '') +
+        '</div>' +
+        (kids ? '<div class="oc-node__children" role="group">' + kids + '</div>' : '') +
+      '</div>';
+  }
+
+  // --------------------------------------------------------------------------
+  // collapse / expand
+  // --------------------------------------------------------------------------
+
+  function setCollapsed(id, collapsed) {
+    state.collapsed[id] = collapsed;
+    var node = el.tree.querySelector('[data-oc-id="' + id + '"]');
+    if (!node) return;
+    node.classList.toggle('oc-node--collapsed', collapsed);
+    if (node.getAttribute('aria-expanded') !== null) {
+      node.setAttribute('aria-expanded', String(!collapsed));
+    }
+    var btn = node.querySelector('[data-oc-toggle="' + id + '"]');
+    if (btn) btn.innerHTML = collapsed ? '+' : '&minus;';
+  }
+
+  function setAll(collapsed) {
+    state.nodes.forEach(function (n) {
+      if (!n.hasChildren) return;
+      // Never collapse a root: collapsing everything would leave a blank page
+      // with nothing to click.
+      if (collapsed && n.depth === 0) return;
+      setCollapsed(n.id, collapsed);
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // search
+  // --------------------------------------------------------------------------
+
+  /**
+   * Filters the tree to matching rows and their ancestors.
+   *
+   * Ancestors are kept and force-expanded, because a match shown without its
+   * reporting line answers "is this person here?" but not "where do they
+   * sit?" — and the second is the question an org chart exists for.
+   *
+   * Filtering toggles a class rather than re-rendering, so clearing the
+   * search restores the previous expand state exactly.
+   */
+  function applySearch(raw) {
+    var q = String(raw || '').trim().toLowerCase();
+    state.query = q;
+
+    if (!q) {
+      state.nodes.forEach(function (n) {
+        var node = el.tree.querySelector('[data-oc-id="' + n.id + '"]');
+        if (node) node.classList.remove('oc-node--filtered');
+        // Restore the stored collapse state, which filtering overrode.
+        if (n.hasChildren) setCollapsed(n.id, state.collapsed[n.id] === true);
+      });
+      el.searchHint.textContent = '';
+      el.empty.hidden = true;
+      return;
+    }
+
+    var keep = {};
+    var hits = 0;
+
+    state.nodes.forEach(function (n) {
+      if (n.haystack.indexOf(q) === -1) return;
+      hits++;
+      keep[n.id] = 'hit';
+      // Walk up, marking ancestors as context.
+      var p = n.parentId;
+      while (p !== null && p !== undefined) {
+        if (!keep[p]) keep[p] = 'context';
+        p = state.nodes[p] ? state.nodes[p].parentId : null;
+      }
+    });
+
+    state.nodes.forEach(function (n) {
+      var node = el.tree.querySelector('[data-oc-id="' + n.id + '"]');
+      if (!node) return;
+      var row = node.querySelector('.oc-row');
+      var kind = keep[n.id];
+
+      node.classList.toggle('oc-node--filtered', !kind);
+      if (row) row.classList.toggle('oc-row--hit', kind === 'hit');
+
+      // Every surviving branch is expanded, or a match nested under a
+      // collapsed ancestor would be filtered-in but invisible.
+      if (kind && n.hasChildren) {
+        node.classList.remove('oc-node--collapsed');
+        if (node.getAttribute('aria-expanded') !== null) {
+          node.setAttribute('aria-expanded', 'true');
+        }
+      }
+    });
+
+    el.searchHint.textContent = hits ? (hits + ' match' + (hits === 1 ? '' : 'es')) : '';
+    el.empty.hidden = hits > 0;
+  }
+
+  // --------------------------------------------------------------------------
+  // chrome
+  // --------------------------------------------------------------------------
+
+  function renderChrome(data) {
+    var bits = [];
+    if (data.count) bits.push(data.count + ' people');
+    if (data.orgCount) bits.push(data.orgCount + ' org codes');
+    if (data.cached) bits.push('cached — press Refresh for live data');
+    el.summary.textContent = bits.join(' · ');
+
+    if (data.warnings && data.warnings.length) {
+      el.warnings.innerHTML =
+        '<strong>' + data.warnings.length + ' issue' +
+        (data.warnings.length === 1 ? '' : 's') + ' in the roster data</strong><ul>' +
+        data.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') +
+        '</ul>';
+      el.warnings.hidden = false;
+    } else {
+      el.warnings.hidden = true;
+      el.warnings.innerHTML = '';
+    }
+  }
+
+  function showError(message) {
+    // Config errors name the property, because the fix is a property. A
+    // generic "could not load" would send the reader to the code.
+    el.error.innerHTML = '<strong>Could not build the chart.</strong> ' + esc(message);
+    el.error.hidden = false;
+    el.tree.innerHTML = '';
+  }
+
+  // --------------------------------------------------------------------------
+  // load
+  // --------------------------------------------------------------------------
+
+  function apply(data) {
+    state.data = data;
+    if (!data || !data.success) {
+      showError((data && data.error) || 'Unknown error.');
+      renderChrome({ warnings: [] });
+      return;
+    }
+    el.error.hidden = true;
+    state.collapsed = {};
+    renderTree(data.roots || []);
+    renderChrome(data);
+    if (state.query) applySearch(state.query);
+  }
+
+  function refresh() {
+    el.refreshBtn.disabled = true;
+    el.refreshBtn.textContent = 'Refreshing…';
+    google.script.run
+      .withSuccessHandler(function (data) {
+        el.refreshBtn.disabled = false;
+        el.refreshBtn.textContent = 'Refresh';
+        apply(data);
+      })
+      .withFailureHandler(function (err) {
+        el.refreshBtn.disabled = false;
+        el.refreshBtn.textContent = 'Refresh';
+        // Surfaced, not swallowed. A Refresh that silently does nothing is
+        // worse than one that says why.
+        showError((err && err.message) || 'The server call failed.');
+      })
+      .getOrgChart(true);
+  }
+
+  // --------------------------------------------------------------------------
+  // events
+  // --------------------------------------------------------------------------
+
+  // Delegated: rows are rebuilt wholesale on refresh, so per-node listeners
+  // would be re-attached every time and leak the old ones.
+  el.tree.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-oc-toggle]');
+    if (!btn) return;
+    var id = parseInt(btn.getAttribute('data-oc-toggle'), 10);
+    var rec = state.nodes[id];
+    if (!rec || !rec.hasChildren) return;
+    setCollapsed(id, !(state.collapsed[id] === true));
+  });
+
+  // Debounced, because filtering touches every node and a fast typist would
+  // otherwise queue a full pass per character.
+  var searchTimer = null;
+  el.search.addEventListener('input', function () {
+    var v = this.value;
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(function () { applySearch(v); }, 120);
+  });
+
+  el.search.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { this.value = ''; applySearch(''); }
+  });
+
+  el.expandBtn.addEventListener('click', function () { setAll(false); });
+  el.collapseBtn.addEventListener('click', function () { setAll(true); });
+  el.refreshBtn.addEventListener('click', refresh);
+
+  // "/" focuses search, the convention on every reference page. Ignored while
+  // typing, or it would swallow a slash in a search term.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    e.preventDefault();
+    el.search.focus();
+  });
+
+  apply(state.data);
+})();
+</script>

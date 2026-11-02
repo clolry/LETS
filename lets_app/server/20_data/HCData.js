@@ -767,6 +767,64 @@ var HC = (function () {
         else roots.push(node);
       });
 
+      // DETACHED CYCLES. Found while building the org chart project's own
+      // reader, which is a second implementation of this function and is
+      // tested against it.
+      //
+      // nearestStaffedAncestor guards a cycle that passes through a VACANT
+      // seat, because it walks until it finds a staffed one. It does NOT
+      // guard a cycle between two STAFFED positions: both lookups succeed on
+      // their first hop, so A becomes B's child and B becomes A's child, and
+      // the pair is a closed ring that nothing in `roots` points at.
+      //
+      // No error, no warning, no hang. Both people and EVERYONE BELOW THEM
+      // disappear, while `count` still reports them — so a caller sees
+      // "187 people" alongside a tree holding 140. A chart that is
+      // confidently wrong is worse than one that fails.
+      //
+      // Detected by reachability rather than by a smarter walk: whatever
+      // shape the bad data takes, a node the roots cannot reach is lost.
+      var reachable = {};
+      (function mark(list) {
+        for (var m = 0; m < list.length; m++) {
+          if (reachable[list[m]._pn]) continue;    // a ring inside a ring
+          reachable[list[m]._pn] = true;
+          mark(list[m].children);
+        }
+      })(roots);
+
+      Object.keys(nodes).forEach(function (pn) {
+        if (reachable[pn]) return;
+        var orphan = nodes[pn];
+
+        // Detach from the unreachable parent first, or the ring stays a ring
+        // and the scrub walk below recurses forever.
+        var parentPn = orphan._parent;
+        while (parentPn && !nodes[parentPn]) {
+          parentPn = allByPn[parentPn] ? allByPn[parentPn].reportsToPositionNumber : '';
+        }
+        if (parentPn && nodes[parentPn]) {
+          var siblings = nodes[parentPn].children;
+          var at = siblings.indexOf(orphan);
+          if (at > -1) siblings.splice(at, 1);
+        }
+
+        roots.push(orphan);
+        console.warn('HC: reporting cycle at position ' + pn + '; promoted to a ' +
+                     'root so its subtree is not lost from the org chart.');
+
+        // Re-mark: promoting this node may have made a whole subtree
+        // reachable, and the other members of its ring must not be promoted
+        // as well.
+        (function mark(list) {
+          for (var k = 0; k < list.length; k++) {
+            if (reachable[list[k]._pn]) continue;
+            reachable[list[k]._pn] = true;
+            mark(list[k].children);
+          }
+        })([orphan]);
+      });
+
       // Strip the internal keys so no position number reaches the browser.
       function scrub(node) {
         delete node._pn;

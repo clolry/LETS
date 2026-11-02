@@ -37,7 +37,7 @@ Every count is produced by [`evidence/pass6_deployment_census.js`](./evidence/pa
 
 | Question | Answer |
 |---|---|
-| **How many Apps Script projects?** | **Three are configured.** Production, a sandbox, and **one undocumented project wired to the repository root** (§5.1.3) |
+| **How many Apps Script projects?** | **Four are configured.** LETS production, a LETS sandbox, the org chart (§5.1.2a), and **one undocumented project wired to the repository root** (§5.1.3) |
 | **How does code reach production?** | A merge to `main` triggers `clasp push --force`. **No `clasp deploy` step runs** (§5.2.1) |
 | **So does a merge reach users?** | `[UNKNOWN]`. It depends on how the active deployment is configured, which nobody has recorded (**VT-01**) |
 | **Who can deploy?** | Whoever holds the `CLASPRC_JSON` secret, or anyone who can merge to `main`. **There is no branch protection** `[VERIFIED]` |
@@ -56,11 +56,12 @@ Every count is produced by [`evidence/pass6_deployment_census.js`](./evidence/pa
 
 | Config file | Role | Script ID | Tracked by git? |
 |---|---|---|---|
-| `lets_app/.clasp.json` | **Production** | `1xDKibOChZti…VaF-tcGJr` | yes |
-| `lets_app/.clasp.sandbox.json` | Sandbox | `1PLzwA_Tin…yyHzfm` | yes |
+| `lets_app/.clasp.json` | **LETS production** | `1xDKibOChZti…VaF-tcGJr` | yes |
+| `lets_app/.clasp.sandbox.json` | LETS sandbox | `1PLzwA_Tin…yyHzfm` | yes |
+| `orgchart_app/.clasp.json` | **Org chart** (§5.1.2a) | `1GUxAYQxgWw…mKdWF_` | yes |
 | **`.clasp.json`** (repo root) | **Undocumented** | `181ocqi16Ruz…51VFGF` | **no — untracked** |
 
-The production ID matches `PROJECT_PLAN.md` `[CLAIMED]`. **The other two appear in no project document** `[VERIFIED]`.
+The production ID matches `PROJECT_PLAN.md` `[CLAIMED]`. The sandbox and root IDs **appear in no project document** `[VERIFIED]`; the org chart is documented in §5.1.2a.
 
 ### 5.1.2 Production and sandbox are configured identically
 
@@ -69,6 +70,29 @@ Both point `rootDir` at `lets_app/` and would each push **111 pushable files** `
 **Switching between them is a file swap**, not a flag — you would rename `.clasp.sandbox.json` over `.clasp.json`. There is no environment variable, no `--project` argument, nothing in CI that targets the sandbox.
 
 > **Two consequences worth knowing.** A developer testing in the sandbox has to modify a tracked file to do it, which risks committing the swap. And **the deploy workflow always targets production** — the sandbox is reachable only by a manual local push `[VERIFIED]`. There is no automated path to the sandbox at all.
+
+### 5.1.2a The org chart project
+
+A second web app, `orgchart_app/`, reading the same spreadsheet LETS writes.
+
+**Why a separate project rather than a page inside LETS.** @clolry asked for it as one. Its deployment settings have to differ from LETS's in two ways that cannot coexist in one project:
+
+| Setting | LETS | Org chart | Why |
+|---|---|---|---|
+| `executeAs` | `USER_ACCESSING` | **`USER_DEPLOYING`** | LETS must know who is calling in order to gate on role. The chart must NOT, or showing a reporting line would require sharing the whole travel database with every domain user |
+| Data exposure | Travel requests, costs, approvals | **Names, titles, org, city** | The chart's payload is reduced server-side: no email, no grade, no employee ID, no position number |
+
+`executeAs` is a project-level setting. One project cannot be both.
+
+**It only ever reads.** There is no code path in `orgchart_app/server/` that opens the spreadsheet for anything but `getValues()`. LETS owns `HC_Positions` and `HC_Orgs`.
+
+**Configuration.** One Script Property, `HC_SPREADSHEET_ID`, pointing at the LETS travel database. Unset is the expected state on a fresh deployment, so it renders an instruction rather than a stack trace. `checkOrgChartSetup()` in the Apps Script console reports what the deployment can actually see.
+
+> **The duplication is deliberate, and it is tested.** `orgchart_app/server/20_data/HCRead.js` is a second implementation of `lets_app/server/20_data/HCData.js`, not a copy and not a library call. A library binding was rejected because **LETS exists in its current form precisely BECAUSE the inherited HC library became unreachable** — recreating that coupling would reproduce the failure it was built to escape.
+>
+> The cost of duplication is drift, and drift here is silent: a chart that quietly disagrees with the roster. So `orgchart_app/test_orgchart.js` §6 loads **both** readers and asserts they agree on all 137 real org codes — budget key and org name, position for position. It runs in CI.
+>
+> **That test has already paid for itself.** Writing it found a defect in LETS's own `hcGetOrgChartTree`: a reporting cycle between two STAFFED positions formed a detached ring that nothing in `roots` pointed at, so both people and their entire subtree vanished from the chart while `count` still reported them. No error, no hang. Fixed in both readers; see `test_hc_data.js` §10b.
 
 ### 5.1.3 The root config is the finding, and it is worse than its rating
 

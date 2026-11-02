@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title><?= orgName ?> — Org Chart</title>
+  <?!= include('client/orgChartStyles'); ?>
+</head>
+<body>
+
+  <header class="oc-header">
+    <div class="oc-header__title">
+      <h1><?= orgName ?></h1>
+      <p class="oc-header__sub" id="ocSummary"></p>
+    </div>
+
+    <div class="oc-header__tools">
+      <!--
+        Search is the primary interaction, not an extra. A 137-org chart is
+        navigated by looking someone up far more often than by browsing down
+        from the top, so it gets the focus and the keyboard shortcut.
+      -->
+      <div class="oc-search">
+        <input type="search" id="ocSearch" class="oc-search__input"
+               placeholder="Search name, title or org…" autocomplete="off"
+               aria-label="Search the org chart">
+        <span class="oc-search__hint" id="ocSearchHint"></span>
+      </div>
+
+      <button type="button" class="oc-btn" id="ocExpandBtn">Expand all</button>
+      <button type="button" class="oc-btn" id="ocCollapseBtn">Collapse all</button>
+      <button type="button" class="oc-btn" id="ocRefreshBtn"
+              title="Re-read the roster, bypassing the cache">Refresh</button>
+    </div>
+  </header>
+
+  <!-- Problems in the source data. Shown rather than swallowed: a missing
+       person is invisible otherwise, and "the chart looks wrong" is not a
+       reportable bug. -->
+  <div class="oc-warnings" id="ocWarnings" hidden></div>
+
+  <div class="oc-error" id="ocError" hidden></div>
+
+  <main class="oc-main" id="ocMain">
+    <div class="oc-tree" id="ocTree" role="tree" aria-label="Organisation chart"></div>
+    <p class="oc-empty" id="ocEmpty" hidden>No matches.</p>
+  </main>
+
+  <script>
+    // Inlined server-side so the first paint has the tree. A
+    // google.script.run round-trip after load shows an empty frame for a
+    // second or two on every visit, which on a reference page is most of the
+    // visit.
+    window.__ORGCHART__ = <?!= payload ?>;
+  </script>
+  <?!= include('client/orgChartApp'); ?>
+</body>
+</html>

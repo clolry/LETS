@@ -809,6 +809,48 @@ console.log('\n10b. Vacant-seat reparenting:');
     'The one real person becomes a root when the chain above is a vacant cycle');
   assert.strictEqual(cyclicTree.roots[0].name, 'Real Person');
   console.log(`   Cycle among vacant seats terminates (${elapsed}ms)`);
+
+  // A cycle between two STAFFED positions. FOUND BY orgchart_app's test
+  // suite, which is a second implementation of this function tested against
+  // it — section 10b covered the VACANT cycle only.
+  //
+  // nearestStaffedAncestor walks until it finds a staffed seat, so it guards
+  // a cycle that passes THROUGH a vacancy. It does not guard a cycle BETWEEN
+  // two staffed positions: both lookups succeed on their first hop, A becomes
+  // B's child, B becomes A's child, and nothing in `roots` points at the
+  // pair.
+  //
+  // No error, no hang, no warning. Both people and everyone below them
+  // disappeared, while `count` still included them.
+  const staffedCycle = loadHC([
+    posRow({ Position_Number: 'S1', Reports_To_Position_Number: 'S2', Employee_Name: 'Ring A',
+             Grade: 15, Org_Code: 'FCA' }),
+    posRow({ Position_Number: 'S2', Reports_To_Position_Number: 'S1', Employee_Name: 'Ring B',
+             Grade: 15, Org_Code: 'FCA' }),
+    posRow({ Position_Number: 'S3', Reports_To_Position_Number: 'S1', Employee_Name: 'Below Ring',
+             Grade: 12, Org_Code: 'FCA' }),
+    posRow({ Position_Number: 'S4', Employee_Name: 'Unrelated', Grade: 15, Org_Code: 'FC' })
+  ], ORGS, { quiet: true });
+
+  const sc = staffedCycle.HC.hcGetOrgChartTree();
+
+  // Named distinctly: section 10b already declares a countNodes(node) taking
+  // a SINGLE node, and a function declaration here would hoist over it and
+  // break the node-accounting assertion above.
+  const countTree = roots => roots.reduce((sum, r) => sum + countNodes(r), 0);
+
+  assert.strictEqual(sc.success, true);
+  assert.strictEqual(countTree(sc.roots), 4,
+    'THE BUG: a staffed cycle detaches a ring that nothing points at, so ' +
+    'both members and their whole subtree vanish from the chart while ' +
+    'count still reports them.');
+  assert.strictEqual(countTree(sc.roots), sc.count,
+    'count must match what the tree actually holds — a chart that is ' +
+    'confidently wrong is worse than one that fails');
+  const names = JSON.stringify(sc.roots);
+  assert.ok(names.indexOf('Below Ring') > -1,
+    'the subtree under a cycle must survive: those people are not the bad data');
+  console.log('   Staffed cycle keeps all 4 people, and count agrees with the tree');
 }
 
 // ---------------------------------------------------------------------------

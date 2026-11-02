@@ -1,0 +1,236 @@
+<style>
+  /* Plain CSS, no framework.
+     LETS pulls Bootstrap, Font Awesome, Flatpickr and Google Fonts from four
+     CDNs. That is defensible there — it is a large form-heavy application. It
+     is not defensible for one read-only page, where the CDN round-trips would
+     dominate the load time and add four external dependencies to a chart. */
+
+  :root {
+    --oc-ink: #0f172a;
+    --oc-ink-soft: #475569;
+    --oc-line: #d7dee8;
+    --oc-bg: #f6f8fb;
+    --oc-card: #ffffff;
+    --oc-accent: #0a4fa8;
+    --oc-accent-soft: #e8f0fb;
+    --oc-warn-bg: #fffbeb;
+    --oc-warn-line: #fde68a;
+    --oc-warn-ink: #92400e;
+    --oc-hit: #fef9c3;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--oc-bg);
+    color: var(--oc-ink);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  /* ---- header ---------------------------------------------------------- */
+
+  .oc-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.85rem 1.25rem;
+    background: var(--oc-card);
+    border-bottom: 1px solid var(--oc-line);
+  }
+
+  .oc-header h1 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+
+  .oc-header__sub {
+    margin: 0.15rem 0 0;
+    font-size: 0.76rem;
+    color: var(--oc-ink-soft);
+  }
+
+  .oc-header__tools {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+
+  .oc-search { position: relative; }
+
+  .oc-search__input {
+    width: 17rem;
+    max-width: 60vw;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--oc-line);
+    border-radius: 6px;
+    font: inherit;
+    font-size: 0.85rem;
+  }
+
+  .oc-search__input:focus {
+    outline: 2px solid var(--oc-accent);
+    outline-offset: -1px;
+    border-color: var(--oc-accent);
+  }
+
+  .oc-search__hint {
+    position: absolute;
+    right: 0.55rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.7rem;
+    color: var(--oc-ink-soft);
+    pointer-events: none;
+  }
+
+  .oc-btn {
+    padding: 0.4rem 0.7rem;
+    border: 1px solid var(--oc-line);
+    border-radius: 6px;
+    background: var(--oc-card);
+    color: var(--oc-ink);
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+
+  .oc-btn:hover { background: var(--oc-accent-soft); border-color: var(--oc-accent); }
+  .oc-btn:disabled { opacity: 0.5; cursor: default; }
+
+  /* ---- messages -------------------------------------------------------- */
+
+  .oc-warnings, .oc-error {
+    margin: 0.75rem 1.25rem 0;
+    padding: 0.6rem 0.8rem;
+    border-radius: 7px;
+    font-size: 0.8rem;
+    line-height: 1.45;
+  }
+
+  .oc-warnings {
+    background: var(--oc-warn-bg);
+    border: 1px solid var(--oc-warn-line);
+    color: var(--oc-warn-ink);
+  }
+
+  .oc-warnings ul { margin: 0.3rem 0 0; padding-left: 1.1rem; }
+
+  .oc-error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+  }
+
+  .oc-error code {
+    display: inline-block;
+    padding: 0.05rem 0.3rem;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 3px;
+    font-size: 0.95em;
+  }
+
+  /* ---- tree ------------------------------------------------------------ */
+
+  .oc-main { padding: 1rem 1.25rem 4rem; }
+
+  /* Indented outline rather than boxes-and-connectors.
+     A six-level, 137-org chart drawn as a horizontal tree is wider than any
+     screen, so it becomes a pan-and-zoom exercise. An indented outline reads
+     top to bottom like a document, searches cleanly, collapses per node, and
+     prints. The tradeoff is that sibling breadth is less visually obvious —
+     the report count on each row compensates. */
+  .oc-node { position: relative; }
+
+  .oc-node__children {
+    margin: 0;
+    padding-left: 1.15rem;
+    border-left: 1px solid var(--oc-line);
+    list-style: none;
+  }
+
+  .oc-node--collapsed > .oc-node__children { display: none; }
+
+  .oc-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45rem;
+    padding: 0.28rem 0.4rem;
+    border-radius: 6px;
+  }
+
+  .oc-row:hover { background: var(--oc-accent-soft); }
+
+  .oc-toggle {
+    flex: 0 0 auto;
+    width: 1.15rem;
+    height: 1.15rem;
+    padding: 0;
+    border: 1px solid var(--oc-line);
+    border-radius: 4px;
+    background: var(--oc-card);
+    color: var(--oc-ink-soft);
+    font: inherit;
+    font-size: 0.7rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .oc-toggle:hover { border-color: var(--oc-accent); color: var(--oc-accent); }
+
+  /* A leaf keeps the same indent as a parent, so names line up in a column
+     instead of stepping in and out by one character. */
+  .oc-toggle--leaf {
+    visibility: hidden;
+    cursor: default;
+  }
+
+  .oc-name { font-weight: 600; }
+
+  .oc-title { color: var(--oc-ink-soft); }
+
+  .oc-title::before { content: "— "; }
+
+  .oc-org {
+    padding: 0.03rem 0.35rem;
+    border-radius: 999px;
+    background: var(--oc-accent-soft);
+    color: var(--oc-accent);
+    font-size: 0.7rem;
+    white-space: nowrap;
+  }
+
+  .oc-loc { color: var(--oc-ink-soft); font-size: 0.72rem; }
+
+  .oc-count {
+    color: var(--oc-ink-soft);
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Search hits. Highlighting the row rather than the matched substring keeps
+     the DOM simple — no re-rendering of names with <mark> wrappers, which
+     would mean escaping decisions on every keystroke. */
+  .oc-row--hit { background: var(--oc-hit); }
+  .oc-row--hit:hover { background: var(--oc-hit); }
+
+  .oc-empty { color: var(--oc-ink-soft); font-size: 0.85rem; }
+
+  /* Rows filtered out by a search. Kept in the DOM rather than removed, so
+     clearing the search restores the previous expand state without a rebuild. */
+  .oc-node--filtered { display: none; }
+
+  @media print {
+    .oc-header__tools, .oc-toggle { display: none; }
+    .oc-node--collapsed > .oc-node__children { display: block; }
+    body { background: #fff; }
+  }
+</style>
