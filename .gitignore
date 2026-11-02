@@ -47,3 +47,6 @@ scripts/environments-result.txt
 reference_excel_files/report_*.xls
 reference_excel_files/Expense Report*.xls
 reference_excel_files/Travel requests*.xls
+# The ASD staffing plan: 806 named staff with position numbers, titles and
+# duty stations. Same reasoning as above, and more of it.
+reference_excel_files/*Staffing Plan*.xlsx
