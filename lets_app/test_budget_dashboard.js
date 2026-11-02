@@ -296,14 +296,21 @@ console.log('\n6. the payload admits what it does not know');
   ok('it states there is no reconciliation step',
      /no post-travel reconciliation/.test(m.actualsNote), m.actualsNote);
 
-  // Budget_Adjustments is part of the unreachable LetsDB layer and has never
-  // been created, so every allocation equals its baseline.
-  ok('it states that adjustments are not tracked',
-     m.adjustmentsAvailable === false && /not yet tracked/.test(m.adjustmentsNote));
-  ok('and totalAllocation equals baseline until they are',
-     r.data.offices.every(o => o.totalAllocation === o.baselineAllocation));
+  // Allocations are now admin-set and versioned by effective date, so a
+  // mid-year change is a row rather than a deploy. @clolry: "each year (or
+  // even mid-year if budgets change) we can update the numbers."
+  ok('allocations are reported as editable', m.allocationsEditable === true);
 
-  // Baselines are config, not data. Worth saying: a reader seeing live
+  // With no rows in the database, every figure is a CONFIG FALLBACK and must
+  // say so. An unconfirmed number must not look like one an admin set.
+  ok('an empty allocations tab reports config-fallback',
+     m.allocationSource === 'config-fallback', m.allocationSource);
+  ok('and every office is individually marked',
+     r.data.offices.every(o => o.allocationSource === 'config-fallback'));
+  ok('and the note tells the admin to set the real figures',
+     /No admin-set allocations yet/.test(m.adjustmentsNote), m.adjustmentsNote);
+
+  // Baselines are config until set. Worth saying: a reader seeing live
   // commitment figures reasonably assumes the allocations are live too.
   ok('it names BudgetConfig as the source of the baselines',
      /BudgetConfig\.js/.test(m.baselineSource), m.baselineSource);

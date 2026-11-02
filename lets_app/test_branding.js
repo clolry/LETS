@@ -65,6 +65,23 @@ console.log('1. defaults are THIS deployment, so unset is not a bug');
   ok('app name', g('getAppName()')==='LETS', g('getAppName()'));
   ok('org short', g('getOrgShortName()')==='ASD');
   ok('org long', g('getOrgLongName()')==='ACQUISITION SOLUTIONS DEVELOPMENT');
+
+  // THE EMAIL FOOTER NAMES THE SERVICE, NOT THE OFFICE.
+  //
+  // @clolry, after the rebranding sweep: "The bottom of the emails still say
+  // GENERAL SERVICES ADMINISTRATION • ASSISTED ACQUISITION SERVICES. I think
+  // it should say FEDERAL ACQUISITION SERVICE rather than ASSISTED
+  // ACQUISITION SERVICES."
+  //
+  // The sweep missed it because the footer was a hardcoded literal inside a
+  // template string in Email.js, not a {{token}} — and because substituting
+  // orgLong would have been a THIRD wrong answer. ASD is an office three
+  // levels down; a footer names the agency and the service.
+  ok('org service', g('getOrgServiceName()')==='FEDERAL ACQUISITION SERVICE');
+  ok('agency', g('getAgencyName()')==='GENERAL SERVICES ADMINISTRATION');
+  ok('service is NOT the office name',
+     g('getOrgServiceName()')!==g('getOrgLongName()'),
+     'a footer names the service (FAS), not the office (ASD)');
   ok('front office label', g('getOrgFOLabel()')==='ASD Travel & Events');
   // SD -> SCD (Service Center Director), BU -> DAC (Deputy Assistant
   // Commissioner, the SES running each of FCA/FCB/FCC).
@@ -235,6 +252,59 @@ console.log('7b. admin Users page must not hardcode the inherited org name');
   const utils = fs.readFileSync('lets_app/client/shared/travelUtils.html', 'utf8');
   ok('stageLabels exposes orgShort', /orgShort: b\.orgShort/.test(utils));
   ok('stageLabels exposes appName', /appName: b\.appName/.test(utils));
+}
+
+console.log('7c. the email footer is built from configuration');
+{
+  // The footer survived the first rebranding sweep because it was a literal
+  // inside a template string rather than a {{token}}. Checked by content, not
+  // by absence of a word, so renaming the constant cannot slip past it.
+  const email = fs.readFileSync('lets_app/server/30_services/Email.js', 'utf8');
+
+  ok('no ASSISTED ACQUISITION literal outside comments',
+     !email.split('\n').some(l => /ASSISTED ACQUISITION/.test(l) &&
+                                   !/^\s*(\/\/|\*|\/\*)/.test(l)),
+     email.split('\n').filter(l => /ASSISTED ACQUISITION/.test(l) &&
+                                    !/^\s*(\/\/|\*|\/\*)/.test(l)));
+
+  ok('and no hardcoded agency line either',
+     !/'GENERAL SERVICES ADMINISTRATION/.test(email) &&
+     !/>\s*GENERAL SERVICES ADMINISTRATION/.test(email),
+     'the agency is configurable too, so a non-GSA workgroup need not edit this file');
+
+  ok('the footer resolves through orgLine',
+     /\$\{EMAIL_CONTENT\.global\.orgLine\}/.test(email));
+  ok('and orgLine reads agency + service',
+     /_brand\(\)\.agency[\s\S]{0,60}_brand\(\)\.orgService/.test(email));
+
+  // _brand() must actually carry them, or orgLine renders 'undefined •
+  // undefined' — which looks like a template bug rather than a config one.
+  ok('_brand exposes agency and orgService',
+     /orgService: getOrgServiceName\(\)/.test(email) &&
+     /agency: getAgencyName\(\)/.test(email));
+
+  // THE CI GUARDS THAT WATCH THIS FILE WERE SILENTLY DEAD.
+  //
+  // Email.js contains ✓ and ⚠ characters, and this container has no UTF-8
+  // locale, so grep classifies the file as BINARY. `grep -n pattern file`
+  // prints "binary file matches" instead of matching lines — so any guard
+  // piping grep output into a filter saw one bogus line and drew the wrong
+  // conclusion. `grep -q` is unaffected; output-consuming greps are not.
+  //
+  // The hardcoded-TRIP guard had been passing for this reason. Verified by
+  // putting a TRIP literal back in and watching it pass.
+  const wf = fs.readFileSync('.github/workflows/verify.yml', 'utf8');
+  const unsafe = wf.split('\n').filter(l => {
+    if (!/grep/.test(l)) return false;
+    if (!/\||\$\(|`/.test(l)) return false;          // output not consumed
+    if (/grep\s+-[a-zA-Z]*a/.test(l)) return false;  // already binary-safe
+    // `find ... | grep .` reads find's output, not a file's contents, so the
+    // binary heuristic cannot apply.
+    if (/find\s/.test(l)) return false;
+    return /lets_app|orgchart_app/.test(l);
+  });
+  ok('every output-consuming grep in CI is binary-safe (-a)',
+     unsafe.length === 0, unsafe.map(l => l.trim().slice(0, 70)));
 }
 
 console.log('8. all four page templates publish branding to the client');

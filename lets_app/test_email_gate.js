@@ -74,6 +74,12 @@ function build(opts){
     function getAppName(){ return 'LETS'; }
     function getOrgShortName(){ return 'ASD'; }
     function getOrgLongName(){ return 'ACQUISITION SOLUTIONS DEVELOPMENT'; }
+    // The email FOOTER names the agency and the SERVICE, not the office.
+    // @clolry: it should read FEDERAL ACQUISITION SERVICE, not ASSISTED
+    // ACQUISITION SERVICES — and ASD, the office, would be a third wrong
+    // answer.
+    function getOrgServiceName(){ return 'FEDERAL ACQUISITION SERVICE'; }
+    function getAgencyName(){ return 'GENERAL SERVICES ADMINISTRATION'; }
     function getOrgFOLabel(){ return 'ASD Travel & Events'; }
     function getReviewLabelSector(){ return 'SCD'; }
     function getReviewLabelBU(){ return 'DAC'; }

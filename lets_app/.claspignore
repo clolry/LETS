@@ -23,6 +23,8 @@ test_hc_admin.js
 test_feedback.js
 test_event_history.js
 test_budget_dashboard.js
+test_budget_admin.js
+test_budget_backfill.js
 preview.html
 node_modules/**
 .git/**

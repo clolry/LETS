@@ -641,6 +641,67 @@ A handled rejection needs care here: `errorResponse()` is a **returned value**, 
 
 **VT-15 still stands.** If a `Feedback` tab already exists in the live database with different headers, **the live tab wins** — the new schema only applies to a tab created from scratch. Check row 1 before relying on the reconstruction above.
 
+### 3.5.1a `Budget_Allocations` — 14 columns, **append-only**
+
+New. The budget figures @clolry maintains per fiscal year, and mid-year.
+
+**One row per office per EFFECTIVE DATE.** Not one row per office.
+
+Supersedes the hardcoded baselines in `BudgetConfig.js`, which required a developer and a deploy to change a dollar figure — for a number that moves mid-year by design.
+
+#### Why it appends instead of editing in place
+
+An in-place edit destroys the only record of what the budget **was**, and that matters specifically for the reconciliation @clolry asked for in the same message.
+
+> A request approved in November against a $152,000 allocation looks **over-budget** if the allocation was later cut to $120,000. With an in-place edit there is nothing, anywhere, saying the ceiling moved. The approval decision becomes indefensible after the fact.
+
+So the current figure is the row with the latest `Effective_Date` that is **not in the future**; everything else is history, and the history is the audit trail.
+
+**The schema deliberately has no `Updated_By` or `Updated_At`** `[VERIFIED]`. Having them would invite exactly the edit this design prevents. `test_budget_admin.js` §3 asserts their absence.
+
+| Column | Note |
+|---|---|
+| `Effective_Date` | A **future** date schedules a change rather than applying it. Entering next year's budget in August must not move this month's balances — `test_budget_admin.js` §4 |
+| `Change_Reason` | **Required, minimum 5 characters.** In six months this row is the only record of why the number moved. The validator rejects a blank or a token |
+| `Supersedes_ID` | The row this replaces, so the chain reads without sorting by date |
+| `Proportional_Share` | Stays sourced from config. It is a policy split that happens to approximate the baseline ratio; recomputing it from amounts would silently drift from the agreed percentages every time a budget moved |
+
+#### The fallback announces itself
+
+A database with no rows falls back to the `BudgetConfig.js` literals, so the dashboard is never blank. But the payload reports `source` as one of `database`, `partial` or `config-fallback`, **per office as well as overall**, and the UI prints it.
+
+> A figure nobody has confirmed must not look like one somebody set. `partial` is its own state precisely because a dashboard mixing confirmed and unconfirmed figures without saying so is the failure this field exists to prevent.
+
+#### Access: read-open, write-admin
+
+@clolry, in two separate messages: *"this would be an admin function and not be open to reviewers"* and *"budgeting info can be available to users at this point - no secrets to hide there - we're trying to develop transparency."*
+
+Both hold. `getBudgetAllocations` is **unguarded**; `saveBudgetAllocations` requires `isTravelAdmin`. Two functions, so the distinction lives in the code rather than in a parameter. A CI guard asserts both halves — including that a guard has not crept into the *read* path.
+
+### 3.5.1b Backfilled travel — not a tab, a **marked state** in `Requests`
+
+@clolry: *"Our fiscal year began October 1st so we have some travel (not a ton, but some) that is planned or already occurred and I want to get it reported in the system."*
+
+No new tab. Imported travel lands in `Requests` like anything else, because the budget arithmetic and every report already read that tab. What differs is how the row is written.
+
+| | intake form | backfill import |
+|---|---|---|
+| Status | `PENDING_SECTOR` | `COMPLETED` or `APPROVED_GOGOV`, **derived from the dates** |
+| Reviewer fields | populated | **empty** |
+| Notifications | emails the reviewer | **none** |
+| `Submitted_At` | now | **the travel date** |
+| Access | any user | **admin only** |
+
+**Status is derived, never chosen** `[VERIFIED]`. It decides whether the cost lands as a commitment or as actual spend, so offering it as a field would let the same trip land in either bucket depending on what the user picked. A trip whose end date has passed is `COMPLETED`; one still ahead is `APPROVED_GOGOV`, which is exactly what "planned" travel is.
+
+**`Submitted_At` carries the travel date, not the import date.** Reports group by it, and stamping it `now` would file October travel under whatever month the import ran — which is the reconciliation problem this feature exists to solve.
+
+**Reviewer fields stay empty.** A name there would put completed travel on somebody's pending queue, and would put an approval in the record that never happened.
+
+**Every row is identifiable afterwards:** `Primary_Justification` is prefixed `BACKFILL:` and names the administrator, and an `Approval_Log` row with action `BACKFILL_IMPORT` states outright that *"NOT routed for approval and no notifications were sent"*. The log is what someone reads to ask who approved a thing; the honest answer here is nobody, and it has to say so.
+
+> **Duplicates are warned about, not blocked.** @clolry is typing in a quarter of a year, and entering a trip twice across two sittings would consume a DAC's budget twice. But two genuine trips to one event in a month happen — @clolry's own FAS tracker data has several — so the importer returns `needsConfirmation` with the matching request IDs and requires a second, deliberate press.
+
 ### 3.5.2a `Historical_Events` — 17 columns, one row per OCCURRENCE
 
 New. Holds the event-attendance history @clolry asked to see on the budget dashboard.

@@ -102,6 +102,19 @@ jobs:
       - name: Feedback pipeline tests
         run: node lets_app/test_feedback.js
 
+      - name: Budget admin tests
+        # §1 proves the ACCESS SPLIT @clolry asked for: reading allocations is
+        # open to every user ("no secrets to hide there - we're trying to
+        # develop transparency") while writing is admin-only. Two functions, so
+        # the distinction is in the code rather than in a parameter.
+        run: node lets_app/test_budget_admin.js
+
+      - name: Budget backfill tests
+        # §2 proves the import sends nothing and routes nothing. The email and
+        # routing mocks RECORD calls rather than absorbing them, so an empty
+        # recording is evidence instead of an artefact of the harness.
+        run: node lets_app/test_budget_backfill.js
+
       - name: Budget dashboard tests
         # §1 records why BudgetEngine.js could not simply be wired up: its
         # status vocabulary has an EMPTY intersection with what the Requests
@@ -124,6 +137,52 @@ jobs:
         # the inherited HC library became unreachable.
         run: node orgchart_app/test_orgchart.js
 
+      - name: Guard - budget writes must be admin-guarded
+        run: |
+          echo "Checking the budget write paths..."
+          # @clolry: "this would be an admin function and not be open to
+          # reviewers." Apps Script makes every top-level function
+          # browser-callable (G-001), so the hidden button protects nothing —
+          # each write must guard itself.
+          #
+          # Checked PER FUNCTION by extracting its body, not by counting
+          # occurrences: a count threshold passes when one function loses its
+          # guard and another gains one.
+          for SPEC in \
+            "saveBudgetAllocations:lets_app/server/40_domain/BudgetAdmin.js" \
+            "importExistingTravel:lets_app/server/40_domain/BudgetBackfill.js" \
+            "validateExistingTravel:lets_app/server/40_domain/BudgetBackfill.js"; do
+            FN="${SPEC%%:*}"
+            FILE="${SPEC##*:}"
+            BODY=$(awk "/^function ${FN}\(/,/^}/" "$FILE")
+            if [ -z "$BODY" ]; then
+              echo "::error file=$FILE::${FN} is missing."
+              exit 1
+            fi
+            if ! echo "$BODY" | grep -aq 'isTravelAdmin'; then
+              echo "::error file=$FILE::${FN} writes budget data but does not check isTravelAdmin(). Every top-level function is browser-callable, so hiding the button is not a control."
+              exit 1
+            fi
+          done
+          # And the converse: reading must NOT be gated. @clolry wants budget
+          # figures visible to everyone for transparency, so a guard creeping
+          # into the read path is also a defect.
+          READBODY=$(awk '/^function getBudgetAllocations\(/,/^}/' \
+                       lets_app/server/40_domain/BudgetAdmin.js)
+          if echo "$READBODY" | grep -aq 'return errorResponse.*Administrator access'; then
+            echo "::error file=lets_app/server/40_domain/BudgetAdmin.js::getBudgetAllocations must stay readable by all users. @clolry: budget info is deliberately transparent; only writes are restricted."
+            exit 1
+          fi
+          # The import must never send mail or route for approval. A reviewer
+          # asked to approve travel that already happened will conclude the
+          # system is broken.
+          if grep -aqE 'GmailApp|MailApp|sendSubmissionNotification|determineInitialRouting' \
+               lets_app/server/40_domain/BudgetBackfill.js; then
+            echo "::error file=lets_app/server/40_domain/BudgetBackfill.js::The backfill importer must not send notifications or route for approval. These records are entered retroactively as completed or committed travel."
+            exit 1
+          fi
+          echo "PASS - budget writes are admin-guarded, reads are open, the importer is silent."
+
       - name: Guard - the budget dashboard must not hardcode dollar figures
         run: |
           echo "Checking the budget dashboard for hardcoded currency..."
@@ -135,7 +194,7 @@ jobs:
           PAGE=lets_app/client/pages/travelBudgetDashboardPage.html
           # Three-digit-plus amounts only: $0 and single digits appear in
           # explanatory prose and are not balances.
-          HITS=$(grep -nE '\$[0-9][0-9,]{2,}' "$PAGE" | grep -v 'toLocaleString' || true)
+          HITS=$(grep -anE '\$[0-9][0-9,]{2,}' "$PAGE" | grep -av 'toLocaleString' || true)
           if [ -n "$HITS" ]; then
             echo "::error file=$PAGE::Hardcoded dollar figures found. Budget values must come from getBudgetDashboard, not from the markup:"
             echo "$HITS"
@@ -158,7 +217,7 @@ jobs:
             for f in "$d"/test_*.js; do
               [ -e "$f" ] || continue
               b=$(basename "$f")
-              grep -qxF "$b" "$d/.claspignore" || MISSING="$MISSING $d/$b"
+              grep -aqxF "$b" "$d/.claspignore" || MISSING="$MISSING $d/$b"
             done
           done
           if [ -n "$MISSING" ]; then
@@ -217,14 +276,14 @@ jobs:
           # literal, and names the consequence in the log.
           BODY=$(awk '/function hcGetOrgChartTree/,/^  }$/' lets_app/server/20_data/HCData.js)
           for FIELD in emailAddress employeeId supervisoryStatus locationCode occupancyStatus; do
-            if echo "$BODY" | grep -qE "(^|[^a-zA-Z_])${FIELD}[^a-zA-Z_]*:" ; then
+            if echo "$BODY" | grep -aqE "(^|[^a-zA-Z_])${FIELD}[^a-zA-Z_]*:" ; then
               echo "::error file=lets_app/server/20_data/HCData.js::hcGetOrgChartTree emits '${FIELD}'. That projection is served by the org chart deployment, which any domain user can open with the link and which has no role check. It must emit only workgroup name, supervisor name and employee names."
               exit 1
             fi
           done
           # `grade` and the duty-station fields are checked separately because
           # 'grade' appears legitimately in the GS-15 predicate comment above.
-          if echo "$BODY" | grep -qE "(grade|dutyStation|location)[[:space:]]*:"; then
+          if echo "$BODY" | grep -aqE "(grade|dutyStation|location)[[:space:]]*:"; then
             echo "::error file=lets_app/server/20_data/HCData.js::hcGetOrgChartTree emits a grade or duty-station field. See the comment above this guard."
             exit 1
           fi
@@ -239,7 +298,7 @@ jobs:
           # a real one. A real address here would also grant its owner LETS
           # access through canAccessTrip (Access.js:416) once seeded.
           if grep -oE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+' lets_app/server/91_setup/HCSeed.js \
-             | grep -v '@example\.gov' | grep . ; then
+             | grep -av '@example\.gov' | grep . ; then
             echo "::error file=lets_app/server/91_setup/HCSeed.js::HCSeed.js contains an address outside example.gov. Seed data must stay fictional; a real address here is seeded into HC_Positions and grants that person LETS access via canAccessTrip."
             exit 1
           fi
@@ -283,7 +342,7 @@ jobs:
           done
           # Each allow-path must log before returning. Three GRANTED calls, one
           # per path, plus the DENIED paths.
-          GRANTS=$(grep -c "_logAccessDecision_(emailLower, 'GRANTED'" lets_app/server/30_services/Access.js || true)
+          GRANTS=$(grep -ac "_logAccessDecision_(emailLower, 'GRANTED'" lets_app/server/30_services/Access.js || true)
           if [ "$GRANTS" -lt 3 ]; then
             echo "::error file=lets_app/server/30_services/Access.js::Expected 3 GRANTED log calls in canAccessTrip (one per allow-path), found ${GRANTS}. An unlogged allow-path is exactly the G-008 defect."
             exit 1
@@ -296,17 +355,26 @@ jobs:
           # Apps Script makes every top-level function browser-callable
           # (G-001), so the admin page's gate protects the PAGE, not these
           # functions. Each must guard independently.
-          for FN in getHCAdminData saveHCPosition deactivateHCPosition refreshHCAdminData; do
-            if ! grep -q "function ${FN}" lets_app/server/40_domain/HCAdmin.js; then
+          for FN in getHCAdminData saveHCPosition deactivateHCPosition refreshHCAdminData hcLoadRealOrgCodes; do
+            if ! grep -aq "function ${FN}" lets_app/server/40_domain/HCAdmin.js; then
               echo "::error file=lets_app/server/40_domain/HCAdmin.js::${FN} is missing."
               exit 1
             fi
+            # CHECKED PER FUNCTION, not by counting occurrences.
+            #
+            # This was a >= threshold against a total count, which does not
+            # bite: adding a fifth entry point raised the count to 6, so
+            # deleting a guard from any one of them left 5 and still passed.
+            # Verified by deleting one — the guard MISSED it.
+            #
+            # A count cannot express "every one of these, individually". This
+            # extracts each function body and looks inside it.
+            BODY=$(awk "/^function ${FN}\(/,/^}/" lets_app/server/40_domain/HCAdmin.js)
+            if ! echo "$BODY" | grep -aq '_hcAdminGuard_()'; then
+              echo "::error file=lets_app/server/40_domain/HCAdmin.js::${FN} does not call _hcAdminGuard_(). Apps Script makes every top-level function browser-callable (G-001), so an unguarded entry point lets any authenticated user edit HR data."
+              exit 1
+            fi
           done
-          GUARDS=$(grep -c '_hcAdminGuard_()' lets_app/server/40_domain/HCAdmin.js || true)
-          if [ "$GUARDS" -lt 5 ]; then
-            echo "::error file=lets_app/server/40_domain/HCAdmin.js::Expected every entry point to call _hcAdminGuard_() (4 callers plus the definition); found ${GUARDS}. An unguarded entry point lets any authenticated user edit HR data."
-            exit 1
-          fi
           # A half-applied edit to HR data produces exactly the dangling
           # references and cycles this editor exists to prevent.
           if ! grep -q 'if (problems.length) {' lets_app/server/40_domain/HCAdmin.js; then
@@ -315,11 +383,16 @@ jobs:
           fi
           # The bundle caches for six hours; without invalidation an edit is
           # invisible long enough to look like the save failed.
-          INVAL=$(grep -c 'hcCacheInvalidateAll()' lets_app/server/40_domain/HCAdmin.js || true)
-          if [ "$INVAL" -lt 3 ]; then
-            echo "::error file=lets_app/server/40_domain/HCAdmin.js::Expected hcCacheInvalidateAll() after each write (save, deactivate, refresh); found ${INVAL}. An edit would be invisible for up to six hours."
-            exit 1
-          fi
+          # PER FUNCTION, for the same reason as the guard check above: a count
+          # threshold passes when one write loses its invalidation and another
+          # gains one.
+          for FN in saveHCPosition deactivateHCPosition refreshHCAdminData; do
+            BODY=$(awk "/^function ${FN}\(/,/^}/" lets_app/server/40_domain/HCAdmin.js)
+            if ! echo "$BODY" | grep -aqE 'hcCacheInvalidateAll\(\)|hcRefreshBundleCache\(\)'; then
+              echo "::error file=lets_app/server/40_domain/HCAdmin.js::${FN} does not invalidate the HC cache. The bundle caches for six hours, so the edit would be invisible long enough to look like the save failed."
+              exit 1
+            fi
+          done
           echo "PASS - roster writes are guarded, validated and invalidate the cache."
 
       - name: 'Guard: a typed leg city must be captured'
@@ -339,7 +412,7 @@ jobs:
           fi
           # It must be called on BOTH failure branches and unconditionally on
           # the success path.
-          CALLS=$(grep -c '_bindLegCityManualEntry(legId)' lets_app/client/controllers/form/travelRequestItinerary.html || true)
+          CALLS=$(grep -ac '_bindLegCityManualEntry(legId)' lets_app/client/controllers/form/travelRequestItinerary.html || true)
           if [ "$CALLS" -lt 3 ]; then
             echo "::error file=lets_app/client/controllers/form/travelRequestItinerary.html::Expected _bindLegCityManualEntry on the failure branch, the catch branch and the success path (3 calls); found ${CALLS}."
             exit 1
@@ -356,16 +429,37 @@ jobs:
           # Comments and STORED values are permitted: 'AAS FO' is an
           # Initial_Review_Level value, and TRIP_FAVICON_ID / _buildAASLogo are
           # identifiers. Display strings are not.
-          BAD=$(grep -rnE "'[^']*\bTRIP\b|\"[^\"]*\bTRIP\b|aastravel@gsa\.gov" \
+          BAD=$(grep -arnE "'[^']*\bTRIP\b|\"[^\"]*\bTRIP\b|aastravel@gsa\.gov" \
                   lets_app/server/30_services/Email.js \
                   lets_app/server/50_pages/Render.js \
                   lets_app/client/shared/travelUtils.html \
                   lets_app/client/controllers/portal/travelPortalController.html \
-                | grep -vE ":[0-9]+:\s*(//|\*|/\*|<!--)" \
-                | grep -vE "TRIP_FAVICON|_buildAASLogo|aas-brand-header|TRAVEL_LOGO" || true)
+                | grep -avE ":[0-9]+:\s*(//|\*|/\*|<!--)" \
+                | grep -avE "TRIP_FAVICON|_buildAASLogo|aas-brand-header|TRAVEL_LOGO" || true)
           if [ -n "$BAD" ]; then
             echo "::error::A hardcoded brand string was found. Use getAppName() / getEmailFromAddress() or a {{appName}} token so another workgroup can rebrand without a code change:"
             echo "$BAD"
+            exit 1
+          fi
+          # The email FOOTER. It survived the first rebranding sweep because it was a
+          # hardcoded literal inside a template string rather than a {{token}}, so
+          # @clolry was still seeing "ASSISTED ACQUISITION SERVICES" — a different
+          # office under the same service — weeks after the rebrand.
+          #
+          # Checked separately from the loop below because the strings differ: a footer
+          # names the AGENCY and the SERVICE, and neither is derivable from
+          # ORG_LONG_NAME. Substituting the office name would be a third wrong answer.
+          # -a because Email.js trips grep's binary heuristic, and without it the
+          # check prints "binary file matches" and exits 1 through the pipe —
+          # looking like a pass. The guard was silently dead when first written.
+          #
+          # ^[0-9]+: not :[0-9]+: — a single-file grep emits "528:..." with no
+          # filename prefix, so the leading colon never matched and every
+          # comment line counted as a hit.
+          if grep -anE "ASSISTED ACQUISITION|'GENERAL SERVICES ADMINISTRATION" \
+               lets_app/server/30_services/Email.js \
+             | grep -avE "^[0-9]+:[[:space:]]*(//|\*|/\*)" | grep -aq .; then
+            echo "::error file=lets_app/server/30_services/Email.js::The email footer must resolve through EMAIL_CONTENT.global.orgLine, which reads getAgencyName() and getOrgServiceName(). A literal here cannot be rebranded by another workgroup."
             exit 1
           fi
           # The stage labels must resolve from configuration, not literals.
@@ -405,10 +499,10 @@ jobs:
           #
           # A scriptlet CALLING a server function is fine; a bare identifier
           # is a page variable and will throw.
-          STRAY=$(grep -rnE '<\?=?!?=[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\?>' \
+          STRAY=$(grep -arnE '<\?=?!?=[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\?>' \
                     lets_app/client/shared/ lets_app/client/components/ \
                     lets_app/client/controllers/ 2>/dev/null \
-                  | grep -v '(' || true)
+                  | grep -av '(' || true)
           if [ -n "$STRAY" ]; then
             echo "::error::An included file references a page template variable. include() gives each file its own template, so this throws ReferenceError on every page that includes it. Use a data- attribute filled from window._letsBranding instead:"
             echo "$STRAY"
@@ -533,7 +627,7 @@ jobs:
           # a file-wide grep matched that — a guard that trips on correct code
           # is one people delete.
           if awk '/MailApp\.sendEmail\(\{/,/\}\);/' lets_app/server/30_services/Email.js \
-               | grep -qE 'to: options\.to'; then
+               | grep -aqE 'to: options\.to'; then
             echo "::error file=lets_app/server/30_services/Email.js::The MailApp fallback is using options.to, bypassing the environment gate."
             exit 1
           fi
@@ -587,7 +681,7 @@ jobs:
               exit 1
             fi
           done
-          REFUSALS=$(grep -c 'LETS_IS_PRODUCTION' lets_app/server/91_setup/FASTrackerTest.js || true)
+          REFUSALS=$(grep -ac 'LETS_IS_PRODUCTION' lets_app/server/91_setup/FASTrackerTest.js || true)
           if [ "$REFUSALS" -lt 2 ]; then
             echo "::error file=lets_app/server/91_setup/FASTrackerTest.js::Expected both submitFASTrackerTestRow and deleteFASTrackerTestRows to check LETS_IS_PRODUCTION, found ${REFUSALS} reference(s). Without it a diagnostic can write to or delete from the official FAS tracker."
             exit 1
@@ -659,8 +753,8 @@ jobs:
           # columns. Matched only in CODE: the comment explaining why the old
           # status write was removed necessarily contains the old string, and a
           # guard that trips on its own documentation is a guard people delete.
-          if grep -vE "^\s*(\*|//)" lets_app/server/30_services/FASTrackerSync.js \
-               | grep -q "'Pending FAS CoS Approval'"; then
+          if grep -avE "^\s*(\*|//)" lets_app/server/30_services/FASTrackerSync.js \
+               | grep -aq "'Pending FAS CoS Approval'"; then
             echo "::error file=lets_app/server/30_services/FASTrackerSync.js::LETS is writing an approval status into the FAS tracker. 'Status:' is the front office's own decision column and must stay blank."
             exit 1
           fi
@@ -679,7 +773,7 @@ jobs:
           # window.top.
           if grep -rnE "window\.location\.href\s*=\s*['\"]\?mode=" \
                lets_app/client/pages/ lets_app/client/controllers/ \
-               | grep -vE '^\s*(//|\*|<!--)' | grep -v 'NOT window.location'; then
+               | grep -avE '^\s*(//|\*|<!--)' | grep -av 'NOT window.location'; then
             echo "::error::A relative ?mode= navigation was found. Inside the Apps Script sandbox iframe this navigates to googleusercontent.com and renders a blank page. Use navigateToTravel(mode) instead."
             exit 1
           fi
@@ -749,7 +843,7 @@ jobs:
           # unrunnable from the editor, which defeats the purpose of having a
           # committed diagnostics file at all. @clolry hit this with
           # diagCityNamesForState('TX').
-          for FN in $(grep -oE '^  diag[A-Za-z]+\(\);$' lets_app/server/99_triggers/Diagnostics.js | tr -d ' ();'); do
+          for FN in $(grep -aoE '^  diag[A-Za-z]+\(\);$' lets_app/server/99_triggers/Diagnostics.js | tr -d ' ();'); do
             if ! grep -qE "function ${FN}\(\)" lets_app/server/99_triggers/Diagnostics.js; then
               echo "::error file=lets_app/server/99_triggers/Diagnostics.js::${FN} is called by diagAll but does not have a zero-argument signature. The editor Run button cannot pass arguments, so it would be unrunnable by hand."
               exit 1
@@ -783,7 +877,7 @@ jobs:
           # Observed in the sandbox: two calls produced one row with Use_Count
           # 1, so promotion never fired and the hybrid-learning feature was
           # entirely inert. The failure is silent; nothing errors.
-          FLUSHES=$(grep -c "SpreadsheetApp.flush()" lets_app/server/30_services/AirportPrefs.js || true)
+          FLUSHES=$(grep -ac "SpreadsheetApp.flush()" lets_app/server/30_services/AirportPrefs.js || true)
           if [ "$FLUSHES" -lt 2 ]; then
             echo "::error file=lets_app/server/30_services/AirportPrefs.js::Expected a SpreadsheetApp.flush() after both the update and the append path in recordAirportPreference, found ${FLUSHES}. Without it Use_Count cannot increment and airport preferences never get promoted."
             exit 1
@@ -817,8 +911,8 @@ jobs:
           done
           # Any raw key literal outside the two helper functions bypasses
           # versioning entirely.
-          STRAY=$(grep -nE "'cp_(fare|airports)_'" lets_app/server/30_services/CityPairs.js \
-                  | grep -vE 'cp_fare_. \+ CP_FARE_CACHE_VERSION|cp_airports_. \+ CP_AIRPORTS_CACHE_VERSION' || true)
+          STRAY=$(grep -anE "'cp_(fare|airports)_'" lets_app/server/30_services/CityPairs.js \
+                  | grep -avE 'cp_fare_. \+ CP_FARE_CACHE_VERSION|cp_airports_. \+ CP_AIRPORTS_CACHE_VERSION' || true)
           if [ -n "$STRAY" ]; then
             echo "::error file=lets_app/server/30_services/CityPairs.js::An unversioned cache key literal was found. Build keys with cityPairFareCacheKey_() or cityAirportsCacheKey_():"
             echo "$STRAY"
@@ -877,7 +971,7 @@ jobs:
           # Removing the sort makes reverse-direction lookups return "no
           # contract fare awarded" for routes that have one — silently, and in
           # a way that reads as missing data rather than a bug.
-          if ! grep -qE "x <= y \? \(x \+ '\|' \+ y\) : \(y \+ '\|' \+ x\)" \
+          if ! grep -aqE "x <= y \? \(x \+ '\|' \+ y\) : \(y \+ '\|' \+ x\)" \
                lets_app/server/91_setup/CityPairSync.js; then
             echo "::error file=lets_app/server/91_setup/CityPairSync.js::buildPairKey_ no longer sorts its inputs alphabetically. GSA stores pairs in alphabetical order; without the sort, half of all lookups silently return no fare."
             exit 1

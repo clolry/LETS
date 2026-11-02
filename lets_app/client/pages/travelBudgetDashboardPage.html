@@ -34,6 +34,64 @@
   <?!= include('client/shared/serverCall'); ?>
 
   <style>
+    /* Modals, hand-rolled.
+       data-bs-toggle was used on this page already and did nothing, because
+       Bootstrap's JAVASCRIPT is not loaded here — only its CSS. Rather than
+       add a fifth CDN dependency for two dialogs, these are plain fixed
+       overlays driven by a class. */
+    .oc-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 1080;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 3vh 1rem;
+      background: rgba(15, 23, 42, 0.45);
+      overflow-y: auto;
+    }
+
+    .oc-modal__panel {
+      width: 100%;
+      max-width: 36rem;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+      display: flex;
+      flex-direction: column;
+      max-height: 94vh;
+    }
+
+    .oc-modal__panel--wide { max-width: 72rem; }
+
+    .oc-modal__head,
+    .oc-modal__foot {
+      padding: 0.75rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .oc-modal__head { border-bottom: 1px solid #e2e8f0; }
+    .oc-modal__foot { border-top: 1px solid #e2e8f0; }
+
+    .oc-modal__body {
+      padding: 1rem;
+      overflow-y: auto;
+    }
+
+    .btn-close-x {
+      margin-left: auto;
+      border: 0;
+      background: none;
+      font-size: 1.35rem;
+      line-height: 1;
+      color: #64748b;
+      cursor: pointer;
+    }
+
+    .btn-close-x:hover { color: #0f172a; }
+
     .kpi-stat-card {
       background: #ffffff;
       border: 1px solid #e2e8f0;
@@ -141,12 +199,25 @@
         <p class="text-muted small mb-0">Active discretionary balance tracking across DACs, set-asides, and Go.gov obligations</p>
       </div>
       <div class="d-flex gap-2">
-        <button class="btn btn-sm btn-outline-primary" onclick="syncFASTrackerNow()">
-          <i class="fas fa-sync-alt me-1"></i> Sync FAS Tracker Sheet
+        <!--
+          ADMIN ONLY, shown by canEdit from getBudgetAllocations. The guard is
+          on the SERVER function, not here: hiding a button is a convenience,
+          never a control.
+        -->
+        <button class="btn btn-sm btn-outline-primary d-none" id="btnSetBudget">
+          <i class="fas fa-sliders me-1"></i> Set Allocations
         </button>
-        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#modalBudgetAdjustment">
-          <i class="fas fa-plus-circle me-1"></i> Log Budget Adjustment
+        <button class="btn btn-sm btn-primary d-none" id="btnImportTravel">
+          <i class="fas fa-file-import me-1"></i> Import Existing Travel
         </button>
+        <!--
+          The "Log Budget Adjustment" button that was here opened
+          #modalBudgetAdjustment, which does not exist in this file — and
+          Bootstrap's JS is not loaded either, so data-bs-toggle did nothing
+          at all. Two layers of dead. Removed rather than wired, because
+          allocation changes now go through Set Allocations, which versions
+          them.
+        -->
       </div>
     </div>
 
@@ -377,6 +448,148 @@
         </table>
       </div>
       <div class="card-footer bg-white small text-muted" id="ehFooter"></div>
+    </div>
+
+    <!-- ================================================================
+         ADMIN: SET ALLOCATIONS
+
+         @clolry: "we need a user interface where each year (or even mid-year
+         if budgets change) we can update the numbers for our overall group
+         and each subgroup (FCA, FCB, FCC) - this would be an admin function
+         and not be open to reviewers."
+
+         Every save APPENDS a row with an effective date. An in-place edit
+         would destroy the record of what the budget was, and a request
+         approved in November against a figure that was later cut would look
+         over-budget with nothing saying the ceiling moved.
+         ================================================================ -->
+    <div class="oc-modal d-none" id="budgetModal">
+      <div class="oc-modal__panel">
+        <div class="oc-modal__head">
+          <h3 class="h6 fw-bold mb-0">Set Budget Allocations</h3>
+          <button type="button" class="btn-close-x" id="budgetModalClose" aria-label="Close">&times;</button>
+        </div>
+
+        <div class="oc-modal__body">
+          <div class="row g-2 mb-3">
+            <div class="col-sm-4">
+              <label class="form-label small mb-1" for="allocFy">Fiscal year</label>
+              <input type="text" class="form-control form-control-sm" id="allocFy" placeholder="FY2027">
+            </div>
+            <div class="col-sm-4">
+              <label class="form-label small mb-1" for="allocEffective">Effective date</label>
+              <input type="date" class="form-control form-control-sm" id="allocEffective">
+              <div class="form-text" style="font-size:0.7rem;">
+                A future date schedules the change rather than applying it now.
+              </div>
+            </div>
+            <div class="col-sm-4">
+              <label class="form-label small mb-1" for="allocReason">Reason</label>
+              <input type="text" class="form-control form-control-sm" id="allocReason"
+                     placeholder="e.g. FY27 opening allocation" maxlength="200">
+              <div class="form-text" style="font-size:0.7rem;">
+                Required. In six months this is the only record of why it moved.
+              </div>
+            </div>
+          </div>
+
+          <table class="table table-sm align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Office</th>
+                <th class="text-end">Current</th>
+                <th class="text-end" style="width: 10rem;">New amount</th>
+              </tr>
+            </thead>
+            <tbody id="allocRows"></tbody>
+          </table>
+
+          <div class="alert alert-danger py-2 px-3 small d-none" id="allocProblems"></div>
+
+          <details class="small">
+            <summary class="text-muted">Allocation history</summary>
+            <div class="table-responsive mt-2">
+              <table class="table table-sm" style="font-size:0.75rem;">
+                <thead class="table-light">
+                  <tr><th>Effective</th><th>Office</th><th class="text-end">Amount</th><th>Reason</th><th>Set by</th></tr>
+                </thead>
+                <tbody id="allocHistory"></tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+
+        <div class="oc-modal__foot">
+          <span class="text-muted small me-auto" id="allocHint"></span>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="allocCancel">Cancel</button>
+          <button type="button" class="btn btn-sm btn-primary" id="allocSave">Save allocations</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         ADMIN: IMPORT EXISTING TRAVEL
+
+         @clolry: "Our fiscal year began October 1st so we have some travel
+         (not a ton, but some) that is planned or already occurred and I want
+         to get it reported in the system."
+
+         Deliberately NOT the intake form. Submitting through that would email
+         a sector director and create a pending approval for a trip that
+         already happened. These rows are written as COMPLETED or
+         APPROVED_GOGOV, route nowhere, and notify nobody.
+         ================================================================ -->
+    <div class="oc-modal d-none" id="importModal">
+      <div class="oc-modal__panel oc-modal__panel--wide">
+        <div class="oc-modal__head">
+          <h3 class="h6 fw-bold mb-0">Import Existing Travel</h3>
+          <button type="button" class="btn-close-x" id="importModalClose" aria-label="Close">&times;</button>
+        </div>
+
+        <div class="oc-modal__body">
+          <div class="alert alert-secondary py-2 px-3 small">
+            <i class="fas fa-circle-info me-1"></i>
+            For travel that already happened or is already committed. These
+            records are <strong>not routed for approval and no emails are
+            sent</strong>. Status is derived from the dates: a trip that has
+            ended counts as completed spend, one still ahead counts as a
+            commitment.
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-sm align-middle" style="font-size:0.8rem;">
+              <thead class="table-light">
+                <tr>
+                  <th style="min-width: 12rem;">Trip / event *</th>
+                  <th>Start *</th>
+                  <th>End *</th>
+                  <th>Office *</th>
+                  <th class="text-end">Total cost *</th>
+                  <th class="text-end">Travellers *</th>
+                  <th>Purpose</th>
+                  <th>Names (optional)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="importRows"></tbody>
+            </table>
+          </div>
+
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="importAddRow">
+            <i class="fas fa-plus me-1"></i>Add another trip
+          </button>
+
+          <div class="alert alert-danger py-2 px-3 small mt-3 d-none" id="importProblems"></div>
+          <div class="alert alert-warning py-2 px-3 small mt-3 d-none" id="importWarnings"></div>
+          <div class="alert alert-success py-2 px-3 small mt-3 d-none" id="importResult"></div>
+        </div>
+
+        <div class="oc-modal__foot">
+          <span class="text-muted small me-auto" id="importHint"></span>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="importCancel">Close</button>
+          <button type="button" class="btn btn-sm btn-primary" id="importSave">Import travel</button>
+        </div>
+      </div>
     </div>
 
   </main>
@@ -857,10 +1070,311 @@
       });
       document.getElementById('ehRefreshBtn').addEventListener('click', function () {
         loadBudget();
+        loadAllocations();
         load();
       });
 
+      // ====================================================================
+      // ADMIN: ALLOCATIONS
+      // ====================================================================
+
+      var allocState = { offices: [], history: [], canEdit: false, fiscalYear: '' };
+
+      function openModal(id) { document.getElementById(id).classList.remove('d-none'); }
+      function closeModal(id) { document.getElementById(id).classList.add('d-none'); }
+
+      function loadAllocations() {
+        serverCall('getBudgetAllocations')
+          .then(function (res) {
+            if (!res || !res.success) { return; }
+            allocState.offices = res.data.offices || [];
+            allocState.history = res.data.history || [];
+            allocState.canEdit = !!res.data.canEdit;
+            allocState.fiscalYear = res.data.fiscalYear || '';
+
+            // Admin-only controls. The real guard is server-side; this only
+            // avoids showing a button that would be refused.
+            if (allocState.canEdit) {
+              document.getElementById('btnSetBudget').classList.remove('d-none');
+              document.getElementById('btnImportTravel').classList.remove('d-none');
+            }
+          })
+          .catch(function () { /* the dashboard still renders without this */ });
+      }
+
+      function renderAllocEditor() {
+        document.getElementById('allocFy').value = allocState.fiscalYear;
+        document.getElementById('allocEffective').value =
+          new Date().toISOString().slice(0, 10);
+        document.getElementById('allocReason').value = '';
+        document.getElementById('allocProblems').classList.add('d-none');
+
+        document.getElementById('allocRows').innerHTML = allocState.offices.map(function (o) {
+          return '<tr>' +
+            '<td class="fw-semibold">' + escapeHtml(o.officeName) +
+              ' <span class="text-muted fw-normal" style="font-size:0.75rem;">' +
+              escapeHtml(o.orgCode) + ' / ' + escapeHtml(o.officeCode) + '</span></td>' +
+            '<td class="text-end">' + money(o.amount) +
+              // Says where the current figure came from. An unconfirmed
+              // fallback must not look like one an admin set.
+              (o.source === 'config-fallback'
+                ? '<div class="text-warning" style="font-size:0.68rem;">not yet set</div>'
+                : '<div class="text-muted" style="font-size:0.68rem;">' +
+                  escapeHtml(o.effectiveDate) + '</div>') +
+            '</td>' +
+            '<td><input type="number" class="form-control form-control-sm text-end" ' +
+              'data-alloc-office="' + escapeHtml(o.officeCode) + '" ' +
+              'min="0" step="100" value="' + o.amount + '"></td>' +
+          '</tr>';
+        }).join('');
+
+        // Newest first, because the recent change is the one being checked.
+        document.getElementById('allocHistory').innerHTML = allocState.history.length
+          ? allocState.history.map(function (h) {
+              return '<tr>' +
+                '<td>' + escapeHtml(h.effectiveDate) + '</td>' +
+                '<td>' + escapeHtml(h.officeCode) + '</td>' +
+                '<td class="text-end">' + money(h.amount) + '</td>' +
+                '<td>' + escapeHtml(h.changeReason) + '</td>' +
+                '<td class="text-muted">' + escapeHtml(h.createdBy) + '</td>' +
+              '</tr>';
+            }).join('')
+          : '<tr><td colspan="5" class="text-muted">No history yet — these are the ' +
+            'configured defaults.</td></tr>';
+
+        document.getElementById('allocHint').textContent =
+          'Saving appends a new row; nothing is overwritten.';
+      }
+
+      function saveAllocations() {
+        var fy = document.getElementById('allocFy').value.trim();
+        var eff = document.getElementById('allocEffective').value;
+        var reason = document.getElementById('allocReason').value.trim();
+
+        // Only offices whose amount CHANGED. Writing an unchanged figure would
+        // fill the history with rows that record nothing.
+        var entries = [];
+        allocState.offices.forEach(function (o) {
+          var input = document.querySelector('[data-alloc-office="' + o.officeCode + '"]');
+          if (!input) { return; }
+          var val = input.value === '' ? null : Number(input.value);
+          if (val === null) { return; }
+          if (o.source !== 'config-fallback' && val === o.amount) { return; }
+          entries.push({ officeCode: o.officeCode, amount: val, fiscalYear: fy,
+                         effectiveDate: eff, changeReason: reason });
+        });
+
+        if (!entries.length) {
+          showAllocProblems(['Nothing changed. Edit an amount, or cancel.']);
+          return;
+        }
+
+        var btn = document.getElementById('allocSave');
+        btn.disabled = true;
+        btn.textContent = 'Saving\u2026';
+
+        serverCall('saveBudgetAllocations', entries)
+          .then(function (res) {
+            btn.disabled = false;
+            btn.textContent = 'Save allocations';
+            if (!res || !res.success) {
+              showAllocProblems(res && res.problems ? res.problems
+                : [(res && res.error) || 'Could not save.']);
+              return;
+            }
+            closeModal('budgetModal');
+            loadAllocations();
+            loadBudget();
+          })
+          .catch(function (err) {
+            btn.disabled = false;
+            btn.textContent = 'Save allocations';
+            showAllocProblems([(err && err.message) || 'The server call failed.']);
+          });
+      }
+
+      function showAllocProblems(list) {
+        var el = document.getElementById('allocProblems');
+        el.innerHTML = '<strong>Not saved.</strong><ul class="mb-0">' +
+          list.map(function (p) { return '<li>' + escapeHtml(p) + '</li>'; }).join('') +
+          '</ul>';
+        el.classList.remove('d-none');
+      }
+
+      document.getElementById('btnSetBudget').addEventListener('click', function () {
+        renderAllocEditor();
+        openModal('budgetModal');
+      });
+      document.getElementById('budgetModalClose').addEventListener('click', function () {
+        closeModal('budgetModal');
+      });
+      document.getElementById('allocCancel').addEventListener('click', function () {
+        closeModal('budgetModal');
+      });
+      document.getElementById('allocSave').addEventListener('click', saveAllocations);
+
+      // ====================================================================
+      // ADMIN: IMPORT EXISTING TRAVEL
+      // ====================================================================
+
+      var OFFICES = [['FO', 'Front Office / AC'], ['OMD', 'OMD DAC'],
+                     ['IDV', 'IDV DAC'], ['CM', 'CM DAC']];
+
+      function importRowHtml() {
+        return '<tr>' +
+          '<td><input type="text" class="form-control form-control-sm" data-f="tripName" ' +
+            'placeholder="NCMA World Congress"></td>' +
+          '<td><input type="date" class="form-control form-control-sm" data-f="startDate"></td>' +
+          '<td><input type="date" class="form-control form-control-sm" data-f="endDate"></td>' +
+          '<td><select class="form-select form-select-sm" data-f="owningOffice">' +
+            '<option value="">\u2014</option>' +
+            OFFICES.map(function (o) {
+              return '<option value="' + o[0] + '">' + escapeHtml(o[1]) + '</option>';
+            }).join('') +
+          '</select></td>' +
+          '<td><input type="number" class="form-control form-control-sm text-end" ' +
+            'data-f="totalCost" min="0" step="1" placeholder="0"></td>' +
+          '<td><input type="number" class="form-control form-control-sm text-end" ' +
+            'data-f="travelerCount" min="1" step="1" value="1"></td>' +
+          '<td><input type="text" class="form-control form-control-sm" data-f="purpose" ' +
+            'placeholder="Conference Attendance"></td>' +
+          '<td><input type="text" class="form-control form-control-sm" data-f="travelerNames" ' +
+            'placeholder="comma separated"></td>' +
+          '<td><button type="button" class="btn btn-sm btn-link text-danger p-0" ' +
+            'data-import-remove>&times;</button></td>' +
+        '</tr>';
+      }
+
+      function collectImportRows() {
+        return Array.prototype.map.call(
+          document.querySelectorAll('#importRows tr'),
+          function (tr) {
+            function v(f) {
+              var el = tr.querySelector('[data-f="' + f + '"]');
+              return el ? el.value.trim() : '';
+            }
+            var names = v('travelerNames')
+              ? v('travelerNames').split(',').map(function (n) { return n.trim(); })
+                  .filter(Boolean)
+              : [];
+            return {
+              tripName: v('tripName'),
+              startDate: v('startDate'),
+              endDate: v('endDate'),
+              owningOffice: v('owningOffice'),
+              totalCost: v('totalCost'),
+              travelerCount: v('travelerCount'),
+              purpose: v('purpose'),
+              travelerNames: names
+            };
+          }
+        // A row the user added and left blank is not an error.
+        ).filter(function (r) {
+          return r.tripName || r.startDate || r.totalCost;
+        });
+      }
+
+      function runImport(allowDuplicates) {
+        var entries = collectImportRows();
+        if (!entries.length) {
+          showImportProblems(['Nothing to import. Fill in at least one trip.']);
+          return;
+        }
+
+        var btn = document.getElementById('importSave');
+        btn.disabled = true;
+        btn.textContent = 'Importing\u2026';
+
+        serverCall('importExistingTravel', entries, { allowDuplicates: !!allowDuplicates })
+          .then(function (res) {
+            btn.disabled = false;
+            btn.textContent = 'Import travel';
+            document.getElementById('importProblems').classList.add('d-none');
+            document.getElementById('importWarnings').classList.add('d-none');
+
+            if (res && res.needsConfirmation) {
+              // A possible duplicate is shown, not blocked: two genuine trips
+              // to one event in a month happen. But silently double-counting
+              // a DAC's budget would be worse, so it needs a second press.
+              var w = document.getElementById('importWarnings');
+              w.innerHTML = '<strong>Possible duplicates.</strong><ul class="mb-2">' +
+                res.warnings.map(function (x) {
+                  return '<li>' + escapeHtml(x) + '</li>';
+                }).join('') + '</ul>' +
+                '<button type="button" class="btn btn-sm btn-warning" ' +
+                'id="importConfirmDupes">Import anyway</button>';
+              w.classList.remove('d-none');
+              document.getElementById('importConfirmDupes')
+                .addEventListener('click', function () { runImport(true); });
+              return;
+            }
+
+            if (!res || !res.success) {
+              showImportProblems(res && res.problems ? res.problems
+                : [(res && res.error) || 'Could not import.']);
+              return;
+            }
+
+            var out = document.getElementById('importResult');
+            out.innerHTML = '<strong>' + res.data.requestsWritten +
+              ' record(s) imported.</strong> No approval routing, no emails sent.' +
+              '<ul class="mb-0 mt-1">' + res.data.created.map(function (c) {
+                return '<li>' + escapeHtml(c.requestId) + ' \u2014 ' +
+                  escapeHtml(c.tripName) + ', ' + escapeHtml(c.owningOffice) + ', ' +
+                  money(c.totalCost) + ', <em>' + escapeHtml(c.status) + '</em></li>';
+              }).join('') + '</ul>';
+            out.classList.remove('d-none');
+
+            document.getElementById('importRows').innerHTML = importRowHtml();
+            loadBudget();
+            load();
+          })
+          .catch(function (err) {
+            btn.disabled = false;
+            btn.textContent = 'Import travel';
+            showImportProblems([(err && err.message) || 'The server call failed.']);
+          });
+      }
+
+      function showImportProblems(list) {
+        var el = document.getElementById('importProblems');
+        el.innerHTML = '<strong>Nothing was imported.</strong><ul class="mb-0">' +
+          list.map(function (p) { return '<li>' + escapeHtml(p) + '</li>'; }).join('') +
+          '</ul>';
+        el.classList.remove('d-none');
+      }
+
+      document.getElementById('btnImportTravel').addEventListener('click', function () {
+        document.getElementById('importRows').innerHTML = importRowHtml();
+        document.getElementById('importProblems').classList.add('d-none');
+        document.getElementById('importWarnings').classList.add('d-none');
+        document.getElementById('importResult').classList.add('d-none');
+        document.getElementById('importHint').textContent =
+          'Written as completed or committed travel. Nothing is routed or emailed.';
+        openModal('importModal');
+      });
+      document.getElementById('importModalClose').addEventListener('click', function () {
+        closeModal('importModal');
+      });
+      document.getElementById('importCancel').addEventListener('click', function () {
+        closeModal('importModal');
+      });
+      document.getElementById('importAddRow').addEventListener('click', function () {
+        document.getElementById('importRows').insertAdjacentHTML('beforeend', importRowHtml());
+      });
+      document.getElementById('importRows').addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-import-remove]');
+        if (!btn) { return; }
+        var rows = document.querySelectorAll('#importRows tr');
+        // Never remove the last row: an empty table has no way back.
+        if (rows.length > 1) { btn.closest('tr').remove(); }
+      });
+      document.getElementById('importSave').addEventListener('click', function () {
+        runImport(false);
+      });
+
       loadBudget();
+      loadAllocations();
       load();
     })();
   </script>

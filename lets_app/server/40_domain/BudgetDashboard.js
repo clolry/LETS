@@ -87,6 +87,35 @@ var BudgetDashboard = (function () {
   }
 
   /**
+   * Allocations in force, from the database when available.
+   *
+   * @clolry asked for an admin UI to set these per year and mid-year, so the
+   * figures no longer live in BudgetConfig.js. BudgetAdmin.currentAllocations
+   * returns the row with the latest Effective_Date not in the future, falling
+   * back to the config literals when no rows exist yet.
+   *
+   * The `source` it reports is carried into the payload rather than smoothed
+   * over: an unconfirmed fallback figure must not look like one an admin set.
+   *
+   * @returns {Object} { byOffice, source, fiscalYear }
+   */
+  function allocations() {
+    if (typeof BudgetAdmin === 'undefined') {
+      // Defensive: Apps Script load order is alphabetical within a directory,
+      // and a missing file here would otherwise be a blank dashboard rather
+      // than a stated error.
+      console.warn('BudgetDashboard: BudgetAdmin unavailable; using config baselines');
+      return null;
+    }
+    try {
+      return BudgetAdmin.currentAllocations();
+    } catch (e) {
+      console.warn('BudgetDashboard: allocation read failed: ' + e.message);
+      return null;
+    }
+  }
+
+  /**
    * Standing set-asides for one office, from BudgetConfig.
    *
    * SELF_FUNDED comes off the owning office alone. ENTERPRISE_SHARED is split
@@ -266,6 +295,8 @@ var BudgetDashboard = (function () {
   function getDashboard() {
     try {
       var baselines = (LETS_CONFIG && LETS_CONFIG.baselineAllocations) || {};
+      var alloc = allocations();
+      // Office list from config; AMOUNTS from the database when set.
       var codes = Object.keys(baselines);
 
       var db;
@@ -287,11 +318,12 @@ var BudgetDashboard = (function () {
         var sa = officeSetAsides(code);
         var sp = spend.byOffice[code] || { committed: 0, actual: 0,
                                            committedCount: 0, actualCount: 0 };
+        var set = (alloc && alloc.byOffice[code]) || null;
 
-        var baseline = round2(o.baselineAmount);
-        // No adjustments layer exists, so this equals the baseline today. Kept
-        // as a separate field so wiring Budget_Adjustments later does not
-        // change the payload shape.
+        // The admin-set figure wins over the config literal. This is the whole
+        // point of the allocations tab: a budget that changes mid-year should
+        // not need a code deploy.
+        var baseline = set ? set.amount : round2(o.baselineAmount);
         var totalAllocation = baseline;
         var discretionaryBase = round2(totalAllocation - sa.total);
         var available = round2(discretionaryBase - sp.committed - sp.actual);
@@ -305,7 +337,18 @@ var BudgetDashboard = (function () {
           isDac: !!o.isDac,
           baselineAllocation: baseline,
           totalAllocation: totalAllocation,
-          proportionalShare: Number(o.standardProportionalShare) || 0,
+          // Where this number came from, per office. A dashboard mixing
+          // admin-set and fallback figures without saying which is the exact
+          // problem this field prevents.
+          allocationSource: set ? set.source : 'config-fallback',
+          allocationEffectiveDate: set ? set.effectiveDate : '',
+          allocationSetBy: set ? set.setBy : '',
+          allocationReason: set ? set.changeReason : '',
+          // A queued change. A DAC reading a balance should know if the
+          // ceiling moves next month.
+          scheduledChanges: set ? (set.scheduledChanges || []) : [],
+          proportionalShare: set ? set.proportionalShare
+                                 : (Number(o.standardProportionalShare) || 0),
           setAsides: sa,
           discretionaryBase: discretionaryBase,
           committed: sp.committed,
@@ -347,10 +390,19 @@ var BudgetDashboard = (function () {
           liveSpend: !spend.unavailable,
           spendError: spend.unavailable || null,
 
-          // Said in the payload so the UI cannot quietly imply otherwise.
-          adjustmentsAvailable: false,
-          adjustmentsNote: 'Mid-year budget adjustments are not yet tracked, so ' +
-                           'each allocation shown is the FY baseline.',
+          // Allocations are now admin-maintained and versioned by effective
+          // date, so a mid-year change is a row rather than a deploy.
+          allocationSource: alloc ? alloc.source : 'config-fallback',
+          allocationsEditable: true,
+          adjustmentsAvailable: true,
+          adjustmentsNote: (alloc && alloc.source === 'database')
+            ? 'Allocations are admin-set and versioned by effective date; the ' +
+              'figures shown are those in force today.'
+            : ((alloc && alloc.source === 'partial')
+                ? 'Some offices have no admin-set allocation yet and fall back to ' +
+                  'the configured baseline. Set them on the Budget page.'
+                : 'No admin-set allocations yet — these are the configured ' +
+                  'baselines. Set the real figures on the Budget admin page.'),
           actualsNote: 'LETS has no post-travel reconciliation step, so completed ' +
                        'travel is counted at its approved estimate rather than at ' +
                        'a liquidated actual.',

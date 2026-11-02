@@ -53,6 +53,11 @@ const PROPS_KEYS = {
   APP_NAME:                     'APP_NAME',
   ORG_SHORT_NAME:               'ORG_SHORT_NAME',
   ORG_LONG_NAME:                'ORG_LONG_NAME',
+  // The SERVICE above the office, and the agency above that. Both appear in
+  // the email footer. Separate from ORG_LONG_NAME because a footer names the
+  // service (FAS), not the office (ASD) — see getOrgServiceName.
+  ORG_SERVICE_NAME:             'ORG_SERVICE_NAME',
+  AGENCY_NAME:                  'AGENCY_NAME',
   ORG_FO_LABEL:                 'ORG_FO_LABEL',
   REVIEW_LABEL_SECTOR:          'REVIEW_LABEL_SECTOR',
   REVIEW_LABEL_BU:              'REVIEW_LABEL_BU'
@@ -208,13 +213,54 @@ function getOrgShortName() {
 }
 
 /**
- * Owning organisation, long form, for email footers.
+ * Owning organisation, long form. 'ACQUISITION SOLUTIONS DEVELOPMENT'.
+ *
+ * This is the OFFICE. It is not what belongs in an email footer — see
+ * getOrgServiceName.
  * @returns {string}
  * @server
  */
 function getOrgLongName() {
   return _props().getProperty(PROPS_KEYS.ORG_LONG_NAME) ||
     'ACQUISITION SOLUTIONS DEVELOPMENT';
+}
+
+/**
+ * The SERVICE this office sits under, for the email footer.
+ *
+ * @clolry: "The bottom of the emails still say GENERAL SERVICES
+ * ADMINISTRATION • ASSISTED ACQUISITION SERVICES. I think it should say
+ * FEDERAL ACQUISITION SERVICE rather than ASSISTED ACQUISITION SERVICES."
+ *
+ * WHY THIS IS A SEPARATE PROPERTY FROM ORG_LONG_NAME
+ * --------------------------------------------------
+ * A footer names the agency and the SERVICE, which is the level the public
+ * recognises — GSA, then FAS. ASD is an office three levels down, and
+ * substituting it would have replaced a wrong name with a differently wrong
+ * one.
+ *
+ * The inherited footer said ASSISTED ACQUISITION SERVICES because AAS is a
+ * different office under the same service. It was never derivable from the
+ * office name, which is why the earlier rebranding sweep missed it: the
+ * footer was a hardcoded literal in Email.js, not a token.
+ *
+ * @returns {string}
+ * @server
+ */
+function getOrgServiceName() {
+  return _props().getProperty(PROPS_KEYS.ORG_SERVICE_NAME) ||
+    'FEDERAL ACQUISITION SERVICE';
+}
+
+/**
+ * The agency. Configurable because this app is meant to be redeployable, and
+ * a non-GSA workgroup would otherwise have to edit Email.js.
+ * @returns {string}
+ * @server
+ */
+function getAgencyName() {
+  return _props().getProperty(PROPS_KEYS.AGENCY_NAME) ||
+    'GENERAL SERVICES ADMINISTRATION';
 }
 
 /**
@@ -270,6 +316,8 @@ function getBrandingForClient() {
     appName: getAppName(),
     orgShort: getOrgShortName(),
     orgLong: getOrgLongName(),
+    orgService: getOrgServiceName(),
+    agency: getAgencyName(),
     foLabel: getOrgFOLabel(),
     sectorLabel: getReviewLabelSector(),
     buLabel: getReviewLabelBU(),

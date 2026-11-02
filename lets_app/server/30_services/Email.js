@@ -501,6 +501,8 @@ function _brand() {
     app: getAppName(),
     orgShort: getOrgShortName(),
     orgLong: getOrgLongName(),
+    orgService: getOrgServiceName(),
+    agency: getAgencyName(),
     contact: getEmailFromAddress(),
     sender: getEmailFromName()
   };
@@ -522,7 +524,11 @@ const EMAIL_CONTENT = {
       return 'This is an automated notification from the ' + _brand().app + ' system.';
     },
     get orgLine() {
-      return 'GENERAL SERVICES ADMINISTRATION • ' + _brand().orgLong;
+      // Agency then SERVICE, not agency then office. @clolry: it "should say
+      // FEDERAL ACQUISITION SERVICE rather than ASSISTED ACQUISITION
+      // SERVICES" — and ASD, the office, would have been a third wrong
+      // answer. A footer names the level the reader recognises.
+      return _brand().agency + ' \u2022 ' + _brand().orgService;
     }
   },
 
@@ -1163,7 +1169,7 @@ function _buildEmailTemplate(options) {
                     </p>
                     <div style="margin: 16px 0 0; padding-top: 16px; border-top: 1px solid #E5E7EB;">
                       <p style="margin: 0; font-family: Calibri, 'Calibri', Arial, sans-serif; font-size: 10px; color: #9CA3AF; letter-spacing: 0.03em;">
-                        GENERAL SERVICES ADMINISTRATION • ASSISTED ACQUISITION SERVICES
+                        ${EMAIL_CONTENT.global.orgLine}
                       </p>
                     </div>
                   </td>

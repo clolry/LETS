@@ -68,6 +68,10 @@ const SHEET_NAMES = {
   HISTORICAL_EVENTS:  'Historical_Events',
   EVENT_SET_ASIDES:   'Event_Set_Asides',
 
+  // Budget allocations, versioned by effective date. Replaces the hardcoded
+  // baselines in BudgetConfig.js, which needed a code deploy to change.
+  BUDGET_ALLOCATIONS: 'Budget_Allocations',
+
   // Learned per-traveler airport preferences. See 30_services/AirportPrefs.js.
   TRAVELER_AIRPORT_PREFS: 'Traveler_Airport_Prefs'
 };
@@ -478,6 +482,50 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Business_Fare',             // 0 = NOT AWARDED on this route, not free
     'Effective_Date',
     'Expiration_Date'
+  ],
+
+  // ==========================================================================
+  // BUDGET ALLOCATIONS
+  // ==========================================================================
+  //
+  // One row per office per EFFECTIVE DATE. Not one row per office.
+  //
+  // WHY VERSIONED AND NOT EDITABLE IN PLACE
+  // ---------------------------------------
+  // @clolry: "each year (or even mid-year if budgets change) we can update the
+  // numbers for our overall group and each subgroup."
+  //
+  // A mid-year change is the whole point, and an in-place edit destroys the
+  // only record of what the budget WAS. Reconciliation then becomes
+  // impossible to defend: a request approved in November against a $152,000
+  // allocation looks over-budget if the allocation was later cut to $120,000,
+  // and nothing on the row says the ceiling moved.
+  //
+  // So an update APPENDS. The current allocation is the row with the latest
+  // Effective_Date not in the future. History is the rest, and it is the
+  // audit trail.
+  //
+  // Supersedes the hardcoded baselines in 00_config/BudgetConfig.js, which
+  // required a code deploy to change a dollar figure. Those remain as the
+  // fallback for a database with no rows yet — see BudgetAdmin.js.
+  Budget_Allocations: [
+    'Allocation_ID',          // PK
+    'Fiscal_Year',            // FY27
+    'Office_Code',            // FO | OMD | IDV | CM — the budget key
+    'Org_Code',               // FC | FCA | FCB | FCC — the HR code, for reference
+    'Office_Name',
+    'Is_DAC',
+    'Amount',                 // dollars
+    'Proportional_Share',     // 0..1, for enterprise-shared set-asides
+    'Effective_Date',         // the date this figure takes effect
+    'Change_Reason',          // required. Why the number moved
+    'Supersedes_ID',          // the row this replaces, for a readable chain
+    'Is_Active',
+    'Created_By',
+    'Created_At'
+    // No Updated_By / Updated_At. A row here is IMMUTABLE once written — the
+    // way to change a figure is a new row. Having update columns would invite
+    // exactly the in-place edit this design exists to prevent.
   ],
 
   // ==========================================================================
