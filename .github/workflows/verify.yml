@@ -313,6 +313,24 @@ jobs:
               exit 1
             fi
           done
+          # include() evaluates each file as its OWN template (Render.js:373),
+          # so a variable set on a PAGE template is invisible inside an
+          # included file. Adding <?= appName ?> to travelHelpModal — which
+          # every page includes — threw "ReferenceError: appName is not
+          # defined" and took the whole app down, on pages that never
+          # referenced appName themselves.
+          #
+          # A scriptlet CALLING a server function is fine; a bare identifier
+          # is a page variable and will throw.
+          STRAY=$(grep -rnE '<\?=?!?=[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\?>' \
+                    lets_app/client/shared/ lets_app/client/components/ \
+                    lets_app/client/controllers/ 2>/dev/null \
+                  | grep -v '(' || true)
+          if [ -n "$STRAY" ]; then
+            echo "::error::An included file references a page template variable. include() gives each file its own template, so this throws ReferenceError on every page that includes it. Use a data- attribute filled from window._letsBranding instead:"
+            echo "$STRAY"
+            exit 1
+          fi
           echo "PASS - branding is configurable."
 
       - name: 'Guard: unrouted requests must be visible'

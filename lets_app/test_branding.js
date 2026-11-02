@@ -214,5 +214,47 @@ console.log('8. all four page templates publish branding to the client');
      (r.match(/_applyBranding\(template\)/g) || []).length);
 }
 
+console.log('9. included files must not reference page template variables');
+{
+  // include() evaluates each file as its OWN template (Render.js:373), so a
+  // variable set on a PAGE template is invisible inside an included file.
+  //
+  // This broke the whole app: <?= appName ?> was added to travelHelpModal,
+  // which every page includes, and threw "ReferenceError: appName is not
+  // defined" — on pages with no appName reference of their own, which is why
+  // the error location was misleading.
+  //
+  // Section 8 checked that PAGES publish branding. It could not catch this,
+  // because the page/include distinction is invisible in the file itself.
+  const path = require('path');
+  const dirs = ['lets_app/client/shared', 'lets_app/client/components',
+                'lets_app/client/controllers'];
+  const offenders = [];
+  dirs.forEach(dir => {
+    (function walk(d) {
+      fs.readdirSync(d, { withFileTypes: true }).forEach(e => {
+        const full = path.join(d, e.name);
+        if (e.isDirectory()) return walk(full);
+        if (!/\.html$/.test(e.name)) return;
+        const src = fs.readFileSync(full, 'utf8');
+        src.split('\n').forEach((line, i) => {
+          // Scriptlets calling a SERVER FUNCTION are fine — those resolve in
+          // any template. A bare identifier is a page variable and will throw.
+          const m = line.match(/<\?=?!?=\s*([A-Za-z_$][\w$]*)\s*\?>/);
+          if (m && !/\(/.test(line)) {
+            offenders.push(full.split('/').pop() + ':' + (i + 1) + ' -> ' + m[1]);
+          }
+        });
+      });
+    })(dir);
+  });
+  ok('no included file reads a page template variable', offenders.length === 0, offenders);
+
+  // The help modal must get its app name at runtime instead.
+  const help = fs.readFileSync('lets_app/client/shared/travelHelpModal.html', 'utf8');
+  ok('help modal marks the app name for substitution', /data-help-app/.test(help));
+  ok('and fills it from branding', /_letsBranding && window\._letsBranding\.appName/.test(help));
+}
+
 console.log(fails?('\n'+fails+' FAILURE(S)'):'\nALL ASSERTIONS PASSED!');
 process.exit(fails?1:0);

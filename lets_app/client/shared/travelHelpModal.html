@@ -932,7 +932,19 @@
            ============================================================ -->
       <div id="help-section-getting-started" class="help-section active">
         <h2>Getting Started</h2>
-        <p>Welcome to <strong><?= appName ?></strong>. This is where you submit, track, and manage travel authorization requests.</p>
+        <!--
+          Uses data-help-app rather than a server scriptlet.
+
+          include() evaluates each file as its OWN template
+          (Render.js:373), so a variable set on a PAGE template is invisible
+          here. This file is included by every page, so the scriptlet threw
+          "ReferenceError: appName is not defined" and took down the whole
+          app — including pages with no appName reference of their own.
+
+          Filled at runtime by applyHelpBranding() from window._letsBranding,
+          the same mechanism the stage labels already use.
+        -->
+        <p>Welcome to <strong data-help-app>this app</strong>. This is where you submit, track, and manage travel authorization requests.</p>
 
         <h3>Portal Layout</h3>
         <p>When you open the portal, you'll see three main areas:</p>
@@ -1875,6 +1887,14 @@
     var L = (window.TravelUtils && window.TravelUtils.stageLabels)
       ? window.TravelUtils.stageLabels()
       : { sector: 'SCD', bu: 'DAC', fo: 'ASD Travel & Events', fas: 'FAS' };
+
+    // App name. Same reason as the stage labels: this file cannot receive a
+    // server template variable.
+    var appNodes = document.querySelectorAll('[data-help-app]');
+    var appName = (window._letsBranding && window._letsBranding.appName) || 'this app';
+    for (var a = 0; a < appNodes.length; a++) {
+      appNodes[a].textContent = appName;
+    }
 
     var nodes = document.querySelectorAll('[data-help-stage]');
     for (var i = 0; i < nodes.length; i++) {
