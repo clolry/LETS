@@ -72,6 +72,11 @@ const SHEET_NAMES = {
   // baselines in BudgetConfig.js, which needed a code deploy to change.
   BUDGET_ALLOCATIONS: 'Budget_Allocations',
 
+  // One row per imported Go.gov expense report, matched or not. Separate from
+  // Requests because an expense report that matches NOTHING is still real
+  // money GSA paid — see the schema comment.
+  EXPENSE_IMPORTS:    'Expense_Imports',
+
   // Learned per-traveler airport preferences. See 30_services/AirportPrefs.js.
   TRAVELER_AIRPORT_PREFS: 'Traveler_Airport_Prefs'
 };
@@ -163,7 +168,47 @@ const TRAVEL_SHEET_SCHEMAS = {
     // Denormalized deliberately: budget attribution is PER TRAVELLER (a
     // conference can draw from FCA, FCB and FCC at once), and routing needs to
     // know which DACs must approve without re-reading every traveller row.
-    'Traveler_Org_Codes'
+    'Traveler_Org_Codes',
+
+    // ======================================================================
+    // RECONCILIATION — for the monthly Go.gov reconciliation
+    // ======================================================================
+    //
+    // APPENDED, never inserted. Every reader in LETS resolves columns by
+    // header NAME, but the eighteen positional readers catalogued in
+    // DATA_DICTIONARY §3.9 index from the LEFT — so a column added at the end
+    // is invisible to them, while one inserted mid-schema would misfile
+    // everything after it.
+    //
+    // @clolry: "we will need to reconcile against actual costs after the
+    // travel has been completed and an expense report is filed."
+    //
+    // Estimates keep their per-category breakdown in Request_Travelers. The
+    // ACTUAL is trip-level only, because the Go.gov expense export has no
+    // category split — only Report Total and Amount Approved.
+    'Gogov_Request_ID',       // the 4-char Go.gov code, e.g. 4QMN. UNIQUE in
+                              // the request export (565/565), so re-importing
+                              // updates rather than duplicating
+    'Gogov_Report_Name',      // Go.gov's trip name, verbatim. The only bridge
+                              // to an expense report when no LETS ID was
+                              // embedded in it
+    'Actual_Total',           // from Amount Approved, NOT Report Total. Those
+                              // differ on 37 of 182 sample rows by $4,569.93 —
+                              // Report Total includes items GSA disallowed and
+                              // never paid
+    'Actual_Source',          // 'gogov-import' | 'manual'
+    'Actual_Posted_At',
+    'Actual_Posted_By',
+    'Reconciliation_Status',  // UNRECONCILED | MATCHED | NO_EXPENSE_EXPECTED
+    'Reconciliation_Notes',
+    'Match_Method',           // 'lets-id' | 'gogov-id' | 'name-title' |
+                              // 'name-date' | 'manual'. Recorded because an ID
+                              // match and a human-confirmed match carry
+                              // different confidence, and an audit has to be
+                              // able to tell them apart
+    'Match_Confirmed_By',
+    'Expense_Report_Name',
+    'Expense_Report_End_Date'
   ],
 
   // Destination/leg info - one row per leg
@@ -526,6 +571,72 @@ const TRAVEL_SHEET_SCHEMAS = {
     // No Updated_By / Updated_At. A row here is IMMUTABLE once written — the
     // way to change a figure is a new row. Having update columns would invite
     // exactly the in-place edit this design exists to prevent.
+  ],
+
+  // ==========================================================================
+  // GO.GOV EXPENSE IMPORTS
+  // ==========================================================================
+  //
+  // One row per expense report line in the monthly Go.gov export, matched or
+  // not.
+  //
+  // WHY THIS IS NOT JUST COLUMNS ON Requests
+  // ----------------------------------------
+  // Measured against @clolry's real exports: only 45% of expense reports can
+  // be confidently matched to a request by traveller and title. 32.6% belong
+  // to travellers with no request in the export at all, mostly because the
+  // request predates the window.
+  //
+  // An unmatched expense report is still REAL MONEY that GSA paid. Storing
+  // actuals only as columns on Requests would leave it nowhere to live, so it
+  // would be dropped — and the reconciliation would balance while
+  // under-reporting spend. A total that looks right is the worst outcome
+  // available here.
+  //
+  // So every imported row lands here first. Matching then links it to a
+  // request and copies the actual across. Unmatched rows stay visible and
+  // still roll up into the office total, flagged.
+  Expense_Imports: [
+    'Import_ID',
+    'Import_Batch_ID',        // one per uploaded file, so a bad import can be
+                              // identified and reversed as a unit
+    'Report_Name',            // Go.gov trip name, verbatim
+    'Employee_Name',          // 'Last, First M.' as Go.gov writes it
+    'Employee_Name_Normalized', // 'FIRST LAST' uppercased. Stored rather than
+                              // derived at query time: 71 of 182 sample rows
+                              // are ALL CAPS and the rest mixed, so the
+                              // normalisation is not obvious from the raw value
+    'Gogov_Employee_ID',      // e.g. 76E00049503. Does NOT match LETS
+                              // Employee_ID (0010001) — kept for traceability,
+                              // not as a join key
+    'Report_Total',           // audit trail only
+    'Amount_Approved',        // THE RECONCILIATION FIGURE
+    'Disallowed_Amount',      // Report_Total - Amount_Approved. Stored because
+                              // it is the number nobody thinks to ask for
+                              // until a traveller disputes a voucher
+    'Report_End_Date',        // text YYYY-MM-DD in the export, not a serial
+    'Submit_Date',
+    'Fiscal_Year',            // from Report_End_Date. One monthly export spans
+                              // TWO fiscal years in the sample
+                              // ($129,470.97 / $143,884.73), so this is
+                              // computed per row
+    'Extracted_LETS_ID',      // a REQ-… found in the report name, if any
+    'Matched_Request_ID',
+    'Match_Method',           // 'lets-id' | 'gogov-id' | 'name-title' |
+                              // 'name-date' | 'manual' | ''
+    'Match_Status',           // AUTO_MATCHED | NEEDS_REVIEW | MANUAL_MATCHED |
+                              // UNMATCHED | IGNORED
+    'Match_Candidates',       // JSON. Proposed request IDs with reasons, so
+                              // the review screen does not recompute them
+    'Match_Confirmed_By',
+    'Match_Confirmed_At',
+    'Office_Code',            // resolved from LETS, never from the file:
+                              // Go.gov's Org Level 3 is 'F' for every row and
+                              // levels 4-5 are empty
+    'Org_Code',
+    'Notes',
+    'Created_At',
+    'Created_By'
   ],
 
   // ==========================================================================

@@ -54,10 +54,48 @@ console.log('1. schema has somewhere to put them');
   ok('Request_Travelers has Budget_Org_Code', S.Request_Travelers.indexOf('Budget_Org_Code')>-1);
   ok('Request_Travelers has Budget_Office_Code', S.Request_Travelers.indexOf('Budget_Office_Code')>-1);
   // Column order is load-bearing: writes are positional.
-  ok('new Requests cols are appended last',
-     S.Requests.indexOf('Traveler_Org_Codes')===S.Requests.length-1);
+  //
+  // This asserted that Traveler_Org_Codes was the LAST column, which only
+  // held until the next feature appended anything. The twelve reconciliation
+  // columns went on after it and this failed — correctly flagging a real
+  // positional-width break in Submission.js, then complaining about the
+  // column order itself, which was fine.
+  //
+  // The INVARIANT is that the trip-overview columns form a contiguous block
+  // appended AFTER the original 42, not that any one of them is last. Stated
+  // that way it survives the next append.
+  const TRIP_BLOCK = ['Owning_Office','Owning_Org_Code','Travel_Purpose',
+    'Travel_Purpose_Label','Set_Aside_Type','Is_Event_Plan_Item','Is_LC_Travel',
+    'Is_COE_Travel','Primary_Justification','Traveler_Org_Codes'];
+  const positions = TRIP_BLOCK.map(c=>S.Requests.indexOf(c));
+  ok('the trip-overview columns are contiguous',
+     positions.every((p,i)=>i===0||p===positions[i-1]+1), positions);
+  ok('and sit after the original 42 columns', positions[0]===42, positions[0]);
+
+  // Nothing may be inserted BEFORE them either: the eighteen positional
+  // readers index from the left.
+  ok('no duplicate headers', new Set(S.Requests).size===S.Requests.length);
   ok('new traveler cols are appended last',
      S.Request_Travelers.indexOf('Budget_Office_Code')===S.Request_Travelers.length-1);
+
+  // THE RECONCILIATION BLOCK. @clolry needs actuals against estimates for a
+  // monthly Go.gov reconciliation; these carry them. Appended after the trip
+  // block for the same positional reason.
+  const RECON_BLOCK = ['Gogov_Request_ID','Gogov_Report_Name','Actual_Total',
+    'Actual_Source','Actual_Posted_At','Actual_Posted_By','Reconciliation_Status',
+    'Reconciliation_Notes','Match_Method','Match_Confirmed_By',
+    'Expense_Report_Name','Expense_Report_End_Date'];
+  const rpos = RECON_BLOCK.map(c=>S.Requests.indexOf(c));
+  ok('every reconciliation column exists', rpos.every(p=>p>-1),
+     RECON_BLOCK.filter((c,i)=>rpos[i]===-1));
+  ok('they are contiguous', rpos.every((p,i)=>i===0||p===rpos[i-1]+1), rpos);
+  ok('and sit after the trip-overview block',
+     rpos[0]===S.Requests.indexOf('Traveler_Org_Codes')+1, rpos[0]);
+  // Actual_Total must NOT be confused with Grand_Total, which is the estimate.
+  ok('the estimate column still exists separately',
+     S.Requests.indexOf('Grand_Total')>-1 &&
+     S.Requests.indexOf('Grand_Total')<rpos[0],
+     'Grand_Total is the ESTIMATE; Actual_Total is what GSA actually paid');
 }
 
 console.log('2. submission row width matches the schema exactly');

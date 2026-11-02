@@ -102,6 +102,13 @@ jobs:
       - name: Feedback pipeline tests
         run: node lets_app/test_feedback.js
 
+      - name: Go.gov sync tests
+        # §5 asserts that an expense report is NEVER auto-matched to a request
+        # belonging to a different traveller. That assertion FAILED when first
+        # written: a cited LETS ID was trusted on its own, and three real
+        # expense reports were attached to other people's requests.
+        run: node lets_app/test_gogov_sync.js
+
       - name: Budget admin tests
         # §1 proves the ACCESS SPLIT @clolry asked for: reading allocations is
         # open to every user ("no secrets to hide there - we're trying to
@@ -136,6 +143,36 @@ jobs:
         # rejected because LETS exists in its current form precisely BECAUSE
         # the inherited HC library became unreachable.
         run: node orgchart_app/test_orgchart.js
+
+      - name: Guard - reconciliation must use Amount Approved, not Report Total
+        run: |
+          echo "Checking the Go.gov reconciliation figure..."
+          # Measured on @clolry's real export: Report Total and Amount Approved
+          # differ on 37 of 182 rows, by $4,569.93. Report Total is what the
+          # traveller CLAIMED; Amount Approved is what GSA PAID.
+          #
+          # @clolry: "we need to use Amount Approved rather than Report Total."
+          #
+          # Reconciling against the wrong one would overstate spend on a fifth
+          # of all rows, and every row would still look plausible.
+          SRC=lets_app/server/30_services/GogovSync.js
+          if ! grep -aq "amountApproved:  \['Amount Approved'" "$SRC"; then
+            echo "::error file=$SRC::The actual-cost field must map to 'Amount Approved' first. Report Total includes items GSA disallowed and never paid."
+            exit 1
+          fi
+          # The traveller check on an ID match. Without it, a mistyped digit
+          # moves money between travellers silently — it did, on three real
+          # rows, before this guard existed.
+          if ! grep -aq 'owner !== expense.employeeNameNormalized' "$SRC"; then
+            echo "::error file=$SRC::An ID-based match must still verify the traveller. A cited LETS ID belonging to someone else's request would otherwise auto-match and move money between travellers."
+            exit 1
+          fi
+          # Fiscal-year bucketing per row. One monthly export spans two years.
+          if ! grep -aq 'fiscalYear: fiscalYearOf' "$SRC"; then
+            echo "::error file=$SRC::Every imported row must carry its own fiscal year. @clolry: budgeting resets on 10/1, and a single monthly export spans two fiscal years."
+            exit 1
+          fi
+          echo "PASS - reconciliation uses the paid amount, verifies the traveller, and buckets by fiscal year."
 
       - name: Guard - budget writes must be admin-guarded
         run: |

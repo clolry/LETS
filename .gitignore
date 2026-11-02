@@ -30,3 +30,20 @@ build/
 scripts/protection-result.txt
 scripts/environments-result.txt
 
+# Go.gov exports used as reference while building the reconciliation importer.
+#
+# NOT COMMITTED. @clolry's monthly exports carry ~400 real GSA traveller names
+# and 391 real employee IDs each. Finding G-056 already flags six real
+# employees' addresses sitting in test fixtures as a problem; adding 800 more
+# names to git history would be a larger instance of the same thing, and
+# history is not something you can take back.
+#
+# The importer's test suite reads them from /tmp when present and SKIPS its
+# measured-numbers section when absent, so a fresh checkout still passes.
+#
+# To re-run the measured assertions locally, convert the .xls files to JSON at
+# /tmp/opencode/req.json and /tmp/opencode/exp.json — see
+# test_gogov_sync.js §8.
+reference_excel_files/report_*.xls
+reference_excel_files/Expense Report*.xls
+reference_excel_files/Travel requests*.xls

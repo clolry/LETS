@@ -435,7 +435,38 @@ function submitTravelRequestV2(formData) {
       // routing can tell which DACs must approve without re-reading every
       // traveller row — a consolidated conference can draw on FCA, FCB and
       // FCC at once.
-      _distinctTravelerOrgCodes_(formData.travelers).join(',')     // Traveler_Org_Codes
+      _distinctTravelerOrgCodes_(formData.travelers).join(','),    // Traveler_Org_Codes
+
+      // ======================================================================
+      // RECONCILIATION COLUMNS — written EMPTY, deliberately
+      // ======================================================================
+      //
+      // This write is POSITIONAL (appendRow with a literal array), so the row
+      // must be exactly as wide as the schema. Twelve reconciliation columns
+      // were appended to Requests for the monthly Go.gov reconciliation, and
+      // omitting them here would not fail loudly — appendRow pads short rows —
+      // it would just leave the new columns permanently blank on every request
+      // submitted through the form.
+      //
+      // verify.yml has a width guard for exactly this, and it caught it.
+      //
+      // They are blank because a new request has no actuals yet: nobody has
+      // travelled, no voucher exists, and no Go.gov expense report has been
+      // filed. Reconciliation_Status is the one exception — it starts at
+      // UNRECONCILED rather than '' so the reconciliation queue can find the
+      // request without treating blank as a state.
+      '',                                                          // Gogov_Request_ID
+      '',                                                          // Gogov_Report_Name
+      '',                                                          // Actual_Total
+      '',                                                          // Actual_Source
+      '',                                                          // Actual_Posted_At
+      '',                                                          // Actual_Posted_By
+      'UNRECONCILED',                                              // Reconciliation_Status
+      '',                                                          // Reconciliation_Notes
+      '',                                                          // Match_Method
+      '',                                                          // Match_Confirmed_By
+      '',                                                          // Expense_Report_Name
+      ''                                                           // Expense_Report_End_Date
     ];
 
     // Write request row
