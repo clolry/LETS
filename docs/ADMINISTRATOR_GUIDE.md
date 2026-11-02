@@ -604,6 +604,29 @@ When the system looks up someone's roles and finds nothing, it calls `selfHealCu
 
 **This is a design decision that should be recorded rather than discovered.** Either accept it with the rationale written down, or require that email changes go through the console. Not a code change — a decision.
 
+### 1.6.3a Org codes, and the HR Roster warning you will see first
+
+**If the HR Roster page shows a list of *"Org_Code … matches no known org code"* warnings, press "Load Org Codes" and reload.** That is the whole fix.
+
+**Why it happens.** Org codes are **hierarchical**: `FCA0A` sits under `FCA`, which sits under `FC`. @clolry supplied the real list — **137 codes, six levels deep**. `HC_Orgs` originally held only four rows, so every real sub-org code matched nothing and its business unit and sector came back blank.
+
+**Two different lookups, and the distinction matters:**
+
+| Question | Resolves | Example |
+|---|---|---|
+| **What is this org called?** | **DOWN** — to the most specific matching row | `FCA0A` → "Portfolio Management Service Center" |
+| **Whose budget does its travel hit?** | **UP** — to the nearest ancestor with an `Office_Code` | `FCA0A` → `FCA` → budget key `OMD` |
+
+**Only `FC`, `FCA`, `FCB` and `FCC` carry an `Office_Code`,** because only those four are budget offices in `BudgetConfig.js`. All 133 sub-org rows leave it **deliberately blank** and inherit it. Do not "helpfully" fill those cells in — copying `OMD` onto all 22 `FCA` descendants means a reorganisation has to edit 22 rows instead of one.
+
+> **To move a service center to a different DAC, fill `Office_Code` and `Business_Unit` on that one row.** An explicit value beats the inherited one. That is the supported way to express a reorganisation, and it needs no code change.
+
+**Adding a new org code.** Add a row to `HC_Orgs` with just `Org_Code` and `Division`; leave `Office_Code` blank so it inherits. A code *missing* from `HC_Orgs` still attributes correctly by prefix — the roster editor will show *"code not in HC_Orgs; inherited from FCA"* — so an out-of-date list degrades gracefully rather than breaking.
+
+**The list's own accuracy.** @clolry's words: *"as of May — it's a bit outdated but this should be pretty close."* Treat a code the validator flags as **possibly a real new org** rather than certainly a typo. The warning names the four top-level codes it failed to match and reports how many codes are loaded; *"4 codes loaded"* means `HC_Orgs` was never populated, not that the positions are wrong.
+
+**What "Load Org Codes" does.** Replaces every `HC_Orgs` row with the 137 known codes, leaves `HC_Positions` untouched, and clears the cache. Idempotent — safe to press twice. **It overwrites hand-edits to `HC_Orgs`**, including a reorganisation override as described above; re-apply those afterwards.
+
 ### 1.6.4 Routine checks worth scheduling
 
 | Cadence | Check | Why |
@@ -614,6 +637,7 @@ When the system looks up someone's roles and finds nothing, it calls `selfHealCu
 | **Quarterly** | Review the database spreadsheet's sharing list | It is an access-control list (§1.5.2) |
 | **Quarterly** | Re-run **VT-18** — trigger health, as **each** project editor | A departed owner's triggers fail silently (§1.3.3) |
 | **After any FY rollover** | Check per-diem sync status and the fiscal-year configuration | **G-037**: LETS IDs are hardcoded to FY27 `[VERIFIED]` |
+| **After any reorganisation** | Open HR Roster and check for org-code warnings | The loaded list is from May 2026 and new codes appear as warnings (§1.6.3a) |
 | **Before any column change** | Stop — read §1.6.5 first | |
 
 **`verifyPhase7Routing()` has a wrinkle worth knowing** (**G-010**): it is itself unguarded and browser-callable, and it returns the complete role roster — every admin, every primary and backup, with names and addresses. Running it is safe. The finding is that anyone can.

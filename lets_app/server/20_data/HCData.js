@@ -281,17 +281,69 @@ var HC = (function () {
     }
 
     for (var p = 0; p < positions.length; p++) {
-      var org = resolveOrgByCode(positions[p].orgCode, byCode);
-      if (org) {
-        positions[p].org.businessUnit = org.businessUnit;
-        positions[p].org.sector       = org.sector;
-        // The org code the position was attributed TO, which may be a parent
-        // of its own code. Budget attribution needs this, not the raw value.
-        positions[p].org.resolvedOrgCode = org.orgCode;
-        positions[p].org.officeCode = org.officeCode || '';
-      }
+      var code = _str_(positions[p].orgCode).toUpperCase();
+      var org = resolveOrgByCode(code, byCode);
+      if (!org) continue;
+
+      // IDENTITY comes from the position's OWN row: FCA0A is the Portfolio
+      // Management Service Center, not "Office of Mission Delivery".
+      positions[p].org.resolvedOrgCode = org.orgCode;
+      positions[p].org.division        = org.division || '';
+
+      // ATTRIBUTION is INHERITED, because only the four top-level rows carry
+      // a budget key — see inheritOrgField.
+      positions[p].org.businessUnit = inheritOrgField(code, byCode, 'businessUnit');
+      positions[p].org.sector       = inheritOrgField(code, byCode, 'sector');
+      positions[p].org.officeCode   = inheritOrgField(code, byCode, 'officeCode');
     }
     return positions;
+  }
+
+  /**
+   * Walks UP the prefix chain for a field the position's own org row leaves
+   * blank.
+   *
+   * WHY THIS IS SEPARATE FROM resolveOrgByCode
+   * ------------------------------------------
+   * This is the trap that the prefix fix alone would have fallen into, and it
+   * is worth being explicit about because it fails SILENTLY.
+   *
+   * @clolry supplied the real list: 137 org codes, six levels deep. Once all
+   * 137 are rows in HC_Orgs, FCA0A has an EXACT match — and
+   * resolveOrgByCode prefers an exact match, correctly, because FCA0A's NAME
+   * is "Portfolio Management Service Center" and not its parent's.
+   *
+   * But only FC, FCA, FCB and FCC carry an Office_Code, because only those
+   * four are budget offices in BudgetConfig.js. So an exact match would have
+   * returned a BLANK budget key for all 133 sub-orgs — and blank is exactly
+   * what the bug @clolry reported produced. The fix would have moved the
+   * failure rather than removed it, and the symptom would have looked
+   * identical.
+   *
+   * Identity resolves DOWN to the most specific row; attribution resolves UP
+   * to the nearest ancestor that actually has a value. They are different
+   * questions about the same code.
+   *
+   * A sub-org MAY override an inherited value by filling the cell in its own
+   * HC_Orgs row — a reorganisation that moves a service center to a different
+   * DAC is one row, not a code change.
+   *
+   * @param {string} code position's own org code, already uppercased
+   * @param {Object} byCode orgCode -> org record
+   * @param {string} field which value to inherit
+   * @returns {string} '' when no ancestor supplies it
+   */
+  function inheritOrgField(code, byCode, field) {
+    var best = null;
+    var bestLen = -1;
+    Object.keys(byCode).forEach(function (key) {
+      if (code.indexOf(key) !== 0) return;              // not an ancestor
+      if (!_str_(byCode[key][field])) return;           // has nothing to give
+      if (key.length <= bestLen) return;                // a nearer one wins
+      best = byCode[key];
+      bestLen = key.length;
+    });
+    return best ? _str_(best[field]) : '';
   }
 
   /**
@@ -315,7 +367,13 @@ var HC = (function () {
    * Front Office.
    *
    * An exact match always wins outright, so adding a specific HC_Orgs row for
-   * a sub-org overrides the derivation.
+   * a sub-org overrides the derivation. With @clolry's real list loaded, all
+   * 137 codes ARE rows, so this is usually an exact match — the prefix walk is
+   * what keeps a code missing from the list working anyway.
+   *
+   * This resolves IDENTITY only. Budget key, business unit and sector are
+   * INHERITED separately by inheritOrgField, because only the four top-level
+   * rows carry them.
    *
    * @param {string} code the position's Org_Code
    * @param {Object} byCode orgCode -> org record, including former codes
@@ -744,6 +802,7 @@ var HC = (function () {
     // Shared so the validator and the roster editor apply the SAME rule as
     // the join. A second implementation would disagree with the data.
     resolveOrgByCode:       resolveOrgByCode,
+    inheritOrgField:        inheritOrgField,
 
     // Exposed for unit tests only. Prefixed to signal that consumers should
     // not call them; they bypass caching and the org join.

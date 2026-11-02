@@ -102,6 +102,40 @@ jobs:
       - name: Feedback pipeline tests
         run: node lets_app/test_feedback.js
 
+      - name: Guard - every test file is excluded from the clasp push
+        run: |
+          echo "Checking .claspignore covers every test_*.js..."
+          # Test files are Node scripts using require() and process.exit.
+          # Apps Script has neither, so a pushed test file is dead weight at
+          # best and a load-time ReferenceError at worst.
+          #
+          # This is caught here rather than noticed later because adding a
+          # suite and forgetting the .claspignore line is invisible locally —
+          # nothing fails until a deploy.
+          MISSING=""
+          for f in lets_app/test_*.js; do
+            b=$(basename "$f")
+            grep -qxF "$b" lets_app/.claspignore || MISSING="$MISSING $b"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::Test files missing from lets_app/.claspignore:$MISSING — they would be pushed to Apps Script, where require() does not exist."
+            exit 1
+          fi
+          # And the converse: a stale entry means a renamed suite is silently
+          # no longer excluded.
+          STALE=""
+          while IFS= read -r line; do
+            case "$line" in
+              test_*.js)
+                [ -f "lets_app/$line" ] || STALE="$STALE $line" ;;
+            esac
+          done < lets_app/.claspignore
+          if [ -n "$STALE" ]; then
+            echo "::error::lets_app/.claspignore lists test files that no longer exist:$STALE"
+            exit 1
+          fi
+          echo "PASS - all test files are excluded from the push."
+
       - name: Leg city capture tests
         run: node lets_app/test_leg_city.js
 

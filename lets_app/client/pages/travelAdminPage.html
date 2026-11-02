@@ -659,6 +659,16 @@
                     title="Re-read from the spreadsheet, bypassing the 6-hour cache">
               <i aria-hidden="true" class="fas fa-rotate me-1"></i>Refresh
             </button>
+            <!--
+              Populates HC_Orgs with the 137 real org codes. @clolry's report
+              was "I don't know how to fix this using the GUI" — so the remedy
+              has to BE in the GUI, not only in the Apps Script console.
+              Idempotent: it replaces HC_Orgs rather than appending.
+            -->
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="rosterLoadOrgsBtn"
+                    title="Replace HC_Orgs with the 137 known org codes (FC, FCA, FCA0A, …). Safe to run more than once.">
+              <i aria-hidden="true" class="fas fa-building-columns me-1"></i>Load Org Codes
+            </button>
             <button type="button" class="btn btn-sm btn-primary" id="rosterAddBtn">
               <i aria-hidden="true" class="fas fa-plus me-1"></i>Add Position
             </button>

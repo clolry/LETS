@@ -216,8 +216,13 @@ console.log('5b. hierarchical org codes');
   const bad=v({positionNumber:'NEW-1',orgCode:'XX99'});
   ok('a code matching no parent is still rejected',
      bad.some(m=>/does not start with any known org code/.test(m)), bad);
-  ok('and the message says sub-orgs resolve to their parent',
-     bad.some(m=>/FCA0A becomes FCA/.test(m)), bad);
+  ok('and the message explains the hierarchy',
+     bad.some(m=>/FCA0A attributes to FCA/.test(m)), bad);
+  // With 137 codes loaded, listing them all makes the message unreadable.
+  ok('it names the four top-level codes, not all 137',
+     bad.some(m=>/none of FC, FCA, FCB, FCC/.test(m)), bad);
+  ok('and says how to populate HC_Orgs if it is empty',
+     bad.some(m=>/loadRealOrgCodes\(\)/.test(m)), bad);
 
   // The known codes must come from HC_Orgs, not a literal in the validator —
   // a new org should not need a code change.
@@ -273,10 +278,15 @@ console.log('5c. the ROSTER PAGE validator applies the same rule');
                   employeeName:'Typo',emailAddress:'t@x.gov',occupancyStatus:'FILLED'}],ORGS);
   ok('a genuine typo is still reported', orgProblems(r2).length===1, r2.problems);
   ok('and the message says HOW to fix it',
-     orgProblems(r2).some(m=>/Correct the code in HC_Positions, or add an HC_Orgs row/.test(m)),
+     orgProblems(r2).some(m=>/Fix the code in HC_Positions, or add an HC_Orgs row/.test(m)),
      orgProblems(r2));
-  ok('and lists the codes that would work',
-     orgProblems(r2).some(m=>/FC, FCA, FCB/.test(m)), orgProblems(r2));
+  ok('and names the top-level codes that would work',
+     orgProblems(r2).some(m=>/none of FC, FCA, FCB/.test(m)), orgProblems(r2));
+  // The banner must say how many codes are loaded. @clolry's symptom was a
+  // page full of these; "3 codes loaded" would have pointed straight at an
+  // unpopulated HC_Orgs instead of at the positions.
+  ok('and says how many codes are loaded',
+     orgProblems(r2).some(m=>/codes loaded — run loadRealOrgCodes/.test(m)), orgProblems(r2));
 
   // The GS-15 reachability check must resolve too, or a DAC whose deputy sits
   // in a sub-org is reported as unstaffed.
@@ -286,6 +296,88 @@ console.log('5c. the ROSTER PAGE validator applies the same rule');
   ],[{orgCode:'FCA',businessUnit:'OMD'}]);
   ok('a GS-15 in a SUB-org counts toward its parent',
      !(r3.problems||[]).some(m=>/no staffed GS-15|GS-15/.test(m)), r3.problems);
+}
+
+console.log('5d. the EDITOR\'s resolution preview agrees with the SERVER');
+{
+  // _updateOrgResolution reimplements the server's two lookups in the browser,
+  // because the preview must update as the user types. A reimplementation that
+  // disagrees is worse than no preview: the editor would promise an
+  // attribution the server does not make.
+  //
+  // So this runs the REAL client function against the REAL 137 codes and
+  // compares it to what HCData actually produces.
+  const src=fs.readFileSync('lets_app/client/controllers/admin/travelRosterController.html','utf8');
+  const body=(src.match(/<script>([\s\S]*)<\/script>/)||[])[1]||'';
+
+  // Load @clolry's real list from HCSeed, the same table that gets written.
+  const seedCtx=vm.createContext({console:{log(){},warn(){},error(){}},
+    JSON,Date,Object,String,Number,Array,Math,RegExp,Error});
+  vm.runInContext('var TRAVEL_DB_SPREADSHEET_ID=null; var SHEET_NAMES={}; '+
+                  'var TRAVEL_SHEET_SCHEMAS={}; var HC={};',seedCtx);
+  vm.runInContext(fs.readFileSync('lets_app/server/91_setup/HCSeed.js','utf8'),seedCtx);
+  const real=vm.runInContext('hcRealOrgRecords()',seedCtx).map(o=>({
+    orgCode:o.orgCode, officeCode:o.officeCode, division:o.division
+  }));
+
+  // Minimal DOM: two elements the function reads and writes.
+  const els={rfOrgCode:{value:''}, rfOrgResolution:{textContent:'',className:''}};
+  const sb={console:{log(){},warn(){},error(){}},JSON,Date,Object,String,Number,Array,
+    Math,RegExp,Error,escapeHtml:x=>String(x),
+    document:{getElementById:id=>els[id]||null,
+              querySelectorAll:()=>[],addEventListener(){}},
+    window:{}, setTimeout(){}, clearTimeout(){}};
+  const ctx=vm.createContext(sb);
+  vm.runInContext(body,ctx);
+  const Ctl=vm.runInContext('window.TravelRoster && window.TravelRoster.Controller',ctx);
+  ok('the roster controller is reachable for testing', !!Ctl);
+
+  if (Ctl) {
+    Ctl._orgs=real; Ctl._offices=[];
+    const preview=(code)=>{ els.rfOrgCode.value=code;
+      Ctl._updateOrgResolution(); return els.rfOrgResolution; };
+
+    // Identity DOWN, attribution UP — the distinction the whole scheme rests on.
+    const r=preview('FCA0A');
+    ok('names the sub-org itself', /Portfolio Management Service Center/.test(r.textContent), r.textContent);
+    ok('and shows the INHERITED budget key', /budget OMD via FCA/.test(r.textContent), r.textContent);
+    ok('not flagged as an error', !/--bad/.test(r.className), r.className);
+
+    const top=preview('FCA');
+    ok('a top-level code shows its key without "via"',
+       /budget OMD/.test(top.textContent) && !/via/.test(top.textContent), top.textContent);
+
+    const typo=preview('XX99');
+    ok('a typo is flagged', /--bad/.test(typo.className) && /check for a typo/.test(typo.textContent),
+       typo.textContent);
+
+    // A code ABSENT from HC_Orgs but with a real ancestor must still work, and
+    // must SAY it is not in the list — @clolry's list is "a bit outdated".
+    const unlisted=preview('FCA0AZZ');
+    ok('an unlisted sub-code still resolves', /budget OMD/.test(unlisted.textContent), unlisted.textContent);
+    ok('and says it is not in HC_Orgs', /not in HC_Orgs/.test(unlisted.textContent), unlisted.textContent);
+
+    // THE AGREEMENT CHECK: all 137, client vs server.
+    const srvCtx=vm.createContext({console:{log(){},warn(){},error(){}},
+      JSON,Date,Object,String,Number,Array,Math,RegExp,Error});
+    vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID='x';",srvCtx);
+    vm.runInContext(fs.readFileSync('lets_app/server/01_constants/Cache.js','utf8'),srvCtx);
+    vm.runInContext(fs.readFileSync('lets_app/server/01_constants/Sheets.js','utf8'),srvCtx);
+    vm.runInContext(fs.readFileSync('lets_app/server/20_data/HCData.js','utf8'),srvCtx);
+    const byCode={}; real.forEach(o=>{byCode[o.orgCode]=o;});
+    vm.runInContext('var __byCode='+JSON.stringify(byCode)+';',srvCtx);
+    const serverKey=(c)=>vm.runInContext(
+      "HC.inheritOrgField("+JSON.stringify(c)+",__byCode,'officeCode')",srvCtx);
+
+    const disagree=[];
+    real.forEach(o=>{
+      const txt=preview(o.orgCode).textContent;
+      const shown=(txt.match(/budget ([A-Z]+)/)||[])[1]||'';
+      const actual=serverKey(o.orgCode);
+      if (shown!==actual) disagree.push(o.orgCode+': editor='+shown+' server='+actual);
+    });
+    ok('editor and server agree on all 137 budget keys', disagree.length===0, disagree.slice(0,4));
+  }
 }
 
 console.log('6. an invalid write is refused ENTIRELY, not partially applied');
@@ -366,7 +458,11 @@ console.log('10. the editor removes the opportunity for error, not just the erro
   ok('org code is free text, not a four-option select',
      /id="rfOrgCode"[^>]*list="rfOrgCodeList"/.test(page) &&
      !/<select[^>]*id="rfOrgCode"/.test(page));
-  ok('with a datalist of the known parents', /<datalist id="rfOrgCodeList">/.test(page));
+  ok('with a datalist of the known codes', /<datalist id="rfOrgCodeList">/.test(page));
+  // Built from _orgs (all 137 HC_Orgs rows), not _offices (the four budget
+  // offices). Using _offices is what made this a four-option dropdown.
+  ok('populated from HC_Orgs, not the four budget offices',
+     /this\._orgs && this\._orgs\.length\) \? this\._orgs : this\._offices/.test(src));
   // Typing FCA0A must show WHICH parent it will attribute to, or the user
   // cannot tell a working sub-org from a typo.
   ok('and shows what a typed code resolves to',
@@ -374,6 +470,25 @@ console.log('10. the editor removes the opportunity for error, not just the erro
   ok('resolution prefers the LONGEST prefix',
      /b\.orgCode\.length - a\.orgCode\.length/.test(src),
      'FC is a prefix of every code and must not win');
+
+  // THE FIX MUST BE REACHABLE FROM THE GUI. @clolry's words: "I don't know
+  // how to fix this using the GUI." loadRealOrgCodes is @editor — Apps Script
+  // console only — so leaving the remedy there reproduces the complaint.
+  ok('a Load Org Codes button exists', /id="rosterLoadOrgsBtn"/.test(page));
+  ok('wired to a handler', /rosterLoadOrgsBtn/.test(src) && /loadOrgCodes: function/.test(src));
+  ok('which calls the admin-guarded server function',
+     /serverCall\('hcLoadRealOrgCodes'\)/.test(src));
+  ok('confirms first, because it REPLACES HC_Orgs',
+     /window\.confirm\(/.test(src) && /will be overwritten/.test(src));
+  // Without a cache bypass the warnings appear not to have cleared.
+  ok('and reloads bypassing the cache', /self\.load\(true\)/.test(src));
+
+  const adm=fs.readFileSync('lets_app/server/40_domain/HCAdmin.js','utf8');
+  ok('the server entry point is admin-guarded',
+     /function hcLoadRealOrgCodes\(\)\s*\{\s*var denied = _hcAdminGuard_\(\);/.test(adm));
+  ok('and takes the same lock as saveHCPosition',
+     /function hcLoadRealOrgCodes[\s\S]{0,900}?LockService\.getScriptLock/.test(adm),
+     'saveHCPosition reads HC_Orgs to validate, so a concurrent replace would race');
 
   ok('supervisory status offers only the meaningful value',
      /<option value="2">2 — Supervisor<\/option>/.test(page));

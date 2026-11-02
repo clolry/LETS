@@ -63,6 +63,11 @@
         refreshBtn.addEventListener('click', function () { self.load(true); });
       }
 
+      var loadOrgsBtn = document.getElementById('rosterLoadOrgsBtn');
+      if (loadOrgsBtn) {
+        loadOrgsBtn.addEventListener('click', function () { self.loadOrgCodes(); });
+      }
+
       var orgInput = document.getElementById('rfOrgCode');
       if (orgInput) {
         orgInput.addEventListener('input', function () { self._updateOrgResolution(); });
@@ -281,20 +286,28 @@
      * the sheet directly and then reported as problems the editor could not
      * fix.
      *
-     * The datalist suggests the four parents without forbidding anything
-     * longer. Validation rejects a code that matches no parent prefix, which
-     * is a typo rather than a sub-org.
+     * The datalist lists every org from HC_Orgs — 137 of them once
+     * loadRealOrgCodes() has run — so the common case is picking a real code
+     * rather than typing one. Free text still accepts a code missing from the
+     * list, because @clolry's list is "a bit outdated".
      */
     _populateOrgSelect: function (selected) {
       var el = document.getElementById('rfOrgCode');
       var list = document.getElementById('rfOrgCodeList');
       if (!el) return;
       if (list) {
-        // Shows both namespaces exactly as the request form does: FCA is the
-        // HR org code, OMD is the BudgetConfig.js allocation key.
-        list.innerHTML = this._offices.map(function (o) {
+        // Built from _orgs, the real HC_Orgs rows, NOT _offices — _offices is
+        // just the four budget offices, which is what made this a four-option
+        // dropdown in the first place.
+        //
+        // Falls back to _offices when HC_Orgs is empty, so a database where
+        // loadRealOrgCodes() has not run yet still offers something.
+        var src = (this._orgs && this._orgs.length) ? this._orgs : this._offices;
+        list.innerHTML = src.map(function (o) {
+          var label = o.orgCode + (o.division ? ' — ' + o.division
+                                              : (o.name ? ' — ' + o.name : ''));
           return '<option value="' + escapeHtml(o.orgCode) + '">' +
-            escapeHtml(o.orgCode + ' — ' + o.name) + '</option>';
+            escapeHtml(label) + '</option>';
         }).join('');
       }
       el.value = selected || '';
@@ -302,11 +315,21 @@
     },
 
     /**
-     * Shows which parent org a typed code will resolve to.
+     * Shows what a typed code resolves to — its NAME and its BUDGET KEY.
      *
-     * Without this the user types FCA0A and has no way to know whether it
-     * will attribute to FCA or fail silently — which is exactly the
-     * uncertainty that produced the original problem report.
+     * These are two different lookups and the distinction is the whole point.
+     * Identity resolves DOWN to the most specific matching row: FCA0A is the
+     * Portfolio Management Service Center. Attribution resolves UP to the
+     * nearest ancestor that actually carries a budget key, because only
+     * FC/FCA/FCB/FCC have one — FCA0A's own row leaves Office_Code blank.
+     *
+     * Mirrors HCData.resolveOrgByCode and HCData.inheritOrgField. If those two
+     * change, this must change with them, or the editor promises an
+     * attribution the server does not make.
+     *
+     * Without this the user types FCA0A and has no way to tell a working
+     * sub-org from a typo — which is exactly the uncertainty that produced
+     * @clolry's original report.
      */
     _updateOrgResolution: function () {
       var el = document.getElementById('rfOrgCode');
@@ -315,22 +338,46 @@
       var code = String(el.value || '').trim().toUpperCase();
       if (!code) { out.textContent = ''; return; }
 
-      var parents = this._offices.map(function (o) { return o; })
-        .filter(function (o) { return code.indexOf(o.orgCode) === 0; })
-        // Longest prefix wins: FC is a prefix of every code, so a shortest
-        // match would attribute all travel to the Front Office.
-        .sort(function (a, b) { return b.orgCode.length - a.orgCode.length; });
+      var orgs = (this._orgs && this._orgs.length) ? this._orgs : this._offices;
 
-      if (!parents.length) {
+      // Ancestors of this code, nearest first.
+      var chain = orgs.filter(function (o) {
+        return o.orgCode && code.indexOf(o.orgCode) === 0;
+      }).sort(function (a, b) { return b.orgCode.length - a.orgCode.length; });
+
+      if (!chain.length) {
         out.className = 'roster-field__resolve roster-field__resolve--bad';
-        out.textContent = 'Does not match any known org — check for a typo.';
+        out.textContent = 'Does not match any known org code — check for a typo.';
         return;
       }
-      var p = parents[0];
+
+      // Identity: the most specific row.
+      var self_ = chain[0];
+      var name = self_.division || self_.name || '';
+
+      // Attribution: nearest ancestor WITH a budget key.
+      var budget = null;
+      for (var i = 0; i < chain.length; i++) {
+        if (chain[i].officeCode) { budget = chain[i]; break; }
+      }
+
       out.className = 'roster-field__resolve';
-      out.textContent = code === p.orgCode
-        ? ('Budget: ' + p.officeCode + ' (' + p.name + ')')
-        : ('Resolves to ' + p.orgCode + ' — budget ' + p.officeCode + ' (' + p.name + ')');
+      var parts = [];
+      if (name) parts.push(name);
+      if (budget) {
+        parts.push(budget.orgCode === code
+          ? ('budget ' + budget.officeCode)
+          : ('budget ' + budget.officeCode + ' via ' + budget.orgCode));
+      } else {
+        // Reachable only if the four top-level rows lost their Office_Code.
+        // Say so rather than implying the attribution worked.
+        out.className = 'roster-field__resolve roster-field__resolve--bad';
+        parts.push('no budget office found — check HC_Orgs');
+      }
+      if (self_.orgCode !== code) {
+        parts.push('code not in HC_Orgs; inherited from ' + self_.orgCode);
+      }
+      out.textContent = parts.join(' · ');
     },
 
     /**
@@ -478,6 +525,44 @@
         })
         .catch(function (err) {
           self._showProblems(['Could not deactivate: ' + (err && err.message)]);
+        });
+    },
+
+    /**
+     * Populates HC_Orgs with the 137 known org codes.
+     *
+     * Confirms first, because it REPLACES the table. Idempotent, so a repeat
+     * press is harmless — but an admin who has hand-edited HC_Orgs would lose
+     * those edits, and the dialog says so rather than discovering it after.
+     */
+    loadOrgCodes: function () {
+      var self = this;
+      if (!window.confirm(
+          'Replace HC_Orgs with the 137 known org codes?\n\n' +
+          'This fixes "Org_Code has no matching HC_Orgs row" warnings by giving ' +
+          'every sub-org a row. Positions are NOT touched.\n\n' +
+          'Any hand-edits to HC_Orgs will be overwritten.')) {
+        return;
+      }
+
+      var btn = document.getElementById('rosterLoadOrgsBtn');
+      if (btn) { btn.disabled = true; }
+
+      serverCall('hcLoadRealOrgCodes')
+        .then(function (res) {
+          if (btn) btn.disabled = false;
+          if (!res || !res.success) {
+            self._showProblems([(res && res.error) || 'Could not load the org codes.']);
+            return;
+          }
+          // Reload bypassing the cache: the join reads a cached bundle, so
+          // without this the new rows are invisible and the warnings would
+          // appear not to have cleared.
+          self.load(true);
+        })
+        .catch(function (err) {
+          if (btn) btn.disabled = false;
+          self._showProblems(['Could not load the org codes: ' + (err && err.message)]);
         });
     }
   };

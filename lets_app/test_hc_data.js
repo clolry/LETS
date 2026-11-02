@@ -431,6 +431,173 @@ console.log('\n7b. Sub-org codes resolve to their parent by longest prefix:');
 }
 
 // ---------------------------------------------------------------------------
+// 7c. Identity resolves DOWN, attribution resolves UP
+// ---------------------------------------------------------------------------
+console.log('\n7c. A sub-org keeps its own NAME but inherits its parent\'s BUDGET KEY:');
+
+{
+  // THE TRAP THE PREFIX FIX ALONE WOULD HAVE FALLEN INTO.
+  //
+  // @clolry supplied 137 real codes, six levels deep. Once all 137 are rows in
+  // HC_Orgs, FCA0A has an EXACT match — and resolveOrgByCode prefers an exact
+  // match, correctly, since FCA0A is the "Portfolio Management Service Center"
+  // and not its parent.
+  //
+  // But only FC/FCA/FCB/FCC carry an Office_Code, because only those four are
+  // budget offices in BudgetConfig.js. An exact match alone would therefore
+  // return a BLANK budget key for all 133 sub-orgs — which is the same blank
+  // @clolry reported in the first place. The fix would have MOVED the failure
+  // and the symptom would have looked identical.
+  const orgs = [
+    orgRow({ Org_Code: 'FC',    Office_Code: 'FO',  Business_Unit: 'Front Office',
+             Sector: 'ASD', Division: 'Office of Acquisition Solutions Development',
+             Status: 'Active' }),
+    orgRow({ Org_Code: 'FCA',   Office_Code: 'OMD', Business_Unit: 'OMD',
+             Sector: 'ASD', Division: 'Office of Mission Delivery', Status: 'Active' }),
+    // The real shape: name only, no budget key.
+    orgRow({ Org_Code: 'FCA0A', Division: 'Portfolio Management Service Center',
+             Sector: '', Status: 'Active' }),
+    orgRow({ Org_Code: 'FCA0BAA', Division: 'Stakeholder Connection Division / Branch A',
+             Status: 'Active' })
+  ];
+  const rows = [
+    posRow({ Position_Number: 'FCA0A-0008', Employee_Name: 'Portfolio Person',
+             Org_Code: 'FCA0A', Grade: 13 }),
+    posRow({ Position_Number: 'DEEP-1', Employee_Name: 'Six Levels Down',
+             Org_Code: 'FCA0BAA', Grade: 12 })
+  ];
+  const { HC } = loadHC(rows, orgs, { quiet: true });
+  const byNum = {};
+  HC.hcGetBundle().data.forEach(p => { byNum[p.positionNumber] = p; });
+
+  const sub = byNum['FCA0A-0008'];
+  // IDENTITY — the most specific row wins.
+  assert.strictEqual(sub.org.division, 'Portfolio Management Service Center',
+    'FCA0A must keep its OWN name, not inherit "Office of Mission Delivery"');
+  assert.strictEqual(sub.org.resolvedOrgCode, 'FCA0A',
+    'an exact row must resolve to itself');
+  console.log('   FCA0A keeps its own name: Portfolio Management Service Center');
+
+  // ATTRIBUTION — the nearest ancestor that actually has a value wins.
+  assert.strictEqual(sub.org.officeCode, 'OMD',
+    'THE REGRESSION TO WATCH: a blank Office_Code on the exact row must not ' +
+    'blank the budget key. It must inherit OMD from FCA.');
+  assert.strictEqual(sub.org.businessUnit, 'OMD',
+    'business unit must inherit too');
+  assert.strictEqual(sub.org.sector, 'ASD',
+    'an empty-string cell must not stop the walk');
+  console.log('   and inherits budget key OMD + sector ASD from FCA');
+
+  // Six levels deep, skipping ancestors that are not even rows (FCA0B, FCA0BA
+  // are absent here).
+  const deep = byNum['DEEP-1'];
+  assert.strictEqual(deep.org.officeCode, 'OMD',
+    'inheritance must skip missing intermediate rows and keep climbing');
+  assert.strictEqual(deep.org.division, 'Stakeholder Connection Division / Branch A',
+    'a six-level code keeps its own name');
+  console.log('   FCA0BAA inherits OMD across missing intermediate rows');
+
+  // An explicit value on the sub-org must WIN, so a reorganisation moving a
+  // service center to another DAC is one row rather than a code change.
+  const moved = orgs.slice();
+  moved[2] = orgRow({ Org_Code: 'FCA0A', Office_Code: 'IDV', Business_Unit: 'IDV',
+                      Division: 'Portfolio Management Service Center', Status: 'Active' });
+  const m = loadHC(rows, moved, { quiet: true });
+  const movedPos = m.HC.hcGetBundle().data.find(p => p.positionNumber === 'FCA0A-0008');
+  assert.strictEqual(movedPos.org.officeCode, 'IDV',
+    'an explicit budget key on the sub-org row must override the inherited one');
+  console.log('   An explicit key on the sub-org row overrides inheritance');
+}
+
+// ---------------------------------------------------------------------------
+// 7d. @clolry's real 137-code list
+// ---------------------------------------------------------------------------
+console.log('\n7d. The real org list is internally consistent:');
+
+{
+  // Loaded from HCSeed.js rather than restated here: a copy would drift from
+  // the table that actually gets written to the sheet.
+  const seedCtx = vm.createContext({
+    console: { log() {}, warn() {}, error() {} },
+    JSON, Date, Object, String, Number, Array, Math, RegExp, Error
+  });
+  vm.runInContext('var TRAVEL_DB_SPREADSHEET_ID=null; var SHEET_NAMES={}; ' +
+                  'var TRAVEL_SHEET_SCHEMAS={}; var HC={};', seedCtx);
+  vm.runInContext(fs.readFileSync(path.join(SERVER, '91_setup', 'HCSeed.js'), 'utf8'),
+                  seedCtx, { filename: 'HCSeed.js' });
+  const real = vm.runInContext('hcRealOrgRecords()', seedCtx);
+
+  assert.strictEqual(real.length, 137, 'expected @clolry\'s 137 codes');
+  const codes = real.map(o => o.orgCode);
+  assert.strictEqual(new Set(codes).size, 137, 'org codes must be unique — they are the PK');
+  console.log('   137 unique codes');
+
+  // EXACTLY four budget keys. More would mean a sub-org had been given one by
+  // accident, which silently misattributes its travel.
+  //
+  // Compared as a JOINED STRING, not with deepStrictEqual: `real` comes from a
+  // separate vm context, so its arrays have a different Array.prototype and
+  // deepStrictEqual fails on two arrays that print identically. That cost ten
+  // minutes once; it should not cost them twice.
+  const keyed = real.filter(o => o.officeCode);
+  assert.strictEqual(keyed.map(o => o.orgCode + '=' + o.officeCode).join(' '),
+    'FC=FO FCA=OMD FCB=IDV FCC=CM',
+    'only the four top-level orgs may carry a budget key');
+  console.log('   exactly four budget keys: FC=FO FCA=OMD FCB=IDV FCC=CM');
+
+  // THE PROPERTY THE WHOLE SCHEME RESTS ON: every code's longest proper
+  // prefix is a real code, so every position reaches a budget key.
+  const set = new Set(codes);
+  const orphans = codes.filter(c => {
+    if (c === 'FC') return false;
+    return ![...set].some(k => k !== c && c.startsWith(k));
+  });
+  assert.strictEqual(orphans.join(','), '',
+    'every code must have an ancestor in the list, or its travel attributes nowhere');
+  console.log('   every code has an ancestor in the list');
+
+  // The prefix chain must be unambiguous — no code may have two ancestors
+  // that are not themselves nested, or "longest prefix" would be arbitrary.
+  codes.forEach(c => {
+    const anc = [...set].filter(k => k !== c && c.startsWith(k)).sort((a, b) => a.length - b.length);
+    for (let i = 0; i + 1 < anc.length; i++) {
+      assert.ok(anc[i + 1].startsWith(anc[i]),
+        'ambiguous ancestry for ' + c + ': ' + anc[i] + ' and ' + anc[i + 1]);
+    }
+  });
+  console.log('   ancestry is a strict chain, so longest-prefix is well defined');
+
+  // And the real list actually resolves through the real code path.
+  const realOrgRows = real.map(o => orgRow({
+    Org_Code: o.orgCode, Office_Code: o.officeCode, Business_Unit: o.businessUnit,
+    Sector: o.sector, Division: o.division, Status: o.status
+  }));
+  const samples = ['FCA0A', 'FCBADDD', 'FCCACBA', 'FCCAAAA', 'FCB0BBB'];
+  const { HC: realHC } = loadHC(
+    samples.map((c, i) => posRow({ Position_Number: 'P' + i, Employee_Name: 'X' + i,
+                                   Org_Code: c, Grade: 13 })),
+    realOrgRows, { quiet: true });
+  const resolved = realHC.hcGetBundle().data;
+  const blanks = resolved.filter(p => !p.org.officeCode);
+  assert.strictEqual(blanks.map(p => p.orgCode).join(','), '',
+    'every sampled real code must reach a budget key');
+  assert.strictEqual(resolved.find(p => p.orgCode === 'FCCACBA').org.officeCode, 'CM');
+  assert.strictEqual(resolved.find(p => p.orgCode === 'FCBADDD').org.officeCode, 'IDV');
+  console.log('   all 5 sampled codes resolve to a budget key (FCCACBA->CM, FCBADDD->IDV)');
+
+  // Every one of the 137, not just a sample.
+  const allRows = codes.map((c, i) => posRow({ Position_Number: 'Q' + i,
+    Employee_Name: 'Y' + i, Org_Code: c, Grade: 13 }));
+  const { HC: allHC } = loadHC(allRows, realOrgRows, { quiet: true });
+  const allResolved = allHC.hcGetBundle().data;
+  const noKey = allResolved.filter(p => !p.org.officeCode).map(p => p.orgCode);
+  assert.strictEqual(noKey.join(','), '', 'these codes reach no budget key');
+  const noName = allResolved.filter(p => !p.org.division).map(p => p.orgCode);
+  assert.strictEqual(noName.join(','), '', 'these codes resolve to no name');
+  console.log('   all 137 resolve to both a budget key and their own name');
+}
+
+// ---------------------------------------------------------------------------
 // 8. Caching, and the return type CacheWarming.js depends on
 // ---------------------------------------------------------------------------
 console.log('\n8. Cache behaviour:');

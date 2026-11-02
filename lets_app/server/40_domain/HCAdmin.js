@@ -228,13 +228,57 @@ function validateHCPosition(position, allPositions, originalPositionNumber, allO
       });
     }
     if (!resolved) {
-      problems.push('Org Code "' + p.orgCode + '" does not start with any known org code (' +
-        Object.keys(known).sort().join(', ') + '). Sub-org codes resolve to their ' +
-        'parent automatically — FCA0A becomes FCA — so this one looks like a typo.');
+      // Does NOT list every known code. With @clolry's real list loaded there
+      // are 137 of them, and a 137-code error message is unreadable — the
+      // four top-level ones are what the user needs to recognise.
+      var tops = Object.keys(known).filter(function (k) { return k.length <= 3; }).sort();
+      problems.push('Org Code "' + p.orgCode + '" does not start with any known org code. ' +
+        'Codes are hierarchical, so a sub-org resolves to its parent — FCA0A ' +
+        'attributes to FCA. Yours matches none of ' +
+        (tops.length ? tops.join(', ') : Object.keys(known).sort().slice(0, 8).join(', ')) +
+        ', so it looks like a typo. ' + Object.keys(known).length +
+        ' codes are loaded; run loadRealOrgCodes() if HC_Orgs is not populated.');
     }
   }
 
   return problems;
+}
+
+/**
+ * Loads @clolry's 137 real org codes into HC_Orgs, from the admin GUI.
+ *
+ * WHY A BUTTON AND NOT JUST THE EDITOR FUNCTION
+ * ---------------------------------------------
+ * loadRealOrgCodes lives in 91_setup/HCSeed.js and is @editor — runnable only
+ * from the Apps Script console. @clolry's actual complaint was exactly this:
+ * "I don't know how to fix this using the GUI." Leaving the remedy in a place
+ * only a developer can reach reproduces the original problem in a new form.
+ *
+ * Admin-guarded like every other write here. Idempotent — it replaces HC_Orgs
+ * rather than appending, so pressing it twice is harmless.
+ *
+ * @returns {Object} { success, orgs, message, error? }
+ * @client
+ */
+function hcLoadRealOrgCodes() {
+  var denied = _hcAdminGuard_();
+  if (denied) return denied;
+
+  // Serialized against saveHCPosition: that function reads HC_Orgs to decide
+  // which codes are valid, so a concurrent replace could have it validate
+  // against a half-written table.
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(LOCK_TIMEOUT_MS);
+  } catch (e) {
+    return { success: false, error: 'Another edit is in progress. Try again in a moment.' };
+  }
+
+  try {
+    return loadRealOrgCodes();
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**
