@@ -82,15 +82,37 @@
       this._ctx = ctx || {};
       window.TravelReviewerDash._scriptUrl = ctx.scriptUrl || '';
 
-      // Weave the role label into the page title as a prefix so it
-      // reads as one phrase: "Air Force · Dashboard",
-      // "Air Force · AF1 · Dashboard", "Front Office · Dashboard".
-      // Falls back to plain "Dashboard" when there's no label
-      // (admin landed here without a viewing-as override).
+      // Weave the role label into the page title as a prefix so it reads as
+      // one phrase: "Air Force · My Review Queue".
+      //
+      // "My Review Queue", not "Dashboard". @clolry: "I don't understand the
+      // difference between the admin portal's dashboard and the Travel
+      // Insights from the navbar." Both were called Dashboard and both showed
+      // KPI strips and charts, so nothing on either screen said which one the
+      // user was looking at.
+      //
+      // The difference is SCOPE, not content: getReviewerContext filters this
+      // view to the signed-in reviewer's own queue, while the admin dashboard
+      // is unscoped. The title now says so.
+      //
+      // Falls back to the bare name when there's no label (an admin landed
+      // here without a viewing-as override).
       var headerLabel = document.getElementById('reviewerHeaderLabel');
       if (headerLabel) {
         var label = (ctx.label || '').trim();
-        headerLabel.textContent = label ? (label + ' · Dashboard') : 'Dashboard';
+        headerLabel.textContent = label
+          ? (label + ' · My Review Queue')
+          : 'My Review Queue';
+      }
+
+      // Scope line under the title. The role pill already names the role, but
+      // it does not say that the NUMBERS are filtered to it.
+      var scopeEl = document.getElementById('reviewerScopeNote');
+      if (scopeEl) {
+        scopeEl.textContent = ctx.label
+          ? ('Showing only requests routed to ' + ctx.label +
+             '. Admins can see every request on the Admin dashboard.')
+          : 'Showing only requests routed to you.';
       }
 
       this._setupSidebarNav();

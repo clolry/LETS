@@ -205,7 +205,7 @@ Severity is **consequence × reachability**. Both axes are needed: a catastrophi
 | 41 | **G-028** | Attachment sharing to the next reviewer passes `'viewer'`, which is not a valid Drive role. Three layers of error suppression report success | C2/R2 | TRIP | open | S-6 |
 | 42 | **G-029** | `fas_fo_reviewer` has no branch in `getReviewerContext` and resolves to `role: 'none'`, so the FAS reviewer gets no dashboard | C2/R2 | TRIP | open | S-9 |
 | 43 | **G-033** | The 12-function `Validation.js` library has zero adoption outside its own self-test | C2/R2 | TRIP | open | S-18 |
-| 44 | **G-041** | The `Feedback` tab is written and read but has no schema; nothing creates it; its 13 headers exist nowhere in code | C2/R2 | TRIP | open | D-1 |
+| 44 | **G-041** | The `Feedback` tab is written and read but has no schema; nothing creates it; its 13 headers exist nowhere in code | C2/R2 | TRIP | **remediated** 2026-11-02 | D-1 §3.5.2.1 |
 | 45 | **G-042** | Four per-diem tabs bypass `SHEET_NAMES` via 6 duplicate constants; renaming through the registry would silently do nothing | C2/R2 | TRIP | open | D-3 |
 | 46 | **G-045** | No data validation, named ranges, or sheet protections are created anywhere | C2/R2 | TRIP | open | D-11 |
 | 47 | **G-046** | **Four design documents referenced by code exist in no commit:** `Data_Model_v2.md`, `BUGS_FOUND.md`, `OPEN_QUESTIONS.md`, `REFACTOR_PLAN.md` | C2/R2 | TRIP | open | D-12 |

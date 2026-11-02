@@ -91,7 +91,7 @@ function srv(opts){
       hcGetBundle: function(){ return ${opts.bundleFails
         ? "{success:false,error:'no tabs',data:[]}"
         : "{success:true,data:__positions,count:__positions.length}"}; },
-      hcGetOrgHierarchy: function(){ return []; },
+      hcGetOrgHierarchy: function(){ return ${JSON.stringify(opts.orgs||[])}; },
       hcCacheInvalidateAll: function(){ globalThis.__invalidated=(globalThis.__invalidated||0)+1; return true; }
     };
     function validateHCData(){ return {success:true,problems:${JSON.stringify(opts.problems||[])}}; }
@@ -188,6 +188,106 @@ console.log('5. a staffed seat needs an email');
        .some(m=>/is not an email address/.test(m)));
 }
 
+console.log('5b. hierarchical org codes');
+{
+  // @clolry: "Our org has hundreds of different codes under FC." The codes are
+  // hierarchical — FCA0A sits under FCA under FC — and only the top-level
+  // codes carry a budget office key.
+  //
+  // The rule here used to be an exact match against a HARDCODED
+  // ['FC','FCA','FCB','FCC'], so every real code was rejected. @clolry typed
+  // FCA0A-0008 into the sheet and the roster page reported a problem that the
+  // editor could not fix, because its Org field was a four-option dropdown.
+  const h=srv({positions:ROSTER});
+  const v=(p)=>h.run('validateHCPosition('+JSON.stringify(p)+',__positions)');
+
+  ok('a sub-org code is accepted',
+     v({positionNumber:'NEW-1',orgCode:'FCA0A'}).filter(m=>/Org Code/.test(m)).length===0,
+     v({positionNumber:'NEW-1',orgCode:'FCA0A'}));
+  ok('a deeper sub-org code is accepted',
+     v({positionNumber:'NEW-1',orgCode:'FCB1234'}).filter(m=>/Org Code/.test(m)).length===0);
+  ok('a top-level code is still accepted',
+     v({positionNumber:'NEW-1',orgCode:'FCA'}).filter(m=>/Org Code/.test(m)).length===0);
+  ok('lowercase is accepted',
+     v({positionNumber:'NEW-1',orgCode:'fca0a'}).filter(m=>/Org Code/.test(m)).length===0);
+
+  // A code matching no parent prefix is a typo and must still be caught —
+  // otherwise this change has just deleted the validation.
+  const bad=v({positionNumber:'NEW-1',orgCode:'XX99'});
+  ok('a code matching no parent is still rejected',
+     bad.some(m=>/does not start with any known org code/.test(m)), bad);
+  ok('and the message says sub-orgs resolve to their parent',
+     bad.some(m=>/FCA0A becomes FCA/.test(m)), bad);
+
+  // The known codes must come from HC_Orgs, not a literal in the validator —
+  // a new org should not need a code change.
+  const h2=srv({positions:ROSTER,orgs:[{orgCode:'ZZ'},{orgCode:'ZZA'}]});
+  const r=h2.run("saveHCPosition({positionNumber:'NEW-9',grade:'12',orgCode:'ZZA7'})");
+  ok('codes are sourced from HC_Orgs, not hardcoded',
+     !(r.problems||[]).some(m=>/Org Code/.test(m)), r.problems);
+  const r2=h2.run("saveHCPosition({positionNumber:'NEW-9',grade:'12',orgCode:'FCA'})");
+  ok('and a code absent from HC_Orgs is rejected even if it was once hardcoded',
+     (r2.problems||[]).some(m=>/Org Code/.test(m)), r2.problems);
+}
+
+console.log('5c. the ROSTER PAGE validator applies the same rule');
+{
+  // This is the banner @clolry actually saw: "Position FCA0A-0008 has Org_Code
+  // FCA0A with no matching HC_Orgs row. Business unit and sector will be
+  // blank" — "but I don't know how to fix this using the GUI."
+  //
+  // validateHCData lives in HCSeed.js and had its OWN exact-match check,
+  // separate from the join in HCData.js and the write-time check in HCAdmin.js.
+  // Three implementations of one rule; fixing two of them would have left the
+  // banner lying.
+  function seed(positions, orgs) {
+    const sb={console:{log(){},warn(){},error(){}},JSON,Date,Object,String,Number,Array,
+      Math,parseFloat,parseInt,isNaN,RegExp,Error,
+      SpreadsheetApp:{openById:()=>({getSheetByName:()=>null}),flush:()=>{}},
+      Session:{getActiveUser:()=>({getEmail:()=>'chris@gsa.gov'})},
+      PropertiesService:{getScriptProperties:()=>({getProperty:()=>null})},
+      CacheService:{getScriptCache:()=>({get:()=>null,put:()=>{},removeAll:()=>{}})}};
+    const ctx=vm.createContext(sb);
+    vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID='x';",ctx);
+    vm.runInContext(fs.readFileSync('lets_app/server/01_constants/Sheets.js','utf8'),ctx);
+    vm.runInContext(`
+      function isTravelAdmin(){ return true; }
+      var HC = {
+        hcGetBundle: function(){ return {success:true,data:${JSON.stringify(positions)}}; },
+        hcGetOrgHierarchy: function(){ return ${JSON.stringify(orgs)}; }
+      };
+    `,ctx);
+    vm.runInContext(fs.readFileSync('lets_app/server/91_setup/HCSeed.js','utf8'),ctx);
+    return vm.runInContext('validateHCData()',ctx);
+  }
+
+  const ORGS=[{orgCode:'FC'},{orgCode:'FCA'},{orgCode:'FCB'}];
+  const orgProblems=(r)=>(r.problems||[]).filter(m=>/Org_Code/.test(m));
+
+  const r1=seed([{positionNumber:'FCA0A-0008',orgCode:'FCA0A',grade:'13',
+                  employeeName:'Sub',emailAddress:'s@x.gov',occupancyStatus:'FILLED'}],ORGS);
+  ok('FCA0A no longer reported as a problem', orgProblems(r1).length===0, orgProblems(r1));
+
+  // The typo case must still be caught, or the banner has simply gone quiet.
+  const r2=seed([{positionNumber:'XX-1',orgCode:'XX99',grade:'13',
+                  employeeName:'Typo',emailAddress:'t@x.gov',occupancyStatus:'FILLED'}],ORGS);
+  ok('a genuine typo is still reported', orgProblems(r2).length===1, r2.problems);
+  ok('and the message says HOW to fix it',
+     orgProblems(r2).some(m=>/Correct the code in HC_Positions, or add an HC_Orgs row/.test(m)),
+     orgProblems(r2));
+  ok('and lists the codes that would work',
+     orgProblems(r2).some(m=>/FC, FCA, FCB/.test(m)), orgProblems(r2));
+
+  // The GS-15 reachability check must resolve too, or a DAC whose deputy sits
+  // in a sub-org is reported as unstaffed.
+  const r3=seed([
+    {positionNumber:'FCA-0001',orgCode:'FCA0A',grade:'15',employeeName:'Deputy',
+     emailAddress:'d@x.gov',occupancyStatus:'FILLED',supervisoryStatus:'2'}
+  ],[{orgCode:'FCA',businessUnit:'OMD'}]);
+  ok('a GS-15 in a SUB-org counts toward its parent',
+     !(r3.problems||[]).some(m=>/no staffed GS-15|GS-15/.test(m)), r3.problems);
+}
+
 console.log('6. an invalid write is refused ENTIRELY, not partially applied');
 {
   const h=srv({positions:ROSTER});
@@ -260,6 +360,21 @@ console.log('10. the editor removes the opportunity for error, not just the erro
   // Position number is the join key for the whole tree.
   ok('position number is read-only when editing', /pnInput\.readOnly = !!positionNumber/.test(src));
   const page=fs.readFileSync('lets_app/client/pages/travelAdminPage.html','utf8');
+  // Org Code is the ONE field that must NOT be a closed dropdown. It was one,
+  // of four options, which is why @clolry had to type FCA0A-0008 into the
+  // sheet directly — the editor could not express it.
+  ok('org code is free text, not a four-option select',
+     /id="rfOrgCode"[^>]*list="rfOrgCodeList"/.test(page) &&
+     !/<select[^>]*id="rfOrgCode"/.test(page));
+  ok('with a datalist of the known parents', /<datalist id="rfOrgCodeList">/.test(page));
+  // Typing FCA0A must show WHICH parent it will attribute to, or the user
+  // cannot tell a working sub-org from a typo.
+  ok('and shows what a typed code resolves to',
+     /id="rfOrgResolution"/.test(page) && /_updateOrgResolution/.test(src));
+  ok('resolution prefers the LONGEST prefix',
+     /b\.orgCode\.length - a\.orgCode\.length/.test(src),
+     'FC is a prefix of every code and must not win');
+
   ok('supervisory status offers only the meaningful value',
      /<option value="2">2 — Supervisor<\/option>/.test(page));
   ok('and says what it grants', /[Gg]rants LETS access on its own/.test(page));

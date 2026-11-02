@@ -12,7 +12,8 @@
   function _L() {
     return (window.TravelUtils && window.TravelUtils.stageLabels)
       ? window.TravelUtils.stageLabels()
-      : { sector: 'SCD', bu: 'DAC', fo: 'ASD Travel & Events', fas: 'FAS' };
+      : { sector: 'SCD', bu: 'DAC', fo: 'ASD Travel & Events', fas: 'FAS',
+          orgShort: 'ASD', appName: 'LETS' };
   }
 
 /**
@@ -56,10 +57,28 @@
   // _humanRoleLabel(role) which builds 'Army Reviewer · Primary' style
   // strings; that helper is the only consumer of role-shape labelling.
   // --------------------------------------------------------------------------
-  var ROLE_META = {
+  // Evaluated LAZILY via _roleMeta(), not as a plain object literal.
+  //
+  // This file is included near the top of the page; window._letsBranding is
+  // assigned further down. An object literal calling _L() at definition time
+  // captured the FALLBACK labels, so a workgroup that set REVIEW_LABEL_BU saw
+  // its property ignored here while every other surface honoured it.
+  var _ROLE_META_CACHE = null;
+
+  function _roleMeta() {
+    if (_ROLE_META_CACHE) return _ROLE_META_CACHE;
+    _ROLE_META_CACHE = _buildRoleMeta();
+    return _ROLE_META_CACHE;
+  }
+
+  function _buildRoleMeta() {
+   return {
     'admin':            { displayLong: 'Admin',           hasScope: false, grantable: true,
                           hint: 'Full access to the admin console.' },
-    'aas_fo_reviewer':  { displayLong: 'AAS-FO Reviewer', hasScope: false, grantable: true,
+    // KEY is the STORED role type and must not change — renaming it would
+    // orphan every existing Travel_User_Roles row. Only the LABEL is
+    // rebranded. @clolry: "I wanted it to say ASD not AAS."
+    'aas_fo_reviewer':  { displayLong: _L().fo + ' Reviewer', hasScope: false, grantable: true,
                           hint: 'Reviews requests at the front-office stage.' },
     'fas_fo_reviewer':  { displayLong: 'FAS-FO Reviewer', hasScope: false, grantable: true,
                           hint: 'Reviews overhead-funded requests at the FAS Front Office stage.' },
@@ -69,7 +88,8 @@
                           hint: 'Overrides the synced sector director for a specific sector.' },
     'approved_user':    { displayLong: 'Site Access',     hasScope: false, grantable: true,
                           hint: 'Grants app access to a non-supervisor. No admin or reviewer privileges.' }
-  };
+   };
+  }
 
   /**
    * Build dropdown <option> markup from grantable roles. Each option
@@ -78,8 +98,9 @@
    */
   function _buildGrantableRoleOptions(includePlaceholder) {
     var html = includePlaceholder ? '<option value="">— select role —</option>' : '';
-    for (var rt in ROLE_META) {
-      var meta = ROLE_META[rt];
+    var _meta = _roleMeta();
+    for (var rt in _meta) {
+      var meta = _meta[rt];
       if (!meta.grantable) continue;
       var titleAttr = meta.hint ? ' title="' + meta.hint + '"' : '';
       html += '<option value="' + rt + '"' + titleAttr + '>' + meta.displayLong + '</option>';
@@ -731,7 +752,7 @@
         if (!r.isActive) continue;     // already off — no impact from this row
         var impact = this._routingImpactOfDeactivation(r.roleId);
         if (impact.level === 'silent') continue;
-        perRole.push({ role: r, impact: impact, meta: ROLE_META[r.roleType] || {} });
+        perRole.push({ role: r, impact: impact, meta: _roleMeta()[r.roleType] || {} });
         if (impact.level === 'block') { hasBlocker = true; isLastAdmin = isLastAdmin || impact.isLastAdmin; }
         else if (impact.level === 'warn') hasWarn = true;
         else if (impact.level === 'inform') hasInform = true;
@@ -1720,7 +1741,7 @@
       if (role.roleType === 'aas_fo_reviewer' && role.isActive && !role.isPrimary) {
         actions += '<button class="users-role-row__action" data-role-action="make-primary"' +
           ' data-role-id="' + _esc(role.roleId) + '" data-role-type="aas_fo_reviewer" data-role-scope=""' +
-          ' title="Make primary AAS FO">' +
+          ' title="Make primary ' + _esc(_L().fo) + '">' +
           '<i aria-hidden="true" class="fas fa-star"></i>' +
         '</button>';
       }
@@ -1802,7 +1823,7 @@
 
       function refreshConditionals() {
         var roleType = typeSel.value;
-        var meta = ROLE_META[roleType] || {};
+        var meta = _roleMeta()[roleType] || {};
         if (roleType && meta.hasScope) {
           scopeWrap.classList.remove('hidden');
           if (roleRow) roleRow.classList.add('users-form-row--2col');
@@ -1828,7 +1849,7 @@
       if (submitBtn) submitBtn.addEventListener('click', function() {
         var roleType = typeSel.value;
         var scope = scopeWrap.classList.contains('hidden') ? '' : (scopeSel.value || '').trim();
-        var meta = ROLE_META[roleType] || {};
+        var meta = _roleMeta()[roleType] || {};
         if (!roleType) {
           self._showSlideinError('Pick a role to grant.');
           try { typeSel.focus(); } catch (e) {}
@@ -2560,7 +2581,7 @@
 
       if (this._addUserState === 'hc-picked' && this._addUserPicked) {
         var p = this._addUserPicked;
-        if (nameEl) nameEl.textContent = p.employeeName || 'AAS staff member';
+        if (nameEl) nameEl.textContent = p.employeeName || (_L().orgShort + ' staff member');
         if (metaEl) {
           var headerBits = [];
           if (p.emailAddress) headerBits.push(_esc(p.emailAddress));
@@ -2572,15 +2593,17 @@
         this._wireAddHcPicked(body);
       } else if (this._addUserState === 'manual') {
         if (nameEl) nameEl.textContent = 'Add user manually';
-        if (metaEl) metaEl.textContent = 'For FAS reviewers, consultants, testers, or others outside the AAS staffing data';
+        if (metaEl) metaEl.textContent = 'For FAS reviewers, consultants, testers, or others outside the ' +
+          _L().orgShort + ' staffing data';
         body.innerHTML = prefillBanner + this._renderAddManualHtml();
         this._wireAddManual(body);
       } else {
         if (nameEl) nameEl.textContent = 'Add user';
         if (metaEl) {
           metaEl.textContent = this._addUserPrefill
-            ? 'Search AAS staff or existing TRIP users — first match wins'
-            : 'Search AAS staff, or add a user manually';
+            ? 'Search ' + _L().orgShort + ' staff or existing ' + _L().appName +
+              ' users — first match wins'
+            : 'Search ' + _L().orgShort + ' staff, or add a user manually';
         }
         body.innerHTML = prefillBanner + this._renderAddSearchHtml();
         this._wireAddSearch(body);
@@ -2610,13 +2633,16 @@
             '<input type="text" id="addUserSearch" placeholder="Search by name or email" autocomplete="off">' +
           '</div>' +
           '<div class="users-add__results" id="addUserResults">' +
-            '<p class="users-add__hint">Type at least 2 characters to search AAS staff.</p>' +
+            '<p class="users-add__hint">Type at least 2 characters to search ' +
+              _esc(_L().orgShort) + ' staff.</p>' +
           '</div>' +
           '<div class="users-add__divider"><span>or</span></div>' +
           '<button type="button" class="users-add__manual-link" id="addUserManualLink">' +
             '<i aria-hidden="true" class="fas fa-user-plus"></i>' +
             '<span>Add user manually</span>' +
-            '<span class="users-add__manual-link-hint">For FAS reviewers, consultants, testers, or others outside AAS staffing data</span>' +
+            '<span class="users-add__manual-link-hint">For FAS reviewers, consultants, ' +
+              'testers, or others outside ' + _esc(_L().orgShort) +
+              ' staffing data</span>' +
           '</button>' +
         '</div>'
       );
@@ -2655,7 +2681,8 @@
     _renderAddSearchResults: function(query, resultsEl) {
       var q = (query || '').trim();
       if (!q || q.length < 2) {
-        resultsEl.innerHTML = '<p class="users-add__hint">Type at least 2 characters to search AAS staff.</p>';
+        resultsEl.innerHTML = '<p class="users-add__hint">Type at least 2 characters ' +
+          'to search ' + _esc(_L().orgShort) + ' staff.</p>';
         return;
       }
       if (!window.HCDataCenter || !window.HCDataCenter.isLoaded()) {
@@ -2679,7 +2706,8 @@
       if (!picked.length) {
         resultsEl.innerHTML =
           '<p class="users-add__hint users-add__hint--empty">' +
-            'No AAS staff matches for &quot;' + _esc(q) + '&quot;. Try fewer characters, or add manually below.' +
+            'No ' + _esc(_L().orgShort) + ' staff matches for &quot;' + _esc(q) +
+            '&quot;. Try fewer characters, or add manually below.' +
           '</p>';
         return;
       }
@@ -2863,7 +2891,7 @@
 
       function refresh() {
         var roleType = typeSel.value;
-        var meta = ROLE_META[roleType] || {};
+        var meta = _roleMeta()[roleType] || {};
         if (roleType && meta.hasScope) {
           scopeWrap.classList.remove('hidden');
           if (roleRow) roleRow.classList.add('users-form-row--2col');
@@ -2910,7 +2938,7 @@
         try { typeSel.focus(); } catch (e) {}
         return null;
       }
-      var meta = ROLE_META[roleType] || {};
+      var meta = _roleMeta()[roleType] || {};
       var scope = '';
       if (meta.hasScope) {
         scope = ((scopeSel && scopeSel.value) || '').trim();

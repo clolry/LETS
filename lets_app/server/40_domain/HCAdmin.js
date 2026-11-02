@@ -115,9 +115,12 @@ function getHCAdminData() {
  * @param {Array} allPositions the current roster, for reference checks
  * @param {string} [originalPositionNumber] set when editing, so the row can
  *        legitimately keep its own key
+ * @param {Array<string>} [allOrgCodes] known HC_Orgs codes. Defaults to the
+ *        four top-level ones; passed explicitly by saveHCPosition so the
+ *        rule follows the sheet rather than a hardcoded list.
  * @returns {Array<string>} empty when valid
  */
-function validateHCPosition(position, allPositions, originalPositionNumber) {
+function validateHCPosition(position, allPositions, originalPositionNumber, allOrgCodes) {
   var problems = [];
   var p = position || {};
   var roster = allPositions || [];
@@ -202,10 +205,32 @@ function validateHCPosition(position, allPositions, originalPositionNumber) {
     }
   }
 
+  // Org codes are HIERARCHICAL and there are hundreds of them: FCA0A sits
+  // under FCA under FC. Only the top-level codes carry a budget office key,
+  // so a sub-org resolves to its parent by longest prefix rather than needing
+  // its own HC_Orgs row.
+  //
+  // The previous rule required an exact match against the four parents, which
+  // rejected every real code — @clolry entered FCA0A-0008 and the validator
+  // reported a problem the editor could not fix.
   if (p.orgCode) {
-    var validOrg = ['FC', 'FCA', 'FCB', 'FCC'].indexOf(String(p.orgCode).trim().toUpperCase()) !== -1;
-    if (!validOrg) {
-      problems.push('Org Code "' + p.orgCode + '" is not one of FC, FCA, FCB, FCC.');
+    var code = String(p.orgCode).trim().toUpperCase();
+    var known = {};
+    (allOrgCodes || ['FC', 'FCA', 'FCB', 'FCC']).forEach(function (k) { known[k] = true; });
+    var resolved = null;
+    if (known[code]) {
+      resolved = code;
+    } else {
+      Object.keys(known).forEach(function (k) {
+        if (code.indexOf(k) !== 0) return;
+        if (resolved && k.length <= resolved.length) return;
+        resolved = k;
+      });
+    }
+    if (!resolved) {
+      problems.push('Org Code "' + p.orgCode + '" does not start with any known org code (' +
+        Object.keys(known).sort().join(', ') + '). Sub-org codes resolve to their ' +
+        'parent automatically — FCA0A becomes FCA — so this one looks like a typo.');
     }
   }
 
@@ -244,7 +269,10 @@ function saveHCPosition(position, originalPositionNumber) {
       return { success: false, error: 'Could not read the current roster: ' + bundle.error };
     }
 
-    var problems = validateHCPosition(position, bundle.data, originalPositionNumber);
+    var orgCodes = (HC.hcGetOrgHierarchy() || []).map(function (o) { return o.orgCode; })
+      .filter(Boolean);
+    var problems = validateHCPosition(position, bundle.data, originalPositionNumber,
+      orgCodes.length ? orgCodes : null);
     if (problems.length) {
       return { success: false, problems: problems };
     }

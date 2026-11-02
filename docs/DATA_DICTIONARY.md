@@ -590,9 +590,11 @@ The only tab that self-creates *and* has a schema. `[VERIFIED]`
 
 Columns 4–6 are marked CUI because a stack trace and serialised context can contain request content, email addresses, and internal paths.
 
-### 3.5.2 `Feedback` — 13 columns, and no schema anywhere
+### 3.5.2 `Feedback` — 13 columns. **G-041 CLOSED.**
 
-This tab is **written and read by the application but declared nowhere** `[VERIFIED]`. This is finding **G-041**.
+> **CLOSED.** The schema now exists `Sheets.js` `[VERIFIED]`, so `setupTravelDatabase` creates this tab like every other. `test_feedback.js` holds it in place. The rest of this section is kept because the *reconstruction* below is how the column names were established, and §3.5.2.1 records what the closure actually found.
+
+This tab was **written and read by the application but declared nowhere** `[VERIFIED]`. This was finding **G-041**.
 
 | What happens | Detail |
 |---|---|
@@ -627,7 +629,17 @@ This tab is **written and read by the application but declared nowhere** `[VERIF
 >
 > **VT-15 settles it:** does a `Feedback` tab exist in the live database, and what is its row 1? If one exists and its headers differ from this list, **the live tab wins** and this table should be corrected.
 
-**The fix is one line of code** — add this array to `TRAVEL_SHEET_SCHEMAS` so the tab is created by setup like every other. Recorded here because it is probably the cheapest closeable finding in the entire register.
+#### 3.5.2.1 What closing it found
+
+The fix was indeed one array in `TRAVEL_SHEET_SCHEMAS`. Two things worth recording:
+
+**The user-visible symptom was worse than this section predicted.** §3.5.2 said *"No data is lost, but no feedback is captured"* and called the failure visible. It was not visible. `travelFeedbackModal.html` passed only an `onSuccess` callback, and `withFailureHandler` called it too — commented *"Don't block UX on failure"*. So a bug report that was never stored still showed the thank-you screen `[VERIFIED]`. @clolry asked where the Report a Bug button goes; the honest answer was nowhere, silently. The modal now has an error state, and `_submitFeedback` takes an `onError`.
+
+A handled rejection needs care here: `errorResponse()` is a **returned value**, so it arrives via `withSuccessHandler`. Checking only `withFailureHandler` would have missed `'Feedback sheet not found'` — the exact error in play.
+
+**The column name nearly went in wrong.** The writer is positional, but `checkNpsEligibility` and `getRecentFeedback` resolve columns **by header name** `Feedback.js:146,:276` `[VERIFIED]`. Column 5 was first written as `Type`; the readers look up **`Feedback_Type`**. Nothing would have thrown — `checkNpsEligibility` returns `eligible: true` when it cannot find its columns, so the NPS prompt would have reappeared for every user forever. `test_feedback.js` §2 now extracts every `headers.indexOf('...')` from the service and asserts each one exists in the schema, which is what caught it.
+
+**VT-15 still stands.** If a `Feedback` tab already exists in the live database with different headers, **the live tab wins** — the new schema only applies to a tab created from scratch. Check row 1 before relying on the reconstruction above.
 
 ### 3.5.3 `File_Queue` — a phantom
 
@@ -635,7 +647,7 @@ This tab is **written and read by the application but declared nowhere** `[VERIF
 
 No schema, no reader, no writer, no creator. This is finding **G-057**, rated Low.
 
-**Speculation on intent** `[INFERRED]`: the name and its placement under the `// Operational` comment beside `Error_Log` and `Feedback` suggest a planned asynchronous file-processing queue — most plausibly to decouple Drive uploads from the request-submission path, which currently happen inline. Worth recording for whoever later wonders whether attachment handling was meant to be asynchronous.
+**Speculation on intent** `[INFERRED]`: the name and its placement under the `// Operational` comment beside `Error_Log` and `Feedback` — the latter since given a schema, see §3.5.2.1 — suggests a planned asynchronous file-processing queue — most plausibly to decouple Drive uploads from the request-submission path, which currently happen inline. Worth recording for whoever later wonders whether attachment handling was meant to be asynchronous.
 
 **Do not delete the constant to tidy up.** It costs nothing and its presence is the only surviving record of the intent.
 

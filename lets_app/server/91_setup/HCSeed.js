@@ -494,6 +494,22 @@ function validateHCData() {
       for (var f = 0; f < formers.length; f++) orgCodes[formers[f]] = true;
     }
 
+    // Mirrors HC.resolveOrgByCode's longest-prefix rule. A different rule here
+    // would report problems the join does not actually have, or miss ones it
+    // does.
+    function _resolveOrgCode_(code, known) {
+      var c = String(code || '').trim().toUpperCase();
+      if (!c) return null;
+      if (known[c]) return c;
+      var best = null;
+      Object.keys(known).forEach(function (key) {
+        if (c.indexOf(key) !== 0) return;
+        if (best && key.length <= best.length) return;
+        best = key;
+      });
+      return best;
+    }
+
     for (var p = 0; p < positions.length; p++) {
       var pos = positions[p];
 
@@ -524,10 +540,20 @@ function validateHCData() {
         }
       }
 
-      // 3 — org code with no HC_Orgs row
-      if (pos.orgCode && !orgCodes[pos.orgCode]) {
+      // 3 — org code that resolves to no HC_Orgs row, even by prefix.
+      //
+      // Codes are hierarchical: FCA0A sits under FCA under FC, and only the
+      // four top-level codes carry a budget office key. So an unresolvable
+      // code is one whose first two characters are not a known org — a typo,
+      // not a sub-org.
+      if (pos.orgCode && !_resolveOrgCode_(pos.orgCode, orgCodes)) {
         problems.push('Position ' + pos.positionNumber + ' has Org_Code "' + pos.orgCode +
-                      '" with no matching HC_Orgs row. Business unit and sector will be blank.');
+                      '" which does not start with any known org code (' +
+                      Object.keys(orgCodes).sort().join(', ') + '). ' +
+                      'Sub-org codes like FCA0A resolve to their parent automatically; ' +
+                      'this one does not match any parent, so business unit and sector ' +
+                      'will be blank. Correct the code in HC_Positions, or add an ' +
+                      'HC_Orgs row if this is a genuinely new org.');
       }
 
       // 4 — a staffed position with no email cannot be routed to or granted access
@@ -543,7 +569,9 @@ function validateHCData() {
       var org = orgs[oc];
       if (!org.officeCode) continue;
       var hasDd = positions.some(function (x) {
-        return x.orgCode === org.orgCode && x.grade === '15' && x.occupancyStatus !== 'VACANT';
+        // Resolve the position's code, so someone in FCA0A counts toward FCA.
+        return _resolveOrgCode_(x.orgCode, orgCodes) === org.orgCode &&
+               x.grade === '15' && x.occupancyStatus !== 'VACANT';
       });
       if (!hasDd) {
         problems.push('Org ' + org.orgCode + ' (' + org.officeCode + ') has no staffed ' +

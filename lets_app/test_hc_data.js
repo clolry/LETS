@@ -367,6 +367,70 @@ console.log('\n7. Former org code mapping:');
 }
 
 // ---------------------------------------------------------------------------
+// 7b. Hierarchical sub-org codes
+// ---------------------------------------------------------------------------
+console.log('\n7b. Sub-org codes resolve to their parent by longest prefix:');
+
+{
+  // @clolry: "Our org has hundreds of different codes under FC." The codes are
+  // hierarchical — FCA0A sits under FCA under FC — and only the four
+  // top-level codes carry a budget office key.
+  //
+  // The join used to require an EXACT match, so every real code failed:
+  // entering FCA0A-0008 produced 'Org_Code "FCA0A" has no matching HC_Orgs
+  // row. Business unit and sector will be blank', with no way to fix it from
+  // the editor.
+  const rows = [
+    posRow({ Position_Number: 'FCA0A-0008', Employee_Name: 'Sub Org', Org_Code: 'FCA0A', Grade: 13 }),
+    posRow({ Position_Number: 'FCB12-0001', Employee_Name: 'Deeper',  Org_Code: 'FCB12', Grade: 13 }),
+    posRow({ Position_Number: 'FC-0001',    Employee_Name: 'Top',     Org_Code: 'FC',    Grade: 15 }),
+    posRow({ Position_Number: 'XX99-0001',  Employee_Name: 'Typo',    Org_Code: 'XX99',  Grade: 13 })
+  ];
+  const { HC } = loadHC(rows, ORGS, { quiet: true });
+  const byNum = {};
+  HC.hcGetBundle().data.forEach(p => { byNum[p.positionNumber] = p; });
+
+  assert.strictEqual(byNum['FCA0A-0008'].org.businessUnit, 'OMD',
+    'FCA0A must resolve to FCA and inherit OMD');
+  assert.strictEqual(byNum['FCA0A-0008'].org.resolvedOrgCode, 'FCA',
+    'resolvedOrgCode must report the PARENT the position attributed to');
+  console.log('   FCA0A -> FCA (OMD)');
+
+  assert.strictEqual(byNum['FCB12-0001'].org.businessUnit, 'IDV',
+    'FCB12 must resolve to FCB, not to FC');
+  console.log('   FCB12 -> FCB (IDV)');
+
+  // THE CRITICAL CASE. FC is a prefix of every other code, so a first-match
+  // or shortest-match rule would attribute all travel to the Front Office.
+  assert.strictEqual(byNum['FCA0A-0008'].org.businessUnit !== 'Front Office', true,
+    'LONGEST prefix must win — FC is a prefix of FCA0A and must not capture it');
+  console.log('   FC does not capture FCA0A (longest prefix wins)');
+
+  // An exact match still wins outright, so adding a specific HC_Orgs row for
+  // a sub-org overrides the derivation.
+  assert.strictEqual(byNum['FC-0001'].org.businessUnit, 'Front Office',
+    'An exact code must still match its own row');
+  console.log('   Exact code FC still matches its own row');
+
+  // A code matching no parent is a typo, and must stay blank rather than be
+  // silently attributed somewhere wrong.
+  assert.strictEqual(byNum['XX99-0001'].org.businessUnit, '',
+    'A code matching no known prefix must not be attributed to any org');
+  console.log('   Unmatched code XX99 stays blank rather than guessing');
+
+  // An explicit sub-org row must beat the prefix rule.
+  const withSub = ORGS.concat([
+    orgRow({ Org_Code: 'FCA0A', Office_Code: 'SUB', Business_Unit: 'Sub Unit',
+             Sector: 'FAS', Status: 'Active' })
+  ]);
+  const sub = loadHC(rows, withSub, { quiet: true });
+  const subPos = sub.HC.hcGetBundle().data.find(p => p.positionNumber === 'FCA0A-0008');
+  assert.strictEqual(subPos.org.businessUnit, 'Sub Unit',
+    'An explicit HC_Orgs row for FCA0A must override the FCA derivation');
+  console.log('   An explicit FCA0A row overrides the derivation');
+}
+
+// ---------------------------------------------------------------------------
 // 8. Caching, and the return type CacheWarming.js depends on
 // ---------------------------------------------------------------------------
 console.log('\n8. Cache behaviour:');

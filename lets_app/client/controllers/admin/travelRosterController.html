@@ -63,6 +63,11 @@
         refreshBtn.addEventListener('click', function () { self.load(true); });
       }
 
+      var orgInput = document.getElementById('rfOrgCode');
+      if (orgInput) {
+        orgInput.addEventListener('input', function () { self._updateOrgResolution(); });
+      }
+
       var search = document.getElementById('rosterSearch');
       if (search) {
         search.addEventListener('input', function () {
@@ -263,17 +268,69 @@
       if (el) { el.classList.remove('show'); el.style.display = 'none'; }
     },
 
+    /**
+     * Org code as free TEXT with a datalist, not a closed dropdown.
+     *
+     * @clolry: "Our org has hundreds of different codes under FC." The codes
+     * are hierarchical — FCA0A sits under FCA under FC — and only the four
+     * top-level codes carry a budget office key, so a sub-org resolves to its
+     * parent by longest prefix.
+     *
+     * A closed dropdown of four options therefore could not express a real
+     * position, which is why @clolry's FCA0A-0008 rows had to be typed into
+     * the sheet directly and then reported as problems the editor could not
+     * fix.
+     *
+     * The datalist suggests the four parents without forbidding anything
+     * longer. Validation rejects a code that matches no parent prefix, which
+     * is a typo rather than a sub-org.
+     */
     _populateOrgSelect: function (selected) {
       var el = document.getElementById('rfOrgCode');
+      var list = document.getElementById('rfOrgCodeList');
       if (!el) return;
-      // Shows both namespaces exactly as the request form does: FCA is the HR
-      // org code, OMD is the BudgetConfig.js allocation key.
-      el.innerHTML = '<option value="">(none)</option>' +
-        this._offices.map(function (o) {
-          return '<option value="' + o.orgCode + '"' +
-            (o.orgCode === selected ? ' selected' : '') + '>' +
+      if (list) {
+        // Shows both namespaces exactly as the request form does: FCA is the
+        // HR org code, OMD is the BudgetConfig.js allocation key.
+        list.innerHTML = this._offices.map(function (o) {
+          return '<option value="' + escapeHtml(o.orgCode) + '">' +
             escapeHtml(o.orgCode + ' — ' + o.name) + '</option>';
         }).join('');
+      }
+      el.value = selected || '';
+      this._updateOrgResolution();
+    },
+
+    /**
+     * Shows which parent org a typed code will resolve to.
+     *
+     * Without this the user types FCA0A and has no way to know whether it
+     * will attribute to FCA or fail silently — which is exactly the
+     * uncertainty that produced the original problem report.
+     */
+    _updateOrgResolution: function () {
+      var el = document.getElementById('rfOrgCode');
+      var out = document.getElementById('rfOrgResolution');
+      if (!el || !out) return;
+      var code = String(el.value || '').trim().toUpperCase();
+      if (!code) { out.textContent = ''; return; }
+
+      var parents = this._offices.map(function (o) { return o; })
+        .filter(function (o) { return code.indexOf(o.orgCode) === 0; })
+        // Longest prefix wins: FC is a prefix of every code, so a shortest
+        // match would attribute all travel to the Front Office.
+        .sort(function (a, b) { return b.orgCode.length - a.orgCode.length; });
+
+      if (!parents.length) {
+        out.className = 'roster-field__resolve roster-field__resolve--bad';
+        out.textContent = 'Does not match any known org — check for a typo.';
+        return;
+      }
+      var p = parents[0];
+      out.className = 'roster-field__resolve';
+      out.textContent = code === p.orgCode
+        ? ('Budget: ' + p.officeCode + ' (' + p.name + ')')
+        : ('Resolves to ' + p.orgCode + ' — budget ' + p.officeCode + ' (' + p.name + ')');
     },
 
     /**

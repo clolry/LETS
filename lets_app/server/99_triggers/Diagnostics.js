@@ -127,9 +127,16 @@ function diagEnvironment() {
         var tabs = ss.getSheets().map(function (sh) { return sh.getName(); });
         console.log('  tabs present:      ' + tabs.length);
 
-        // Schema-declared tabs that do not exist. Two are expected:
-        // File_Queue has no creator anywhere in the codebase, and Feedback is
-        // created lazily on first write.
+        // Schema-declared tabs that do not exist.
+        //
+        // Feedback used to be listed here as "created lazily on first write".
+        // That was wrong: it had no schema, so setupTravelDatabase skipped it
+        // and submitTravelFeedback failed with 'Feedback sheet not found'
+        // while the client reported success. It now has a schema and is
+        // created like any other tab.
+        //
+        // File_Queue still has no creator and no reader anywhere in the
+        // codebase — it is an inherited constant, not a live tab.
         var expected = Object.keys(TRAVEL_SHEET_SCHEMAS);
         var missing = expected.filter(function (t) { return tabs.indexOf(t) === -1; });
         console.log('  schema tabs:       ' + expected.length);

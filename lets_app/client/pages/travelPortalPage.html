@@ -58,9 +58,20 @@
         <i aria-hidden="true" class="fas fa-shield-halved"></i>
         <span>Admin</span>
       </a>
-      <a href="#" onclick="window.TravelPortal.navigateTo('reviewer-dashboard', { force: '1' }); return false;" class="travel-header__role-link hidden" id="reviewerDashboardLink">
+      <!--
+        Distinct from the admin dashboard, which @clolry could not tell apart:
+        "I don't understand the difference between the admin portal's dashboard
+        and the Travel Insights from the navbar."
+
+        Travel Insights is SCOPED TO THE SIGNED-IN REVIEWER by
+        getReviewerContext — their own queue, their own sectors. The admin
+        dashboard is unscoped and shows the whole pipeline. The tooltip says so
+        rather than leaving the user to infer it from the contents.
+      -->
+      <a href="#" onclick="window.TravelPortal.navigateTo('reviewer-dashboard', { force: '1' }); return false;" class="travel-header__role-link hidden" id="reviewerDashboardLink"
+         title="Your own review queue and trends — only the requests assigned to you">
         <i aria-hidden="true" class="fas fa-clipboard-check"></i>
-        <span>Travel Insights</span>
+        <span>My Review Queue</span>
       </a>
       <div class="help-dropdown">
         <button class="travel-header__help-btn" onclick="TravelHelp.toggle(event)" title="Help">

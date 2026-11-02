@@ -325,7 +325,12 @@ function _reportBuildSheetsExport(headers, rows, title, meta) {
   return {
     success: true,
     spreadsheetUrl: ss.getUrl(),
-    spreadsheetId: ss.getId()
+    spreadsheetId: ss.getId(),
+    // Echoed so the client's export toast can name what it exported. The
+    // toast is persistent and link-bearing because Apps Script's sandboxed
+    // iframe blocks a gestureless window.open silently — see
+    // travelAdminController._showExportToast.
+    reportName: title
   };
 }
 

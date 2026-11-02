@@ -281,13 +281,62 @@ var HC = (function () {
     }
 
     for (var p = 0; p < positions.length; p++) {
-      var org = byCode[positions[p].orgCode];
+      var org = resolveOrgByCode(positions[p].orgCode, byCode);
       if (org) {
         positions[p].org.businessUnit = org.businessUnit;
         positions[p].org.sector       = org.sector;
+        // The org code the position was attributed TO, which may be a parent
+        // of its own code. Budget attribution needs this, not the raw value.
+        positions[p].org.resolvedOrgCode = org.orgCode;
+        positions[p].org.officeCode = org.officeCode || '';
       }
     }
     return positions;
+  }
+
+  /**
+   * Resolves a position's org code to an HC_Orgs row by LONGEST PREFIX.
+   *
+   * WHY PREFIX MATCHING
+   * -------------------
+   * @clolry: "Our org has hundreds of different codes under FC." The codes are
+   * hierarchical — FCA0A sits under FCA, which sits under FC — and only the
+   * four top-level codes carry a budget office key.
+   *
+   * An exact-match join therefore failed for every real code. @clolry entered
+   * FCA0A-0008 and got "Org_Code FCA0A has no matching HC_Orgs row. Business
+   * unit and sector will be blank", with no way to fix it: the editor's org
+   * dropdown offered only the four parents, and maintaining hundreds of
+   * HC_Orgs rows by hand would be worse than the problem.
+   *
+   * Longest prefix wins, so FCA0A resolves to FCA (3 chars) rather than FC
+   * (2 chars). That matters: FC is a prefix of every other code, so a
+   * shortest-match or first-match rule would attribute all travel to the
+   * Front Office.
+   *
+   * An exact match always wins outright, so adding a specific HC_Orgs row for
+   * a sub-org overrides the derivation.
+   *
+   * @param {string} code the position's Org_Code
+   * @param {Object} byCode orgCode -> org record, including former codes
+   * @returns {Object|null}
+   */
+  function resolveOrgByCode(code, byCode) {
+    var c = _str_(code).toUpperCase();
+    if (!c) return null;
+
+    // Exact match first: a specific row overrides prefix derivation.
+    if (byCode[c]) return byCode[c];
+
+    var best = null;
+    var bestLen = 0;
+    Object.keys(byCode).forEach(function (key) {
+      if (c.indexOf(key) !== 0) return;          // not a prefix
+      if (key.length <= bestLen) return;          // shorter than current best
+      best = byCode[key];
+      bestLen = key.length;
+    });
+    return best;
   }
 
   // ==========================================================================
@@ -691,6 +740,10 @@ var HC = (function () {
     hcWalkSupervisorChain:  hcWalkSupervisorChain,
     hcFindDivisionDirector: hcFindDivisionDirector,
     hcGetOrgChartTree:      hcGetOrgChartTree,
+
+    // Shared so the validator and the roster editor apply the SAME rule as
+    // the join. A second implementation would disagree with the data.
+    resolveOrgByCode:       resolveOrgByCode,
 
     // Exposed for unit tests only. Prefixed to signal that consumers should
     // not call them; they bypass caching and the org join.

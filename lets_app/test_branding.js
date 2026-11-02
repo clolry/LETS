@@ -197,6 +197,46 @@ console.log('7. every review surface reads one label source');
   ok('no "overhead-funded" left in help text', !/overhead-funded/.test(helpCode));
 }
 
+console.log('7b. admin Users page must not hardcode the inherited org name');
+{
+  // @clolry, testing the admin portal: "it has many references to AAS — when I
+  // went to add a user it says Search AAS staff ... I wanted it to say ASD not
+  // AAS."
+  //
+  // Section 7 only rejected hardcoded STAGE labels, so these survived: they
+  // name the ORG, not a review stage.
+  const f = 'lets_app/client/controllers/admin/travelUsersController.html';
+  const src = fs.readFileSync(f, 'utf8');
+  // Strips single-line comments too (/** ... */ on one line), which section 7's
+  // filter does not — it only skips lines STARTING with * or //.
+  const code = src.split('\n')
+    .filter(l => !/^\s*(\/\/|\/\*|\*|<!--)/.test(l))
+    .join('\n');
+
+  // STORED role types and sheet values legitimately contain 'aas' — renaming
+  // 'aas_fo_reviewer' would orphan every existing Travel_User_Roles row. Only
+  // DISPLAY strings are checked.
+  const hits = code.split('\n')
+    .filter(l => /\bAAS\b/.test(l))
+    .filter(l => !/'aas_fo_reviewer'|AAS FO'|'AAS/.test(l));
+  ok('no user-visible "AAS" in the Users controller', hits.length === 0, hits.slice(0, 3));
+
+  ok('org name comes from branding', /_L\(\)\.orgShort/.test(code),
+     'should read stageLabels().orgShort');
+
+  // ROLE_META must be built LAZILY. This file is included above the page's
+  // window._letsBranding assignment, so an object literal calling _L() at
+  // definition time captured the fallback labels and ignored the property.
+  ok('role metadata is built lazily, after branding is published',
+     /function _roleMeta\(\)/.test(code) && !/^\s*var ROLE_META = \{/m.test(code));
+
+  // stageLabels must actually carry the org, or _L().orgShort is undefined
+  // and the UI prints "Search undefined staff".
+  const utils = fs.readFileSync('lets_app/client/shared/travelUtils.html', 'utf8');
+  ok('stageLabels exposes orgShort', /orgShort: b\.orgShort/.test(utils));
+  ok('stageLabels exposes appName', /appName: b\.appName/.test(utils));
+}
+
 console.log('8. all four page templates publish branding to the client');
 {
   // A page that does not set window._letsBranding falls back to hardcoded

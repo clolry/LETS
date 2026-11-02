@@ -396,6 +396,23 @@ html, body { height: 100%; overflow: hidden; }
   gap: var(--space-2);
 }
 
+/* Scope note on the reviewer queue: says the numbers are filtered to one
+   reviewer. The header is a wrapping flex row, so flex-basis 100% drops this
+   onto its own line below the title rather than competing with the ribbon for
+   horizontal space. Empty on the admin dashboard, which is unscoped — and
+   :empty keeps it from reserving a line there. */
+.admin-view-header__scope {
+  flex: 0 0 100%;
+  order: 99;
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--color-slate-500, #64748b);
+}
+
+.admin-view-header__scope:empty {
+  display: none;
+}
+
 /* Action ribbon now lives inside .admin-view-header (which is itself
    sticky), so the ribbon doesn't need its own sticky positioning or
    edge-to-edge bleed — it's a normal flex child sitting between the
@@ -5243,6 +5260,22 @@ input.typeahead-loading {
 .roster-form-errors li {
   margin: 0.15rem 0;
   line-height: 1.4;
+}
+
+/* Shows which parent org a typed code resolves to. Codes are hierarchical and
+   there are hundreds of them, so without this the user cannot tell whether
+   FCA0A will attribute to FCA or fail silently. */
+.roster-field__resolve {
+  margin-top: 0.2rem;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: #0a4fa8;
+  min-height: 0.95rem;
+}
+
+.roster-field__resolve--bad {
+  color: #92400e;
+  font-weight: 500;
 }
 
 .roster-problems.hidden,

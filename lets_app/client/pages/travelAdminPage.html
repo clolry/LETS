@@ -104,13 +104,20 @@
           <i aria-hidden="true" class="fas fa-lightbulb"></i>
           <span>Feature Idea</span>
         </button>
-        <!-- Dev/admin affordance: opens the reviewer-facing Travel
-             Insights dashboard with force=1 so it doesn't auto-redirect
-             back to admin. Lets admins screenshot / test the reviewer
-             surface without leaving their admin context. -->
-        <a href="#" onclick="window.TravelAdmin.navigateTo('reviewer-dashboard', { force: '1' }); return false;" class="admin-sidebar__back admin-sidebar__back--secondary" title="Open the reviewer-facing Travel Insights dashboard for testing">
+        <!-- Dev/admin affordance: opens the REVIEWER-SCOPED dashboard with
+             force=1 so it doesn't auto-redirect back to admin. Lets admins
+             screenshot / test the reviewer surface without leaving their
+             admin context.
+
+             Labelled "as a reviewer" rather than "Travel Insights (test)".
+             @clolry: "I don't understand the difference between the admin
+             portal's dashboard and the Travel Insights from the navbar."
+             The difference is SCOPE — getReviewerContext filters that view to
+             one reviewer's own queue, while this admin dashboard is unscoped
+             — and the old label described neither. -->
+        <a href="#" onclick="window.TravelAdmin.navigateTo('reviewer-dashboard', { force: '1' }); return false;" class="admin-sidebar__back admin-sidebar__back--secondary" title="Preview the reviewer-scoped queue view. The admin dashboard above is unscoped and shows every request.">
           <i aria-hidden="true" class="fas fa-clipboard-check"></i>
-          <span>Travel Insights (test)</span>
+          <span>Preview as a reviewer</span>
         </a>
         <a href="#" onclick="window.TravelAdmin.navigateTo('travel'); return false;" class="admin-sidebar__back" title="Back to Portal">
           <i aria-hidden="true" class="fas fa-arrow-left"></i>
@@ -741,8 +748,20 @@
                   <div class="roster-field__hint">May contain leading zeros.</div>
                 </div>
                 <div class="roster-field">
-                  <label class="form-label" for="rfOrgCode">Org</label>
-                  <select class="form-select form-select-sm" id="rfOrgCode"></select>
+                  <label class="form-label" for="rfOrgCode">Org Code</label>
+                  <!--
+                    Free text with a datalist, not a closed dropdown. The org
+                    has hundreds of hierarchical codes under FC — FCA0A sits
+                    under FCA — and only the four top-level codes carry a
+                    budget key, so a sub-org resolves to its parent by longest
+                    prefix. A four-option dropdown could not express a real
+                    position.
+                  -->
+                  <input type="text" class="form-control form-control-sm" id="rfOrgCode"
+                         list="rfOrgCodeList" maxlength="20" style="text-transform: uppercase;"
+                         placeholder="e.g. FCA or FCA0A">
+                  <datalist id="rfOrgCodeList"></datalist>
+                  <div class="roster-field__resolve" id="rfOrgResolution"></div>
                 </div>
                 <div class="roster-field roster-field--wide">
                   <label class="form-label" for="rfOfficeTitle">Office Title</label>

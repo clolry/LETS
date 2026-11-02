@@ -99,6 +99,9 @@ jobs:
       - name: Branding configurability tests
         run: node lets_app/test_branding.js
 
+      - name: Feedback pipeline tests
+        run: node lets_app/test_feedback.js
+
       - name: Leg city capture tests
         run: node lets_app/test_leg_city.js
 

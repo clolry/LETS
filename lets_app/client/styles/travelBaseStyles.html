@@ -206,6 +206,43 @@ body {
   background: var(--color-primary);
 }
 
+/* Persistent variant: carries a link to an exported Sheet, so it must not
+   auto-dismiss. Losing the only reference to a generated spreadsheet is worse
+   than a toast that lingers until dismissed. */
+.travel-toast--persistent {
+  align-items: flex-start;
+  max-width: 460px;
+}
+
+.travel-toast__link {
+  color: white;
+  font-weight: 700;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.travel-toast__link:hover,
+.travel-toast__link:focus {
+  color: white;
+  text-decoration: none;
+}
+
+.travel-toast__close {
+  margin-left: auto;
+  padding: 0 0 0 0.5rem;
+  border: 0;
+  background: none;
+  color: white;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.travel-toast__close:hover {
+  opacity: 1;
+}
+
 /* Status Badges */
 .status-badge {
   display: inline-flex;

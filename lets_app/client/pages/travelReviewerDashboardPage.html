@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title><?= appName ?> - Travel Insights</title>
+  <!-- "My Review Queue", not "Travel Insights": this view is SCOPED to the
+       signed-in reviewer by getReviewerContext, and the old name read like a
+       second analytics dashboard sitting beside the admin one. -->
+  <title><?= appName ?> - My Review Queue</title>
 
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -96,8 +99,15 @@
         <div class="admin-view-header">
           <h2>
             <i aria-hidden="true" class="fas fa-gauge-high"></i>
-            <span id="reviewerHeaderLabel">Dashboard</span>
+            <!-- Filled by the controller, which appends "· My Review Queue"
+                 to the role label. Not "Dashboard": the admin dashboard looks
+                 almost identical and the only difference is that THIS one is
+                 scoped to one reviewer. -->
+            <span id="reviewerHeaderLabel">My Review Queue</span>
           </h2>
+          <!-- Says the numbers are FILTERED. The role pill names the role but
+               does not say that. -->
+          <p class="admin-view-header__scope" id="reviewerScopeNote"></p>
 
           <!-- Action ribbon chips inline in the header (matches admin). -->
           <div class="action-ribbon" id="actionRibbon">

@@ -281,6 +281,17 @@
   min-height: 100px;
   resize: vertical;
 }
+.tf-report-modal__error {
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 .tf-report-modal__charcount {
   font-size: 0.7rem;
   color: var(--text-secondary, #6c757d);
@@ -357,6 +368,11 @@
             placeholder="Describe the issue or feature..."></textarea>
           <div class="tf-report-modal__charcount"><span id="tfReportCharCount">0</span> / 2000</div>
         </div>
+        <!--
+          Shown when the write FAILED. Previously the modal had no error state
+          at all, so a rejected report still showed the thank-you screen.
+        -->
+        <div class="tf-report-modal__error" id="tfReportError" style="display:none;"></div>
       </div>
       <div class="tf-report-modal__footer">
         <button class="tf-report-modal__btn tf-report-modal__btn--cancel" onclick="TravelFeedback.closeReport()">Cancel</button>
@@ -655,6 +671,9 @@
       document.getElementById('tfReportCharCount').textContent = '0';
       document.getElementById('tfReportCategory').selectedIndex = 0;
       document.getElementById('tfReportSubmitBtn').disabled = false;
+      document.getElementById('tfReportSubmitBtn').textContent = 'Submit';
+      var errEl = document.getElementById('tfReportError');
+      if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
       document.getElementById('tfReportFormState').style.display = '';
       document.getElementById('tfReportSuccessState').style.display = 'none';
       document.getElementById('tfReportBackdrop').classList.add('active');
@@ -687,6 +706,21 @@
         document.getElementById('tfReportFormState').style.display = 'none';
         document.getElementById('tfReportSuccessState').style.display = '';
         setTimeout(function() { self.closeReport(); }, 2500);
+      }, function(msg) {
+        // A bug report MUST NOT claim success when it was not stored.
+        //
+        // @clolry asked where these go; the answer was the Feedback tab, which
+        // had no schema and so did not exist. The server returned 'Feedback
+        // sheet not found' and this modal showed the thank-you screen anyway,
+        // because the only callback was onSuccess. The report was lost and the
+        // user was told it had been sent.
+        var errEl = document.getElementById('tfReportError');
+        if (errEl) {
+          errEl.textContent = msg || 'Could not save your report. Please try again.';
+          errEl.style.display = '';
+        }
+        btn.disabled = false;
+        btn.textContent = 'Submit';
       });
     },
 
@@ -694,7 +728,17 @@
     // CORE SUBMIT
     // ================================================================
 
-    _submitFeedback: function(data, onSuccess) {
+    /**
+     * @param {Object} data feedback payload
+     * @param {Function} [onSuccess]
+     * @param {Function} [onError] called with a message when the write FAILED.
+     *        When omitted the failure is swallowed, which is acceptable only
+     *        for thumbs and NPS — losing one of those is not worth
+     *        interrupting the user. Bug reports and feature requests pass this
+     *        and surface the error, because the user believes they have filed
+     *        something.
+     */
+    _submitFeedback: function(data, onSuccess, onError) {
       // Client-side cooldown (per-type)
       var now = Date.now();
       if (now - this._lastSubmitTime < this._cooldownMs && data.type === this._lastSubmitType) {
@@ -718,12 +762,22 @@
       };
 
       google.script.run
-        .withSuccessHandler(function() {
+        .withSuccessHandler(function(result) {
+          // submitTravelFeedback returns errorResponse() for a handled
+          // failure, which arrives on the SUCCESS channel. Checking only for
+          // a transport error would miss 'Feedback sheet not found'.
+          if (result && result.success === false) {
+            console.error('Feedback rejected:', result.error);
+            if (onError) onError(result.error);
+            else if (onSuccess) onSuccess();
+            return;
+          }
           if (onSuccess) onSuccess();
         })
         .withFailureHandler(function(err) {
           console.error('Feedback submit error:', err);
-          if (onSuccess) onSuccess(); // Don't block UX on failure
+          if (onError) onError(err && err.message);
+          else if (onSuccess) onSuccess(); // thumbs/NPS: don't block UX
         })
         .submitTravelFeedback(payload);
     }

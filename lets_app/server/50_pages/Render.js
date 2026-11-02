@@ -331,7 +331,7 @@ function serveReviewerDashboardPage(e) {
   return template
     .evaluate()
     .setFaviconUrl('https://drive.google.com/uc?id=' + TRIP_FAVICON_ID + '&export=download&format=png')
-    .setTitle(getAppName() + ' - Travel Insights')
+    .setTitle(getAppName() + ' - My Review Queue')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 

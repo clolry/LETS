@@ -399,7 +399,14 @@ window.TravelUtils = (function() {
       fo: b.foLabel || 'ASD Travel & Events',
       // Not configurable: FAS is the Federal Acquisition Service, a fixed
       // external body, not this workgroup's own naming.
-      fas: 'FAS'
+      fas: 'FAS',
+
+      // Not review stages, but carried here because every caller that needs
+      // them already calls stageLabels(). The admin Users page said "Search
+      // AAS staff" and "outside AAS staffing data" — @clolry: "I wanted it to
+      // say ASD not AAS." Those strings need the ORG, not a stage.
+      orgShort: b.orgShort || 'ASD',
+      appName: b.appName || 'LETS'
     };
   }
 

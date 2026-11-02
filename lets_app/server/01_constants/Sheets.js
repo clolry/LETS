@@ -58,6 +58,12 @@ const SHEET_NAMES = {
   // docs/GAP_REGISTER.md G-008.
   ACCESS_LOG:         'Access_Log',
 
+  // User-submitted bug reports, feature requests and NPS. Declared in
+  // SHEET_NAMES since the inherited code, but it had NO SCHEMA — so
+  // setupTravelDatabase never created it and every submission failed. See
+  // the Feedback schema below.
+  FEEDBACK:           'Feedback',
+
   // Learned per-traveler airport preferences. See 30_services/AirportPrefs.js.
   TRAVELER_AIRPORT_PREFS: 'Traveler_Airport_Prefs'
 };
@@ -468,6 +474,40 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Business_Fare',             // 0 = NOT AWARDED on this route, not free
     'Effective_Date',
     'Expiration_Date'
+  ],
+
+  // ==========================================================================
+  // USER FEEDBACK
+  // ==========================================================================
+  //
+  // Feedback was in SHEET_NAMES but had NO SCHEMA, so setupTravelDatabase
+  // never created the tab. submitTravelFeedback returned 'Feedback sheet not
+  // found' and the client's withFailureHandler called onSuccess anyway — so
+  // every bug report and feature request silently went nowhere while telling
+  // the user it had been sent.
+  //
+  // Column order matches the row built in 30_services/Feedback.js:52. Writes
+  // are positional (docs/DATA_DICTIONARY.md §3.9), so these must stay in
+  // step.
+  Feedback: [
+    'Feedback_ID',
+    'Timestamp',
+    'User_Email',
+    'User_Name',
+    // Feedback_Type, NOT 'Type'. getRecentFeedback and checkNpsEligibility
+    // resolve this column BY HEADER NAME (Feedback.js:146, :276). With the
+    // wrong name both silently degrade: checkNpsEligibility returns
+    // eligible:true for everyone, so the NPS prompt reappears forever.
+    // Values include 'nps_dismiss', written by dismissNpsPrompt.
+    'Feedback_Type',
+    'Context_Page',
+    'Context_Action',
+    'Request_ID',
+    'NPS_Score',
+    'Comment',
+    'Category',
+    'Browser_Info',
+    'Page_URL'
   ],
 
   // One row per sync attempt. Mirrors DoD_Sync_Log so all three external-data

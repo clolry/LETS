@@ -3088,8 +3088,15 @@
           this._showToast('Error', (result && result.error) || 'Failed to generate report', 'error');
           return;
         }
-        if (result.data && result.data.spreadsheetUrl) window.open(result.data.spreadsheetUrl, '_blank');
-        this._showToast('Success', 'Report exported to Google Sheets', 'success');
+        // A URL is the whole point of the export; without one the user has
+        // nothing, so say so rather than claiming success.
+        if (result.data && result.data.spreadsheetUrl) {
+          this._showExportToast(result.data.spreadsheetUrl,
+            (result.data.reportName || 'Report') + ' exported —');
+        } else {
+          this._showToast('Exported', 'Report generated, but no link was returned. ' +
+            'Check your Google Drive.', 'warning');
+        }
       } catch (error) {
         console.error('Error exporting to Sheets:', error);
         this._showToast('Error', error.message || 'Failed to export report', 'error');
@@ -3582,8 +3589,12 @@
           return;
         }
 
-        if (result.data && result.data.spreadsheetUrl) window.open(result.data.spreadsheetUrl, '_blank');
-        this._showToast('Success', 'Report exported to Google Sheets', 'success');
+        if (result.data && result.data.spreadsheetUrl) {
+          this._showExportToast(result.data.spreadsheetUrl, 'Report exported —');
+        } else {
+          this._showToast('Exported', 'Report generated, but no link was returned. ' +
+            'Check your Google Drive.', 'warning');
+        }
       } catch (error) {
         console.error('Error exporting:', error);
         this._showToast('Error', error.message || 'Failed to export', 'error');
@@ -3941,6 +3952,66 @@
      * Show a toast notification using travel-toast pattern from base styles
      * Creates a DOM element, auto-removes after 4s
      */
+    /**
+     * Persistent toast carrying a CLICKABLE link to an exported Sheet.
+     *
+     * WHY NOT window.open
+     * -------------------
+     * @clolry: "I tried running a monthly summary report and while it seemed
+     * to be working it didn't give any sort of confirmation or pop up the
+     * exported sheet."
+     *
+     * The export did work and the server did return spreadsheetUrl. But the
+     * call is awaited, so by the time window.open runs the user's click
+     * gesture has expired — and the whole app is inside Apps Script's
+     * sandboxed iframe, where a gestureless popup is blocked silently. No
+     * error, no tab.
+     *
+     * An anchor the user clicks themselves carries its own gesture, so it
+     * cannot be blocked. It also survives the 4-second auto-dismiss, since
+     * losing the only reference to a generated Sheet is worse than a toast
+     * that lingers.
+     *
+     * window.open is still ATTEMPTED first — when it is allowed, the tab
+     * opening immediately is the nicer outcome.
+     *
+     * @param {string} url spreadsheet URL from the server
+     * @param {string} [label] what was exported, for the toast text
+     */
+    _showExportToast(url, label) {
+      document.querySelectorAll('.travel-toast').forEach(function (t) { t.remove(); });
+
+      var opened = null;
+      try {
+        opened = window.open(url, '_blank');
+      } catch (e) {
+        opened = null;
+      }
+
+      var toast = document.createElement('div');
+      toast.className = 'travel-toast travel-toast--success travel-toast--persistent';
+
+      var msg = opened
+        ? 'opened in a new tab.'
+        : 'ready — your browser blocked the new tab, so open it here:';
+
+      toast.innerHTML =
+        '<i aria-hidden="true" class="fas fa-check-circle"></i>' +
+        '<span><strong>' + this._escapeHtml(label || 'Report') + '</strong> ' + msg +
+        ' <a href="' + this._escapeHtml(url) + '" target="_blank" rel="noopener" ' +
+        'class="travel-toast__link">Open Google Sheet</a></span>' +
+        '<button type="button" class="travel-toast__close" aria-label="Dismiss">&times;</button>';
+
+      toast.querySelector('.travel-toast__close').addEventListener('click', function () {
+        toast.classList.remove('show');
+        setTimeout(function () { toast.remove(); }, 300);
+      });
+
+      var container = document.getElementById('adminToastContainer');
+      (container || document.body).appendChild(toast);
+      requestAnimationFrame(function () { toast.classList.add('show'); });
+    },
+
     _showToast(title, message, type) {
       type = type || 'info';
 
