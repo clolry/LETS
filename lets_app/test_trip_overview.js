@@ -84,7 +84,11 @@ console.log('1. schema has somewhere to put them');
   const RECON_BLOCK = ['Gogov_Request_ID','Gogov_Report_Name','Actual_Total',
     'Actual_Source','Actual_Posted_At','Actual_Posted_By','Reconciliation_Status',
     'Reconciliation_Notes','Match_Method','Match_Confirmed_By',
-    'Expense_Report_Name','Expense_Report_End_Date'];
+    'Expense_Report_Name','Expense_Report_End_Date',
+    // The event catalogue link, appended after the reconciliation block for
+    // the same positional reason: the eighteen positional readers index from
+    // the left, so appending is invisible to them.
+    'Event_ID','Event_Proposal_ID'];
   const rpos = RECON_BLOCK.map(c=>S.Requests.indexOf(c));
   ok('every reconciliation column exists', rpos.every(p=>p>-1),
      RECON_BLOCK.filter((c,i)=>rpos[i]===-1));

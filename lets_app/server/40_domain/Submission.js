@@ -466,7 +466,17 @@ function submitTravelRequestV2(formData) {
       '',                                                          // Match_Method
       '',                                                          // Match_Confirmed_By
       '',                                                          // Expense_Report_Name
-      ''                                                           // Expense_Report_End_Date
+      '',                                                          // Expense_Report_End_Date
+
+      // Event catalogue link. Set when the traveller selected a catalogued
+      // event, which pre-fills dates, location and purpose; blank for ad-hoc
+      // travel, which is most of it.
+      //
+      // Event_Proposal_ID is set instead when the traveller chose "Other" and
+      // described an event that does not exist yet — the request is
+      // submittable and a coordinator links it afterwards.
+      formData.eventId || '',                                      // Event_ID
+      formData.eventProposalId || ''                               // Event_Proposal_ID
     ];
 
     // Write request row

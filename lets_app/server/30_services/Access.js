@@ -1135,8 +1135,51 @@ function _isBuLeadByTitle(email) {
  */
 function getReviewerContext(email, viewAs, sharedDb) {
   var resolvedEmail = email || (Session.getActiveUser().getEmail() || '');
+
+  // ACT-AS DELEGATION.
+  //
+  // @clolry: "when a user delegates access, the other logs in and then can
+  // choose to emulate that user's access and approvals (of course they're
+  // logged as themselves but are given the rights to view/edit as the other
+  // person would)."
+  //
+  // Resolved FIRST, so everything below computes the PRINCIPAL's context —
+  // their role, their scope, their queue. The delegate's own identity stays
+  // on the context as actorEmail, so every write can stamp both and the log
+  // never claims the principal did something their delegate did.
+  //
+  // CHECKED AT EVERY CALL rather than trusted from a session: a delegation
+  // can be revoked while somebody is sitting on a page with the switch on.
+  var _actorEmail = resolvedEmail;
+  var _actingDelegation = null;
+  if (viewAs && viewAs.actAs && typeof Delegation !== 'undefined') {
+    try {
+      var _chk = Delegation.canActAs(resolvedEmail, viewAs.actAs);
+      if (_chk.allowed) {
+        _actingDelegation = _chk.delegation;
+        resolvedEmail = _chk.delegation.principalEmail;
+      } else {
+        // Logged rather than silently ignored. Falling back to the delegate's
+        // own context would show them their own empty queue, which looks like
+        // a bug rather than a refusal.
+        console.warn('getReviewerContext: act-as refused for ' + _actorEmail +
+                     ' as ' + viewAs.actAs + ': ' + _chk.reason);
+      }
+    } catch (e) {
+      console.error('getReviewerContext: delegation check failed: ' + e.message);
+    }
+  }
+
   var ctx = {
+    // The identity whose AUTHORITY is in use. Role and scope resolve against
+    // this.
     email: resolvedEmail,
+    // The human at the keyboard. Equal to email unless acting as somebody
+    // else.
+    actorEmail: _actorEmail,
+    actingAs: _actingDelegation ? _actingDelegation.principalEmail : '',
+    actingAsName: _actingDelegation ? _actingDelegation.principalName : '',
+    delegationId: _actingDelegation ? _actingDelegation.delegationId : '',
     role: 'none',
     scope: { type: 'none', codes: [], names: [] },
     label: '',

@@ -240,6 +240,55 @@ console.log('\n3. field reduction for callers who are entitled but not everythin
 }
 
 // ---------------------------------------------------------------------------
+console.log('\n3b. a delegate can read what their principal can');
+{
+  // Without this a delegate could APPROVE a request they cannot OPEN: the
+  // action path resolves delegation, but if this read path did not, the
+  // review page would refuse to load and the button would never be reachable.
+  const withDelegation = (principal, delegateEmail) => {
+    const t = load({ email: delegateEmail });
+    t.run(`Delegation = { availableTo: function () { return [{
+      delegationId: 'del_1', principalEmail: ${JSON.stringify(principal)},
+      principalName: 'The Principal' }]; } };`);
+    return t.run('requestReadAccess(' + JSON.stringify(REQ) + ',' +
+                 JSON.stringify(TRAV) + ',' + JSON.stringify(LOG) + ')');
+  };
+
+  const forCurrent = withDelegation('rev@gsa.gov', 'cover@gsa.gov');
+  ok('a delegate for the current reviewer may read',
+     forCurrent.allowed && forCurrent.basis === 'delegate', forCurrent);
+  ok('a delegate for a named reviewer may read',
+     withDelegation('sd@gsa.gov', 'cover@gsa.gov').allowed);
+  ok('a delegate for the submitter may read',
+     withDelegation('sub@gsa.gov', 'cover@gsa.gov').allowed);
+  // A principal who already acted may need to justify it; so may their cover.
+  ok('a delegate for a PRIOR reviewer may read',
+     withDelegation('prior@gsa.gov', 'cover@gsa.gov').allowed);
+
+  // THE IMPORTANT NEGATIVE. Holding a delegation from somebody unrelated to
+  // this request grants nothing.
+  ok('a delegation from an unrelated person grants nothing',
+     !withDelegation('stranger@gsa.gov', 'cover@gsa.gov').allowed);
+
+  // A delegate stands in for the current reviewer, so they need the full
+  // traveller detail — redacting it would mean approving blind.
+  const t = load({ email: 'cover@gsa.gov' });
+  const full = t.run('sanitizeTravelersForCaller(' + JSON.stringify(TRAV) +
+                     ",'delegate','cover@gsa.gov')");
+  ok('a delegate sees full traveller detail',
+     full[0].hasSecurityClearance === true && full[0].normalCommuteDistance === 12,
+     'they must be able to check what the decision depends on');
+
+  // A failing delegation lookup must not grant access.
+  const broken = load({ email: 'cover@gsa.gov' });
+  broken.run('Delegation = { availableTo: function () { throw new Error("down"); } };');
+  const bd = broken.run('requestReadAccess(' + JSON.stringify(REQ) + ',' +
+                        JSON.stringify(TRAV) + ',' + JSON.stringify(LOG) + ')');
+  ok('a failing delegation lookup denies', !bd.allowed, bd);
+  ok('and is logged',
+     broken.logs.some(l => /delegation check failed/.test(l)), broken.logs);
+}
+
 console.log('\n4. failures DENY, they do not degrade');
 {
   // The HC directory could safely fall back to a narrower tier, because what
@@ -432,9 +481,13 @@ console.log('\n7. negative controls (the suite must be able to fail)');
   // point of use inside a closure that was never reached for that basis. A
   // control that does not provoke the behaviour proves nothing, so this one
   // targets the branch directly.
-  const noRedact = src.replace(
-    "  if (basis === 'admin' || basis === 'current-reviewer') return travelers || [];",
-    "  return travelers || [];");
+  // Anchored on the line that OPENS the branch, which survived the delegate
+  // being added to it. The previous anchor was the whole single-line
+  // condition, and adding 'delegate' reformatted it across three lines — so
+  // the replace silently matched nothing and the control stopped controlling.
+  const ANCHOR2 = "  if (basis === 'admin' || basis === 'current-reviewer' || basis === 'delegate') {";
+  ok('the reduction-branch anchor is present', src.indexOf(ANCHOR2) > -1);
+  const noRedact = src.replace(ANCHOR2, "  if (true) {");
   ok('negative control patched the reduction branch', noRedact !== src);
   {
     const t = load({ email: 'sd@gsa.gov' });

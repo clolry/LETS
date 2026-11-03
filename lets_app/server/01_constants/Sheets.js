@@ -72,6 +72,19 @@ const SHEET_NAMES = {
   // baselines in BudgetConfig.js, which needed a code deploy to change.
   BUDGET_ALLOCATIONS: 'Budget_Allocations',
 
+  // The event CATALOGUE: one row per event occurrence a traveller can pick
+  // from. Distinct from Historical_Events, which records what already
+  // happened — see the schema comment.
+  EVENTS:             'Events',
+
+  // Traveller-proposed events awaiting a coordinator. @clolry: "We need a way
+  // for a traveler to define an 'other' and then let the back-end coordinator
+  // add that event."
+  EVENT_PROPOSALS:    'Event_Proposals',
+
+  // Reviewer delegations: who may act on whose behalf while they are out.
+  REVIEW_DELEGATIONS: 'Review_Delegations',
+
   // One row per imported Go.gov expense report, matched or not. Separate from
   // Requests because an expense report that matches NOTHING is still real
   // money GSA paid — see the schema comment.
@@ -208,7 +221,27 @@ const TRAVEL_SHEET_SCHEMAS = {
                               // able to tell them apart
     'Match_Confirmed_By',
     'Expense_Report_Name',
-    'Expense_Report_End_Date'
+    'Expense_Report_End_Date',
+
+    // ======================================================================
+    // EVENT CATALOGUE LINK — appended, same positional reasoning as above
+    // ======================================================================
+    //
+    // Set when the traveller picked an event from the catalogue, which
+    // pre-fills dates, location and purpose. Blank for ad-hoc travel, which
+    // is most of it.
+    //
+    // Event_Proposal_ID is set instead when the traveller chose "Other" and
+    // described an event that does not exist yet. The request is then
+    // SUBMITTABLE but unlinked, and a coordinator resolves the proposal
+    // later — @clolry: the coordinator "add[s] that event and then
+    // associate[s] the request with that new event."
+    //
+    // Blocking submission until an event exists would be the obvious
+    // alternative and would be wrong: a traveller should not wait on a
+    // coordinator to file a request with a deadline.
+    'Event_ID',
+    'Event_Proposal_ID'
   ],
 
   // Destination/leg info - one row per leg
@@ -574,6 +607,171 @@ const TRAVEL_SHEET_SCHEMAS = {
   ],
 
   // ==========================================================================
+  // REVIEWER DELEGATION
+  // ==========================================================================
+  //
+  // @clolry: "In go.gov when a user delegates access, the other logs in and
+  // then can choose to emulate that user's access and approvals (of course
+  // they're logged as themselves but are given the rights to view/edit as the
+  // other person would)."
+  //
+  // That last clause is the whole design. A delegate ACTS AS THEMSELVES with
+  // somebody else's authority — they do not become that person.
+  //
+  // WHY THIS IS NOT A ROLE ROW
+  // --------------------------
+  // The obvious implementation is to grant the delegate the principal's role
+  // in Travel_User_Roles. That would work and would be wrong in three ways:
+  //
+  //   1. It is indistinguishable from a real grant afterwards. Six months on,
+  //      nobody can tell whether Bob was a BU reviewer or was covering for
+  //      Alice for a fortnight.
+  //   2. It has no end date. A role row granted for two weeks of leave stays
+  //      granted until someone remembers to revoke it.
+  //   3. The approval log would record Bob approving under his own authority,
+  //      losing the fact that the authority was Alice's.
+  //
+  // So a delegation is its own record with its own lifetime, and every action
+  // taken under it is stamped with BOTH identities.
+  //
+  // WHO MAY CREATE ONE
+  // ------------------
+  // The principal, for their own authority — a reviewer going on leave should
+  // not need an administrator. Or an admin, because somebody has to be able
+  // to delegate on behalf of a person who left abruptly.
+  //
+  // A delegate CANNOT create a delegation, including re-delegating what they
+  // hold. Otherwise authority spreads transitively and the audit trail
+  // becomes a chain nobody can follow.
+  Review_Delegations: [
+    'Delegation_ID',          // PK
+    'Principal_Email',        // whose authority is being lent
+    'Principal_Name',
+    'Delegate_Email',         // who may exercise it
+    'Delegate_Name',
+    'Scope',                  // 'all' | a role type, when lending only part
+    'Start_Date',             // inclusive
+    'End_Date',               // inclusive. REQUIRED — see below
+    'Reason',                 // required. 'Annual leave', 'Detail to FAS'
+    'Status',                 // ACTIVE | REVOKED | EXPIRED
+    'Created_By',             // the principal, or an admin acting for them
+    'Created_At',
+    'Revoked_By',
+    'Revoked_At',
+    'Revoke_Reason'
+    // No Updated_By/Updated_At. A delegation is created, then revoked — it is
+    // never edited. Changing the dates or the delegate on an existing row
+    // would rewrite history that approvals already reference.
+  ],
+
+  // ==========================================================================
+  // THE EVENT CATALOGUE
+  // ==========================================================================
+  //
+  // One row per event OCCURRENCE a traveller can select when raising a
+  // request. @clolry: "perhaps we build a way for the admin to define events
+  // on the back end first and then people select the event from a list - it
+  // could pre-fill dates, location, etc."
+  //
+  // WHY THIS IS NOT Historical_Events
+  // ---------------------------------
+  // Historical_Events records what ALREADY HAPPENED — attendance counts for
+  // budget planning, with no stable key: its PK is evt_<slug>_<YYYY-MM> and
+  // events are grouped by name after the fact.
+  //
+  // This is FORWARD-LOOKING and needs a stable identity, because a request
+  // and a set-aside both point at it. Event_ID is that identity. Renaming an
+  // event must not orphan the requests that selected it, which name-based
+  // grouping cannot promise.
+  //
+  // The two are linked by Historical_Event_Name so the planning view can show
+  // "we sent 25 last year" against a catalogue entry.
+  //
+  // WHY ONE ROW PER OCCURRENCE, NOT PER EVENT
+  // -----------------------------------------
+  // "NCMA World Congress" is a series; "NCMA World Congress, July 2027" is
+  // the thing a traveller attends and a DAC reserves money for. A series-level
+  // row would have to carry a list of dates, and every consumer would have to
+  // pick the right one. Series_Key groups the occurrences instead.
+  Events: [
+    'Event_ID',               // PK. evt_<slug>_<YYYYMM>_<seq>
+    'Series_Key',             // stable slug grouping occurrences of one event
+    'Event_Name',
+    'Event_Month',            // YYYY-MM, for grouping and set-aside matching
+    'Start_Date',
+    'End_Date',
+    'Fiscal_Year',            // Oct-Sep. The year whose budget it consumes
+    'Location_City',
+    'Location_State',
+    'Location_Venue',
+    'Is_Virtual',
+    'Is_Local',               // no lodging/airfare expected
+    'Default_Purpose',        // pre-fills the request's Travel_Purpose
+    'Registration_Cost',      // per attendee, if known
+    'Registration_Waived_For', // e.g. 'speakers'. See the waiver note below
+    'Meals_Provided',         // JSON or prose. Affects the M&IE deduction
+    'Requires_Special_Form',  // e.g. a speaking-engagement form
+    'Special_Form_Notes',
+    'Sponsor_Org',            // who runs it, for the FAS tracker
+    'Expected_Attendees',
+    'Status',                 // PROPOSED | OPEN | CLOSED | CANCELLED
+    'Historical_Event_Name',  // links to Historical_Events for prior-year data
+    'Proposed_By',            // set when promoted from a traveller proposal
+    'Proposal_ID',
+    'Notes',
+    'Is_Active',
+    'Created_By',
+    'Created_At',
+    'Updated_By',
+    'Updated_At'
+  ],
+
+  // ==========================================================================
+  // TRAVELLER-PROPOSED EVENTS
+  // ==========================================================================
+  //
+  // @clolry: "We need a way for a traveler to define an 'other' and then let
+  // the back-end coordinator add that event and then associate the request
+  // with that new event (and then allow future travelers to select that
+  // event)."
+  //
+  // WHY A SEPARATE TAB RATHER THAN A 'PROPOSED' STATUS ON Events
+  // -----------------------------------------------------------
+  // Events has a Status column including PROPOSED, so this looks redundant.
+  // It is not, for one reason: a traveller must not be able to write to the
+  // catalogue that every other traveller picks from.
+  //
+  // If proposals landed in Events as PROPOSED rows, every list query would
+  // have to remember to filter them out, and one forgotten filter would show
+  // unvetted traveller text — including typos and duplicates — in the picker.
+  // A separate tab means the picker CANNOT see a proposal, rather than
+  // relying on it being filtered.
+  //
+  // A proposal is promoted by a coordinator, which creates the Events row and
+  // links the originating request to it.
+  Event_Proposals: [
+    'Proposal_ID',            // PK
+    'Proposed_Event_Name',    // traveller's free text, verbatim
+    'Proposed_Start_Date',
+    'Proposed_End_Date',
+    'Proposed_Location',      // free text; a traveller may not know the venue
+    'Proposed_Purpose',
+    'Notes',                  // the traveller's own justification
+    'Request_ID',             // the request that prompted it. Linked to the
+                              // created event on promotion
+    'Proposed_By',
+    'Proposed_At',
+    'Status',                 // PENDING | PROMOTED | MERGED | REJECTED
+    // Set on promotion. MERGED means the coordinator matched it to an event
+    // that already existed — the common case for a duplicate proposal, and a
+    // different outcome from PROMOTED which creates a new one.
+    'Resolved_Event_ID',
+    'Resolution_Notes',
+    'Resolved_By',
+    'Resolved_At'
+  ],
+
+  // ==========================================================================
   // GO.GOV EXPENSE IMPORTS
   // ==========================================================================
   //
@@ -705,7 +903,18 @@ const TRAVEL_SHEET_SCHEMAS = {
   // event-specific, DAC-owned, and expire.
   Event_Set_Asides: [
     'Set_Aside_ID',           // PK
-    'Event_Name',             // free text; matched to Historical_Events by name
+    // EITHER a catalogue event, or a free-text name.
+    //
+    // Event_ID is the better path: it pins the reservation to a real
+    // occurrence with known dates, and a request that selects that event
+    // draws down against it automatically.
+    //
+    // Event_Name survives because a DAC often knows they want to reserve for
+    // a conference before anyone has catalogued it. Requiring a catalogue
+    // entry first would mean the reservation could not be made at the moment
+    // the DAC is doing their annual planning, which is the moment it matters.
+    'Event_ID',
+    'Event_Name',             // free text when Event_ID is blank
     'Event_Month',            // YYYY-MM the money is being reserved for
     'Fiscal_Year',
     'Org_Code',               // the DAC reserving it: FCA | FCB | FCC | FC

@@ -38,7 +38,7 @@
  * @returns {Object} successResponse({ requestId, action, newStatus, message }) or errorResponse(msg)
  * @client
  */
-function submitReviewAction(requestId, action, comments, sectionComments) {
+function submitReviewAction(requestId, action, comments, sectionComments, actAs) {
   const _timer = 'submitReviewAction(' + requestId + ', ' + action + ')';
   console.time(_timer);
   try {
@@ -47,8 +47,33 @@ function submitReviewAction(requestId, action, comments, sectionComments) {
     }
 
     const db = new TravelDB();
-    const currentUser = Session.getActiveUser().getEmail();
-    const currentUserName = formatUserName(currentUser);
+
+    // THE HUMAN AT THE KEYBOARD. Never overwritten, whatever delegation is in
+    // play. @clolry: a delegate is "of course logged as themselves but are
+    // given the rights to view/edit as the other person would."
+    const actorEmail = Session.getActiveUser().getEmail();
+    const actorName = formatUserName(actorEmail);
+
+    // DELEGATED AUTHORITY, if the caller asked to act as somebody.
+    //
+    // Re-checked HERE rather than trusted from the page that rendered the
+    // button: a delegation can be revoked between the page loading and the
+    // approval being pressed, and this is the moment that matters.
+    let delegation = null;
+    if (actAs && typeof Delegation !== 'undefined') {
+      const chk = Delegation.canActAs(actorEmail, actAs);
+      if (!chk.allowed) {
+        // Refused outright. Falling back to the actor's own authority would
+        // silently approve something under the wrong authority.
+        throw new Error('Cannot act as ' + actAs + ': ' + chk.reason);
+      }
+      delegation = chk.delegation;
+    }
+
+    // The identity whose AUTHORITY is being exercised. Authorization checks
+    // below compare against this; the log records both.
+    const currentUser = delegation ? delegation.principalEmail : actorEmail;
+    const currentUserName = delegation ? delegation.principalName : actorName;
     const now = new Date();
 
     // Load current request to verify permissions and get current status
@@ -151,17 +176,34 @@ function submitReviewAction(requestId, action, comments, sectionComments) {
     }
 
     const logId = generateLogId();
+
+    // BOTH IDENTITIES IN THE LOG.
+    //
+    // Action_By_Email records the HUMAN who pressed the button — not the
+    // principal. The alternative was tempting and wrong: logging the
+    // principal would make the record read as though Alice approved her own
+    // coverage while she was on leave, and the one question this log exists
+    // to answer is who actually did it.
+    //
+    // Whose authority was used goes in the comment, so it survives in the
+    // text a reviewer reads rather than only in a column.
+    const delegationNote = delegation
+      ? '[Acting for ' + delegation.principalName + ' (' +
+        delegation.principalEmail + ') under delegation ' +
+        delegation.delegationId + '] '
+      : '';
+
     const logRow = [
       logId,                                    // Log_ID
       requestId,                                // Request_ID
       actionConfig.actionName,                  // Action
-      currentUserName,                          // Action_By_Name
-      currentUser,                              // Action_By_Email
-      actionByRole,                             // Action_By_Role
+      actorName,                                // Action_By_Name — the human
+      actorEmail,                               // Action_By_Email — the human
+      actionByRole + (delegation ? ' (delegated)' : ''),  // Action_By_Role
       now,                                      // Timestamp
       currentStatus,                            // Previous_Status
       effectiveNewStatus,                       // New_Status (may differ for client-paid OSO approve)
-      comments || '',                           // Comments
+      delegationNote + (comments || ''),        // Comments
       sectionComments ? JSON.stringify(sectionComments) : '', // Section_Comments
       '',                                       // Snapshot_Data (only on resubmit)
       currentVersion,                           // Version_Before

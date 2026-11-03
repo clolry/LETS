@@ -147,6 +147,40 @@ function requestReadAccess(request, travelers, approvalLog, email) {
     return { allowed: true, basis: 'prior-reviewer', depth: 'full', reason: '' };
   }
 
+  // A DELEGATE acting for someone who may read it.
+  //
+  // Without this a delegate could approve a request they cannot open: the
+  // action path resolves delegation but this read path would not, so the
+  // review page would refuse to load and the approve button would never be
+  // reachable.
+  //
+  // Checked by relationship rather than by trusting an act-as parameter —
+  // this function has no session, so it asks "does this user hold a
+  // delegation from anybody named on this request".
+  try {
+    if (typeof Delegation !== 'undefined') {
+      var held = Delegation.availableTo(who);
+      for (var h = 0; h < held.length; h++) {
+        var principal = held[h].principalEmail;
+        if (principal === lower(req.currentReviewerEmail) ||
+            principal === lower(req.sectorDirectorEmail) ||
+            principal === lower(req.buReviewerEmail) ||
+            principal === lower(req.submitterEmail)) {
+          return { allowed: true, basis: 'delegate', depth: 'full', reason: '' };
+        }
+        var principalActed = (approvalLog || []).some(function (entry) {
+          return lower(entry.actionByEmail) === principal;
+        });
+        if (principalActed) {
+          return { allowed: true, basis: 'delegate', depth: 'full', reason: '' };
+        }
+      }
+    }
+  } catch (e) {
+    // Denies by falling through, like the scope check below.
+    console.error('requestReadAccess: delegation check failed: ' + e.message);
+  }
+
   // A SCOPED REVIEWER — within their BU or sector. Reuses getReviewerContext
   // so the scope rules live in one place; a second implementation here would
   // drift from the dashboards.
@@ -228,7 +262,14 @@ function sanitizeTravelersForCaller(travelers, basis, email) {
   var who = String(email || '').toLowerCase();
 
   // The people who need the full picture to do their job.
-  if (basis === 'admin' || basis === 'current-reviewer') return travelers || [];
+  //
+  // 'delegate' is included because a delegate stands in for the current
+  // reviewer — redacting their view would mean they could not check the
+  // clearance or commute figures the decision depends on, and the approval
+  // would be made blind.
+  if (basis === 'admin' || basis === 'current-reviewer' || basis === 'delegate') {
+    return travelers || [];
+  }
 
   return (travelers || []).map(function (t) {
     // A traveller always sees their OWN row in full. It is their clearance,
