@@ -1,0 +1,745 @@
+<!--
+  travelEventsController.html
+
+  The admin event catalogue, the DAC set-aside editor, and the coordinator's
+  proposal queue.
+
+  @clolry asked for three things that are one screen:
+    "perhaps we build a way for the admin to define events on the back end
+     first and then people select the event from a list"
+    "we need a way to setaside budget for those events so 'routine' travel
+     doesn't eat up all the funds first"
+    "a way for a traveler to define an 'other' and then let the back-end
+     coordinator add that event and then associate the request with that new
+     event (and then allow future travelers to select that event)"
+
+  They share one screen because they are one workflow: a proposal becomes an
+  event, an event gets a reservation, and the reservation draws down from
+  requests that selected the event. Splitting them across three tabs would
+  mean a coordinator promoting a proposal then hunting for where to reserve
+  against it.
+
+  THE PROPOSAL QUEUE IS FIRST
+  ---------------------------
+  Proposals are time-sensitive — a traveller is waiting, and their request is
+  unlinked until somebody acts. The catalogue and reservations are not. So the
+  queue is at the top and carries a count, and the rest is below it.
+-->
+
+<script>
+(function () {
+  'use strict';
+
+  window.TravelEvents = window.TravelEvents || {};
+
+  var state = {
+    events: [],
+    setAsides: [],
+    proposals: [],
+    totals: null,
+    byOffice: {},
+    loaded: false,
+    fiscalYear: ''
+  };
+
+  function esc(v) {
+    return String(v === null || v === undefined ? '' : v)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function el(id) { return document.getElementById(id); }
+
+  function money(v) {
+    if (v === null || v === undefined || isNaN(v)) return '\u2014';
+    return '$' + Math.round(v).toLocaleString();
+  }
+
+  // ==========================================================================
+  // LOAD
+  // ==========================================================================
+
+  function load() {
+    return serverCall('getTravelEventPlanning', state.fiscalYear)
+      .then(function (res) {
+        if (!res || !res.success) {
+          showError((res && res.error) || 'Could not load event planning.');
+          return;
+        }
+        state.events = res.data.events || [];
+        state.setAsides = res.data.setAsides || [];
+        state.proposals = res.data.proposals || [];
+        state.totals = res.data.totals || null;
+        state.byOffice = res.data.byOffice || {};
+        state.loaded = true;
+        hideError();
+        renderAll();
+      })
+      .catch(function (err) {
+        showError((err && err.message) || 'The server call failed.');
+      });
+  }
+
+  function showError(msg) {
+    var box = el('evError');
+    if (!box) return;
+    box.textContent = msg;
+    box.classList.remove('d-none');
+  }
+
+  function hideError() {
+    var box = el('evError');
+    if (box) box.classList.add('d-none');
+  }
+
+  // ==========================================================================
+  // PROPOSAL QUEUE
+  // ==========================================================================
+
+  /**
+   * Groups pending proposals by normalised name.
+   *
+   * THE WHOLE POINT OF GROUPING. @clolry: "if we get 12 different requests
+   * from people wanting to attend the same event". Twelve separate rows would
+   * invite twelve separate events; one row with twelve requests behind it
+   * invites one event and eleven merges.
+   */
+  function groupProposals() {
+    var groups = {};
+    state.proposals.forEach(function (p) {
+      var key = String(p.proposedEventName || '').toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ').trim();
+      if (!groups[key]) {
+        groups[key] = { name: p.proposedEventName, items: [] };
+      }
+      groups[key].items.push(p);
+    });
+    return Object.keys(groups).map(function (k) { return groups[k]; })
+      .sort(function (a, b) { return b.items.length - a.items.length; });
+  }
+
+  function renderProposals() {
+    var host = el('evProposals');
+    var count = el('evProposalCount');
+    if (!host) return;
+
+    var groups = groupProposals();
+    if (count) {
+      count.textContent = state.proposals.length
+        ? state.proposals.length + ' waiting' : '';
+      count.className = state.proposals.length
+        ? 'ev-count ev-count--open' : 'ev-count';
+    }
+
+    if (!groups.length) {
+      host.innerHTML = '<p class="ev-empty">No proposals waiting. Travellers who ' +
+        'pick &ldquo;Other&rdquo; on a request appear here.</p>';
+      return;
+    }
+
+    host.innerHTML = groups.map(function (g) {
+      var first = g.items[0];
+      var dupes = g.items.length > 1;
+      return '<div class="ev-prop">' +
+        '<div class="ev-prop__head">' +
+          '<strong>' + esc(g.name) + '</strong>' +
+          (dupes ? '<span class="ev-count ev-count--dupe">' + g.items.length +
+                   ' requests</span>' : '') +
+        '</div>' +
+        '<div class="ev-prop__meta">' +
+          esc(first.proposedStartDate || '?') + ' to ' +
+          esc(first.proposedEndDate || '?') +
+          (first.proposedLocation ? ' \u00b7 ' + esc(first.proposedLocation) : '') +
+        '</div>' +
+        // Every proposer and request is named. A coordinator deciding whether
+        // to merge needs to see whose requests are waiting on it.
+        '<div class="ev-prop__who">' +
+          g.items.map(function (p) {
+            return '<span class="ev-chip">' + esc(p.proposedBy) +
+              (p.requestId ? ' \u00b7 ' + esc(p.requestId) : ' \u00b7 no request') +
+              '</span>';
+          }).join('') +
+        '</div>' +
+        (first.notes ? '<div class="ev-prop__notes">' + esc(first.notes) +
+                       '</div>' : '') +
+        '<div class="ev-prop__actions">' +
+          '<button type="button" class="ev-btn ev-btn--primary" ' +
+            'data-ev-promote="' + esc(first.proposalId) + '">' +
+            'Create event' + (dupes ? ' &amp; link all ' + g.items.length : '') +
+          '</button>' +
+          (state.events.length
+            ? '<button type="button" class="ev-btn" data-ev-merge="' +
+              esc(first.proposalId) + '">Merge into existing</button>'
+            : '') +
+          '<button type="button" class="ev-btn ev-btn--danger" ' +
+            'data-ev-reject="' + esc(first.proposalId) + '">Reject</button>' +
+        '</div>' +
+        // Stored so the bulk action can find the rest of the group without
+        // regrouping.
+        '<input type="hidden" data-ev-group="' + esc(first.proposalId) + '" value="' +
+          esc(g.items.map(function (p) { return p.proposalId; }).join(',')) + '">' +
+      '</div>';
+    }).join('');
+  }
+
+  // ==========================================================================
+  // CATALOGUE
+  // ==========================================================================
+
+  function renderEvents() {
+    var host = el('evCatalogue');
+    if (!host) return;
+
+    if (!state.events.length) {
+      host.innerHTML = '<tr><td colspan="7" class="ev-empty">No events yet. ' +
+        'Add one, or promote a traveller proposal above.</td></tr>';
+      return;
+    }
+
+    host.innerHTML = state.events.map(function (e) {
+      // Reservations against this event, so a coordinator can see at a glance
+      // which events DACs have committed money to.
+      var reserved = state.setAsides.filter(function (s) {
+        return s.eventId === e.eventId;
+      });
+      var total = reserved.reduce(function (sum, s) { return sum + s.amount; }, 0);
+
+      var flags = [];
+      if (e.isVirtual) flags.push('virtual');
+      if (e.isLocal) flags.push('local');
+      // Surfaced in the list, not only in the editor: both change what a
+      // traveller may claim, and a coordinator reviewing the catalogue should
+      // see them without opening each row.
+      if (e.registrationWaivedFor) flags.push('waiver: ' + e.registrationWaivedFor);
+      if (e.mealsProvided) flags.push('meals provided');
+      if (e.requiresSpecialForm) flags.push('\u26a0 form required');
+
+      return '<tr>' +
+        '<td><strong>' + esc(e.eventName) + '</strong>' +
+          (flags.length ? '<div class="ev-flags">' + esc(flags.join(' \u00b7 ')) +
+                          '</div>' : '') + '</td>' +
+        '<td>' + esc(e.startDate) + '<br><small>' + esc(e.endDate) + '</small></td>' +
+        '<td>' + esc(e.fiscalYear) + '</td>' +
+        '<td>' + (e.isVirtual ? 'Virtual'
+          : esc(e.locationCity + (e.locationState ? ', ' + e.locationState : ''))) + '</td>' +
+        '<td class="text-end">' + (e.registrationCost ? money(e.registrationCost)
+          : '\u2014') + '</td>' +
+        '<td class="text-end">' + (total ? money(total) +
+          '<div class="ev-flags">' + reserved.length + ' DAC' +
+          (reserved.length === 1 ? '' : 's') + '</div>' : '\u2014') + '</td>' +
+        '<td class="text-end">' +
+          '<button type="button" class="ev-btn" data-ev-edit="' +
+            esc(e.eventId) + '">Edit</button> ' +
+          '<button type="button" class="ev-btn ev-btn--primary" data-ev-reserve="' +
+            esc(e.eventId) + '">Reserve</button>' +
+        '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  // ==========================================================================
+  // SET-ASIDES
+  // ==========================================================================
+
+  function renderSetAsides() {
+    var host = el('evSetAsides');
+    if (!host) return;
+
+    if (!state.setAsides.length) {
+      host.innerHTML = '<tr><td colspan="8" class="ev-empty">No budget reserved ' +
+        'yet. Reserve against an event above so routine travel does not consume ' +
+        'it first.</td></tr>';
+      return;
+    }
+
+    host.innerHTML = state.setAsides.map(function (s) {
+      // Over-commitment is FLAGGED, not clamped. A reservation consumed
+      // beyond its amount is a real condition a DAC needs to see; showing
+      // zero remaining would hide the overrun.
+      var remainCls = s.isOverCommitted ? 'ev-over' : '';
+      var util = s.utilisationPct === null ? '\u2014' : s.utilisationPct + '%';
+      var utilCls = s.utilisationPct === null ? ''
+        : (s.utilisationPct >= 100 ? 'ev-over'
+        : (s.utilisationPct >= 80 ? 'ev-warn' : ''));
+
+      return '<tr>' +
+        '<td><strong>' + esc(s.eventName) + '</strong>' +
+          // A free-text reservation is marked. It still draws down, by name
+          // and month, but less reliably than an Event_ID — so a coordinator
+          // can see which ones to link up.
+          (s.isCatalogued ? ''
+            : '<div class="ev-flags ev-warn">not linked to a catalogue event</div>') +
+          '<div class="ev-flags">' + esc(s.basis) + '</div></td>' +
+        '<td>' + esc(s.eventMonth) + '</td>' +
+        '<td>' + esc(s.officeCode) + '</td>' +
+        '<td class="text-end">' + money(s.amount) + '</td>' +
+        '<td class="text-end">' + money(s.consumed) +
+          (s.linkedRequestIds.length
+            ? '<div class="ev-flags">' + s.linkedRequestIds.length + ' request' +
+              (s.linkedRequestIds.length === 1 ? '' : 's') + '</div>'
+            : '') + '</td>' +
+        '<td class="text-end ' + remainCls + '">' + money(s.remaining) + '</td>' +
+        '<td class="text-end ' + utilCls + '">' + util + '</td>' +
+        '<td class="text-end">' +
+          // Planned versus actual travellers, which is the number a DAC
+          // reacts to: reserved for 10, 14 going.
+          (s.plannedTravelers
+            ? esc(s.actualTravelers + ' / ' + s.plannedTravelers) +
+              (s.travelerVariance > 0
+                ? '<div class="ev-flags ev-over">+' + s.travelerVariance + '</div>'
+                : '')
+            : esc(String(s.actualTravelers))) +
+        '</td>' +
+      '</tr>';
+    }).join('');
+
+    var foot = el('evSetAsideTotals');
+    if (foot && state.totals) {
+      foot.innerHTML = '<strong>' + money(state.totals.reserved) +
+        '</strong> reserved \u00b7 <strong>' + money(state.totals.consumed) +
+        '</strong> committed \u00b7 <strong>' + money(state.totals.remaining) +
+        '</strong> unspent' +
+        (state.totals.overCommittedCount
+          ? ' \u00b7 <span class="ev-over">' + state.totals.overCommittedCount +
+            ' over-committed</span>'
+          : '');
+    }
+  }
+
+  function renderAll() {
+    renderProposals();
+    renderEvents();
+    renderSetAsides();
+  }
+
+  // ==========================================================================
+  // EVENT EDITOR
+  // ==========================================================================
+
+  function openEventEditor(eventId, prefill) {
+    var ev = eventId
+      ? state.events.filter(function (e) { return e.eventId === eventId; })[0]
+      : null;
+    var d = ev || prefill || {};
+
+    el('evFormTitle').textContent = ev ? 'Edit event' : 'New event';
+    el('evFormId').value = ev ? ev.eventId : '';
+    el('evFormProposalId').value = d.proposalId || '';
+    el('evFormName').value = d.eventName || '';
+    el('evFormStart').value = d.startDate || '';
+    el('evFormEnd').value = d.endDate || '';
+    el('evFormCity').value = d.locationCity || '';
+    el('evFormState').value = d.locationState || '';
+    el('evFormVenue').value = d.locationVenue || '';
+    el('evFormVirtual').checked = !!d.isVirtual;
+    el('evFormPurpose').value = d.defaultPurpose || '';
+    el('evFormReg').value = d.registrationCost || '';
+    el('evFormWaiver').value = d.registrationWaivedFor || '';
+    el('evFormMeals').value = d.mealsProvided || '';
+    el('evFormSpecialForm').checked = !!d.requiresSpecialForm;
+    el('evFormFormNotes').value = d.specialFormNotes || '';
+    el('evFormSponsor').value = d.sponsorOrg || '';
+    el('evFormHistorical').value = d.historicalEventName || '';
+    el('evFormNotes').value = d.notes || '';
+    el('evFormProblems').classList.add('d-none');
+
+    // Carried through so promoting a proposal links the originating request.
+    el('evFormGroup').value = d._groupIds || '';
+
+    el('evFormModal').classList.remove('d-none');
+  }
+
+  function saveEvent() {
+    var btn = el('evFormSave');
+    btn.disabled = true;
+    btn.textContent = 'Saving\u2026';
+
+    var payload = {
+      eventId: el('evFormId').value || '',
+      eventName: el('evFormName').value.trim(),
+      startDate: el('evFormStart').value,
+      endDate: el('evFormEnd').value,
+      locationCity: el('evFormCity').value.trim(),
+      locationState: el('evFormState').value.trim(),
+      locationVenue: el('evFormVenue').value.trim(),
+      isVirtual: el('evFormVirtual').checked,
+      defaultPurpose: el('evFormPurpose').value.trim(),
+      registrationCost: el('evFormReg').value,
+      registrationWaivedFor: el('evFormWaiver').value.trim(),
+      mealsProvided: el('evFormMeals').value.trim(),
+      requiresSpecialForm: el('evFormSpecialForm').checked,
+      specialFormNotes: el('evFormFormNotes').value.trim(),
+      sponsorOrg: el('evFormSponsor').value.trim(),
+      historicalEventName: el('evFormHistorical').value.trim(),
+      notes: el('evFormNotes').value.trim()
+    };
+
+    var proposalId = el('evFormProposalId').value;
+    var groupIds = (el('evFormGroup').value || '').split(',').filter(Boolean);
+
+    var done = function () {
+      btn.disabled = false;
+      btn.textContent = 'Save event';
+    };
+
+    // PROMOTING a proposal goes through resolveEventProposal rather than
+    // saveTravelEvent, because that is the call that also links the
+    // originating request. Creating the event directly would leave the
+    // traveller's request unlinked and the reservation would never draw down.
+    var call = proposalId
+      ? serverCall('resolveEventProposal', proposalId,
+          { action: 'PROMOTE', event: payload, notes: 'Created from proposal' })
+      : serverCall('saveTravelEvent', payload);
+
+    call.then(function (res) {
+      if (!res || !res.success) {
+        done();
+        showFormProblems(res && res.problems ? res.problems
+          : [(res && res.error) || 'Could not save.']);
+        return;
+      }
+
+      var newId = (res.data && res.data.eventId) || '';
+
+      // A WARNING WORTH SURFACING. If the event saved but the request could
+      // not be linked, the reservation will not draw down — and that is
+      // invisible unless somebody says so.
+      if (res.data && res.data.requestLinkWarning) {
+        window.alert(res.data.requestLinkWarning);
+      }
+
+      // Merge the rest of the group into the event just created. This is
+      // @clolry's twelve-people case: one event, eleven merges.
+      var others = groupIds.filter(function (id) { return id !== proposalId; });
+      if (!others.length || !newId) {
+        done();
+        el('evFormModal').classList.add('d-none');
+        load();
+        return;
+      }
+
+      Promise.all(others.map(function (id) {
+        return serverCall('resolveEventProposal', id,
+          { action: 'MERGE', eventId: newId,
+            notes: 'Same event as the promoted proposal' })
+          .catch(function (err) {
+            // Reported per proposal rather than aborting the batch: eleven
+            // merges where ten succeed is better than none, and the failures
+            // stay in the queue to retry.
+            console.warn('Could not merge proposal ' + id + ':', err && err.message);
+            return { success: false, error: (err && err.message) || 'failed' };
+          });
+      })).then(function (results) {
+        done();
+        var failed = results.filter(function (r) { return !r || !r.success; });
+        el('evFormModal').classList.add('d-none');
+        if (failed.length) {
+          showError(failed.length + ' of ' + others.length + ' duplicate ' +
+            'proposals could not be merged and remain in the queue.');
+        }
+        load();
+      });
+    }).catch(function (err) {
+      done();
+      showFormProblems([(err && err.message) || 'The server call failed.']);
+    });
+  }
+
+  function showFormProblems(list) {
+    var box = el('evFormProblems');
+    box.innerHTML = '<strong>Not saved.</strong><ul>' +
+      list.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') +
+      '</ul>';
+    box.classList.remove('d-none');
+  }
+
+  // ==========================================================================
+  // SET-ASIDE EDITOR
+  // ==========================================================================
+
+  function openSetAsideEditor(eventId) {
+    var ev = eventId
+      ? state.events.filter(function (e) { return e.eventId === eventId; })[0]
+      : null;
+
+    el('saFormEventId').value = ev ? ev.eventId : '';
+    el('saFormEventName').value = ev ? ev.eventName : '';
+    // A linked reservation takes its month and fiscal year FROM the event, so
+    // these are read-only when linked — a month that disagreed with the event
+    // would break the draw-down match silently.
+    el('saFormEventName').readOnly = !!ev;
+    el('saFormMonth').value = ev ? ev.eventMonth : '';
+    el('saFormMonth').readOnly = !!ev;
+    el('saFormFy').value = ev ? ev.fiscalYear : '';
+    el('saFormFy').readOnly = !!ev;
+    el('saFormOffice').value = '';
+    el('saFormTravelers').value = '';
+    el('saFormAmount').value = '';
+    el('saFormBasis').value = '';
+    el('saFormNotes').value = '';
+    el('saFormProblems').classList.add('d-none');
+
+    el('saFormHint').textContent = ev
+      ? 'Linked to ' + ev.eventName + '. Requests that select this event draw ' +
+        'the reservation down automatically.'
+      : 'Not linked to a catalogue event. The reservation will match requests ' +
+        'by name and month, which is less reliable — catalogue the event if ' +
+        'you can.';
+
+    el('saFormModal').classList.remove('d-none');
+  }
+
+  /**
+   * Suggests an amount from planned travellers.
+   *
+   * ADVISORY ONLY, and it fills the basis text so the reasoning is recorded
+   * rather than lost. The server requires a basis for exactly this reason:
+   * six months on, the row is the only record of how the figure was reached.
+   */
+  function suggestAmount() {
+    var n = parseInt(el('saFormTravelers').value, 10);
+    if (!n || n < 1) return;
+
+    var ev = state.events.filter(function (e) {
+      return e.eventId === el('saFormEventId').value;
+    })[0];
+    var reg = (ev && ev.registrationCost) || 0;
+
+    // $2,400 is a rough per-traveller travel figure, deliberately round so
+    // nobody mistakes it for a calculation. The admin is expected to correct
+    // it — which is why it is a suggestion and not a computed field.
+    var perTraveller = 2400;
+    var amount = n * (perTraveller + reg);
+
+    el('saFormAmount').value = amount;
+    el('saFormBasis').value = n + ' travellers \u00d7 $' +
+      perTraveller.toLocaleString() + ' travel' +
+      (reg ? ' + $' + reg.toLocaleString() + ' registration' : '') +
+      ' (estimate \u2014 adjust as needed)';
+  }
+
+  function saveSetAside() {
+    var btn = el('saFormSave');
+    btn.disabled = true;
+    btn.textContent = 'Saving\u2026';
+
+    serverCall('saveEventSetAside', {
+      eventId: el('saFormEventId').value || '',
+      eventName: el('saFormEventName').value.trim(),
+      eventMonth: el('saFormMonth').value.trim(),
+      fiscalYear: el('saFormFy').value.trim(),
+      officeCode: el('saFormOffice').value,
+      plannedTravelers: el('saFormTravelers').value,
+      amount: el('saFormAmount').value,
+      basis: el('saFormBasis').value.trim(),
+      notes: el('saFormNotes').value.trim()
+    }).then(function (res) {
+      btn.disabled = false;
+      btn.textContent = 'Reserve budget';
+      if (!res || !res.success) {
+        var box = el('saFormProblems');
+        box.innerHTML = '<strong>Not saved.</strong><ul>' +
+          (res && res.problems ? res.problems : [(res && res.error) || 'Failed'])
+            .map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') +
+          '</ul>';
+        box.classList.remove('d-none');
+        return;
+      }
+      el('saFormModal').classList.add('d-none');
+      load();
+    }).catch(function (err) {
+      btn.disabled = false;
+      btn.textContent = 'Reserve budget';
+      showError((err && err.message) || 'The server call failed.');
+    });
+  }
+
+  // ==========================================================================
+  // MERGE PICKER
+  // ==========================================================================
+
+  function openMergePicker(proposalId) {
+    var prop = state.proposals.filter(function (p) {
+      return p.proposalId === proposalId;
+    })[0];
+    if (!prop) return;
+
+    el('mgFormProposalId').value = proposalId;
+    el('mgFormName').textContent = prop.proposedEventName;
+    el('mgFormEvent').innerHTML = '<option value="">Choose an event\u2026</option>' +
+      state.events.map(function (e) {
+        return '<option value="' + esc(e.eventId) + '">' + esc(e.eventName) +
+          ' \u2014 ' + esc(e.startDate) + '</option>';
+      }).join('');
+    el('mgFormNotes').value = '';
+    el('mgFormModal').classList.remove('d-none');
+  }
+
+  function doMerge() {
+    var id = el('mgFormProposalId').value;
+    var eventId = el('mgFormEvent').value;
+    if (!eventId) { window.alert('Choose an event to merge into.'); return; }
+
+    serverCall('resolveEventProposal', id,
+      { action: 'MERGE', eventId: eventId,
+        notes: el('mgFormNotes').value.trim() || 'Duplicate of an existing event' })
+      .then(function (res) {
+        if (!res || !res.success) {
+          showError((res && res.error) || 'Could not merge.');
+          return;
+        }
+        if (res.data && res.data.requestLinkWarning) {
+          window.alert(res.data.requestLinkWarning);
+        }
+        el('mgFormModal').classList.add('d-none');
+        load();
+      })
+      .catch(function (err) {
+        showError((err && err.message) || 'The server call failed.');
+      });
+  }
+
+  function doReject(proposalId) {
+    // A traveller asked for something and is being told no. The server
+    // requires a reason for that; prompting is crude but honest.
+    var reason = window.prompt('Why are you rejecting this event? The ' +
+      'traveller will see this.');
+    if (reason === null) return;
+    if (!reason.trim()) {
+      showError('A reason is required to reject a proposal.');
+      return;
+    }
+    serverCall('resolveEventProposal', proposalId,
+      { action: 'REJECT', notes: reason.trim() })
+      .then(function (res) {
+        if (!res || !res.success) {
+          showError((res && res.error) || 'Could not reject.');
+          return;
+        }
+        load();
+      })
+      .catch(function (err) {
+        showError((err && err.message) || 'The server call failed.');
+      });
+  }
+
+  // ==========================================================================
+  // WIRING
+  // ==========================================================================
+
+  function bind() {
+    // Delegated, because every list is rebuilt on each load.
+    var root = el('eventsView');
+    if (!root) return;
+
+    root.addEventListener('click', function (e) {
+      var t;
+
+      if ((t = e.target.closest('[data-ev-promote]'))) {
+        var pid = t.getAttribute('data-ev-promote');
+        var prop = state.proposals.filter(function (p) {
+          return p.proposalId === pid;
+        })[0];
+        if (!prop) return;
+        var groupInput = root.querySelector('[data-ev-group="' + pid + '"]');
+        openEventEditor('', {
+          eventName: prop.proposedEventName,
+          startDate: prop.proposedStartDate,
+          endDate: prop.proposedEndDate,
+          locationCity: prop.proposedLocation,
+          defaultPurpose: prop.proposedPurpose,
+          notes: prop.notes,
+          proposalId: pid,
+          _groupIds: groupInput ? groupInput.value : pid
+        });
+        return;
+      }
+
+      if ((t = e.target.closest('[data-ev-merge]'))) {
+        openMergePicker(t.getAttribute('data-ev-merge'));
+        return;
+      }
+      if ((t = e.target.closest('[data-ev-reject]'))) {
+        doReject(t.getAttribute('data-ev-reject'));
+        return;
+      }
+      if ((t = e.target.closest('[data-ev-edit]'))) {
+        openEventEditor(t.getAttribute('data-ev-edit'));
+        return;
+      }
+      if ((t = e.target.closest('[data-ev-reserve]'))) {
+        openSetAsideEditor(t.getAttribute('data-ev-reserve'));
+      }
+    });
+
+    var newBtn = el('evNewEvent');
+    if (newBtn) newBtn.addEventListener('click', function () { openEventEditor(''); });
+
+    var newSa = el('evNewSetAside');
+    if (newSa) newSa.addEventListener('click', function () { openSetAsideEditor(''); });
+
+    var refresh = el('evRefresh');
+    if (refresh) refresh.addEventListener('click', load);
+
+    [['evFormSave', saveEvent], ['saFormSave', saveSetAside],
+     ['mgFormSave', doMerge]].forEach(function (pair) {
+      var node = el(pair[0]);
+      if (node) node.addEventListener('click', pair[1]);
+    });
+
+    ['evFormCancel', 'evFormClose'].forEach(function (id) {
+      var node = el(id);
+      if (node) node.addEventListener('click', function () {
+        el('evFormModal').classList.add('d-none');
+      });
+    });
+    ['saFormCancel', 'saFormClose'].forEach(function (id) {
+      var node = el(id);
+      if (node) node.addEventListener('click', function () {
+        el('saFormModal').classList.add('d-none');
+      });
+    });
+    ['mgFormCancel', 'mgFormClose'].forEach(function (id) {
+      var node = el(id);
+      if (node) node.addEventListener('click', function () {
+        el('mgFormModal').classList.add('d-none');
+      });
+    });
+
+    var sug = el('saFormSuggest');
+    if (sug) sug.addEventListener('click', suggestAmount);
+
+    // A virtual event must not carry a city — the server rejects that, and
+    // the per-diem logic would otherwise read a location for an event nobody
+    // travelled to.
+    var virt = el('evFormVirtual');
+    if (virt) {
+      virt.addEventListener('change', function () {
+        var on = this.checked;
+        ['evFormCity', 'evFormState', 'evFormVenue'].forEach(function (id) {
+          var node = el(id);
+          if (!node) return;
+          node.disabled = on;
+          if (on) node.value = '';
+        });
+      });
+    }
+  }
+
+  window.TravelEvents.Controller = {
+    /**
+     * Called on first entry to the tab, and on every re-entry.
+     *
+     * Reloads EVERY time rather than caching, unlike the roster. The proposal
+     * queue is the point of this screen and it changes while the coordinator
+     * is working — a cached view would show a proposal somebody else already
+     * handled.
+     */
+    activate: function () {
+      if (!this._bound) { bind(); this._bound = true; }
+      load();
+    },
+    reload: load
+  };
+})();
+</script>

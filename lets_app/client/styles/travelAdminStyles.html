@@ -5294,3 +5294,173 @@ input.typeahead-loading {
   .roster-search { max-width: none; }
 }
 </style>
+
+/* ---- events, set-asides and the proposal queue -------------------------- */
+
+.ev-empty {
+  padding: 0.75rem 0.25rem;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.ev-count {
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+/* Amber, not red. Proposals waiting are work to do, not a fault. */
+.ev-count--open { background: #fef3c7; color: #92400e; }
+
+/* The duplicate count is the number a coordinator acts on: twelve requests
+   for one event means one event and eleven merges. */
+.ev-count--dupe { background: #e0e7ff; color: #3730a3; }
+
+.ev-prop {
+  padding: 0.6rem 0.7rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  margin-bottom: 0.5rem;
+}
+
+.ev-prop__head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.ev-prop__meta {
+  margin-top: 0.1rem;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.ev-prop__who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+}
+
+.ev-chip {
+  padding: 0.08rem 0.4rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  font-size: 0.68rem;
+  color: #475569;
+}
+
+.ev-prop__notes {
+  margin-top: 0.35rem;
+  padding: 0.3rem 0.45rem;
+  background: #f8fafc;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  color: #334155;
+}
+
+.ev-prop__actions {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.ev-btn {
+  padding: 0.2rem 0.55rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.73rem;
+  cursor: pointer;
+}
+
+.ev-btn:hover { background: #f8fafc; }
+.ev-btn--primary { border-color: #0a4fa8; background: #0a4fa8; color: #fff; }
+.ev-btn--primary:hover { background: #083f87; }
+.ev-btn--danger { border-color: #fca5a5; color: #991b1b; }
+
+.ev-flags {
+  font-size: 0.66rem;
+  line-height: 1.35;
+  color: #64748b;
+}
+
+/* Over-commitment is FLAGGED, not clamped. A reservation consumed beyond its
+   amount is a real condition a DAC needs to see; showing zero remaining would
+   hide the overrun. */
+.ev-over { color: #991b1b; font-weight: 600; }
+.ev-warn { color: #92400e; }
+
+/* ---- modal shell --------------------------------------------------------
+   The event, set-aside and merge dialogs use these.
+
+   HAND-ROLLED, because Bootstrap's JAVASCRIPT is not loaded on the admin page
+   — only its CSS. data-bs-toggle was used on the budget page already and did
+   nothing at all for exactly that reason.
+
+   Defined HERE rather than copied from travelBudgetDashboardPage's inline
+   <style>, where an identical block already lives. The duplication is
+   deliberate for now: the budget page's copy is inline and self-contained,
+   and moving it would mean touching a page that works. Worth consolidating if
+   a third page needs it. */
+
+.oc-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1080;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 3vh 1rem;
+  background: rgba(15, 23, 42, 0.45);
+  overflow-y: auto;
+}
+
+.oc-modal.d-none { display: none; }
+
+.oc-modal__panel {
+  width: 100%;
+  max-width: 36rem;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  max-height: 94vh;
+}
+
+.oc-modal__panel--wide { max-width: 56rem; }
+
+.oc-modal__head,
+.oc-modal__foot {
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.oc-modal__head { border-bottom: 1px solid #e2e8f0; }
+.oc-modal__foot { border-top: 1px solid #e2e8f0; justify-content: flex-end; }
+
+.oc-modal__body {
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.btn-close-x {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  font-size: 1.35rem;
+  line-height: 1;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.btn-close-x:hover { color: #0f172a; }

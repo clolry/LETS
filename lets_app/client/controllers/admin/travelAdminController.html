@@ -241,7 +241,8 @@
         'requests': 'requestsView',
         'reports': 'reportsView',
         'users': 'usersView',
-        'roster': 'rosterView'
+        'roster': 'rosterView',
+        'events': 'eventsView'
       };
 
       var viewEl = document.getElementById(viewMap[view]);
@@ -279,6 +280,15 @@
             window.TravelRoster.Controller.activate();
           }
           break;
+        case 'events':
+          // RELOADS ON EVERY ENTRY, unlike the roster. The proposal queue is
+          // the point of this screen and it changes while a coordinator is
+          // working — a cached view would show a proposal somebody else
+          // already handled.
+          if (window.TravelEvents && window.TravelEvents.Controller) {
+            window.TravelEvents.Controller.activate();
+          }
+          break;
       }
     },
 
@@ -286,7 +296,30 @@
     // DASHBOARD - ACTION CENTER (Phase 2)
     // =========================================================================
 
+    /**
+     * Pending proposal count for the nav badge.
+     *
+     * Loaded alongside the dashboard so a coordinator sees there is something
+     * waiting without opening the tab. A queue nobody knows about is a queue
+     * nobody works.
+     *
+     * Non-fatal: a failure leaves the badge empty rather than breaking the
+     * dashboard.
+     */
+    async _loadProposalBadge() {
+      try {
+        const res = await serverCall('getTravelEventPlanning', '');
+        const n = (res && res.success && res.data.proposals)
+          ? res.data.proposals.length : 0;
+        const badge = document.getElementById('navProposalCount');
+        if (badge) badge.textContent = n ? String(n) : '';
+      } catch (e) {
+        console.warn('Proposal badge unavailable:', e && e.message);
+      }
+    },
+
     async _loadDashboard() {
+      this._loadProposalBadge();
       try {
         // Single consolidated call — reads Requests once, returns both payloads
         var result = await this._serverCall('getAdminDashboard', this._userEmail, '30d');

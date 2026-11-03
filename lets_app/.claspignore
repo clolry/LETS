@@ -29,6 +29,7 @@ test_gogov_sync.js
 test_hc_privacy.js
 test_request_access.js
 test_delegation.js
+test_events_ui.js
 preview.html
 node_modules/**
 .git/**

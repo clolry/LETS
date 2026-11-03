@@ -106,6 +106,26 @@
     // Form data object
     _formData: {
       // Step 1: Trip Overview
+
+      // EVENT CATALOGUE LINK.
+      //
+      // eventId is set when the traveller picked a catalogued event, which is
+      // what lets a DAC's set-aside draw down against this request.
+      //
+      // eventProposalId is set instead when they chose "Other" and described
+      // something not yet catalogued. The request is still submittable —
+      // blocking on a coordinator would be wrong for anyone with a deadline —
+      // and a coordinator links it afterwards.
+      //
+      // Both blank for ordinary ad-hoc travel, which is most of it.
+      eventId: '',
+      eventProposalId: '',
+      // Held only to build the proposal on submit. Never stored on the
+      // request itself: the catalogued event carries the authoritative
+      // location once a coordinator has created it.
+      eventOtherLocation: '',
+      eventOtherNotes: '',
+
       tripName: '',
       locationType: '',        // 'conference', 'client-site', 'contractor-site', 'gsa-site', 'teb', or 'other'
       eventStartDate: '',      // When the event/meeting begins

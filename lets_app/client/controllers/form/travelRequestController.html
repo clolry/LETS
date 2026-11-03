@@ -371,6 +371,11 @@
         step6Summary: document.getElementById('step6Summary'),
 
         // Step 1: Trip Overview (includes Justification)
+        eventPicker: document.getElementById('eventPicker'),
+        eventPickerHint: document.getElementById('eventPickerHint'),
+        eventOtherBlock: document.getElementById('eventOtherBlock'),
+        eventOtherLocation: document.getElementById('eventOtherLocation'),
+        eventOtherNotes: document.getElementById('eventOtherNotes'),
         tripName: document.getElementById('tripName'),
         locationType: document.getElementById('locationType'),
         // Budget pool and FAS delegation. These were rendered but never
@@ -509,6 +514,9 @@
           self._clearFieldError(this);
         });
       }
+
+      // Step 1: event picker
+      this._bindEventPicker();
 
       // Fixed footer events
       this._bindFixedFooterEvents();
@@ -728,6 +736,155 @@
     /**
      * Bind justification textarea events
      */
+
+    /**
+     * Loads the event catalogue and wires the picker.
+     *
+     * CATALOGUE FAILURE MUST NOT BLOCK THE FORM. If the list cannot be
+     * loaded, the picker is hidden and the traveller types a name as before.
+     * A request with a deadline must not be blocked by an event catalogue
+     * being unavailable.
+     */
+    _bindEventPicker() {
+      const self = this;
+      const sel = this._elements.eventPicker;
+      if (!sel) return;
+
+      serverCall('getTravelEvents')
+        .then(function (res) {
+          if (!res || !res.success) { self._hideEventPicker(); return; }
+          const events = (res.data && res.data.events) || [];
+          self._catalogueEvents = events;
+
+          // "Other" is offered even when the catalogue is empty — that is the
+          // case where a traveller most needs it.
+          let html = '<option value="">No / ad-hoc travel</option>';
+          if (events.length) {
+            html += '<optgroup label="Catalogued events">' +
+              events.map(function (e) {
+                const when = e.startDate
+                  ? ' \u2014 ' + escapeHtml(e.startDate) : '';
+                const where = e.isVirtual ? ' (virtual)'
+                  : (e.locationCity ? ' \u00b7 ' + escapeHtml(e.locationCity) : '');
+                return '<option value="' + escapeHtml(e.eventId) + '">' +
+                  escapeHtml(e.eventName) + when + where + '</option>';
+              }).join('') + '</optgroup>';
+          }
+          html += '<option value="__OTHER__">Other \u2014 not in this list</option>';
+          sel.innerHTML = html;
+        })
+        .catch(function (err) {
+          console.warn('Event catalogue unavailable:', err && err.message);
+          self._hideEventPicker();
+        });
+
+      sel.addEventListener('change', function () {
+        self._onEventSelected(this.value);
+      });
+
+      ['eventOtherLocation', 'eventOtherNotes'].forEach(function (id) {
+        const node = self._elements[id];
+        if (!node) return;
+        node.addEventListener('blur', function () {
+          window.TravelRequest.State.updateField(id, this.value.trim());
+        });
+      });
+    },
+
+    _hideEventPicker() {
+      const block = document.getElementById('eventPickerBlock');
+      if (block) block.classList.add('d-none');
+    },
+
+    /**
+     * Applies a catalogue selection.
+     *
+     * PRE-FILLS BUT DOES NOT LOCK. @clolry asked for pre-fill — "it could
+     * pre-fill dates, location, etc." — and a locked field would be wrong:
+     * somebody attending two days of a five-day conference has different
+     * dates from the event itself, and the per-diem calculation depends on
+     * theirs.
+     *
+     * So the event supplies defaults the traveller can correct. Event_ID
+     * still links the request, which is what the set-aside draws down against.
+     */
+    _onEventSelected(value) {
+      const state = window.TravelRequest.State;
+      const other = this._elements.eventOtherBlock;
+      const hint = this._elements.eventPickerHint;
+
+      if (value === '__OTHER__') {
+        state.updateField('eventId', '');
+        if (other) other.classList.remove('d-none');
+        if (hint) {
+          hint.textContent = 'Fill in the event name and dates below as usual.';
+        }
+        return;
+      }
+
+      if (other) other.classList.add('d-none');
+      state.updateField('eventOtherLocation', '');
+      state.updateField('eventOtherNotes', '');
+
+      if (!value) {
+        state.updateField('eventId', '');
+        if (hint) hint.textContent = '';
+        return;
+      }
+
+      const ev = (this._catalogueEvents || []).filter(function (e) {
+        return e.eventId === value;
+      })[0];
+      if (!ev) { state.updateField('eventId', ''); return; }
+
+      state.updateField('eventId', ev.eventId);
+
+      // Only fill a field the traveller has not already typed into.
+      // Overwriting their own entry with a default is the kind of thing that
+      // loses work silently.
+      const setIfBlank = (elKey, field, val) => {
+        if (!val) return;
+        const node = this._elements[elKey];
+        if (node && !String(node.value || '').trim()) {
+          node.value = val;
+          state.updateField(field, val);
+        }
+      };
+      setIfBlank('tripName', 'tripName', ev.eventName);
+      setIfBlank('eventStartDate', 'eventStartDate', ev.startDate);
+      setIfBlank('eventEndDate', 'eventEndDate', ev.endDate);
+
+      if (this._elements.locationType && !this._elements.locationType.value) {
+        const lt = ev.isVirtual ? 'other' : 'conference';
+        this._elements.locationType.value = lt;
+        state.updateField('locationType', lt);
+      }
+
+      if (hint) {
+        const bits = [];
+        if (ev.startDate) bits.push(ev.startDate + ' to ' + (ev.endDate || '?'));
+        if (ev.locationCity) {
+          bits.push(ev.locationCity + (ev.locationState ? ', ' + ev.locationState : ''));
+        }
+        if (ev.registrationCost) {
+          bits.push('registration $' + ev.registrationCost);
+        }
+        // SURFACED, because both change what a traveller claims. A waiver they
+        // did not know about means an over-claim; meals provided mean an M&IE
+        // deduction a reviewer will otherwise query.
+        if (ev.registrationWaivedFor) {
+          bits.push('waived for ' + ev.registrationWaivedFor);
+        }
+        if (ev.mealsProvided) bits.push('meals: ' + ev.mealsProvided);
+        if (ev.requiresSpecialForm) {
+          bits.push('\u26a0 extra form required' +
+                    (ev.specialFormNotes ? ' \u2014 ' + ev.specialFormNotes : ''));
+        }
+        hint.innerHTML = bits.map(function (b) { return escapeHtml(b); })
+          .join(' \u00b7 ');
+      }
+    },
+
     _bindJustificationEvents() {
       const self = this;
 
@@ -2757,6 +2914,45 @@
       // Add attachment file IDs to form data
       formData.attachmentFileIds = this._getUploadedDocumentIds();
 
+      // THE "OTHER" EVENT PROPOSAL, recorded BEFORE the request is submitted.
+      //
+      // Ordered this way so the request can carry the proposal ID — which is
+      // what lets a coordinator find the request from the proposal queue and
+      // link it to the event they create.
+      //
+      // A FAILED PROPOSAL DOES NOT BLOCK THE SUBMISSION. @clolry's traveller
+      // has a deadline; losing their request because a catalogue write failed
+      // would be a far worse outcome than a coordinator having to match it up
+      // by name. The failure is logged and the request goes through unlinked.
+      const picker = this._elements.eventPicker;
+      const wantsOther = picker && picker.value === '__OTHER__';
+
+      const proposeIfNeeded = wantsOther
+        ? serverCall('proposeTravelEvent', {
+            proposedEventName: formData.tripName || '',
+            proposedStartDate: formData.eventStartDate || '',
+            proposedEndDate: formData.eventEndDate || '',
+            proposedLocation: formData.eventOtherLocation || '',
+            proposedPurpose: formData.travelPurpose || '',
+            notes: formData.eventOtherNotes || ''
+          }).then(function (res) {
+            if (res && res.success && res.data) {
+              formData.eventProposalId = res.data.proposalId;
+              // Surfaced on the success page: a traveller who knows eleven
+              // colleagues already asked for the same event will not chase a
+              // coordinator about it.
+              self._eventProposalNote = res.data.message || '';
+            } else {
+              console.warn('Event proposal not recorded:',
+                           (res && res.error) || 'unknown');
+            }
+          }).catch(function (err) {
+            console.warn('Event proposal failed, submitting anyway:',
+                         err && err.message);
+          })
+        : Promise.resolve();
+
+      proposeIfNeeded.then(function () {
       google.script.run
         .withSuccessHandler(function(result) {
           self._isLoading = false;
@@ -2786,6 +2982,7 @@
           self._showToast('Submission failed: ' + error, 'error');
         })
         .submitTravelRequestV2(formData);
+      });
     },
 
     /**

@@ -222,6 +222,69 @@
                     </div>
                   </div>
 
+                  <!--
+                    EVENT PICKER.
+
+                    @clolry: "perhaps we build a way for the admin to define
+                    events on the back end first and then people select the
+                    event from a list - it could pre-fill dates, location,
+                    etc."
+
+                    Sits ABOVE the free-text name rather than replacing it.
+                    Most travel is ad-hoc, and forcing every trip through a
+                    catalogue would mean a coordinator had to create an event
+                    before anyone could file a one-off client visit.
+
+                    Selecting a catalogued event pre-fills the name, dates and
+                    location type and links the request by Event_ID — which is
+                    what makes a DAC's set-aside draw down.
+
+                    Choosing "Other" reveals a short description block. The
+                    request stays submittable; a coordinator creates the event
+                    and links it afterwards.
+                  -->
+                  <div class="event-picker" id="eventPickerBlock">
+                    <div class="form-group form-group--grow">
+                      <label class="form-label" for="eventPicker">
+                        Is this for a known event?
+                      </label>
+                      <select class="form-select form-select-sm" id="eventPicker">
+                        <option value="">Loading events&hellip;</option>
+                      </select>
+                      <div class="form-text event-picker__hint" id="eventPickerHint"></div>
+                    </div>
+                  </div>
+
+                  <!-- Revealed only when "Other" is chosen. -->
+                  <div class="event-other d-none" id="eventOtherBlock">
+                    <div class="event-other__head">
+                      <i aria-hidden="true" class="fas fa-circle-info"></i>
+                      <span>
+                        Describe the event and submit as normal. A coordinator
+                        will add it to the catalogue and link your request — you
+                        do not need to wait.
+                      </span>
+                    </div>
+                    <div class="event-other__grid">
+                      <div class="form-group">
+                        <label class="form-label form-label--sm" for="eventOtherLocation">
+                          Where is it?
+                        </label>
+                        <input type="text" class="form-control form-control-sm"
+                               id="eventOtherLocation" maxlength="120"
+                               placeholder="Orlando, FL">
+                      </div>
+                      <div class="form-group">
+                        <label class="form-label form-label--sm" for="eventOtherNotes">
+                          Anything a coordinator should know?
+                        </label>
+                        <input type="text" class="form-control form-control-sm"
+                               id="eventOtherNotes" maxlength="200"
+                               placeholder="Annual conference, first time attending">
+                      </div>
+                    </div>
+                  </div>
+
                   <!-- Row 1: All key fields compact with modern styling -->
                   <div class="trip-overview-row1">
                     <div class="form-group form-group--grow">

@@ -102,6 +102,13 @@ jobs:
       - name: Feedback pipeline tests
         run: node lets_app/test_feedback.js
 
+      - name: Events UI tests
+        # §4 is the one that matters: promoting a proposal must go through
+        # resolveEventProposal, not saveTravelEvent. Only the former links the
+        # originating request, and without that link a DAC's reservation never
+        # draws down — silently.
+        run: node lets_app/test_events_ui.js
+
       - name: Delegation tests
         # §4 holds @clolry's requirement: the approval log records the HUMAN
         # who pressed the button, not the principal. Logging the principal
@@ -164,6 +171,88 @@ jobs:
         # rejected because LETS exists in its current form precisely BECAUSE
         # the inherited HC library became unreachable.
         run: node orgchart_app/test_orgchart.js
+
+      - name: Guard - event wiring must not break the draw-down
+        run: |
+          echo "Checking the event catalogue wiring..."
+          EVC=lets_app/client/controllers/admin/travelEventsController.html
+          RCTL=lets_app/client/controllers/form/travelRequestController.html
+          SUB=lets_app/server/40_domain/Submission.js
+
+          # PROMOTING A PROPOSAL must go through resolveEventProposal.
+          # saveTravelEvent creates the event but does NOT link the
+          # originating request — and without that link the reservation never
+          # draws down, with nothing on screen to say so.
+          # Matched on the PROMOTE action, not on the function name alone.
+          # resolveEventProposal is called twice in this file — once to promote
+          # and once to reject — so a name-only grep stayed satisfied when the
+          # promote path was swapped for saveTravelEvent. The negative control
+          # reported MISSED and that is how I found it.
+          if ! grep -aq "action: 'PROMOTE'" "$EVC"; then
+            echo "::error file=$EVC::Promoting a proposal must call resolveEventProposal with action PROMOTE, which also links the originating request. saveTravelEvent alone leaves the request unlinked and the DAC's reservation silently never draws down."
+            exit 1
+          fi
+          PROMOTE_CTX=$(grep -aB 3 "action: 'PROMOTE'" "$EVC")
+          if ! echo "$PROMOTE_CTX" | grep -aq 'resolveEventProposal'; then
+            echo "::error file=$EVC::The PROMOTE action must be sent to resolveEventProposal."
+            exit 1
+          fi
+          # A link failure must be surfaced; it is invisible otherwise.
+          if ! grep -aq 'requestLinkWarning' "$EVC"; then
+            echo "::error file=$EVC::A failed request link must be surfaced to the coordinator."
+            exit 1
+          fi
+
+          # THE "OTHER" PROPOSAL MUST NOT BLOCK SUBMISSION. A traveller with a
+          # deadline losing their request because a catalogue write failed is
+          # far worse than a coordinator matching it up by name.
+          if ! grep -aq 'submitting anyway' "$RCTL"; then
+            echo "::error file=$RCTL::A failed event proposal must not block the request submission."
+            exit 1
+          fi
+          # And the proposal must be recorded BEFORE the submit, so the
+          # request can carry its ID.
+          PROP_LINE=$(grep -an 'proposeTravelEvent' "$RCTL" | head -1 | cut -d: -f1)
+          SUBMIT_LINE=$(grep -an 'submitTravelRequestV2' "$RCTL" | head -1 | cut -d: -f1)
+          if [ -z "$PROP_LINE" ] || [ -z "$SUBMIT_LINE" ] || \
+             [ "$PROP_LINE" -ge "$SUBMIT_LINE" ]; then
+            echo "::error file=$RCTL::The event proposal must be recorded BEFORE submitTravelRequestV2 so the request carries the proposal ID. Without it a coordinator cannot find the request from the queue."
+            exit 1
+          fi
+
+          # The server must actually store both links, or the whole chain is
+          # cosmetic.
+          for F in eventId eventProposalId; do
+            if ! grep -aq "formData.$F || ''" "$SUB"; then
+              echo "::error file=$SUB::submitTravelRequestV2 must store formData.$F."
+              exit 1
+            fi
+          done
+
+          # The picker must PRE-FILL, not overwrite. Somebody attending two
+          # days of a five-day conference has different dates from the event,
+          # and per-diem depends on theirs.
+          if ! grep -aqF "if (node && !String(node.value || '').trim()) {" "$RCTL"; then
+            echo "::error file=$RCTL::Event pre-fill must only fill a BLANK field. Overwriting what the traveller typed loses their work silently."
+            exit 1
+          fi
+
+          # A traveller must not be able to write the catalogue — only the
+          # proposals tab.
+          EV=lets_app/server/40_domain/Events.js
+          for FN in saveTravelEvent saveEventSetAside resolveEventProposal; do
+            BODY=$(awk "/^function ${FN}\(/,/^}/" "$EV")
+            if ! echo "$BODY" | grep -aq 'isTravelAdmin'; then
+              echo "::error file=$EV::${FN} writes the catalogue or reserves budget and must be admin-gated. A traveller writing the catalogue would put unvetted text in front of every other traveller."
+              exit 1
+            fi
+          done
+          PROP=$(awk '/^function proposeTravelEvent\(/,/^}/' "$EV")
+          if echo "$PROP" | grep -aq 'SHEET_NAMES.EVENTS'; then
+            echo "::error file=$EV::proposeTravelEvent must write only to EVENT_PROPOSALS, never to the catalogue."
+            exit 1
+          fi
+          echo "PASS - event wiring links requests, never blocks submission, and keeps travellers out of the catalogue."
 
       - name: Guard - delegation must not become a role grant
         run: |

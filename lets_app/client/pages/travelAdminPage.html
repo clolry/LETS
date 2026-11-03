@@ -78,6 +78,18 @@
           <i aria-hidden="true" class="fas fa-sitemap"></i>
           <span>HR Roster</span>
         </button>
+        <!--
+          Events, set-asides and the proposal queue on ONE screen, because
+          they are one workflow: a proposal becomes an event, an event gets a
+          reservation, and the reservation draws down from requests that
+          selected the event. Split across three tabs, a coordinator would
+          promote a proposal then hunt for where to reserve against it.
+        -->
+        <button class="admin-nav__item" data-view="events">
+          <i aria-hidden="true" class="fas fa-calendar-check"></i>
+          <span>Events &amp; Set-Asides</span>
+          <span class="admin-nav__badge" id="navProposalCount"></span>
+        </button>
         <button class="admin-nav__item" data-view="reports">
           <i aria-hidden="true" class="fas fa-chart-bar"></i>
           <span>Reports</span>
@@ -651,6 +663,99 @@
         page walking the chain. Every save here validates against all three and
         refuses the whole write rather than applying a partial one.
       -->
+      <!-- ================================================================
+           EVENTS, SET-ASIDES AND THE PROPOSAL QUEUE
+           ================================================================ -->
+      <div class="admin-view admin-view--scroll-body hidden" id="eventsView">
+        <div class="admin-view-header">
+          <h2>
+            <i aria-hidden="true" class="fas fa-calendar-check"></i>
+            <span>Events &amp; Set-Asides</span>
+          </h2>
+          <p class="admin-view-header__scope">
+            Define events travellers can pick from, and reserve DAC budget
+            against them so routine travel does not consume it first.
+          </p>
+          <div class="admin-ribbon">
+            <button class="btn btn-sm btn-outline-secondary" id="evRefresh">
+              <i class="fas fa-rotate me-1"></i>Refresh
+            </button>
+          </div>
+        </div>
+
+        <div class="admin-view__body">
+          <div class="alert alert-danger py-2 px-3 small d-none" id="evError"></div>
+
+          <!-- PROPOSALS FIRST. A traveller is waiting and their request is
+               unlinked until somebody acts; the catalogue and reservations are
+               not time-sensitive. -->
+          <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white py-2 d-flex align-items-center gap-2">
+              <h3 class="h6 mb-0 fw-bold">Proposed by travellers</h3>
+              <span id="evProposalCount" class="ev-count"></span>
+              <span class="text-muted small ms-auto">
+                From travellers who chose &ldquo;Other&rdquo; on a request
+              </span>
+            </div>
+            <div class="card-body py-2" id="evProposals"></div>
+          </div>
+
+          <!-- CATALOGUE -->
+          <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white py-2 d-flex align-items-center gap-2">
+              <h3 class="h6 mb-0 fw-bold">Event catalogue</h3>
+              <button class="btn btn-sm btn-primary ms-auto" id="evNewEvent">
+                <i class="fas fa-plus me-1"></i>New event
+              </button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0" style="font-size:0.8rem;">
+                <thead class="table-light">
+                  <tr>
+                    <th>Event</th>
+                    <th>Dates</th>
+                    <th>FY</th>
+                    <th>Location</th>
+                    <th class="text-end">Registration</th>
+                    <th class="text-end">Reserved</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="evCatalogue"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- SET-ASIDES -->
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white py-2 d-flex align-items-center gap-2">
+              <h3 class="h6 mb-0 fw-bold">Reserved budget</h3>
+              <button class="btn btn-sm btn-outline-primary ms-auto" id="evNewSetAside">
+                <i class="fas fa-plus me-1"></i>Reserve for an uncatalogued event
+              </button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0" style="font-size:0.8rem;">
+                <thead class="table-light">
+                  <tr>
+                    <th>Event</th>
+                    <th>Month</th>
+                    <th>DAC</th>
+                    <th class="text-end">Reserved</th>
+                    <th class="text-end">Committed</th>
+                    <th class="text-end">Unspent</th>
+                    <th class="text-end">Used</th>
+                    <th class="text-end">Travellers</th>
+                  </tr>
+                </thead>
+                <tbody id="evSetAsides"></tbody>
+              </table>
+            </div>
+            <div class="card-footer bg-white small text-muted" id="evSetAsideTotals"></div>
+          </div>
+        </div>
+      </div>
+
       <div class="admin-view admin-view--scroll-body hidden" id="rosterView">
         <div class="admin-view-header">
           <h2><i aria-hidden="true" class="fas fa-sitemap"></i> HR Roster</h2>
@@ -900,7 +1005,257 @@
         <div class="users-slidein__backdrop" id="usersSlideinBackdrop"></div>
       </div>
 
-    </main>
+  
+    <!-- ================================================================
+         EVENT EDITOR
+         ================================================================ -->
+    <div class="oc-modal d-none" id="evFormModal">
+      <div class="oc-modal__panel oc-modal__panel--wide">
+        <div class="oc-modal__head">
+          <h3 class="h6 fw-bold mb-0" id="evFormTitle">New event</h3>
+          <button type="button" class="btn-close-x" id="evFormClose" aria-label="Close">&times;</button>
+        </div>
+        <div class="oc-modal__body">
+          <input type="hidden" id="evFormId">
+          <input type="hidden" id="evFormProposalId">
+          <input type="hidden" id="evFormGroup">
+
+          <div class="row g-2">
+            <div class="col-md-8">
+              <label class="form-label small mb-1" for="evFormName">Event name *</label>
+              <input type="text" class="form-control form-control-sm" id="evFormName"
+                     maxlength="120" placeholder="NCMA World Congress">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small mb-1" for="evFormSponsor">Sponsor / organiser</label>
+              <input type="text" class="form-control form-control-sm" id="evFormSponsor">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small mb-1" for="evFormStart">Start *</label>
+              <input type="date" class="form-control form-control-sm" id="evFormStart">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small mb-1" for="evFormEnd">End *</label>
+              <input type="date" class="form-control form-control-sm" id="evFormEnd">
+            </div>
+            <div class="col-md-6 d-flex align-items-end">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="evFormVirtual">
+                <label class="form-check-label small" for="evFormVirtual">
+                  Virtual &mdash; no travel, no location
+                </label>
+              </div>
+            </div>
+
+            <div class="col-md-5">
+              <label class="form-label small mb-1" for="evFormCity">City *</label>
+              <input type="text" class="form-control form-control-sm" id="evFormCity"
+                     placeholder="Orlando">
+              <div class="form-text" style="font-size:0.68rem;">
+                Per-diem rates depend on this.
+              </div>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small mb-1" for="evFormState">State</label>
+              <input type="text" class="form-control form-control-sm" id="evFormState"
+                     maxlength="2" placeholder="FL" style="text-transform:uppercase;">
+            </div>
+            <div class="col-md-5">
+              <label class="form-label small mb-1" for="evFormVenue">Venue</label>
+              <input type="text" class="form-control form-control-sm" id="evFormVenue">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label small mb-1" for="evFormPurpose">Default purpose</label>
+              <input type="text" class="form-control form-control-sm" id="evFormPurpose"
+                     placeholder="Conference Attendance">
+              <div class="form-text" style="font-size:0.68rem;">
+                Pre-fills the request form.
+              </div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small mb-1" for="evFormReg">Registration cost</label>
+              <input type="number" class="form-control form-control-sm" id="evFormReg"
+                     min="0" step="1" placeholder="0">
+            </div>
+            <!--
+              FREE TEXT, not a checkbox. @clolry raised speakers getting
+              attendance waived; "speakers" is one case and sponsors, hosts and
+              panel chairs are others a boolean cannot express.
+            -->
+            <div class="col-md-5">
+              <label class="form-label small mb-1" for="evFormWaiver">Registration waived for</label>
+              <input type="text" class="form-control form-control-sm" id="evFormWaiver"
+                     placeholder="speakers, panel chairs">
+            </div>
+
+            <!--
+              Likewise. "Lunch days 1-2, breakfast day 3" is the real shape of
+              this, and it drives an M&IE deduction a reviewer has to check.
+            -->
+            <div class="col-12">
+              <label class="form-label small mb-1" for="evFormMeals">Meals provided</label>
+              <input type="text" class="form-control form-control-sm" id="evFormMeals"
+                     placeholder="Lunch days 1-3, breakfast day 2">
+              <div class="form-text" style="font-size:0.68rem;">
+                Shown to travellers when they pick this event. Affects what they
+                may claim for M&amp;IE.
+              </div>
+            </div>
+
+            <div class="col-md-4 d-flex align-items-end">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="evFormSpecialForm">
+                <label class="form-check-label small" for="evFormSpecialForm">
+                  Extra form required
+                </label>
+              </div>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label small mb-1" for="evFormFormNotes">Which form, and when</label>
+              <input type="text" class="form-control form-control-sm" id="evFormFormNotes"
+                     placeholder="Speaking engagement form if presenting">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label small mb-1" for="evFormHistorical">
+                Matches which historical event?
+              </label>
+              <input type="text" class="form-control form-control-sm" id="evFormHistorical"
+                     placeholder="NCMA World Congress">
+              <div class="form-text" style="font-size:0.68rem;">
+                Links to prior-year attendance so planners can see what was sent
+                before.
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small mb-1" for="evFormNotes">Notes</label>
+              <input type="text" class="form-control form-control-sm" id="evFormNotes">
+            </div>
+          </div>
+
+          <div class="alert alert-danger py-2 px-3 small mt-3 d-none" id="evFormProblems"></div>
+        </div>
+        <div class="oc-modal__foot">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="evFormCancel">Cancel</button>
+          <button type="button" class="btn btn-sm btn-primary" id="evFormSave">Save event</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         SET-ASIDE EDITOR
+         ================================================================ -->
+    <div class="oc-modal d-none" id="saFormModal">
+      <div class="oc-modal__panel">
+        <div class="oc-modal__head">
+          <h3 class="h6 fw-bold mb-0">Reserve budget</h3>
+          <button type="button" class="btn-close-x" id="saFormClose" aria-label="Close">&times;</button>
+        </div>
+        <div class="oc-modal__body">
+          <input type="hidden" id="saFormEventId">
+          <p class="small text-muted" id="saFormHint"></p>
+
+          <div class="row g-2">
+            <div class="col-md-7">
+              <label class="form-label small mb-1" for="saFormEventName">Event *</label>
+              <input type="text" class="form-control form-control-sm" id="saFormEventName">
+            </div>
+            <div class="col-md-5">
+              <label class="form-label small mb-1" for="saFormMonth">Month *</label>
+              <input type="text" class="form-control form-control-sm" id="saFormMonth"
+                     placeholder="2027-07">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small mb-1" for="saFormFy">Fiscal year *</label>
+              <input type="text" class="form-control form-control-sm" id="saFormFy"
+                     placeholder="FY2027">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small mb-1" for="saFormOffice">DAC *</label>
+              <select class="form-select form-select-sm" id="saFormOffice">
+                <option value="">Choose&hellip;</option>
+                <option value="FO">Front Office (FC)</option>
+                <option value="OMD">OMD (FCA)</option>
+                <option value="IDV">IDV (FCB)</option>
+                <option value="CM">CM (FCC)</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small mb-1" for="saFormTravelers">Planned travellers</label>
+              <div class="input-group input-group-sm">
+                <input type="number" class="form-control" id="saFormTravelers" min="0" step="1">
+                <button class="btn btn-outline-secondary" type="button" id="saFormSuggest"
+                        title="Suggest an amount from the traveller count">
+                  Estimate
+                </button>
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label small mb-1" for="saFormAmount">Amount *</label>
+              <input type="number" class="form-control form-control-sm" id="saFormAmount"
+                     min="0" step="100">
+            </div>
+            <!--
+              REQUIRED by the server, for the same reason a budget change needs
+              a reason: six months from now this row is the only record of how
+              the figure was reached.
+            -->
+            <div class="col-md-8">
+              <label class="form-label small mb-1" for="saFormBasis">How was this worked out? *</label>
+              <input type="text" class="form-control form-control-sm" id="saFormBasis"
+                     placeholder="10 travellers x $2,400 travel + $1,295 registration">
+            </div>
+            <div class="col-12">
+              <label class="form-label small mb-1" for="saFormNotes">Notes</label>
+              <input type="text" class="form-control form-control-sm" id="saFormNotes">
+            </div>
+          </div>
+
+          <div class="alert alert-danger py-2 px-3 small mt-3 d-none" id="saFormProblems"></div>
+        </div>
+        <div class="oc-modal__foot">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="saFormCancel">Cancel</button>
+          <button type="button" class="btn btn-sm btn-primary" id="saFormSave">Reserve budget</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         MERGE A PROPOSAL INTO AN EXISTING EVENT
+         ================================================================ -->
+    <div class="oc-modal d-none" id="mgFormModal">
+      <div class="oc-modal__panel">
+        <div class="oc-modal__head">
+          <h3 class="h6 fw-bold mb-0">Merge into an existing event</h3>
+          <button type="button" class="btn-close-x" id="mgFormClose" aria-label="Close">&times;</button>
+        </div>
+        <div class="oc-modal__body">
+          <input type="hidden" id="mgFormProposalId">
+          <p class="small">
+            Proposed as <strong id="mgFormName"></strong>. Merging links the
+            traveller's request to the event you choose, so a DAC's reservation
+            draws down correctly.
+          </p>
+          <div class="mb-2">
+            <label class="form-label small mb-1" for="mgFormEvent">Existing event *</label>
+            <select class="form-select form-select-sm" id="mgFormEvent"></select>
+          </div>
+          <div>
+            <label class="form-label small mb-1" for="mgFormNotes">Note</label>
+            <input type="text" class="form-control form-control-sm" id="mgFormNotes"
+                   placeholder="Same conference, different wording">
+          </div>
+        </div>
+        <div class="oc-modal__foot">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="mgFormCancel">Cancel</button>
+          <button type="button" class="btn btn-sm btn-primary" id="mgFormSave">Merge</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
   </div>
 
   <!-- ========== SLIDE-IN DETAIL PANEL ========== -->
@@ -1125,6 +1480,7 @@
 
   <!-- HR roster editor -->
   <?!= include('client/controllers/admin/travelRosterController'); ?>
+  <?!= include('client/controllers/admin/travelEventsController'); ?>
 
   <!-- Document Viewer -->
   <?!= include('client/components/documentViewer'); ?>
