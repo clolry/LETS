@@ -102,6 +102,57 @@ jobs:
       - name: Feedback pipeline tests
         run: node lets_app/test_feedback.js
 
+      - name: Guard - the org hierarchy must be stored, not derived
+        run: |
+          echo "Checking the org hierarchy..."
+          # I derived the tree from org-code LENGTH and got it wrong: FCBA
+          # reads as a child of FCA because it is four characters, and it is
+          # actually under FCB. @clolry: "FCBA is not under FCA - it's part of
+          # FCB."
+          #
+          # The '0' in FCA0A is a FILLER, not a level, and FCA has no 4-char
+          # level at all while FCB and FCC do — so two service centres sit at
+          # different depths and length cannot stand in for level.
+          H=lets_app/server/91_setup/HCSeed.js
+          for FIELD in "p:" "v:"; do
+            if ! grep -aq "{ c: 'FCBA',.*${FIELD}" "$H"; then
+              echo "::error file=$H::HC_REAL_ORGS rows must carry an explicit parent (p:) and level (v:). Deriving either from the code length produces a wrong tree."
+              exit 1
+            fi
+          done
+          # 4 spaces of padding after the comma, not 1 — the table is aligned,
+          # so ' *' matched nothing and the check passed with FCBA reparented
+          # to FCA. The negative control reported it.
+          if ! grep -aqE "\{ c: 'FCBA', +p: 'FCB'," "$H"; then
+            echo "::error file=$H::FCBA (Office of MAS) must have parent FCB. It is NOT under FCA, however the code length reads."
+            exit 1
+          fi
+          if ! grep -aqE "\{ c: 'FCA0A', +p: 'FCA'," "$H"; then
+            echo "::error file=$H::FCA0A's parent must be FCA. The 0 is a filler, not a level — there is no FCA0."
+            exit 1
+          fi
+          # Both columns must exist on the tab and be read back, or the stored
+          # hierarchy never reaches a consumer.
+          if ! grep -aq "'Parent_Org_Code'" lets_app/server/01_constants/Sheets.js; then
+            echo "::error file=lets_app/server/01_constants/Sheets.js::HC_Orgs must store Parent_Org_Code."
+            exit 1
+          fi
+          if ! grep -aq "parentOrgCode:  _str_(row\['Parent_Org_Code'\])" lets_app/server/20_data/HCData.js; then
+            echo "::error file=lets_app/server/20_data/HCData.js::_normalizeOrg_ must read Parent_Org_Code, or the stored hierarchy never reaches the org chart."
+            exit 1
+          fi
+          # 22 service centres, identified by LEVEL. A Service Center Director
+          # is the supervisory person whose own Dept ID is one of these, which
+          # is how the routing reviewer should be found — the four existing
+          # call sites match a 'sector director' title that does not exist in
+          # this organisation.
+          SC=$(grep -ac "v: 'SERVICE_CENTER'," "$H" || true)
+          if [ "$SC" -ne 22 ]; then
+            echo "::error file=$H::Expected 22 SERVICE_CENTER rows; found ${SC}. @clolry's org has 22 service centres."
+            exit 1
+          fi
+          echo "PASS - the org hierarchy is stored explicitly: 22 service centres, parents pinned."
+
       - name: Coordinator role tests
         # §2 holds the boundary: a coordinator reassigns reviewers and manages
         # the event catalogue, but cannot set budgets, reserve set-asides,

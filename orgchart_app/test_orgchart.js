@@ -556,9 +556,20 @@ console.log('\n5. org labels: "FCA and OMD are two ways to describe the same thi
 
   ok('a sub-org uses its own name',
      label('FCA0A') === 'Portfolio Management Service Center', label('FCA0A'));
-  ok('six levels deep too',
-     label('FCCACBA') === 'Technical Account Management Division / Branch A',
-     label('FCCACBA'));
+  // The stored name is now the BARE level name — 'Branch A' — not a path.
+  //
+  // @clolry's corrected org list names each row for itself: FCCACBA is
+  // 'Branch A', and its position under Technology Account Management Division
+  // comes from parentOrgCode rather than from the name. The May data embedded
+  // the path in the name, which is why this assertion expected one.
+  //
+  // Bare names collide by design: 'Branch A' appears under 21 different
+  // divisions. That is fine here because the chart renders the TREE, so the
+  // parent is already on screen above it.
+  ok('six levels deep too', label('FCCACBA') === 'Branch A', label('FCCACBA'));
+  ok('and a bare name is reused across parents, which the tree disambiguates',
+     label('FCA0BAA') === 'Branch A' && label('FCCACBA') === 'Branch A',
+     'the chart shows the parent above, so the bare name is unambiguous in context');
   ok('a top-level org uses its office name',
      label('FCA') === 'Office of Mission Delivery', label('FCA'));
 

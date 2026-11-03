@@ -110,13 +110,50 @@ var HC_SEED_ORGS = [
 ];
 
 // ============================================================================
-// REAL ORG CODES — @clolry, May 2026
+// REAL ORG CODES — @clolry, corrected November 2026
 // ============================================================================
 //
-// 137 codes, six levels deep. Supplied by @clolry after the exact-match join
-// failed on FCA0A-0008: "Our org has hundreds of different codes under FC ...
-// here's the org codes as of May - its a bit outdated but this should be
-// pretty close."
+// 137 codes. Supplied as a May snapshot, then CORRECTED by @clolry after I
+// drew the wrong hierarchy from it.
+//
+// WHAT THE MAY DATA GOT WRONG
+// ---------------------------
+// I inferred the tree from org-code LENGTH and asserted that FCBA sat under
+// FCA. It sits under FCB. @clolry: "FCBA is not under FCA - it's part of FCB."
+//
+// Two division names were also transposed in the source: FCA0CB and FCA0DB
+// had each other's names, which read plausibly because both pairs are
+// Workforce-something and analytics-something.
+//
+// So the parent and the level are now STORED per row rather than derived.
+// Deriving them from length is what produced the wrong answer, and it was
+// wrong in a way that looked right.
+//
+// THE '0' IS A FILLER, NOT A LEVEL
+// --------------------------------
+// @clolry: "In FCA it goes directly from FCA to FCA0A ... there isn't a
+// 4-character level." So FCA0A's parent is FCA, not FCA0.
+//
+// FCB and FCC DO have a 4-character office level — FCBA (Office of MAS),
+// FCBB (Office of Non-MAS), FCCA (Office of IT Category) — and FCA does not.
+// Depth therefore varies by branch of the tree, which is precisely why length
+// cannot stand in for it.
+//
+// LEVELS
+// ------
+//   AC               FC          the Assistant Commissioner and his advisor
+//   DAC              FCA/B/C     where the DACs sit
+//   OFFICE           4 chars     FCB and FCC only
+//   SERVICE_CENTER   5 chars     22 of them. A Service Center Director is
+//                                the supervisory person whose own Dept ID is
+//                                exactly one of these
+//   DIVISION         6 chars
+//   BRANCH           7 chars
+//
+// TWO SERVICE CENTRES SHARE A NAME, legitimately: Acquisition Service Center
+// 2 exists under both Office of MAS (FCBAC) and Office of Non-MAS (FCBBB).
+// @clolry confirmed they are distinct. The code is the key; a display name
+// should prefix the parent office or a dropdown shows two identical entries.
 //
 // WHY THESE ARE ROWS AND NOT DERIVED
 // ----------------------------------
@@ -147,149 +184,149 @@ var HC_SEED_ORGS = [
 //
 var HC_REAL_ORGS = [
   // ---- FC (budget key FO) ------------------------------------------------
-  { c: 'FC',      o: 'FO',   b: 'Front Office',  d: 'Office of Acquisition Solutions Development' },
+  { c: 'FC',      p: '',        v: 'AC',            o: 'FO',   b: 'Front Office',  d: 'Office of Acquisition Solutions Development' },
 
   // ---- FCA (budget key OMD) ----------------------------------------------
-  { c: 'FCA',     o: 'OMD',  b: 'OMD',           d: 'Office of Mission Delivery' },
-  { c: 'FCA0A',   o: '',     b: '',              d: 'Portfolio Management Service Center' },
-  { c: 'FCA0B',   o: '',     b: '',              d: 'Stakeholder Connection and Engagement Service Center' },
-  { c: 'FCA0BA',  o: '',     b: '',              d: 'Stakeholder Connection Division' },
-  { c: 'FCA0BAA', o: '',     b: '',              d: 'Stakeholder Connection Division / Branch A' },
-  { c: 'FCA0BAB', o: '',     b: '',              d: 'Stakeholder Connection Division / Branch B' },
-  { c: 'FCA0BB',  o: '',     b: '',              d: 'Stakeholder Engagement Division' },
-  { c: 'FCA0BBA', o: '',     b: '',              d: 'Stakeholder Engagement Division / Branch A' },
-  { c: 'FCA0BBB', o: '',     b: '',              d: 'Stakeholder Engagement Division / Branch B' },
-  { c: 'FCA0C',   o: '',     b: '',              d: 'Workforce Service Center' },
-  { c: 'FCA0CA',  o: '',     b: '',              d: 'Workforce Service Center / Workforce Operations Division' },
-  { c: 'FCA0CB',  o: '',     b: '',              d: 'Workforce Service Center / Workforce Planning Division' },
-  { c: 'FCA0D',   o: '',     b: '',              d: 'Business Analytics Service Center' },
-  { c: 'FCA0DA',  o: '',     b: '',              d: 'Accountability and Operational Analysis Division' },
-  { c: 'FCA0DB',  o: '',     b: '',              d: 'Enterprise Intelligence Division' },
-  { c: 'FCA0E',   o: '',     b: '',              d: 'Systems Service Center' },
-  { c: 'FCA0EA',  o: '',     b: '',              d: 'Buying-Ordering Tools Division' },
-  { c: 'FCA0EB',  o: '',     b: '',              d: 'Systems Service Center / Contracting Tools Division 1' },
-  { c: 'FCA0EC',  o: '',     b: '',              d: 'Systems Service Center / Contracting Tools Division 2' },
-  { c: 'FCA0ED',  o: '',     b: '',              d: 'Systems Service Center / Pricing Tools Division' },
-  { c: 'FCA0EDA', o: '',     b: '',              d: 'Systems Service Center / Pricing Tools Division / Branch A' },
-  { c: 'FCA0EDB', o: '',     b: '',              d: 'Systems Service Center / Pricing Tools Division / Branch B' },
+  { c: 'FCA',     p: 'FC',      v: 'DAC',           o: 'OMD',  b: 'OMD',           d: 'Office of Mission Delivery' },
+  { c: 'FCA0A',   p: 'FCA',     v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Portfolio Management Service Center' },
+  { c: 'FCA0B',   p: 'FCA',     v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Stakeholder Connection and Engagement Service Center' },
+  { c: 'FCA0BA',  p: 'FCA0B',   v: 'DIVISION',      o: '',     b: '',              d: 'Stakeholder Connection Division' },
+  { c: 'FCA0BAA', p: 'FCA0BA',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCA0BAB', p: 'FCA0BA',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCA0BB',  p: 'FCA0B',   v: 'DIVISION',      o: '',     b: '',              d: 'Stakeholder Engagement Division' },
+  { c: 'FCA0BBA', p: 'FCA0BB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCA0BBB', p: 'FCA0BB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCA0C',   p: 'FCA',     v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Workforce Service Center' },
+  { c: 'FCA0CA',  p: 'FCA0C',   v: 'DIVISION',      o: '',     b: '',              d: 'Workforce Operations Division' },
+  { c: 'FCA0CB',  p: 'FCA0C',   v: 'DIVISION',      o: '',     b: '',              d: 'Workforce Planning Division' },
+  { c: 'FCA0D',   p: 'FCA',     v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Business Analytics Service Center' },
+  { c: 'FCA0DA',  p: 'FCA0D',   v: 'DIVISION',      o: '',     b: '',              d: 'Accountability and Operational Analysis Division' },
+  { c: 'FCA0DB',  p: 'FCA0D',   v: 'DIVISION',      o: '',     b: '',              d: 'Enterprise Intelligence Division' },
+  { c: 'FCA0E',   p: 'FCA',     v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Systems Service Center' },
+  { c: 'FCA0EA',  p: 'FCA0E',   v: 'DIVISION',      o: '',     b: '',              d: 'Buying-Ordering Tools Division' },
+  { c: 'FCA0EB',  p: 'FCA0E',   v: 'DIVISION',      o: '',     b: '',              d: 'Contracting Tools Division 1' },
+  { c: 'FCA0EC',  p: 'FCA0E',   v: 'DIVISION',      o: '',     b: '',              d: 'Contracting Tools Division 2' },
+  { c: 'FCA0ED',  p: 'FCA0E',   v: 'DIVISION',      o: '',     b: '',              d: 'Pricing Tools Division' },
+  { c: 'FCA0EDA', p: 'FCA0ED',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCA0EDB', p: 'FCA0ED',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
 
   // ---- FCB (budget key IDV) ----------------------------------------------
-  { c: 'FCB',     o: 'IDV',  b: 'IDV',           d: 'Office of Indefinite Delivery Vehicle Acquisition Management' },
-  { c: 'FCB0A',   o: '',     b: '',              d: 'IDV Implementation and Warrant Management Service Center' },
-  { c: 'FCB0AA',  o: '',     b: '',              d: 'IDV Implementation and Warrant Management Service Center / Division 1' },
-  { c: 'FCB0AAA', o: '',     b: '',              d: 'IDV Implementation and Warrant Management Service Center / Division 1 / Branch A' },
-  { c: 'FCB0AAB', o: '',     b: '',              d: 'IDV Implementation and Warrant Management Service Center / Division 1 / Branch B' },
-  { c: 'FCB0AB',  o: '',     b: '',              d: 'IDV Implementation and Warrant Management Service Center / Division 2' },
-  { c: 'FCB0B',   o: '',     b: '',              d: 'IDV Supplier Compliance Service Center' },
-  { c: 'FCB0BA',  o: '',     b: '',              d: 'IDV Supplier Compliance Service Center / Division 1' },
-  { c: 'FCB0BAA', o: '',     b: '',              d: 'IDV Supplier Compliance Service Center / Division 1 / Branch A' },
-  { c: 'FCB0BAB', o: '',     b: '',              d: 'IDV Supplier Compliance Service Center / Division 1 / Branch B' },
-  { c: 'FCB0BB',  o: '',     b: '',              d: 'IDV Supplier Compliance Service Center / Division 2' },
-  { c: 'FCB0BBA', o: '',     b: '',              d: 'IDV Supplier Compliance Service Center / Division 2 / Branch A' },
-  { c: 'FCB0BBB', o: '',     b: '',              d: 'IDV Supplier Compliance Service Center / Division 2 / Branch B' },
-  { c: 'FCB0C',   o: '',     b: '',              d: 'Cyber-Supply Chain Risk Management Service Center' },
-  { c: 'FCBA',    o: '',     b: '',              d: 'Office of MAS' },
-  { c: 'FCBAA',   o: '',     b: '',              d: 'MAS Program Management Service Center' },
-  { c: 'FCBAAA',  o: '',     b: '',              d: 'MAS Program Management Service Center / Solicitation and Training Division' },
-  { c: 'FCBAAB',  o: '',     b: '',              d: 'MAS Program Management Service Center / Intake and Performance Division' },
-  { c: 'FCBAAC',  o: '',     b: '',              d: 'MAS Program Management Service Center / Analysis and Improvement Division' },
-  { c: 'FCBAB',   o: '',     b: '',              d: 'MAS Acquisition Service Center 1' },
-  { c: 'FCBABA',  o: '',     b: '',              d: 'MAS Acquisition Service Center 1 / Division 1' },
-  { c: 'FCBABB',  o: '',     b: '',              d: 'MAS Acquisition Service Center 1 / Division 2' },
-  { c: 'FCBABBA', o: '',     b: '',              d: 'MAS Acquisition Service Center 1 / Division 2 / Branch A' },
-  { c: 'FCBABBB', o: '',     b: '',              d: 'MAS Acquisition Service Center 1 / Division 2 / Branch B' },
-  { c: 'FCBABC',  o: '',     b: '',              d: 'MAS Acquisition Service Center 1 / Division 3' },
-  { c: 'FCBABCA', o: '',     b: '',              d: 'MAS Acquisition Service Center 1 / Division 3 / Branch A' },
-  { c: 'FCBABCB', o: '',     b: '',              d: 'MAS Acquisition Service Center 1 / Division 3 / Branch B' },
-  { c: 'FCBABCC', o: '',     b: '',              d: 'MAS Acquisition Service Center 1 / Division 3 / Branch C' },
-  { c: 'FCBABD',  o: '',     b: '',              d: 'MAS Acquisition Service Center 1 / Division 4' },
-  { c: 'FCBABDA', o: '',     b: '',              d: 'MAS Acquisition Service Center 1 / Division 4 / Branch A' },
-  { c: 'FCBABDB', o: '',     b: '',              d: 'MAS Acquisition Service Center 1 / Division 4 / Branch B' },
-  { c: 'FCBABE',  o: '',     b: '',              d: 'MAS Acquisition Service Center 1 / Division 5' },
-  { c: 'FCBABEA', o: '',     b: '',              d: 'MAS Acquisition Service Center 1 / Division 5 / Branch A' },
-  { c: 'FCBABEB', o: '',     b: '',              d: 'MAS Acquisition Service Center 1 / Division 5 / Branch B' },
-  { c: 'FCBAC',   o: '',     b: '',              d: 'MAS Acquisition Service Center 2' },
-  { c: 'FCBACA',  o: '',     b: '',              d: 'MAS Acquisition Service Center 2 / Division 1' },
-  { c: 'FCBACAA', o: '',     b: '',              d: 'MAS Acquisition Service Center 2 / Division 1 / Branch A' },
-  { c: 'FCBACAB', o: '',     b: '',              d: 'MAS Acquisition Service Center 2 / Division 1 / Branch B' },
-  { c: 'FCBACB',  o: '',     b: '',              d: 'MAS Acquisition Service Center 2 / Division 2' },
-  { c: 'FCBACBA', o: '',     b: '',              d: 'MAS Acquisition Service Center 2 / Division 2 / Branch A' },
-  { c: 'FCBACBB', o: '',     b: '',              d: 'MAS Acquisition Service Center 2 / Division 2 / Branch B' },
-  { c: 'FCBACBC', o: '',     b: '',              d: 'MAS Acquisition Service Center 2 / Division 2 / Branch C' },
-  { c: 'FCBACC',  o: '',     b: '',              d: 'MAS Acquisition Service Center 2 / Division 3' },
-  { c: 'FCBACCA', o: '',     b: '',              d: 'MAS Acquisition Service Center 2 / Division 3 / Branch A' },
-  { c: 'FCBACCB', o: '',     b: '',              d: 'MAS Acquisition Service Center 2 / Division 3 / Branch B' },
-  { c: 'FCBAD',   o: '',     b: '',              d: 'MAS Acquisition Service Center 3' },
-  { c: 'FCBADA',  o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 1' },
-  { c: 'FCBADAA', o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 1 / Branch A' },
-  { c: 'FCBADAB', o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 1 / Branch B' },
-  { c: 'FCBADAC', o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 1 / Branch C' },
-  { c: 'FCBADB',  o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 2' },
-  { c: 'FCBADBA', o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 2 / Branch A' },
-  { c: 'FCBADBB', o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 2 / Branch B' },
-  { c: 'FCBADBC', o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 2 / Branch C' },
-  { c: 'FCBADC',  o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 3' },
-  { c: 'FCBADCA', o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 3 / Branch A' },
-  { c: 'FCBADCB', o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 3 / Branch B' },
-  { c: 'FCBADCC', o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 3 / Branch C' },
-  { c: 'FCBADD',  o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 4' },
-  { c: 'FCBADDA', o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 4 / Branch A' },
-  { c: 'FCBADDB', o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 4 / Branch B' },
-  { c: 'FCBADDC', o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 4 / Branch C' },
-  { c: 'FCBADDD', o: '',     b: '',              d: 'MAS Acquisition Service Center 3 / Division 4 / Branch D' },
-  { c: 'FCBAE',   o: '',     b: '',              d: 'MAS Acquisition Service Center 4' },
-  { c: 'FCBAEA',  o: '',     b: '',              d: 'MAS Acquisition Service Center 4 / Division 1' },
-  { c: 'FCBAEAA', o: '',     b: '',              d: 'MAS Acquisition Service Center 4 / Division 1 / Branch A' },
-  { c: 'FCBAEAB', o: '',     b: '',              d: 'MAS Acquisition Service Center 4 / Division 1 / Branch B' },
-  { c: 'FCBAEAC', o: '',     b: '',              d: 'MAS Acquisition Service Center 4 / Division 1 / Branch C' },
-  { c: 'FCBAEAD', o: '',     b: '',              d: 'MAS Acquisition Service Center 4 / Division 1 / Branch D' },
-  { c: 'FCBAEB',  o: '',     b: '',              d: 'MAS Acquisition Service Center 4 / Division 2' },
-  { c: 'FCBAEBA', o: '',     b: '',              d: 'MAS Acquisition Service Center 4 / Division 2 / Branch A' },
-  { c: 'FCBAEBB', o: '',     b: '',              d: 'MAS Acquisition Service Center 4 / Division 2 / Branch B' },
-  { c: 'FCBAEBC', o: '',     b: '',              d: 'MAS Acquisition Service Center 4 / Division 2 / Branch C' },
-  { c: 'FCBAEBD', o: '',     b: '',              d: 'MAS Acquisition Service Center 4 / Division 2 / Branch D' },
-  { c: 'FCBAEBE', o: '',     b: '',              d: 'MAS Acquisition Service Center 4 / Division 2 / Branch E' },
-  { c: 'FCBB',    o: '',     b: '',              d: 'Office of Non-MAS' },
-  { c: 'FCBBA',   o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 1' },
-  { c: 'FCBBAA',  o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 1 / Division 1' },
-  { c: 'FCBBAB',  o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 1 / Division 2' },
-  { c: 'FCBBABA', o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 1 / Division 2 / Branch A' },
-  { c: 'FCBBABB', o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 1 / Division 2 / Branch B' },
-  { c: 'FCBBAC',  o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 1 / Division 3' },
-  { c: 'FCBBB',   o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 2' },
-  { c: 'FCBBBA',  o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 2 / Division 1' },
-  { c: 'FCBBBB',  o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 2 / Division 2' },
-  { c: 'FCBBBC',  o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 2 / Division 3' },
-  { c: 'FCBBC',   o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 3' },
-  { c: 'FCBBCA',  o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 3 / Division 1' },
-  { c: 'FCBBCB',  o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 3 / Division 2' },
-  { c: 'FCBBCC',  o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 3 / Division 3' },
-  { c: 'FCBBCD',  o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 3 / Division 4' },
-  { c: 'FCBBCE',  o: '',     b: '',              d: 'Non-MAS Acquisition Service Center 3 / Division 5' },
+  { c: 'FCB',     p: 'FC',      v: 'DAC',           o: 'IDV',  b: 'IDV',           d: 'Office of Indefinite Delivery Vehicle Acquisition Management' },
+  { c: 'FCB0A',   p: 'FCB',     v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Indefinite Delivery Vehicle Implementation and Warrant Management Service Center' },
+  { c: 'FCB0AA',  p: 'FCB0A',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 1' },
+  { c: 'FCB0AAA', p: 'FCB0AA',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCB0AAB', p: 'FCB0AA',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCB0AB',  p: 'FCB0A',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 2' },
+  { c: 'FCB0B',   p: 'FCB',     v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Indefinite Delivery Vehicle Supplier Compliance Service Center' },
+  { c: 'FCB0BA',  p: 'FCB0B',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 1' },
+  { c: 'FCB0BAA', p: 'FCB0BA',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCB0BAB', p: 'FCB0BA',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCB0BB',  p: 'FCB0B',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 2' },
+  { c: 'FCB0BBA', p: 'FCB0BB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCB0BBB', p: 'FCB0BB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCB0C',   p: 'FCB',     v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Cyber-Supply Chain Risk Management Service Center' },
+  { c: 'FCBA',    p: 'FCB',     v: 'OFFICE',        o: '',     b: '',              d: 'Office of MAS' },
+  { c: 'FCBAA',   p: 'FCBA',    v: 'SERVICE_CENTER', o: '',     b: '',              d: 'MAS Program Management Service Center' },
+  { c: 'FCBAAA',  p: 'FCBAA',   v: 'DIVISION',      o: '',     b: '',              d: 'Solicitation and Training Division' },
+  { c: 'FCBAAB',  p: 'FCBAA',   v: 'DIVISION',      o: '',     b: '',              d: 'Intake and Performance Division' },
+  { c: 'FCBAAC',  p: 'FCBAA',   v: 'DIVISION',      o: '',     b: '',              d: 'Analysis and Improvement Division' },
+  { c: 'FCBAB',   p: 'FCBA',    v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Acquisition Service Center 1' },
+  { c: 'FCBABA',  p: 'FCBAB',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 1' },
+  { c: 'FCBABB',  p: 'FCBAB',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 2' },
+  { c: 'FCBABBA', p: 'FCBABB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCBABBB', p: 'FCBABB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCBABC',  p: 'FCBAB',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 3' },
+  { c: 'FCBABCA', p: 'FCBABC',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCBABCB', p: 'FCBABC',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCBABCC', p: 'FCBABC',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch C' },
+  { c: 'FCBABD',  p: 'FCBAB',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 4' },
+  { c: 'FCBABDA', p: 'FCBABD',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCBABDB', p: 'FCBABD',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCBABE',  p: 'FCBAB',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 5' },
+  { c: 'FCBABEA', p: 'FCBABE',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCBABEB', p: 'FCBABE',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCBAC',   p: 'FCBA',    v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Acquisition Service Center 2' },
+  { c: 'FCBACA',  p: 'FCBAC',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 1' },
+  { c: 'FCBACAA', p: 'FCBACA',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCBACAB', p: 'FCBACA',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCBACB',  p: 'FCBAC',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 2' },
+  { c: 'FCBACBA', p: 'FCBACB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCBACBB', p: 'FCBACB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCBACBC', p: 'FCBACB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch C' },
+  { c: 'FCBACC',  p: 'FCBAC',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 3' },
+  { c: 'FCBACCA', p: 'FCBACC',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCBACCB', p: 'FCBACC',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCBAD',   p: 'FCBA',    v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Acquisition Service Center 3' },
+  { c: 'FCBADA',  p: 'FCBAD',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 1' },
+  { c: 'FCBADAA', p: 'FCBADA',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCBADAB', p: 'FCBADA',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCBADAC', p: 'FCBADA',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch C' },
+  { c: 'FCBADB',  p: 'FCBAD',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 2' },
+  { c: 'FCBADBA', p: 'FCBADB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCBADBB', p: 'FCBADB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCBADBC', p: 'FCBADB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch C' },
+  { c: 'FCBADC',  p: 'FCBAD',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 3' },
+  { c: 'FCBADCA', p: 'FCBADC',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCBADCB', p: 'FCBADC',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCBADCC', p: 'FCBADC',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch C' },
+  { c: 'FCBADD',  p: 'FCBAD',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 4' },
+  { c: 'FCBADDA', p: 'FCBADD',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCBADDB', p: 'FCBADD',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCBADDC', p: 'FCBADD',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch C' },
+  { c: 'FCBADDD', p: 'FCBADD',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch D' },
+  { c: 'FCBAE',   p: 'FCBA',    v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Acquisition Service Center 4' },
+  { c: 'FCBAEA',  p: 'FCBAE',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 1' },
+  { c: 'FCBAEAA', p: 'FCBAEA',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCBAEAB', p: 'FCBAEA',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCBAEAC', p: 'FCBAEA',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch C' },
+  { c: 'FCBAEAD', p: 'FCBAEA',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch D' },
+  { c: 'FCBAEB',  p: 'FCBAE',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 2' },
+  { c: 'FCBAEBA', p: 'FCBAEB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCBAEBB', p: 'FCBAEB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCBAEBC', p: 'FCBAEB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch C' },
+  { c: 'FCBAEBD', p: 'FCBAEB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch D' },
+  { c: 'FCBAEBE', p: 'FCBAEB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch E' },
+  { c: 'FCBB',    p: 'FCB',     v: 'OFFICE',        o: '',     b: '',              d: 'Office of Non-MAS' },
+  { c: 'FCBBA',   p: 'FCBB',    v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Acquisition Service Center 1' },
+  { c: 'FCBBAA',  p: 'FCBBA',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 1' },
+  { c: 'FCBBAB',  p: 'FCBBA',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 2' },
+  { c: 'FCBBABA', p: 'FCBBAB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCBBABB', p: 'FCBBAB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCBBAC',  p: 'FCBBA',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 3' },
+  { c: 'FCBBB',   p: 'FCBB',    v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Acquisition Service Center 2' },
+  { c: 'FCBBBA',  p: 'FCBBB',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 1' },
+  { c: 'FCBBBB',  p: 'FCBBB',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 2' },
+  { c: 'FCBBBC',  p: 'FCBBB',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 3' },
+  { c: 'FCBBC',   p: 'FCBB',    v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Acquisition Service Center 3' },
+  { c: 'FCBBCA',  p: 'FCBBC',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 1' },
+  { c: 'FCBBCB',  p: 'FCBBC',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 2' },
+  { c: 'FCBBCC',  p: 'FCBBC',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 3' },
+  { c: 'FCBBCD',  p: 'FCBBC',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 4' },
+  { c: 'FCBBCE',  p: 'FCBBC',   v: 'DIVISION',      o: '',     b: '',              d: 'Division 5' },
 
   // ---- FCC (budget key CM) -----------------------------------------------
-  { c: 'FCC',     o: 'CM',   b: 'CM',            d: 'Office of Category Management' },
-  { c: 'FCC0A',   o: '',     b: '',              d: 'Category Management Service Center' },
-  { c: 'FCC0B',   o: '',     b: '',              d: 'Vendor Management Service Center' },
-  { c: 'FCC0C',   o: '',     b: '',              d: 'Non-IT Program Management Service Center' },
-  { c: 'FCCA',    o: '',     b: '',              d: 'Office of IT Category' },
-  { c: 'FCCAA',   o: '',     b: '',              d: 'IT Products Service Center' },
-  { c: 'FCCAAA',  o: '',     b: '',              d: 'IT Products Service Center / Software Division' },
-  { c: 'FCCAAAA', o: '',     b: '',              d: 'IT Products Service Center / Software Division / Solutions Development Branch' },
-  { c: 'FCCAAAB', o: '',     b: '',              d: 'IT Products Service Center / Software Division / Service Delivery Branch' },
-  { c: 'FCCAAB',  o: '',     b: '',              d: 'IT Products Service Center / Hardware Division' },
-  { c: 'FCCAB',   o: '',     b: '',              d: 'IT Services Service Center' },
-  { c: 'FCCABA',  o: '',     b: '',              d: 'IT Services Service Center / IT Services Division' },
-  { c: 'FCCABB',  o: '',     b: '',              d: 'IT Services Service Center / IT Security Division' },
-  { c: 'FCCAC',   o: '',     b: '',              d: 'Enterprise Technology Solutions Service Center' },
-  { c: 'FCCACA',  o: '',     b: '',              d: 'Enterprise Technology Solutions Service Center / Business Management Division' },
-  { c: 'FCCACAA', o: '',     b: '',              d: 'Business Management Division / Program Management Branch' },
-  { c: 'FCCACAB', o: '',     b: '',              d: 'Business Management Division / Mission Support Branch' },
-  { c: 'FCCACAC', o: '',     b: '',              d: 'Business Management Division / Strategic Partner Analytics Branch' },
-  { c: 'FCCACB',  o: '',     b: '',              d: 'Enterprise Technology Solutions Service Center / Technical Account Management Division' },
-  { c: 'FCCACBA', o: '',     b: '',              d: 'Technical Account Management Division / Branch A' },
-  { c: 'FCCACBB', o: '',     b: '',              d: 'Technical Account Management Division / Branch B' },
-  { c: 'FCCACBC', o: '',     b: '',              d: 'Technical Account Management Division / Branch C' },
+  { c: 'FCC',     p: 'FC',      v: 'DAC',           o: 'CM',   b: 'CM',            d: 'Office of Category Management' },
+  { c: 'FCC0A',   p: 'FCC',     v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Category Management Service Center' },
+  { c: 'FCC0B',   p: 'FCC',     v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Vendor Management Service Center' },
+  { c: 'FCC0C',   p: 'FCC',     v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Non-IT Program Management Service Center' },
+  { c: 'FCCA',    p: 'FCC',     v: 'OFFICE',        o: '',     b: '',              d: 'Office of IT Category' },
+  { c: 'FCCAA',   p: 'FCCA',    v: 'SERVICE_CENTER', o: '',     b: '',              d: 'IT Products Service Center' },
+  { c: 'FCCAAA',  p: 'FCCAA',   v: 'DIVISION',      o: '',     b: '',              d: 'Software Division' },
+  { c: 'FCCAAAA', p: 'FCCAAA',  v: 'BRANCH',        o: '',     b: '',              d: 'Solutions Development Branch' },
+  { c: 'FCCAAAB', p: 'FCCAAA',  v: 'BRANCH',        o: '',     b: '',              d: 'Service Delivery Branch' },
+  { c: 'FCCAAB',  p: 'FCCAA',   v: 'DIVISION',      o: '',     b: '',              d: 'Hardware Division' },
+  { c: 'FCCAB',   p: 'FCCA',    v: 'SERVICE_CENTER', o: '',     b: '',              d: 'IT Services Service Center' },
+  { c: 'FCCABA',  p: 'FCCAB',   v: 'DIVISION',      o: '',     b: '',              d: 'IT Services Division' },
+  { c: 'FCCABB',  p: 'FCCAB',   v: 'DIVISION',      o: '',     b: '',              d: 'IT Security Division' },
+  { c: 'FCCAC',   p: 'FCCA',    v: 'SERVICE_CENTER', o: '',     b: '',              d: 'Enterprise Technology Solutions Service Center' },
+  { c: 'FCCACA',  p: 'FCCAC',   v: 'DIVISION',      o: '',     b: '',              d: 'Business Management Division' },
+  { c: 'FCCACAA', p: 'FCCACA',  v: 'BRANCH',        o: '',     b: '',              d: 'Program Management Branch' },
+  { c: 'FCCACAB', p: 'FCCACA',  v: 'BRANCH',        o: '',     b: '',              d: 'Mission Support Branch' },
+  { c: 'FCCACAC', p: 'FCCACA',  v: 'BRANCH',        o: '',     b: '',              d: 'Strategic Partner Analytics Branch' },
+  { c: 'FCCACB',  p: 'FCCAC',   v: 'DIVISION',      o: '',     b: '',              d: 'Technology Account Management Division' },
+  { c: 'FCCACBA', p: 'FCCACB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch A' },
+  { c: 'FCCACBB', p: 'FCCACB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch B' },
+  { c: 'FCCACBC', p: 'FCCACB',  v: 'BRANCH',        o: '',     b: '',              d: 'Branch C' },
 ];
 
 /**
@@ -305,6 +342,10 @@ function hcRealOrgRecords() {
   return HC_REAL_ORGS.map(function (o) {
     return {
       orgCode: o.c,
+      // STORED, not derived. Deriving the parent from the code length gave
+      // the wrong tree — see the note above.
+      parentOrgCode: o.p,
+      orgLevel: o.v,
       officeCode: o.o,
       businessUnit: o.b,
       sector: 'ASD',
@@ -313,6 +354,61 @@ function hcRealOrgRecords() {
       formerOrgCodes: ''
     };
   });
+}
+
+/**
+ * Service centre org codes.
+ *
+ * @clolry: "We don't call them Sector Directors, we call them Service Center
+ * Directors - I'm not precisely sure how to tell you how to identify what a
+ * service center is or who the director is."
+ *
+ * The answer was in the org list: a service centre is a row whose level is
+ * SERVICE_CENTER, and there are 22. The DIRECTOR is then the supervisory
+ * person whose own Dept ID is exactly that code — somebody in FCA0BAA belongs
+ * to a branch, while somebody sitting directly at FCA0B is at the service
+ * centre level.
+ *
+ * THIS MATTERS BECAUSE FOUR CALL SITES LOOK FOR THE WRONG THING. They match a
+ * title containing 'sector director', which does not exist in this
+ * organisation — so all four find nobody, including the one that resolves the
+ * routing reviewer. That would have failed silently the moment the real
+ * roster loaded.
+ *
+ * @returns {Array<string>}
+ */
+function hcServiceCenterCodes() {
+  return HC_REAL_ORGS
+    .filter(function (o) { return o.v === 'SERVICE_CENTER'; })
+    .map(function (o) { return o.c; });
+}
+
+/**
+ * Display name for an org code, with the parent office prefixed when the
+ * bare name is ambiguous.
+ *
+ * Acquisition Service Center 2 exists under both Office of MAS and Office of
+ * Non-MAS. Two identical entries in a dropdown are unusable, so the parent
+ * disambiguates — but only where it is needed, because prefixing every name
+ * would make the common case worse.
+ *
+ * @param {string} code
+ * @returns {string}
+ */
+function hcOrgDisplayName(code) {
+  var byCode = {};
+  HC_REAL_ORGS.forEach(function (o) { byCode[o.c] = o; });
+
+  var me = byCode[String(code || '').toUpperCase()];
+  if (!me) return String(code || '');
+
+  var sameName = HC_REAL_ORGS.filter(function (o) {
+    return o.d === me.d && o.v === me.v;
+  });
+  if (sameName.length < 2) return me.d;
+
+  var parent = byCode[me.p];
+  return parent ? (parent.d + ' / ' + me.d) : me.d;
 }
 
 /**
@@ -352,6 +448,8 @@ function loadRealOrgCodes() {
     var rows = hcRealOrgRecords().map(function (o) {
       var rec = {
         'Org_Code': o.orgCode,
+        'Parent_Org_Code': o.parentOrgCode,
+        'Org_Level': o.orgLevel,
         'Office_Code': o.officeCode,
         'Business_Unit': o.businessUnit,
         'Sector': o.sector,

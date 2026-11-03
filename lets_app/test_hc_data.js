@@ -127,7 +127,12 @@ const POS_HEADERS = [
   'Created_By', 'Created_At', 'Updated_By', 'Updated_At'
 ];
 const ORG_HEADERS = [
-  'Org_Code', 'Office_Code', 'Business_Unit', 'Sector', 'Division', 'Status',
+  'Org_Code',
+  // Parent and level are STORED. Deriving them from the code length gave the
+  // wrong tree — FCBA is under FCB, not FCA — and the '0' in FCA0A is a
+  // filler rather than a level, so depth varies by branch.
+  'Parent_Org_Code', 'Org_Level',
+  'Office_Code', 'Business_Unit', 'Sector', 'Division', 'Status',
   'Former_Org_Codes', 'Is_Active', 'Created_By', 'Created_At', 'Updated_By', 'Updated_At'
 ];
 
@@ -531,6 +536,77 @@ console.log('\n7d. The real org list is internally consistent:');
   const codes = real.map(o => o.orgCode);
   assert.strictEqual(new Set(codes).size, 137, 'org codes must be unique — they are the PK');
   console.log('   137 unique codes');
+
+  // THE HIERARCHY IS STORED, and this is the assertion that would have caught
+  // my error. I derived the tree from org-code LENGTH and asserted FCBA sat
+  // under FCA; it is under FCB. @clolry: "FCBA is not under FCA - it's part
+  // of FCB."
+  const byCode = {};
+  real.forEach(o => { byCode[o.orgCode] = o; });
+
+  assert.strictEqual(byCode['FCBA'].parentOrgCode, 'FCB',
+    'FCBA is Office of MAS, under FCB — not under FCA');
+  assert.strictEqual(byCode['FCBB'].parentOrgCode, 'FCB', 'FCBB is under FCB');
+  assert.strictEqual(byCode['FCCA'].parentOrgCode, 'FCC', 'FCCA is under FCC');
+  console.log('   The 4-char offices sit under FCB and FCC, not FCA');
+
+  // THE FILLER ZERO. FCA0A's parent is FCA, not FCA0 — @clolry: "In FCA it
+  // goes directly from FCA to FCA0A ... there isn't a 4-character level."
+  ['FCA0A', 'FCA0B', 'FCA0C', 'FCA0D', 'FCA0E'].forEach(c => {
+    assert.strictEqual(byCode[c].parentOrgCode, 'FCA',
+      c + "'s parent is FCA; the 0 is a filler, not a level");
+  });
+  assert.ok(!byCode['FCA0'], 'FCA0 must not exist as an org');
+  console.log('   The 0 in FCA0A is a filler: its parent is FCA');
+
+  // EVERY parent must resolve, or a subtree is unreachable in the chart.
+  const parentOrphans = real.filter(o => o.parentOrgCode && !byCode[o.parentOrgCode])
+    .map(o => o.orgCode + ' -> ' + o.parentOrgCode);
+  assert.strictEqual(parentOrphans.join(','), '', 'these parents do not exist');
+  const roots = real.filter(o => !o.parentOrgCode).map(o => o.orgCode);
+  assert.strictEqual(roots.join(','), 'FC', 'FC is the only root');
+  console.log('   No orphans; FC is the single root');
+
+  // DEPTH VARIES BY BRANCH, which is exactly why length cannot stand in for
+  // level: FCA has no OFFICE level while FCB and FCC do.
+  const depth = c => { let n = 0, cur = c; while (byCode[cur] && byCode[cur].parentOrgCode) { n++; cur = byCode[cur].parentOrgCode; } return n; };
+  assert.strictEqual(depth('FCA0A'), 2, 'FC > FCA > FCA0A');
+  assert.strictEqual(depth('FCBAA'), 3, 'FC > FCB > FCBA > FCBAA');
+  assert.ok(depth('FCA0A') !== depth('FCBAA'),
+    'two service centres at different depths — length cannot give the level');
+  console.log('   Service centres sit at different depths (2 and 3)');
+
+  // 22 SERVICE CENTRES. A Service Center Director is the supervisory person
+  // whose own Dept ID is one of these, which is how the routing reviewer
+  // should be found — four call sites currently look for a 'sector director'
+  // title that does not exist in this organisation.
+  const scCodes = vm.runInContext('hcServiceCenterCodes()', seedCtx);
+  assert.strictEqual(scCodes.length, 22, 'expected 22 service centres');
+  assert.ok(scCodes.every(c => byCode[c].orgLevel === 'SERVICE_CENTER'));
+  console.log('   22 service centres, identified by level not by name');
+
+  // TWO SHARE A NAME, legitimately — Acquisition Service Center 2 exists
+  // under both Office of MAS and Office of Non-MAS. @clolry confirmed they
+  // are distinct, so the display name must disambiguate or a dropdown shows
+  // two identical entries.
+  const dn = c => vm.runInContext('hcOrgDisplayName(' + JSON.stringify(c) + ')', seedCtx);
+  assert.strictEqual(byCode['FCBAC'].division, byCode['FCBBB'].division,
+    'these two really do share a stored name');
+  assert.strictEqual(dn('FCBAC'), 'Office of MAS / Acquisition Service Center 2');
+  assert.strictEqual(dn('FCBBB'), 'Office of Non-MAS / Acquisition Service Center 2');
+  assert.notStrictEqual(dn('FCBAC'), dn('FCBBB'));
+  // An unambiguous name is NOT prefixed — doing so everywhere would make the
+  // common case worse.
+  assert.strictEqual(dn('FCA0A'), 'Portfolio Management Service Center');
+  console.log('   Colliding names are prefixed with the parent office; others are not');
+
+  // @clolry's two name corrections, pinned so a re-import cannot undo them.
+  assert.strictEqual(byCode['FCA0CA'].division, 'Workforce Operations Division');
+  assert.strictEqual(byCode['FCA0CB'].division, 'Workforce Planning Division');
+  assert.strictEqual(byCode['FCA0DA'].division,
+    'Accountability and Operational Analysis Division');
+  assert.strictEqual(byCode['FCA0DB'].division, 'Enterprise Intelligence Division');
+  console.log('   The FCA0C / FCA0D division names match @clolry\'s correction');
 
   // EXACTLY four budget keys. More would mean a sub-org had been given one by
   // accident, which silently misattributes its travel.

@@ -508,6 +508,24 @@ const TRAVEL_SHEET_SCHEMAS = {
   // codes onto current values so historical requests still resolve.
   HC_Orgs: [
     'Org_Code',                    // PK
+    // PARENT AND LEVEL ARE STORED, not derived from the code length.
+    //
+    // Deriving them produced a wrong org chart: I read FCBA as a child of FCA
+    // because it is four characters, and it is actually under FCB. @clolry:
+    // "FCBA is not under FCA - it's part of FCB."
+    //
+    // The '0' in FCA0A is a FILLER, not a level — FCA0A's parent is FCA — and
+    // FCA has no 4-character level at all while FCB and FCC do. Depth varies
+    // by branch of the tree, so length cannot stand in for it.
+    'Parent_Org_Code',
+    // AC | DAC | OFFICE | SERVICE_CENTER | DIVISION | BRANCH.
+    //
+    // SERVICE_CENTER is load-bearing: a Service Center Director is the
+    // supervisory person whose own Dept ID is one of those 22 codes, which is
+    // how the routing reviewer should be found. Four call sites currently
+    // match a title containing 'sector director', which does not exist in
+    // this organisation — so all four find nobody.
+    'Org_Level',
     'Office_Code',                 // BudgetConfig.js key. May be blank
     'Business_Unit',
     'Sector',

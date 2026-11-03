@@ -247,6 +247,13 @@ var HC = (function () {
     var formers = _str_(row['Former_Org_Codes']);
     return {
       orgCode:        _str_(row['Org_Code']),
+      // STORED, not derived from the code length. Reading the parent off
+      // length gave the wrong tree: FCBA is under FCB, not FCA, and the '0'
+      // in FCA0A is a filler rather than a level. See HCSeed.js HC_REAL_ORGS.
+      parentOrgCode:  _str_(row['Parent_Org_Code']).toUpperCase(),
+      // AC | DAC | OFFICE | SERVICE_CENTER | DIVISION | BRANCH. SERVICE_CENTER
+      // is how a Service Center Director is identified.
+      orgLevel:       _str_(row['Org_Level']).toUpperCase(),
       officeCode:     _str_(row['Office_Code']),   // LETS addition, see below
       businessUnit:   _str_(row['Business_Unit']),
       sector:         _str_(row['Sector']),
