@@ -7,6 +7,27 @@
   // Create namespace
   window.TravelReview = window.TravelReview || {};
 
+  /**
+   * Whose authority this user is exercising, or '' for their own.
+   *
+   * Read from TravelDelegation rather than from storage directly, so the
+   * mechanism lives in one place. Guarded because this controller is also
+   * loaded on pages that do not include the delegation panel — a missing
+   * global must mean "acting as yourself", not a thrown error that blocks an
+   * approval.
+   *
+   * The server RE-CHECKS the value on every action. A tampered or stale one
+   * is refused, and the real human is recorded in Action_By_Email regardless.
+   */
+  function _actingAs() {
+    try {
+      return (window.TravelDelegation && window.TravelDelegation.actingAs())
+        || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
   // =========================================================================
   // NAVIGATION
   // =========================================================================
@@ -600,7 +621,12 @@
               this._requestId,
               'resubmit',
               comment,
-              {} // No section comments for resubmit
+              {}, // No section comments for resubmit
+              // Whose authority. Empty unless the user has switched to act for
+              // somebody via TravelDelegation. The server RE-CHECKS it — a
+              // tampered value is refused, not honoured — and records the real
+              // human in Action_By_Email either way.
+              _actingAs()
             );
         });
 
@@ -7648,7 +7674,8 @@
               this._requestId,
               actionType,
               comment,
-              sectionComments
+              sectionComments,
+              _actingAs()
             );
         });
 
@@ -7698,7 +7725,8 @@
               this._requestId,
               actionType,
               overallComment,
-              sectionComments
+              sectionComments,
+              _actingAs()
             );
         });
 
@@ -7746,7 +7774,8 @@
               this._requestId,
               denyAction,
               reason,
-              TravelReview._sectionComments
+              TravelReview._sectionComments,
+              _actingAs()
             );
         });
 

@@ -33,6 +33,7 @@
   <!-- Shared client helpers: escapeHtml/escapeAttr + serverCall Promise wrapper -->
   <?!= include('client/shared/escapeHtml'); ?>
   <?!= include('client/shared/serverCall'); ?>
+  <?!= include('client/shared/travelDelegationPanel'); ?>
 
   <!-- Reviewer-specific tweaks -->
   <style>
@@ -374,7 +375,14 @@
       scopeNames: <?!= scopeNames ?>,
       viewAsActive: <?!= JSON.stringify(viewAsActive) ?>,
       viewAsLabel: <?!= JSON.stringify(viewAsLabel) ?>,
-      viewAsParams: <?!= viewAsParams ?>
+      viewAsParams: <?!= viewAsParams ?>,
+      // Delegation, which is NOT the same as viewAs above. viewAs is an admin
+      // preview granting nothing; this is a real delegation the server has
+      // already verified. Published so the act-as banner paints immediately
+      // rather than after a round trip — a delegate should not see one
+      // identity flash before the other.
+      actingAs: <?!= JSON.stringify(actingAs) ?>,
+      actingAsName: <?!= JSON.stringify(actingAsName) ?>
     };
   </script>
 

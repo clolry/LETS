@@ -1,0 +1,700 @@
+<!--
+  travelDelegationPanel.html
+
+  Reviewer delegation, and the act-as switch.
+
+  @clolry: "In go.gov when a user delegates access, the other logs in and then
+  can choose to emulate that user's access and approvals (of course they're
+  logged as themselves but are given the rights to view/edit as the other
+  person would)."
+
+  WHY THE SWITCH IS LOUD
+  ----------------------
+  When act-as is on, the page gets a persistent amber bar that cannot be
+  dismissed — only switched off. A delegate who forgot they were holding
+  somebody else's authority and approved something under it by accident is the
+  failure this prevents, and a subtle indicator does not prevent it.
+
+  WHY THE CHOICE IS STORED IN sessionStorage
+  ------------------------------------------
+  Not localStorage. A delegation is cover for an absence, so it should not
+  survive closing the browser — coming back next week still acting as somebody
+  is the same accident in slower motion.
+
+  The server re-checks the delegation on EVERY call regardless, so a stale
+  value here is refused rather than honoured. This is a convenience, not a
+  control.
+
+  INCLUDED BY: travelPortalPage, travelReviewPage, travelReviewerDashboardPage
+-->
+
+<style>
+  /* ---- the act-as banner ------------------------------------------------ */
+
+  .actas-bar {
+    position: sticky;
+    top: 0;
+    z-index: 1090;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 1rem;
+    background: #fef3c7;
+    border-bottom: 2px solid #f59e0b;
+    color: #78350f;
+    font-size: 0.82rem;
+  }
+
+  .actas-bar__icon { font-size: 1rem; }
+
+  .actas-bar__text { flex: 1 1 auto; }
+
+  .actas-bar__text strong { font-weight: 700; }
+
+  /* Deliberately NOT a dismiss control. The only way out is to stop acting
+     as the principal, because hiding the banner while the state persists is
+     exactly the accident this guards against. */
+  .actas-bar__stop {
+    flex: 0 0 auto;
+    padding: 0.25rem 0.7rem;
+    border: 1px solid #b45309;
+    border-radius: 5px;
+    background: #fff;
+    color: #78350f;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .actas-bar__stop:hover { background: #fffbeb; }
+
+  /* ---- the delegation panel --------------------------------------------- */
+
+  .dlg-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 4vh 1rem;
+    background: rgba(15, 23, 42, 0.45);
+    overflow-y: auto;
+  }
+
+  .dlg-panel {
+    width: 100%;
+    max-width: 44rem;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    max-height: 92vh;
+  }
+
+  .dlg-head,
+  .dlg-foot {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .dlg-head { border-bottom: 1px solid #e2e8f0; }
+  .dlg-foot { border-top: 1px solid #e2e8f0; }
+
+  .dlg-body { padding: 1rem; overflow-y: auto; }
+
+  .dlg-x {
+    margin-left: auto;
+    border: 0;
+    background: none;
+    font-size: 1.35rem;
+    line-height: 1;
+    color: #64748b;
+    cursor: pointer;
+  }
+
+  .dlg-section {
+    margin-bottom: 1.25rem;
+  }
+
+  .dlg-section > h4 {
+    margin: 0 0 0.4rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .dlg-section > p.dlg-hint {
+    margin: 0 0 0.6rem;
+    font-size: 0.74rem;
+    line-height: 1.45;
+    color: #64748b;
+  }
+
+  .dlg-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    margin-bottom: 0.4rem;
+    font-size: 0.8rem;
+  }
+
+  .dlg-row__who { flex: 1 1 auto; }
+
+  .dlg-row__who small {
+    display: block;
+    color: #64748b;
+    font-size: 0.7rem;
+  }
+
+  .dlg-badge {
+    padding: 0.08rem 0.42rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .dlg-badge--active { background: #dcfce7; color: #166534; }
+  .dlg-badge--scheduled { background: #e0e7ff; color: #3730a3; }
+  .dlg-badge--expired { background: #f1f5f9; color: #64748b; }
+  .dlg-badge--revoked { background: #fee2e2; color: #991b1b; }
+
+  .dlg-btn {
+    padding: 0.22rem 0.6rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    background: #fff;
+    font: inherit;
+    font-size: 0.74rem;
+    cursor: pointer;
+  }
+
+  .dlg-btn:hover { background: #f8fafc; }
+  .dlg-btn--danger { border-color: #fca5a5; color: #991b1b; }
+  .dlg-btn--primary { border-color: #0a4fa8; background: #0a4fa8; color: #fff; }
+  .dlg-btn--primary:hover { background: #083f87; }
+
+  .dlg-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+    padding: 0.75rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 7px;
+  }
+
+  .dlg-form label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 0.15rem;
+  }
+
+  .dlg-form input,
+  .dlg-form select {
+    width: 100%;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    font: inherit;
+    font-size: 0.8rem;
+  }
+
+  .dlg-form .dlg-span2 { grid-column: 1 / -1; }
+
+  .dlg-problems {
+    margin-top: 0.6rem;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+    background: #fef2f2;
+    color: #991b1b;
+    font-size: 0.76rem;
+  }
+
+  .dlg-problems ul { margin: 0.25rem 0 0; padding-left: 1.1rem; }
+
+  .dlg-empty {
+    padding: 0.5rem 0;
+    color: #64748b;
+    font-size: 0.78rem;
+  }
+</style>
+
+<!--
+  The act-as banner. Rendered empty and revealed by the controller, so a page
+  load with no delegation active costs nothing.
+-->
+<div class="actas-bar" id="actAsBar" hidden>
+  <i aria-hidden="true" class="fas fa-user-shield actas-bar__icon"></i>
+  <span class="actas-bar__text" id="actAsText"></span>
+  <button type="button" class="actas-bar__stop" id="actAsStop">Stop acting as</button>
+</div>
+
+<div class="dlg-modal" id="dlgModal" hidden>
+  <div class="dlg-panel">
+    <div class="dlg-head">
+      <h3 style="margin:0;font-size:0.95rem;font-weight:700;">Delegation</h3>
+      <button type="button" class="dlg-x" id="dlgClose" aria-label="Close">&times;</button>
+    </div>
+
+    <div class="dlg-body">
+      <!-- WHAT I CAN ACT UNDER. First, because it is the thing a delegate
+           opens this panel to use. -->
+      <div class="dlg-section">
+        <h4>Act on someone's behalf</h4>
+        <p class="dlg-hint">
+          You stay logged in as yourself and every action is recorded under your
+          name. Switching changes whose queue and authority you see.
+        </p>
+        <div id="dlgActAsList"></div>
+      </div>
+
+      <!-- WHAT I HAVE LENT OUT. -->
+      <div class="dlg-section">
+        <h4>People who can act for you</h4>
+        <p class="dlg-hint">
+          Use this when you are on leave or detailed elsewhere. A delegation has
+          a last day — if cover is permanent, ask an administrator for a role
+          instead.
+        </p>
+        <div id="dlgGrantedList"></div>
+
+        <div class="dlg-form" style="margin-top:0.6rem;">
+          <div>
+            <label for="dlgDelegate">Delegate</label>
+            <input type="email" id="dlgDelegate" placeholder="colleague@gsa.gov">
+          </div>
+          <div>
+            <label for="dlgReason">Reason</label>
+            <input type="text" id="dlgReason" maxlength="120"
+                   placeholder="Annual leave">
+          </div>
+          <div>
+            <label for="dlgStart">First day</label>
+            <input type="date" id="dlgStart">
+          </div>
+          <div>
+            <label for="dlgEnd">Last day</label>
+            <input type="date" id="dlgEnd">
+          </div>
+          <div class="dlg-span2" style="display:flex;justify-content:flex-end;gap:0.4rem;">
+            <button type="button" class="dlg-btn dlg-btn--primary" id="dlgCreate">
+              Grant delegation
+            </button>
+          </div>
+        </div>
+        <div class="dlg-problems" id="dlgProblems" hidden></div>
+      </div>
+
+      <!-- Everything I hold, including expired, so a delegate can see why a
+           switch disappeared. -->
+      <div class="dlg-section">
+        <h4>Delegations you hold</h4>
+        <div id="dlgReceivedList"></div>
+      </div>
+    </div>
+
+    <div class="dlg-foot">
+      <span style="margin-right:auto;font-size:0.72rem;color:#64748b;" id="dlgFootNote"></span>
+      <button type="button" class="dlg-btn" id="dlgCancel">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /**
+   * TravelDelegation
+   *
+   * Two responsibilities:
+   *   - the act-as banner and the current act-as choice
+   *   - the panel for granting, revoking and switching
+   *
+   * THE ACT-AS CHOICE IS ADVISORY HERE. Every server call re-checks the
+   * delegation, so a stale or tampered value is refused rather than honoured.
+   * Storing it client-side is a convenience, not a control.
+   */
+
+  var STORAGE_KEY = 'lets_act_as';
+
+  var state = {
+    granted: [],
+    received: [],
+    canActAs: [],
+    today: '',
+    loaded: false
+  };
+
+  function esc(v) {
+    return String(v === null || v === undefined ? '' : v)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function el(id) { return document.getElementById(id); }
+
+  // --------------------------------------------------------------------------
+  // the act-as choice
+  // --------------------------------------------------------------------------
+
+  /**
+   * sessionStorage, NOT localStorage.
+   *
+   * A delegation covers an absence, so the choice should not survive closing
+   * the browser. Coming back next week still acting as somebody else is the
+   * same accident in slower motion.
+   */
+  function getActAs() {
+    // SERVER-CONFIRMED VALUE WINS.
+    //
+    // When a page was rendered with ?actAs=, getReviewerContext has already
+    // verified the delegation and published the result. Trusting that over
+    // sessionStorage means the banner reflects what the server actually
+    // granted — if the delegation was refused, ctx.actingAs is empty and no
+    // banner appears, which is correct. Reading storage alone would show a
+    // banner for authority the user does not have.
+    try {
+      // REVIEWER_CTX is what the reviewer dashboard publishes. Named here
+      // rather than guessed at — the first version looked for
+      // window._reviewerContext, which does not exist, so the whole branch
+      // was dead and the banner fell back to storage every time.
+      var ctx = window.REVIEWER_CTX || null;
+      if (ctx && typeof ctx.actingAs === 'string' && ctx.actingAs) {
+        return ctx.actingAs;
+      }
+    } catch (e) { /* fall through to storage */ }
+
+    try {
+      return window.sessionStorage.getItem(STORAGE_KEY) || '';
+    } catch (e) {
+      // Private browsing and some managed profiles throw on storage access.
+      // Losing the convenience is acceptable; breaking the page is not.
+      return '';
+    }
+  }
+
+  function setActAs(email) {
+    try {
+      if (email) window.sessionStorage.setItem(STORAGE_KEY, email);
+      else window.sessionStorage.removeItem(STORAGE_KEY);
+    } catch (e) { /* see above */ }
+  }
+
+  /**
+   * The parameter every server call should pass.
+   *
+   * Exposed so controllers do not each reimplement reading the storage key —
+   * and so that if the mechanism changes, one place changes.
+   */
+  function actingAs() {
+    return getActAs();
+  }
+
+  function renderBar() {
+    var who = getActAs();
+    var bar = el('actAsBar');
+    if (!bar) return;
+
+    if (!who) {
+      bar.hidden = true;
+      return;
+    }
+
+    // Name it from the delegation list when we have it; fall back to the
+    // address. A banner reading "acting as undefined" is worse than one
+    // reading an email.
+    var match = null;
+    for (var i = 0; i < state.canActAs.length; i++) {
+      if (state.canActAs[i].principalEmail === who) { match = state.canActAs[i]; break; }
+    }
+    var label = match && match.principalName ? match.principalName : who;
+    var until = match && match.endDate ? ' until ' + esc(match.endDate) : '';
+
+    el('actAsText').innerHTML =
+      'You are acting on behalf of <strong>' + esc(label) + '</strong>' + until +
+      '. Actions are still recorded under your own name.';
+    bar.hidden = false;
+  }
+
+  /**
+   * Turns act-as on or off and reloads.
+   *
+   * A FULL RELOAD, not a re-render. Role, scope, queue contents and which
+   * buttons exist are all resolved server-side from the context; patching
+   * them in place would leave some part of the page showing the old identity.
+   * A reload is slower and cannot be half-applied.
+   */
+  function switchTo(email) {
+    setActAs(email || '');
+    window.location.reload();
+  }
+
+  // --------------------------------------------------------------------------
+  // rendering
+  // --------------------------------------------------------------------------
+
+  function badge(status) {
+    var cls = status === 'ACTIVE' ? 'active'
+            : status === 'SCHEDULED' ? 'scheduled'
+            : status === 'REVOKED' ? 'revoked' : 'expired';
+    return '<span class="dlg-badge dlg-badge--' + cls + '">' + esc(status) + '</span>';
+  }
+
+  function renderActAsList() {
+    var host = el('dlgActAsList');
+    var current = getActAs();
+
+    if (!state.canActAs.length) {
+      host.innerHTML = '<p class="dlg-empty">Nobody has delegated their ' +
+        'authority to you.</p>';
+      return;
+    }
+
+    var html = state.canActAs.map(function (d) {
+      var isOn = d.principalEmail === current;
+      return '<div class="dlg-row">' +
+        '<span class="dlg-row__who"><strong>' + esc(d.principalName || d.principalEmail) +
+        '</strong><small>' + esc(d.principalEmail) + ' &middot; until ' +
+        esc(d.endDate) + '</small></span>' +
+        (isOn
+          ? '<span class="dlg-badge dlg-badge--active">Acting now</span>' +
+            '<button type="button" class="dlg-btn" data-dlg-stop="1">Stop</button>'
+          : '<button type="button" class="dlg-btn dlg-btn--primary" ' +
+            'data-dlg-act="' + esc(d.principalEmail) + '">Act as</button>') +
+      '</div>';
+    }).join('');
+    host.innerHTML = html;
+  }
+
+  function renderGranted() {
+    var host = el('dlgGrantedList');
+    if (!state.granted.length) {
+      host.innerHTML = '<p class="dlg-empty">You have not delegated to anyone.</p>';
+      return;
+    }
+    host.innerHTML = state.granted.map(function (d) {
+      return '<div class="dlg-row">' +
+        '<span class="dlg-row__who"><strong>' + esc(d.delegateName || d.delegateEmail) +
+        '</strong><small>' + esc(d.startDate) + ' to ' + esc(d.endDate) +
+        ' &middot; ' + esc(d.reason) + '</small></span>' +
+        badge(d.status) +
+        // Revoke is offered only while it could still be used. Revoking an
+        // expired delegation does nothing and inviting it suggests otherwise.
+        (d.status === 'ACTIVE' || d.status === 'SCHEDULED'
+          ? '<button type="button" class="dlg-btn dlg-btn--danger" ' +
+            'data-dlg-revoke="' + esc(d.delegationId) + '">Revoke</button>'
+          : '') +
+      '</div>';
+    }).join('');
+  }
+
+  function renderReceived() {
+    var host = el('dlgReceivedList');
+    if (!state.received.length) {
+      host.innerHTML = '<p class="dlg-empty">None.</p>';
+      return;
+    }
+    host.innerHTML = state.received.map(function (d) {
+      return '<div class="dlg-row">' +
+        '<span class="dlg-row__who"><strong>' + esc(d.principalName || d.principalEmail) +
+        '</strong><small>' + esc(d.startDate) + ' to ' + esc(d.endDate) +
+        ' &middot; ' + esc(d.reason) + '</small></span>' +
+        badge(d.status) +
+        // A delegate may DECLINE. Somebody handed unexpected authority should
+        // be able to give it back without chasing the principal.
+        (d.status === 'ACTIVE' || d.status === 'SCHEDULED'
+          ? '<button type="button" class="dlg-btn dlg-btn--danger" ' +
+            'data-dlg-revoke="' + esc(d.delegationId) + '">Decline</button>'
+          : '') +
+      '</div>';
+    }).join('');
+  }
+
+  function renderAll() {
+    renderActAsList();
+    renderGranted();
+    renderReceived();
+    el('dlgFootNote').textContent = 'Every delegation is recorded in the ' +
+      'access log, including who created it and why.';
+  }
+
+  function showProblems(list) {
+    var box = el('dlgProblems');
+    box.innerHTML = '<strong>Not saved.</strong><ul>' +
+      list.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') +
+      '</ul>';
+    box.hidden = false;
+  }
+
+  // --------------------------------------------------------------------------
+  // server
+  // --------------------------------------------------------------------------
+
+  function load() {
+    return serverCall('getMyDelegations')
+      .then(function (res) {
+        if (!res || !res.success) return;
+        state.granted = res.data.granted || [];
+        state.received = res.data.received || [];
+        state.canActAs = res.data.canActAs || [];
+        state.today = res.data.today || '';
+        state.loaded = true;
+
+        // A stored act-as that is no longer valid must be CLEARED, not left
+        // to fail on every call. A delegation can be revoked while the tab is
+        // open, and the banner would otherwise keep claiming authority the
+        // server refuses.
+        var current = getActAs();
+        if (current) {
+          var stillValid = state.canActAs.some(function (d) {
+            return d.principalEmail === current;
+          });
+          if (!stillValid) {
+            setActAs('');
+            console.warn('Delegation for ' + current +
+                         ' is no longer active; stopped acting as them.');
+          }
+        }
+        renderBar();
+        if (!el('dlgModal').hidden) renderAll();
+      })
+      .catch(function (err) {
+        // Non-fatal. A page that cannot load delegations should still work for
+        // the user's own authority.
+        console.warn('Could not load delegations:', err && err.message);
+      });
+  }
+
+  function create() {
+    el('dlgProblems').hidden = true;
+    var btn = el('dlgCreate');
+    btn.disabled = true;
+    btn.textContent = 'Saving\u2026';
+
+    serverCall('createDelegation', {
+      delegateEmail: el('dlgDelegate').value.trim(),
+      startDate: el('dlgStart').value,
+      endDate: el('dlgEnd').value,
+      reason: el('dlgReason').value.trim()
+    }).then(function (res) {
+      btn.disabled = false;
+      btn.textContent = 'Grant delegation';
+      if (!res || !res.success) {
+        showProblems(res && res.problems ? res.problems
+          : [(res && res.error) || 'Could not create the delegation.']);
+        return;
+      }
+      el('dlgDelegate').value = '';
+      el('dlgReason').value = '';
+      load().then(renderAll);
+    }).catch(function (err) {
+      btn.disabled = false;
+      btn.textContent = 'Grant delegation';
+      showProblems([(err && err.message) || 'The server call failed.']);
+    });
+  }
+
+  function revoke(id) {
+    // A reason is required server-side. Prompting is crude but honest: the
+    // alternative is a second modal for one field.
+    var reason = window.prompt('Why are you ending this delegation?');
+    if (reason === null) return;
+    if (!reason.trim()) {
+      showProblems(['A reason is required to end a delegation.']);
+      return;
+    }
+
+    serverCall('revokeDelegation', id, reason.trim())
+      .then(function (res) {
+        if (!res || !res.success) {
+          showProblems([(res && res.error) || 'Could not revoke.']);
+          return;
+        }
+        // If we were acting under the delegation just revoked, stop — and
+        // reload, because the authority the page was rendered with is gone.
+        var current = getActAs();
+        var wasActing = state.received.some(function (d) {
+          return d.delegationId === id && d.principalEmail === current;
+        });
+        if (wasActing) { switchTo(''); return; }
+        load().then(renderAll);
+      })
+      .catch(function (err) {
+        showProblems([(err && err.message) || 'The server call failed.']);
+      });
+  }
+
+  // --------------------------------------------------------------------------
+  // wiring
+  // --------------------------------------------------------------------------
+
+  function open() {
+    el('dlgModal').hidden = false;
+    if (state.loaded) renderAll();
+    else load().then(renderAll);
+  }
+
+  function close() { el('dlgModal').hidden = true; }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var stop = el('actAsStop');
+    if (stop) stop.addEventListener('click', function () { switchTo(''); });
+
+    var closeBtn = el('dlgClose');
+    if (closeBtn) closeBtn.addEventListener('click', close);
+    var cancel = el('dlgCancel');
+    if (cancel) cancel.addEventListener('click', close);
+    var createBtn = el('dlgCreate');
+    if (createBtn) createBtn.addEventListener('click', create);
+
+    // Delegated, because the lists are rebuilt on every load.
+    var modal = el('dlgModal');
+    if (modal) {
+      modal.addEventListener('click', function (e) {
+        var act = e.target.closest('[data-dlg-act]');
+        if (act) { switchTo(act.getAttribute('data-dlg-act')); return; }
+        if (e.target.closest('[data-dlg-stop]')) { switchTo(''); return; }
+        var rev = e.target.closest('[data-dlg-revoke]');
+        if (rev) { revoke(rev.getAttribute('data-dlg-revoke')); }
+      });
+    }
+
+    // Sensible defaults: today to a fortnight out, which is what leave cover
+    // usually is. Both remain editable.
+    var start = el('dlgStart');
+    var end = el('dlgEnd');
+    if (start && !start.value) start.value = new Date().toISOString().slice(0, 10);
+    if (end && !end.value) {
+      var d = new Date();
+      d.setDate(d.getDate() + 14);
+      end.value = d.toISOString().slice(0, 10);
+    }
+
+    // Loaded on every page that includes this, because the BANNER has to
+    // appear whether or not the panel is opened. A delegate who does not know
+    // they are acting as somebody is the whole risk.
+    load();
+  });
+
+  window.TravelDelegation = {
+    open: open,
+    close: close,
+    actingAs: actingAs,
+    switchTo: switchTo,
+    reload: load
+  };
+})();
+</script>

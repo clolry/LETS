@@ -102,6 +102,13 @@ jobs:
       - name: Feedback pipeline tests
         run: node lets_app/test_feedback.js
 
+      - name: Delegation tests
+        # §4 holds @clolry's requirement: the approval log records the HUMAN
+        # who pressed the button, not the principal. Logging the principal
+        # would make the record read as though Alice approved her own coverage
+        # while she was on leave.
+        run: node lets_app/test_delegation.js
+
       - name: Request read authorization tests
         # §5 watches the CACHED path. The review cache is keyed per REQUEST
         # with no user in the key, so gating only the slow path would mean the
@@ -157,6 +164,68 @@ jobs:
         # rejected because LETS exists in its current form precisely BECAUSE
         # the inherited HC library became unreachable.
         run: node orgchart_app/test_orgchart.js
+
+      - name: Guard - delegation must not become a role grant
+        run: |
+          echo "Checking delegation constraints..."
+          D=lets_app/server/30_services/Delegation.js
+          if [ ! -f "$D" ]; then
+            echo "::error::$D is missing."
+            exit 1
+          fi
+          # @clolry described the Go.gov model: the delegate "logs in and then
+          # can choose to emulate that user's access and approvals (of course
+          # they're logged as themselves...)". The parenthetical is the design.
+          #
+          # These four refusals are what makes a delegation different from a
+          # Travel_User_Roles row, which was the obvious implementation and
+          # would have been indistinguishable from a permanent grant.
+          for CHECK in \
+            "End date is required:an open-ended delegation is a role grant in disguise" \
+            "cannot lend authority onward:re-delegation would make the audit chain unfollowable" \
+            "only delegate your own authority:nobody may lend authority that is not theirs" \
+            "only record of why:the reason is the record"; do
+            NEEDLE="${CHECK%%:*}"
+            WHY="${CHECK##*:}"
+            if ! grep -aqF "$NEEDLE" "$D"; then
+              echo "::error file=$D::Missing the refusal for \"${NEEDLE}\" — ${WHY}."
+              exit 1
+            fi
+          done
+          # Expiry must be COMPUTED. A stored EXPIRED needs a nightly job, and
+          # a delegation live until the job next runs is the failure this avoids.
+          FORCE=$(awk '/^  function isInForce/,/^  }/' "$D")
+          if ! echo "$FORCE" | grep -aq 'd.startDate <= when && when <= d.endDate'; then
+            echo "::error file=$D::isInForce must compute the window from the dates. A stored EXPIRED status requires a scheduled job and leaves a delegation live until it next runs."
+            exit 1
+          fi
+          # THE APPROVAL LOG MUST NAME THE HUMAN.
+          RA=lets_app/server/40_domain/Review_Action.js
+          if ! grep -aq 'actorEmail,  *\/\/ Action_By_Email' "$RA"; then
+            echo "::error file=$RA::Action_By_Email must record the ACTOR, not the principal. Logging the principal would make the record read as though they approved their own coverage while on leave."
+            exit 1
+          fi
+          if ! grep -aq 'Delegation.canActAs(actorEmail, actAs)' "$RA"; then
+            echo "::error file=$RA::The delegation must be re-checked at ACTION time. It can be revoked between the page loading and the approval being pressed."
+            exit 1
+          fi
+          # Every review action must carry the act-as value, or a delegate's
+          # approval is attempted under their own authority and refused.
+          RC=lets_app/client/controllers/review/travelReviewController.html
+          CALLS=$(grep -aoc '\.submitReviewAction(' "$RC" || true)
+          PASSES=$(grep -ao '_actingAs()' "$RC" | wc -l)
+          CALLN=$(grep -ao '\.submitReviewAction(' "$RC" | wc -l)
+          if [ "$PASSES" -ne "$CALLN" ]; then
+            echo "::error file=$RC::All ${CALLN} submitReviewAction call(s) must pass the act-as value; ${PASSES} do. A delegate's approval would be attempted under their own authority."
+            exit 1
+          fi
+          # The banner must not be dismissible while the state persists.
+          P=lets_app/client/shared/travelDelegationPanel.html
+          if grep -aqE 'actas-bar__dismiss|data-dismiss' "$P"; then
+            echo "::error file=$P::The act-as banner must not be dismissible. A delegate who forgot they held someone's authority and approved under it is the failure it guards against."
+            exit 1
+          fi
+          echo "PASS - delegation is bounded, audited, and logged under the real actor."
 
       - name: Guard - request reads must be authorized on both paths
         run: |

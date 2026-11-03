@@ -73,6 +73,15 @@
         <i aria-hidden="true" class="fas fa-clipboard-check"></i>
         <span>My Review Queue</span>
       </a>
+      <!--
+        Delegation. Visible to everyone, because both halves apply broadly:
+        anyone may need to arrange cover, and anyone may be handed it.
+      -->
+      <a href="#" onclick="TravelDelegation.open(); return false;" class="travel-header__role-link"
+         title="Arrange cover while you are out, or act on someone else's behalf">
+        <i aria-hidden="true" class="fas fa-user-shield"></i>
+        <span>Delegation</span>
+      </a>
       <div class="help-dropdown">
         <button class="travel-header__help-btn" onclick="TravelHelp.toggle(event)" title="Help">
           <i aria-hidden="true" class="fas fa-question"></i>
@@ -326,6 +335,7 @@
   <?!= include('client/components/documentViewer'); ?>
 
   <!-- Help Modal -->
+  <?!= include('client/shared/travelDelegationPanel'); ?>
   <?!= include('client/shared/travelHelpModal'); ?>
 
   <!-- Feedback System -->

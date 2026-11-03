@@ -282,6 +282,25 @@ function serveReviewerDashboardPage(e) {
     };
   }
 
+  // DELEGATION act-as, which is a different thing from the admin view-as
+  // above and must not be confused with it.
+  //
+  //   ?as=bu&force=1     ADMIN preview. Shows a synthetic BU reviewer context
+  //                      for testing. Grants nothing real.
+  //   ?actAs=a@gsa.gov   DELEGATION. Resolves the actual person's context,
+  //                      and only if the caller holds a live delegation from
+  //                      them. getReviewerContext refuses otherwise.
+  //
+  // Passed as a URL parameter rather than read from the session because the
+  // page is rendered server-side before any client script runs — the
+  // delegation panel sets it in sessionStorage, and the links it builds carry
+  // it through. The authority check is in getReviewerContext either way, so a
+  // hand-typed parameter buys nothing.
+  if (params.actAs) {
+    viewAs = viewAs || {};
+    viewAs.actAs = String(params.actAs).toLowerCase();
+  }
+
   var ctx;
   try {
     ctx = getReviewerContext(userEmail, viewAs);
@@ -326,6 +345,11 @@ function serveReviewerDashboardPage(e) {
   template.scopeNames = JSON.stringify(ctx.scope.names || []);
   template.viewAsActive = !!ctx.viewAsActive;
   template.viewAsLabel = ctx.viewAsLabel || '';
+  // Published so the page can render the act-as banner on first paint rather
+  // than waiting for a round trip — a delegate should not see one identity
+  // flash before the other.
+  template.actingAs = ctx.actingAs || '';
+  template.actingAsName = ctx.actingAsName || '';
   template.viewAsParams = JSON.stringify(viewAs || null);
 
   return template
