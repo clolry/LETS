@@ -102,6 +102,13 @@ jobs:
       - name: Feedback pipeline tests
         run: node lets_app/test_feedback.js
 
+      - name: Request read authorization tests
+        # §5 watches the CACHED path. The review cache is keyed per REQUEST
+        # with no user in the key, so gating only the slow path would mean the
+        # first legitimate read populated the cache and every later caller was
+        # served unchecked — which is the path an enumeration loop hits.
+        run: node lets_app/test_request_access.js
+
       - name: HC PII boundary tests
         # §2 is an ALLOW-LIST test. A deny-list passes the moment someone adds
         # a column to HC_Positions — the leak would be silent and the test
@@ -150,6 +157,79 @@ jobs:
         # rejected because LETS exists in its current form precisely BECAUSE
         # the inherited HC library became unreachable.
         run: node orgchart_app/test_orgchart.js
+
+      - name: Guard - request reads must be authorized on both paths
+        run: |
+          echo "Checking request read authorization..."
+          # getRequestForReview had NO authorization check. It computed a
+          # `permissions` object and returned it ALONGSIDE the data; the client
+          # used it to pick which buttons to draw and nothing gated the
+          # payload. Any signed-in user who knew a sequential request ID got
+          # the submitter and all four reviewers by name and email, and per
+          # traveller: employee ID, security clearance, passport status,
+          # telework status and home commute. Finding G-004, C4/R3.
+          R=lets_app/server/40_domain/Review_Read.js
+          A=lets_app/server/30_services/RequestAccess.js
+          if [ ! -f "$A" ]; then
+            echo "::error::$A is missing. Request read authorization must exist."
+            exit 1
+          fi
+          # BOTH PATHS. The cache is keyed per request with no user in the key,
+          # so the fast path is the one that matters.
+          CACHED=$(awk '/if \(!isChainedCall\)/,/db = db \|\| new TravelDB/' "$R")
+          if ! echo "$CACHED" | grep -aq 'requestReadAccess('; then
+            echo "::error file=$R::The CACHED path must check requestReadAccess(). The review cache is shared across users, so gating only the uncached path leaves the fast path open."
+            exit 1
+          fi
+          if ! echo "$CACHED" | grep -aq 'sanitizeTravelersForCaller('; then
+            echo "::error file=$R::The cached envelope is the FULL record and must be re-sanitized per caller, or a scoped reviewer receives another traveller's clearance and commute."
+            exit 1
+          fi
+          UNCACHED=$(awk '/========== AUTHORIZATION ==========/,/const envelope = successResponse/' "$R")
+          if ! echo "$UNCACHED" | grep -aq 'requestReadAccess('; then
+            echo "::error file=$R::The uncached path must check requestReadAccess()."
+            exit 1
+          fi
+          # Default deny. A missing final refusal turns the whole function into
+          # a pass-through.
+          # The FINAL return, not any refusal anywhere in the file. There are
+          # two `allowed: false` returns — the anonymous-caller check and the
+          # default — so a plain grep passed with the default flipped to
+          # allow. Checked against the last 12 lines of the function instead.
+          TAIL=$(awk '/^function requestReadAccess/,/^}/' "$A" | tail -12)
+          if ! echo "$TAIL" | grep -aq 'allowed: false'; then
+            echo "::error file=$A::requestReadAccess must END in a REFUSAL. A travel request is not a public record, and a flipped default turns the whole function into a pass-through."
+            exit 1
+          fi
+          # A failing scope lookup must deny, not degrade. Unlike the HC
+          # directory, there is no safe reduced form here.
+          if ! grep -aq "scope check failed" "$A"; then
+            echo "::error file=$A::A failing scope lookup must be logged and must DENY."
+            exit 1
+          fi
+          # The attachment chain: list is relationship-gated, share is admin.
+          AT=lets_app/server/30_services/Attachments.js
+          LISTSTART=$(grep -an 'function getRequestAttachments' "$AT" | head -1 | cut -d: -f1)
+          if [ -z "$LISTSTART" ]; then
+            echo "::error file=$AT::getRequestAttachments is missing."
+            exit 1
+          fi
+          if ! sed -n "${LISTSTART},\$p" "$AT" | head -60 | grep -aq 'requestReadAccess('; then
+            echo "::error file=$AT::getRequestAttachments must check request access. It returns Drive file IDs, and shareAttachmentsWithUsers will grant access to them."
+            exit 1
+          fi
+          SHAREBODY=$(awk '/^function shareAttachmentsWithUsers/,/^}/' "$AT")
+          if ! echo "$SHAREBODY" | grep -aq 'isTravelAdmin'; then
+            echo "::error file=$AT::shareAttachmentsWithUsers grants Drive access to arbitrary file IDs and must be admin-gated for browser callers."
+            exit 1
+          fi
+          # And the reviewer handoff must NOT go through the gated wrapper, or
+          # every approval silently fails to share attachments.
+          if grep -aqE '=\s*shareAttachmentsWithUsers\(' lets_app/server/40_domain/Review_Action.js; then
+            echo "::error file=lets_app/server/40_domain/Review_Action.js::The reviewer handoff must call _shareAttachmentsInternal_. The admin-gated wrapper would break every handoff, and the call site swallows the error so nobody would notice."
+            exit 1
+          fi
+          echo "PASS - request reads are authorized on both paths and the attachment chain is closed."
 
       - name: Guard - HR PII must not escape the privacy boundary
         run: |

@@ -150,7 +150,7 @@ Severity is **consequence × reachability**. Both axes are needed: a catastrophi
 |---|---|---|---|---|---|---|
 | 1 | **G-001** | **412 functions are reachable from any authenticated browser; 51 of them write with no authorization check.** Includes the 118 `_foo` names that look private and are not | C4/R4 | TRIP | open | R-4, S-19 |
 | 2 | **G-002** | **`bootstrapTravelAdmin` lets any authenticated user grant themselves `admin`** — writes both rows and clears the role cache so it takes effect at once | C4/R4 | TRIP | open | S-1 |
-| 3 | **G-004** | **Request disclosure chain.** `getRequestForReview` returns any request's full record (PII + probable CUI); `getRequestAttachments` yields its file IDs; `shareAttachmentsWithUsers` grants anyone access. IDs are sequential | C4/R3 | TRIP | open | S-2, S-16 |
+| 3 | **G-004** | **Request disclosure chain.** `getRequestForReview` returns any request's full record (PII + probable CUI); `getRequestAttachments` yields its file IDs; `shareAttachmentsWithUsers` grants anyone access. IDs are sequential | C4/R3 | TRIP | **remediated** 2026-11-03 — §6.13 | S-2, S-16 |
 | 4 | **G-006** | **No `oauthScopes` declared.** The effective grant is inferred from API usage and includes full Drive and all spreadsheets. Nobody chose it; it widens silently as code is added | C4/R2 | TRIP | open | S-13 |
 | 5 | **G-003** | **The review-edit surface has no authorization.** 5 `update*` RPCs plus `reportDDFundingIssue` and `submitFundingCorrection` let any user rewrite itinerary, travellers, costs, `Grand_Total`, status and `Is_Client_Paid` on any request | C3/R4 | TRIP | **BLOCKED ON BD-3** | S-4, S-17 |
 | 6 | **G-005** | **`deleteTravelDraftFile` trashes any Drive file ID with no ownership check**; `uploadTravelDraftFile` has no size or MIME limit | C3/R3 | TRIP | open | S-3 |
@@ -269,6 +269,64 @@ Every finding resolves to a measurement script, a deliverable section, or both. 
 | G-001, G-002, G-003, G-004, G-005, G-030, G-067 | `pass5_guard_census.js`, `pass6_write_surface_census.js` — the guard census and the write surface |
 | G-011, G-015, G-017, G-025, G-026 | `pass6_client_call_census.js`, `pass6_component_map.js` — the RPC census and the include graph |
 | G-006, G-020, G-021, G-048, G-064, G-065, G-072, G-073 | `pass6_deployment_census.js` — manifest, clasp targets, Script Properties, CI guards |
+---
+
+## §6.13 G-004 closed, and what the chain actually was
+
+Remediated 2026-11-03 at @clolry's instruction: *"Reduce the exposure on `getRequestForReview` to at or below TRIP's HC exposure."*
+
+### The mechanism was more specific than the finding states
+
+`getRequestForReview` did not merely lack a check. **It computed one and returned it as data** `[VERIFIED]`:
+
+```js
+permissions: {
+  isCurrentReviewer: isCurrentReviewer,
+  isSubmitter: isSubmitter,
+  availableActions: availableActions
+}
+```
+
+The client used that object to decide which buttons to draw. Nothing gated the payload on it. So the function *appeared* authorization-aware to a reader, which is worse than an obviously missing check — a reviewer skimming the code would see `permissions` and assume it was enforced.
+
+### What a stranger received
+
+| | |
+|---|---|
+| `request` | submitter and all four reviewers by name and email, BLUF, justification, every cost figure |
+| `travelers` | per person: employee ID, LCAT, **security clearance held**, **valid passport held**, telework status, home commute distance, home parking cost, NFS receipt |
+| `legs` | every destination and date |
+| `attachments` | Drive file IDs |
+| `approvalLog` | every decision, comment and reviewer |
+
+Clearance and passport status are a materially worse disclosure than anything in the HC bundle. Request IDs are sequential, so enumeration is a loop.
+
+### The chain had three links, not one
+
+1. `getRequestForReview` — leaked the file IDs
+2. `getRequestAttachments` — listed them for any request, also ungated
+3. `shareAttachmentsWithUsers` — granted **any** email access to **any** file ID
+
+Closing only the first would have left 2 and 3 as a working pair.
+
+### What was built
+
+`30_services/RequestAccess.js`. Read access requires a **relationship** to the request — submitter, a traveller on it, the current reviewer, a named reviewer, a **prior** reviewer who already acted, a scoped reviewer whose BU or org prefix matches, or an admin. Everyone else is **refused**, not served a redacted copy: a redacted copy still confirms the request exists and who is on it.
+
+> **This is stricter than the HC bar, deliberately.** The HC directory is organisation-visible by design, so reduction was the right answer there. A travel request is not a public record, so refusal is.
+
+Field reduction applies **within** the allowed set. A named reviewer who is not the current reviewer does not see another traveller's clearance, passport, commute or employee ID. The current reviewer does, because clearance bears on whether someone can attend a classified or foreign event and commute figures feed the local-travel calculation. **A traveller always sees their own row in full and nobody else's.**
+
+### Two things that would have failed silently
+
+**The cached path.** The review cache is keyed `request_review_v2_<id>` — per request, with **no user in the key** `[VERIFIED]`. Gating only the slow path would have meant the first legitimate read populated the cache and every subsequent caller was served from it unchecked. That is the path an enumeration loop hits. Both paths now check, and the cached envelope is **re-sanitized per caller** because it is stored in full.
+
+**The reviewer handoff.** `Review_Action.js` shares attachments with the next reviewer on approval, and that actor is a **reviewer, not an admin**. An admin gate on the shared implementation would have broken every handoff — and the call site catches its own errors and logs a warning, so the approval would still succeed and nobody would notice until a reviewer could not open a file. The browser-callable wrapper is gated; the internal function the workflow uses is not.
+
+### A failing check DENIES here
+
+`HCPrivacy` could safely degrade to a narrower tier when a role lookup failed, because what remained was harmless. There is no safe reduced form of a travel request, so a failing scope lookup refuses.
+
 ---
 
 ## §6.12 G-016 is worse than "unreachable": its status vocabulary does not exist

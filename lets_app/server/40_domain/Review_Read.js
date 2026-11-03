@@ -51,13 +51,36 @@ function getRequestForReview(requestId, db) {
         const cachedRequest = cachedData.request || {};
         const currentUser = Session.getActiveUser().getEmail() || '';
         const currentUserLower = currentUser.toLowerCase();
+
+        // AUTHORIZATION, ON THE CACHED PATH TOO.
+        //
+        // The cache is SHARED across users — one key per request, no user in
+        // it. Gating only the slow path would mean the first legitimate read
+        // populated the cache and every subsequent caller was served from it
+        // unchecked. The fast path is the one an enumeration loop would hit.
+        const cachedAccess = requestReadAccess(
+          cachedRequest, cachedData.travelers, cachedData.approvalLog, currentUser);
+        if (!cachedAccess.allowed) {
+          logRequestAccessDenial(requestId, currentUser, cachedAccess.reason);
+          console.timeEnd(_timer);
+          return errorResponse(cachedAccess.reason, 'FORBIDDEN');
+        }
+
         const reviewerEmailLower = (cachedRequest.currentReviewerEmail || '').toLowerCase();
         const submitterEmailLower = (cachedRequest.submitterEmail || '').toLowerCase();
         const isCurrentReviewer = currentUserLower === reviewerEmailLower && reviewerEmailLower !== '';
         const isSubmitter = currentUserLower === submitterEmailLower;
+
+        // Re-sanitized per caller. The cached copy is the FULL envelope, so
+        // serving it as-is would hand a scoped reviewer another traveller's
+        // clearance and commute.
+        cachedData.travelers = sanitizeTravelersForCaller(
+          cachedData.travelers, cachedAccess.basis, currentUser);
+
         cachedData.permissions = {
           isCurrentReviewer: isCurrentReviewer,
           isSubmitter: isSubmitter,
+          accessBasis: cachedAccess.basis,
           availableActions: getAvailableActions(cachedRequest.status, isCurrentReviewer, isSubmitter)
         };
         console.timeEnd(_timer);
@@ -366,9 +389,39 @@ function getRequestForReview(requestId, db) {
     // Sort approval log by timestamp descending (most recent first)
     approvalLog.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-    // ========== Determine reviewer permissions ==========
+    // ========== AUTHORIZATION ==========
+    //
+    // This function had NO authorization check of any kind. It computed the
+    // `permissions` object below and returned it ALONGSIDE the data — the
+    // client used it to decide which buttons to draw, and nothing gated the
+    // payload.
+    //
+    // So any signed-in user who knew a request ID received the submitter and
+    // all four reviewers by name and email, and per traveller: employee ID,
+    // LCAT, security clearance held, valid passport held, telework status,
+    // home commute distance and parking cost, plus every attachment file ID —
+    // which shareAttachmentsWithUsers would then grant anyone access to.
+    //
+    // Request IDs are SEQUENTIAL, so enumeration is a loop rather than an
+    // attack. Finding G-004, rated C4/R3.
+    //
+    // @clolry: "Reduce the exposure on getRequestForReview to at or below
+    // TRIP's HC exposure."
+    //
+    // See 30_services/RequestAccess.js for who may read what and why.
     const currentUser = Session.getActiveUser().getEmail() || '';
     const currentUserLower = currentUser.toLowerCase();
+
+    const access = requestReadAccess(request, travelers, approvalLog, currentUser);
+    if (!access.allowed) {
+      // Refusals are logged, not successes: a successful read happens
+      // constantly in normal use, while a refusal is what enumeration looks
+      // like.
+      logRequestAccessDenial(requestId, currentUser, access.reason);
+      console.timeEnd(_timer);
+      return errorResponse(access.reason, 'FORBIDDEN');
+    }
+
     const reviewerEmailLower = (request.currentReviewerEmail || '').toLowerCase();
     const submitterEmailLower = (request.submitterEmail || '').toLowerCase();
 
@@ -387,12 +440,18 @@ function getRequestForReview(requestId, db) {
     const envelope = successResponse({
       request: request,
       legs: legs,
-      travelers: travelers,
+      // Reduced for anyone who is not the current reviewer, an admin, or the
+      // traveller themselves. A scoped reviewer three stages away has no need
+      // for another person's security clearance or home commute.
+      travelers: sanitizeTravelersForCaller(travelers, access.basis, currentUser),
       attachments: attachments,
       approvalLog: cleanApprovalLog,
       permissions: {
         isCurrentReviewer: isCurrentReviewer,
         isSubmitter: isSubmitter,
+        // Exposed so the UI can say WHY the user has access, and so a bug
+        // report can distinguish "no access" from "reduced access".
+        accessBasis: access.basis,
         availableActions: availableActions
       }
     });

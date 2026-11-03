@@ -214,7 +214,16 @@ function submitReviewAction(requestId, action, comments, sectionComments) {
           const attachments = getRequestAttachments(requestId);
           if (attachments.success && attachments.attachments.length > 0) {
             const fileIds = attachments.attachments.map(a => a.fileId);
-            const shareResult = shareAttachmentsWithUsers(fileIds, [nextReviewer.email], 'viewer');
+            // _shareAttachmentsInternal_, not the browser-callable wrapper.
+            //
+            // The wrapper is admin-gated to close the G-004 chain, and the
+            // actor HERE is the reviewer who just approved — not an admin. An
+            // admin gate on this path would have broken every handoff to the
+            // next reviewer, silently: the warning is logged and the approval
+            // still succeeds, so nobody would notice until a reviewer
+            // reported they could not open an attachment.
+            const shareResult = _shareAttachmentsInternal_(
+              fileIds, [nextReviewer.email], 'viewer');
             if (shareResult.success) {
               console.log(`Shared ${fileIds.length} attachments with ${nextReviewer.email}`);
             } else {

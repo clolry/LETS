@@ -27,6 +27,7 @@ test_budget_admin.js
 test_budget_backfill.js
 test_gogov_sync.js
 test_hc_privacy.js
+test_request_access.js
 preview.html
 node_modules/**
 .git/**

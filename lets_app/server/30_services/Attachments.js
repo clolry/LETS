@@ -467,7 +467,56 @@ function finalizeRequestAttachments(fileIds, requestId, category, options) {
  * @param {string} accessLevel - 'reader' or 'writer' (default 'reader')
  * @returns {Object} { success }
  */
+/**
+ * Shares attachment files. ADMIN ONLY from a browser.
+ *
+ * THE BACK HALF OF G-004. This takes ARBITRARY file IDs and ARBITRARY email
+ * addresses and grants Drive access. Paired with getRequestAttachments —
+ * which was also ungated — it was a complete disclosure chain: enumerate a
+ * sequential request ID, read its file IDs, share them to yourself.
+ *
+ * There is no request in the signature to authorize against, so there is
+ * nothing to scope a per-request rule to. Hence admin-only rather than
+ * relationship-based.
+ *
+ * THE WORKFLOW STILL WORKS. Review_Action.js shares attachments with the next
+ * reviewer on approval, and the caller there is the REVIEWER, not an admin —
+ * so an admin gate on the shared implementation would have broken every
+ * handoff. That path calls _shareAttachmentsInternal_ directly, which is
+ * server-side only and carries no gate. This wrapper exists purely to stop a
+ * BROWSER caller.
+ *
+ * @client
+ */
 function shareAttachmentsWithUsers(fileIds, emails, accessLevel) {
+  try {
+    var _who = Session.getActiveUser().getEmail() || '';
+    if (!_who || typeof isTravelAdmin !== 'function' || !isTravelAdmin(_who)) {
+      console.warn('shareAttachmentsWithUsers: refused non-admin caller ' +
+                   (_who || '(none)'));
+      return { success: false,
+               error: 'Administrator access is required to share attachments.' };
+    }
+  } catch (e) {
+    return { success: false, error: 'Could not determine the active user.' };
+  }
+  return _shareAttachmentsInternal_(fileIds, emails, accessLevel);
+}
+
+/**
+ * Does the sharing. SERVER-SIDE ONLY — not browser-reachable, because it is
+ * not a top-level declaration pattern Apps Script exposes by name a client
+ * would guess, and because every caller is inside this project.
+ *
+ * Carries no authorization check ON PURPOSE: its callers are the submission
+ * and review paths, which have already established that the actor may act on
+ * the request. Adding an admin gate here would break the reviewer handoff.
+ *
+ * @param {Array<string>} fileIds
+ * @param {Array<string>} emails
+ * @param {string} [accessLevel='reader']
+ */
+function _shareAttachmentsInternal_(fileIds, emails, accessLevel) {
   accessLevel = accessLevel || 'reader';
   try {
     if (!fileIds || !emails || fileIds.length === 0 || emails.length === 0) {
@@ -530,7 +579,86 @@ function updateRequestAttachmentsFolder(requestId, folderUrl) {
  * @param {string} requestId
  * @returns {Object} { success, attachments: [...] }
  */
+/**
+ * Loads the minimum needed to authorize an attachment read.
+ *
+ * Reads three tabs rather than calling getRequestForReview, which would
+ * recurse: that function is what calls this one.
+ *
+ * @param {string} requestId
+ * @returns {{request: Object, travelers: Array, approvalLog: Array}}
+ */
+function _attachmentAccessContext_(requestId) {
+  var out = { request: {}, travelers: [], approvalLog: [] };
+  try {
+    var db = new TravelDB();
+
+    var r = db.readSheet(SHEET_NAMES.REQUESTS);
+    var ri = r.headerIndex || {};
+    for (var i = 0; i < r.rows.length; i++) {
+      if (String(r.rows[i][ri['Request_ID']]) !== String(requestId)) continue;
+      out.request = {
+        submitterEmail: r.rows[i][ri['Submitter_Email']] || '',
+        currentReviewerEmail: r.rows[i][ri['Current_Reviewer_Email']] || '',
+        sectorDirectorEmail: r.rows[i][ri['Sector_Director_Email']] || '',
+        buReviewerEmail: r.rows[i][ri['BU_Reviewer_Email']] || '',
+        submitterOrgCode: r.rows[i][ri['Submitter_Org_Code']] || '',
+        submitterBU: r.rows[i][ri['Submitter_BU']] || ''
+      };
+      break;
+    }
+
+    var t = db.readSheet(SHEET_NAMES.REQUEST_TRAVELERS);
+    var ti = t.headerIndex || {};
+    for (var j = 0; j < t.rows.length; j++) {
+      if (String(t.rows[j][ti['Request_ID']]) !== String(requestId)) continue;
+      out.travelers.push({ email: t.rows[j][ti['Email']] || '' });
+    }
+
+    var l = db.readSheet(SHEET_NAMES.APPROVAL_LOG);
+    var li = l.headerIndex || {};
+    for (var k = 0; k < l.rows.length; k++) {
+      if (String(l.rows[k][li['Request_ID']]) !== String(requestId)) continue;
+      out.approvalLog.push({ actionByEmail: l.rows[k][li['Action_By_Email']] || '' });
+    }
+  } catch (e) {
+    console.error('_attachmentAccessContext_: ' + e.message);
+  }
+  return out;
+}
+
 function getRequestAttachments(requestId) {
+  // THE SECOND HALF OF G-004.
+  //
+  // This returns Drive FILE IDs for a request's attachments, and
+  // shareAttachmentsWithUsers below will grant any email address access to
+  // any file ID. Together they were a complete disclosure chain: enumerate a
+  // sequential request ID here, then share its files to yourself.
+  //
+  // Gated on the same rule as the request itself — if you may not read the
+  // request, you may not list its files. Reuses requestReadAccess rather than
+  // reimplementing the relationship checks, so the two cannot drift.
+  try {
+    var _who = '';
+    try { _who = Session.getActiveUser().getEmail() || ''; } catch (e) { _who = ''; }
+    if (typeof requestReadAccess === 'function') {
+      var _ctx = _attachmentAccessContext_(requestId);
+      var _acc = requestReadAccess(_ctx.request, _ctx.travelers, _ctx.approvalLog, _who);
+      if (!_acc.allowed) {
+        if (typeof logRequestAccessDenial === 'function') {
+          logRequestAccessDenial(requestId, _who, 'attachment list: ' + _acc.reason);
+        }
+        return { success: false, error: _acc.reason, attachments: [] };
+      }
+    }
+  } catch (e) {
+    // A failure here DENIES. The alternative is serving file IDs when the
+    // check could not be made.
+    console.error('getRequestAttachments: access check failed: ' + e.message);
+    return { success: false, error: 'Could not verify access to this request.',
+             attachments: [] };
+  }
+
   try {
     var ss = SpreadsheetApp.openById(TRAVEL_DB_SPREADSHEET_ID);
     var sheet = ss.getSheetByName(SHEET_NAMES.ATTACHMENTS);
