@@ -742,9 +742,12 @@ function saveTravelEvent(ev) {
   } catch (e) {
     return errorResponse('Could not determine the active user.');
   }
-  if (!who || !isTravelAdmin(who)) {
-    console.warn('saveTravelEvent: refused non-admin caller ' + (who || '(none)'));
-    return errorResponse('Administrator access is required to define events.');
+  // COORDINATOR OR ADMIN. Defining an event is workflow, not money: it
+  // creates something travellers can pick from and reserves nothing. The
+  // set-aside editor below stays admin-only because that commits budget.
+  if (!who || !isTravelCoordinator(who)) {
+    console.warn('saveTravelEvent: refused caller ' + (who || '(none)'));
+    return errorResponse('Coordinator or administrator access is required to define events.');
   }
 
   var e = ev || {};
@@ -873,6 +876,12 @@ function saveEventSetAside(sa) {
   } catch (e) {
     return errorResponse('Could not determine the active user.');
   }
+  // ADMIN ONLY, deliberately — NOT coordinator.
+  //
+  // This commits money. A coordinator may define the event and link requests
+  // to it, but reserving a DAC's budget against it is a budget decision, and
+  // the whole point of the coordinator role is that it carries workflow
+  // powers without money powers.
   if (!who || !isTravelAdmin(who)) {
     console.warn('saveEventSetAside: refused non-admin caller ' + (who || '(none)'));
     return errorResponse('Administrator access is required to reserve budget.');
@@ -1003,9 +1012,12 @@ function resolveEventProposal(proposalId, resolution) {
   } catch (e) {
     return errorResponse('Could not determine the active user.');
   }
-  if (!who || !isTravelAdmin(who)) {
-    console.warn('resolveEventProposal: refused non-admin caller ' + (who || '(none)'));
-    return errorResponse('Administrator access is required to resolve proposals.');
+  // COORDINATOR OR ADMIN. @clolry: the coordinator "add[s] that event and
+  // then associate[s] the request with that new event". This is the function
+  // that does it, and it was the main thing a coordinator could not reach.
+  if (!who || !isTravelCoordinator(who)) {
+    console.warn('resolveEventProposal: refused caller ' + (who || '(none)'));
+    return errorResponse('Coordinator or administrator access is required to resolve proposals.');
   }
 
   var r = resolution || {};

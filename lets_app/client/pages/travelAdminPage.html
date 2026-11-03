@@ -1530,7 +1530,12 @@
         window.TravelAdmin.Controller.init({
           userEmail: '<?= userEmail ?>',
           userName: '<?= userName ?>',
-          scriptUrl: '<?= scriptUrl ?>'
+          scriptUrl: '<?= scriptUrl ?>',
+          // A coordinator reaches this page for reassignment and the event
+          // proposal queue, and must not see the money or privilege sections.
+          // The hiding is cosmetic — every restricted function checks
+          // isTravelAdmin itself and refuses regardless.
+          isFullAdmin: <?!= JSON.stringify(isFullAdmin) ?>
         });
       }
     });

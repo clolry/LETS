@@ -228,7 +228,19 @@ function serveTravelAdminPage(e) {
   var userEmail = Session.getActiveUser().getEmail() || '';
   var formattedName = formatUserName(userEmail);
 
-  if (!isTravelAdmin(userEmail)) {
+  // COORDINATOR OR ADMIN.
+  //
+  // A coordinator's whole job lives on this page — reassigning a reviewer and
+  // working the event proposal queue. Gating it on admin alone would make the
+  // role unreachable, which is the mistake that would have made all of this
+  // look broken rather than restricted.
+  //
+  // What a coordinator CANNOT do is still enforced per function: the budget
+  // allocation editor, the travel importer, the roster editor and the role
+  // granting all check isTravelAdmin independently. The nav hides those
+  // sections for a coordinator, and hiding is a convenience — the server
+  // refuses regardless.
+  if (!isTravelCoordinator(userEmail)) {
     console.log('Access denied to travel admin page for: ' + userEmail);
     return serveAccessRestrictedPage(userEmail, {
       iconClass: 'fa-shield-halved',
@@ -246,6 +258,18 @@ function serveTravelAdminPage(e) {
   _applyBranding(template);
   template.userName = formattedName;
   template.scriptUrl = ScriptApp.getService().getUrl();
+
+  // Published so the page can hide what a coordinator cannot use.
+  //
+  // THIS WAS IN THE WRONG FUNCTION. I anchored it on `template.userEmail =
+  // userEmail;`, which first occurs in serveTravelRequestForm — so the ADMIN
+  // page never received it, options.isFullAdmin was undefined, and the
+  // client's `!== false` default meant a coordinator saw every admin control.
+  //
+  // The hiding is cosmetic either way: every restricted function checks
+  // isTravelAdmin itself and refuses. But a coordinator shown a Budget
+  // button that errors is a worse experience than one who never sees it.
+  template.isFullAdmin = isTravelAdmin(userEmail);
 
   return template
     .evaluate()

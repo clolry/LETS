@@ -75,6 +75,19 @@
    return {
     'admin':            { displayLong: 'Admin',           hasScope: false, grantable: true,
                           hint: 'Full access to the admin console.' },
+    // WORKFLOW WITHOUT MONEY OR PRIVILEGE. @clolry needed somebody who can
+    // reassign a reviewer when a person is out and work the event proposal
+    // queue, and both of those sat behind full admin — which also grants
+    // budget editing, HR roster editing and role granting.
+    //
+    // The hint states what is EXCLUDED, not just what is granted. An admin
+    // choosing a role needs to know the boundary, and "handles events and
+    // reassignment" alone does not tell them a coordinator cannot touch
+    // budgets.
+    'coordinator':      { displayLong: 'Coordinator',     hasScope: false, grantable: true,
+                          hint: 'Reassign reviewers and manage the event catalogue. ' +
+                                'Cannot set budgets, reserve set-asides, edit the ' +
+                                'HR roster or grant roles.' },
     // KEY is the STORED role type and must not change — renaming it would
     // orphan every existing Travel_User_Roles row. Only the LABEL is
     // rebranded. @clolry: "I wanted it to say ASD not AAS."

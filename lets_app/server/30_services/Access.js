@@ -1184,6 +1184,10 @@ function getReviewerContext(email, viewAs, sharedDb) {
     scope: { type: 'none', codes: [], names: [] },
     label: '',
     isAdmin: false,
+    // A coordinator handles workflow — reassignment and event proposals —
+    // without the money and privilege powers an admin has. See
+    // isTravelCoordinator.
+    isCoordinator: false,
     isReviewer: false,
     viewAsActive: false,
     viewAsLabel: ''
@@ -1202,6 +1206,11 @@ function getReviewerContext(email, viewAs, sharedDb) {
       ctx.label = 'Admin';
       ctx.isAdmin = true;
       ctx.isReviewer = true;
+      // An admin IS a coordinator. Set here as well as in the coordinator
+      // branch below, because the admin branch RETURNS before reaching it —
+      // without this, a UI showing a control on isCoordinator would hide it
+      // from the very people who definitely have the power.
+      ctx.isCoordinator = true;
 
       // View-as override only applies for admins
       if (viewAs && viewAs.role) {
@@ -1219,6 +1228,32 @@ function getReviewerContext(email, viewAs, sharedDb) {
     }
   } catch (e) {
     console.error('getReviewerContext: admin check error: ' + e.message);
+  }
+
+  // Priority 1b: coordinator.
+  //
+  // Sits between admin and the reviewer roles. A coordinator is NOT a
+  // reviewer — they do not approve anything — so isReviewer stays false and
+  // they get no review queue. What they get is the admin console's request
+  // list and the event screens.
+  //
+  // Their SCOPE is 'all', because reassigning a stuck request and resolving a
+  // proposal are organisation-wide jobs. A scoped coordinator could not do
+  // the thing the role exists for.
+  try {
+    if (typeof isTravelCoordinator === 'function' &&
+        isTravelCoordinator(resolvedEmail)) {
+      ctx.role = 'coordinator';
+      ctx.scope = { type: 'all', codes: [], names: [] };
+      ctx.label = 'Coordinator';
+      ctx.isCoordinator = true;
+      // Deliberately NOT isReviewer. They have no queue and no approve
+      // button; granting isReviewer would put them in reviewer dashboards
+      // with nothing in them.
+      return ctx;
+    }
+  } catch (e) {
+    console.error('getReviewerContext: coordinator check failed: ' + e.message);
   }
 
   // Priority 2: OSO/FO reviewer
@@ -1364,9 +1399,23 @@ function checkTravelAdminAccess() {
   try {
     const email = Session.getActiveUser().getEmail();
     const adminStatus = isTravelAdmin(email);
+    // A coordinator reaches the admin console too — the reassignment modal
+    // and the event proposal queue both live there. Without this the client's
+    // _checkAccess would replace the page with "Access Denied" the moment a
+    // coordinator opened it, which is how the role would appear broken
+    // rather than scoped.
+    //
+    // isAdmin stays TRUE only for real admins, so the client can still tell
+    // them apart and hide the money and privilege sections.
+    const coordinatorStatus = (typeof isTravelCoordinator === 'function')
+      ? isTravelCoordinator(email) : adminStatus;
     return {
       success: true,
       isAdmin: adminStatus,
+      isCoordinator: coordinatorStatus,
+      // What the client should gate page ACCESS on. Named separately from
+      // isAdmin so an existing caller reading isAdmin keeps its old meaning.
+      hasConsoleAccess: coordinatorStatus,
       email: email
     };
   } catch (error) {
@@ -1425,6 +1474,108 @@ function requireRole(roleName) {
  */
 function requireTravelAdmin() {
   return requireRole('admin');
+}
+
+/**
+ * Is this user a travel coordinator?
+ *
+ * WHY THIS ROLE EXISTS
+ * --------------------
+ * @clolry needs a coordinator who can reassign a reviewer when somebody is
+ * out, and resolve the event proposals travellers raise. Both of those sat
+ * behind requireTravelAdmin, which also grants budget allocation editing, HR
+ * roster editing, user role granting, and the HR data that was just
+ * tier-restricted for PII.
+ *
+ * Granting a coordinator full admin to reassign a reviewer is a one-line
+ * change and the wrong answer: it hands them every other admin power as a
+ * side effect.
+ *
+ * WHAT A COORDINATOR MAY DO
+ * -------------------------
+ *   reassign a reviewer on a stuck request
+ *   resolve event proposals — promote, merge, reject
+ *   define and edit catalogue events
+ *   see the admin console's request list
+ *
+ * WHAT THEY MAY NOT
+ * -----------------
+ *   set budget allocations          money
+ *   reserve event set-asides        money
+ *   import existing travel          money, and writes approved requests
+ *   edit the HR roster              HR data
+ *   grant or revoke roles           privilege escalation
+ *   read full HR PII                stays at the reviewer tier
+ *
+ * The split is money and privilege on one side, workflow on the other.
+ *
+ * AN ADMIN IS ALWAYS A COORDINATOR. Otherwise every coordinator-gated
+ * function would need both checks, and one of them would eventually be
+ * forgotten.
+ *
+ * @param {string} email
+ * @returns {boolean}
+ * @server
+ */
+function isTravelCoordinator(email) {
+  if (!email) return false;
+  var emailLower = email.toLowerCase();
+
+  // Admins pass. Checked FIRST so a coordinator gate never locks out an
+  // admin, which would be a confusing failure to diagnose.
+  try {
+    if (isTravelAdmin(emailLower)) return true;
+  } catch (e) {
+    console.error('isTravelCoordinator: admin check failed: ' + e.message);
+  }
+
+  try {
+    var roles = _getUnifiedRolesForEmail(emailLower);
+    for (var u = 0; u < roles.length; u++) {
+      if (roles[u].roleType === 'coordinator') return true;
+    }
+  } catch (e) {
+    console.error('isTravelCoordinator: unified-roles check failed: ' + e.message);
+  }
+  return false;
+}
+
+/**
+ * Throws unless the caller is a coordinator or an admin.
+ *
+ * Returns the same shape as requireTravelAdmin so a call site can switch
+ * between them without changing what it does with the result.
+ *
+ * @returns {{email: string, name: string, role: string, isAdmin: boolean}}
+ * @server
+ */
+function requireTravelCoordinator() {
+  var email = '';
+  try {
+    email = Session.getActiveUser().getEmail() || '';
+  } catch (e) {
+    throw new Error('Not authenticated');
+  }
+  if (!email) throw new Error('Not authenticated');
+
+  if (!isTravelCoordinator(email)) {
+    // Logged because these functions are browser-reachable (G-001) and an
+    // unexpected caller is worth seeing.
+    console.warn('requireTravelCoordinator: refused ' + email);
+    throw new Error('Coordinator or administrator access is required.');
+  }
+
+  var isAdmin = false;
+  try { isAdmin = isTravelAdmin(email); } catch (e) { isAdmin = false; }
+
+  return {
+    email: email,
+    name: formatUserName(email),
+    // Reported so a caller can tell the two apart when it matters — the
+    // approval log records which authority was used.
+    role: isAdmin ? 'admin' : 'coordinator',
+    isAdmin: isAdmin
+  };
 }
 
 // ============================================================================

@@ -30,6 +30,7 @@ test_hc_privacy.js
 test_request_access.js
 test_delegation.js
 test_events_ui.js
+test_coordinator_role.js
 preview.html
 node_modules/**
 .git/**

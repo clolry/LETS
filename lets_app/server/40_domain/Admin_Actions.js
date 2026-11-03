@@ -71,7 +71,13 @@ function adminOverrideStatus(requestId, newStatus, reason) {
       ACTION_TYPES.ADMIN_OVERRIDE,
       admin.name,
       admin.email,
-      'Admin',
+      // THE AUTHORITY ACTUALLY USED, not a hardcoded 'Admin'.
+      //
+      // A coordinator reassigning a reviewer is a different act from an admin
+      // doing it — same effect, different power — and the log is where that
+      // distinction has to survive. Hardcoding 'Admin' would have recorded
+      // every coordinator action as an admin one.
+      admin.isAdmin ? 'Admin' : 'Coordinator',
       now,
       previousStatus,
       newStatus,
@@ -101,7 +107,21 @@ function adminOverrideStatus(requestId, newStatus, reason) {
  */
 function adminReassignReviewer(requestId, newReviewerEmail, reason) {
   try {
-    const admin = requireTravelAdmin();
+    // COORDINATOR OR ADMIN.
+    //
+    // @clolry needs a coordinator who can reassign a reviewer when somebody
+    // is out. This sat behind requireTravelAdmin, which also grants budget
+    // editing, HR roster editing and role granting — so covering an absence
+    // meant handing over every admin power as a side effect.
+    //
+    // Reassignment is workflow, not money or privilege: it moves a request
+    // from one reviewer to another and cannot approve anything. See
+    // isTravelCoordinator for the full split.
+    //
+    // The variable keeps its name so the log and email below are unchanged;
+    // requireTravelCoordinator returns the same shape, with role set to
+    // 'coordinator' or 'admin' so the log records which authority was used.
+    const admin = requireTravelCoordinator();
 
     if (!requestId || !newReviewerEmail || !reason) {
       throw new Error('Request ID, new reviewer email, and reason are required');
@@ -170,7 +190,7 @@ function adminReassignReviewer(requestId, newReviewerEmail, reason) {
       logError('adminReassignReviewer.email', emailErr, { requestId: requestId });
     }
 
-    console.log(`Admin ${admin.email} reassigned ${requestId} from ${previousReviewer} to ${newReviewerEmail}`);
+    console.log(`${admin.role} ${admin.email} reassigned ${requestId} from ${previousReviewer} to ${newReviewerEmail}`);
 
     return successResponse({ message: `Reassigned to ${newReviewerName}` });
 

@@ -143,8 +143,14 @@
       this._userEmail = options.userEmail || '';
       this._userName = options.userName || '';
       this._scriptUrl = options.scriptUrl || '';
+      // Defaults to TRUE when absent, so an older cached page or a call site
+      // that has not been updated keeps working as it did. The server refuses
+      // the restricted functions regardless, so the worst case is a visible
+      // button that errors — not a hidden power.
+      this._isFullAdmin = options.isFullAdmin !== false;
 
       window.TravelAdmin._scriptUrl = this._scriptUrl;
+      this._applyRoleVisibility();
 
       // Verify admin access
       const accessResult = await this._checkAccess();
@@ -183,13 +189,29 @@
     async _checkAccess() {
       try {
         const result = await this._serverCall('checkTravelAdminAccess');
-        if (!result || !result.isAdmin) {
+        // hasConsoleAccess, NOT isAdmin. A coordinator belongs on this page —
+        // the reassignment modal and the event proposal queue are both here —
+        // and gating on isAdmin would have shown them "Access Denied",
+        // making the role look broken rather than scoped.
+        //
+        // Falls back to isAdmin so an older server build still works.
+        const mayOpen = result && (result.hasConsoleAccess !== undefined
+          ? result.hasConsoleAccess : result.isAdmin);
+        if (!mayOpen) {
           document.body.innerHTML = '<div style="padding: 2rem; text-align: center;">' +
             '<h2 style="color: var(--color-slate-800);">Access Denied</h2>' +
-            '<p style="color: var(--color-slate-500);">You do not have admin access to this page.</p>' +
+            '<p style="color: var(--color-slate-500);">You do not have admin or ' +
+            'coordinator access to this page.</p>' +
             '<a href="#" onclick="window.TravelAdmin.navigateTo(\'travel\'); return false;" ' +
             'style="color: var(--color-primary);">Return to Portal</a></div>';
           return false;
+        }
+        // The SERVER's answer wins over the page template. The template value
+        // is baked in at render; this is checked live, so a role granted or
+        // revoked since the page loaded is reflected.
+        if (result && result.isAdmin === false) {
+          this._isFullAdmin = false;
+          this._applyRoleVisibility();
         }
         return true;
       } catch (error) {
@@ -222,6 +244,44 @@
           item.classList.add('admin-nav__item--active');
         });
       });
+    },
+
+    /**
+     * Hides what a coordinator cannot use.
+     *
+     * COSMETIC ONLY. Every restricted function checks isTravelAdmin itself:
+     * saveBudgetAllocations, importExistingTravel, saveEventSetAside, the
+     * roster writes and the role grants all refuse a coordinator server-side.
+     * This exists so a coordinator is not shown a button that will fail.
+     *
+     * Hiding rather than disabling, because a disabled control invites "why
+     * can't I click this" where an absent one does not raise the question.
+     */
+    _applyRoleVisibility() {
+      if (this._isFullAdmin) return;
+
+      // Nav sections a coordinator has no business in. Users grants roles;
+      // the roster is HR data; reports read across the whole organisation.
+      ['users', 'roster'].forEach(function (view) {
+        var btn = document.querySelector('[data-view="' + view + '"]');
+        if (btn) btn.classList.add('hidden');
+      });
+
+      // The money controls on the events screen. A coordinator may define an
+      // event and resolve proposals; reserving a DAC's budget against it is a
+      // budget decision.
+      var reserve = document.getElementById('evNewSetAside');
+      if (reserve) reserve.classList.add('hidden');
+
+      document.body.classList.add('is-coordinator');
+
+      // Said out loud, because a console that silently lacks sections looks
+      // broken rather than scoped.
+      var scope = document.querySelector('.admin-view-header__scope');
+      if (scope && !scope.textContent.trim()) {
+        scope.textContent = 'Coordinator access: requests and events. ' +
+          'Budget, roster and user administration are not available.';
+      }
     },
 
     async _switchView(view) {

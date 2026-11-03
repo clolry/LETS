@@ -102,6 +102,13 @@ jobs:
       - name: Feedback pipeline tests
         run: node lets_app/test_feedback.js
 
+      - name: Coordinator role tests
+        # §2 holds the boundary: a coordinator reassigns reviewers and manages
+        # the event catalogue, but cannot set budgets, reserve set-asides,
+        # import travel, edit the HR roster or grant roles. Money and
+        # privilege stay admin-only.
+        run: node lets_app/test_coordinator_role.js
+
       - name: Events UI tests
         # §4 is the one that matters: promoting a proposal must go through
         # resolveEventProposal, not saveTravelEvent. Only the former links the
@@ -172,6 +179,89 @@ jobs:
         # the inherited HC library became unreachable.
         run: node orgchart_app/test_orgchart.js
 
+      - name: Guard - the coordinator boundary is money and privilege
+        run: |
+          echo "Checking the coordinator role boundary..."
+          # @clolry needed somebody who can reassign a reviewer when a person
+          # is out and work the event proposal queue. Both sat behind
+          # requireTravelAdmin, which also grants budget editing, HR roster
+          # editing and role granting — so covering an absence meant handing
+          # over every admin power.
+          #
+          # Checked per FUNCTION BODY, never file-wide: these files contain
+          # several functions and a file-wide grep is satisfied by the wrong
+          # one.
+          for SPEC in \
+            "saveBudgetAllocations:lets_app/server/40_domain/BudgetAdmin.js:sets the money every DAC spends" \
+            "importExistingTravel:lets_app/server/40_domain/BudgetBackfill.js:writes approved requests that consume budget" \
+            "saveEventSetAside:lets_app/server/40_domain/Events.js:reserves a DAC budget"; do
+            FN="${SPEC%%:*}"
+            REST="${SPEC#*:}"
+            FILE="${REST%%:*}"
+            WHY="${REST##*:}"
+            BODY=$(awk "/^function ${FN}\(/,/^}/" "$FILE")
+            if [ -z "$BODY" ]; then
+              echo "::error file=$FILE::${FN} is missing."
+              exit 1
+            fi
+            if ! echo "$BODY" | grep -aq 'isTravelAdmin'; then
+              echo "::error file=$FILE::${FN} must stay ADMIN-only — it ${WHY}."
+              exit 1
+            fi
+            if echo "$BODY" | grep -aq 'isTravelCoordinator'; then
+              echo "::error file=$FILE::${FN} must NOT accept a coordinator — it ${WHY}. The coordinator role exists to carry workflow powers without money powers."
+              exit 1
+            fi
+          done
+
+          # And the three that a coordinator MUST reach, or the role is
+          # pointless.
+          for SPEC in \
+            "adminReassignReviewer:lets_app/server/40_domain/Admin_Actions.js" \
+            "saveTravelEvent:lets_app/server/40_domain/Events.js" \
+            "resolveEventProposal:lets_app/server/40_domain/Events.js"; do
+            FN="${SPEC%%:*}"
+            FILE="${SPEC##*:}"
+            BODY=$(awk "/^function ${FN}\(/,/^}/" "$FILE")
+            if ! echo "$BODY" | grep -aqE 'isTravelCoordinator|requireTravelCoordinator'; then
+              echo "::error file=$FILE::${FN} must accept a coordinator. It is one of the three things the role exists to do."
+              exit 1
+            fi
+          done
+
+          # The admin CONSOLE must admit a coordinator, or the role is
+          # unreachable and looks broken rather than scoped.
+          R=lets_app/server/50_pages/Render.js
+          PAGE=$(awk '/^function serveTravelAdminPage/,/^  return template/' "$R")
+          if ! echo "$PAGE" | grep -aq 'isTravelCoordinator(userEmail)'; then
+            echo "::error file=$R::serveTravelAdminPage must gate on isTravelCoordinator. The reassignment modal and the event proposal queue both live on that page, so an admin-only gate makes the role unreachable."
+            exit 1
+          fi
+          # And it must tell the page which it is, IN THAT FUNCTION. I first
+          # anchored this assignment on a line whose first occurrence is in
+          # serveTravelRequestForm, so the admin page never received it and a
+          # coordinator saw every admin control.
+          if ! echo "$PAGE" | grep -aq 'template.isFullAdmin'; then
+            echo "::error file=$R::serveTravelAdminPage must set template.isFullAdmin, or the client cannot hide the money and privilege sections."
+            exit 1
+          fi
+
+          # A coordinator is not a reviewer: no queue, no approve button.
+          A=lets_app/server/30_services/Access.js
+          COORD=$(awk '/Priority 1b: coordinator/,/Priority 2/' "$A")
+          if echo "$COORD" | grep -aq 'ctx.isReviewer = true'; then
+            echo "::error file=$A::The coordinator branch must not set isReviewer. They approve nothing, and granting it would put them in reviewer dashboards with an empty queue."
+            exit 1
+          fi
+
+          # Grantable end to end: a role the server rejects fails on save with
+          # "Invalid roleType", which reads as a bug.
+          if ! grep -aq "'coordinator'," lets_app/server/40_domain/Users.js; then
+            echo "::error file=lets_app/server/40_domain/Users.js::TRAVEL_ROLE_TYPES must include 'coordinator', or granting it fails validation."
+            exit 1
+          fi
+          echo "PASS - the coordinator boundary holds: workflow yes, money and privilege no."
+
       - name: Guard - event wiring must not break the draw-down
         run: |
           echo "Checking the event catalogue wiring..."
@@ -240,13 +330,28 @@ jobs:
           # A traveller must not be able to write the catalogue — only the
           # proposals tab.
           EV=lets_app/server/40_domain/Events.js
-          for FN in saveTravelEvent saveEventSetAside resolveEventProposal; do
+          # TWO TIERS, and the difference is money.
+          #
+          # A coordinator defines events and resolves proposals — workflow.
+          # Reserving a DAC's budget against an event is a budget decision and
+          # stays admin-only, which is the whole point of the coordinator
+          # role: workflow powers without money powers.
+          for FN in saveTravelEvent resolveEventProposal; do
             BODY=$(awk "/^function ${FN}\(/,/^}/" "$EV")
-            if ! echo "$BODY" | grep -aq 'isTravelAdmin'; then
-              echo "::error file=$EV::${FN} writes the catalogue or reserves budget and must be admin-gated. A traveller writing the catalogue would put unvetted text in front of every other traveller."
+            if ! echo "$BODY" | grep -aq 'isTravelCoordinator'; then
+              echo "::error file=$EV::${FN} must be gated on isTravelCoordinator (which admins also satisfy). A traveller writing the catalogue would put unvetted text in front of every other traveller."
               exit 1
             fi
           done
+          SA_BODY=$(awk '/^function saveEventSetAside\(/,/^}/' "$EV")
+          if ! echo "$SA_BODY" | grep -aq 'isTravelAdmin'; then
+            echo "::error file=$EV::saveEventSetAside commits budget and must stay ADMIN-ONLY, not coordinator. The coordinator role exists to carry workflow powers without money powers."
+            exit 1
+          fi
+          if echo "$SA_BODY" | grep -aq 'isTravelCoordinator'; then
+            echo "::error file=$EV::saveEventSetAside must NOT accept a coordinator. Reserving a DAC's budget is a money decision."
+            exit 1
+          fi
           PROP=$(awk '/^function proposeTravelEvent\(/,/^}/' "$EV")
           if echo "$PROP" | grep -aq 'SHEET_NAMES.EVENTS'; then
             echo "::error file=$EV::proposeTravelEvent must write only to EVENT_PROPOSALS, never to the catalogue."
