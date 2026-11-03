@@ -390,8 +390,7 @@ var BudgetBackfill = (function () {
                       ({ FO: 'FC', OMD: 'FCA', IDV: 'FCB', CM: 'FCC' })[office] || '';
         var cost = round2(entry.totalCost);
         var count = parseInt(entry.travelerCount, 10) || 1;
-        var requestId = 'REQ-' + now.getFullYear() + '-' +
-                        String(nextSeq + i).padStart(4, '0');
+        var requestId = _idPrefix_(now) + String(nextSeq + i).padStart(4, '0');
 
         var rec = {
           'Request_ID': requestId,
@@ -544,14 +543,37 @@ var BudgetBackfill = (function () {
   }
 
   /**
-   * The next free request sequence number for this calendar year.
+   * ID prefix for a date: 'L27-' for anything in FY2027.
    *
-   * Matches generateRequestId's REQ-YYYY-NNNN format, but computed ONCE for a
+   * Matches Database.generateRequestId, which the intake form uses. The two
+   * must agree or a backfilled request and a form-submitted one would land in
+   * different numbering sequences and could collide.
+   *
+   * FISCAL year, not calendar. The old code used getFullYear(), so a trip
+   * entered on 15 October 2026 was numbered REQ-2026-xxxx while drawing on
+   * FY2027 money — and the sequence reset on 1 January rather than 1 October.
+   *
+   * @param {Date} d
+   * @returns {string} e.g. 'L27-'
+   */
+  function _idPrefix_(d) {
+    var dt = d || new Date();
+    var fy = dt.getMonth() >= 9 ? dt.getFullYear() + 1 : dt.getFullYear();
+    return 'L' + String(fy).slice(-2) + '-';
+  }
+
+  /**
+   * The next free request sequence number for this fiscal year.
+   *
+   * Matches generateRequestId's L<FY2>-NNNN format, but computed ONCE for a
    * batch. generateRequestId reads the sheet each call, so calling it per
    * entry before any write would return the same ID every time.
+   *
+   * Scans for the current prefix only. A legacy REQ-YYYY-NNNN row is a
+   * different namespace and cannot collide with an L27-xxxx id.
    */
   function _nextRequestSeq_(db, now) {
-    var prefix = 'REQ-' + (now || new Date()).getFullYear() + '-';
+    var prefix = _idPrefix_(now || new Date());
     var max = 0;
     try {
       var data = db.readSheet(SHEET_NAMES.REQUESTS);

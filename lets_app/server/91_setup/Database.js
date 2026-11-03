@@ -751,32 +751,75 @@ function initTravelSystemConfig() {
 
 
 /**
- * Generate a new Request ID in format REQ-YYYY-NNNN
- * @returns {string} New unique Request ID
+ * Generate a new Request ID. Format: L<FY2>-NNNN, e.g. L27-0001.
+ *
+ * WHY THE FORMAT CHANGED FROM REQ-YYYY-NNNN
+ * -----------------------------------------
+ * Go.gov truncates a trip name at EXACTLY 40 characters — measured across 565
+ * real request names: 79 are exactly 40 long and none is longer, cut
+ * mid-word.
+ *
+ * Travellers are asked to put the LETS ID at the FRONT of the Go.gov trip
+ * name so the monthly expense report can be matched back automatically (see
+ * GogovSync.extractLetsId). A prefix survives truncation; a suffix is cut
+ * away on precisely the long-title trips most likely to be expensive.
+ *
+ * 'REQ-2026-0123 ' consumed 14 of the 40 characters, leaving 26 — only 32% of
+ * real trip names fit in that. 'L27-0001 ' takes 9 and leaves 31, which fits
+ * 61%. It is also 8 keystrokes rather than 13, typed by hand into another
+ * system every time.
+ *
+ * WHY THE FISCAL YEAR, NOT THE CALENDAR YEAR
+ * ------------------------------------------
+ * The old code used `new Date().getFullYear()`, so a request raised on 15
+ * October 2026 was numbered REQ-2026-xxxx while drawing on FY2027 money — the
+ * ID said one year and the budget another, and the sequence reset on 1
+ * January rather than 1 October.
+ *
+ * @clolry, twice: "our fiscal year is 10/1 through 9/30 so budgeting all
+ * resets on 10/1." So the ID now agrees with the budget it consumes.
+ *
+ * WHY 4 DIGITS
+ * ------------
+ * @clolry asked for 4. At roughly 200 requests a year that is deep headroom,
+ * and the pad below grows to 5 rather than colliding if a year ever exceeds
+ * 9999.
+ *
+ * OLD IDS KEEP WORKING. Nothing renames an existing REQ-YYYY-NNNN row; the
+ * validator, the parser and the matcher all accept both forms permanently.
+ * The three hand-written REQ- ids already in @clolry's Go.gov data continue
+ * to match.
+ *
+ * @returns {string} New unique Request ID, e.g. 'L27-0001'
  */
 function generateRequestId() {
   const ss = SpreadsheetApp.openById(TRAVEL_DB_SPREADSHEET_ID);
   const sheet = ss.getSheetByName(SHEET_NAMES.REQUESTS);
 
-  const year = new Date().getFullYear();
-  const prefix = `REQ-${year}-`;
+  // Fiscal year: October through September. 15 Oct 2026 is FY2027 -> '27'.
+  const now = new Date();
+  const fy = now.getMonth() >= 9 ? now.getFullYear() + 1 : now.getFullYear();
+  const prefix = `L${String(fy).slice(-2)}-`;
 
-  // Get highest existing ID for this year
+  // Highest existing sequence for this fiscal year.
+  //
+  // Scans for the NEW prefix only. An old REQ-2026-xxxx row cannot collide
+  // with an L27-xxxx id — different namespaces — so the two coexist without
+  // the sequence having to account for both.
   let maxNum = 0;
   if (sheet && sheet.getLastRow() > 1) {
     const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
     data.forEach(row => {
-      const id = row[0];
-      if (id && id.startsWith(prefix)) {
-        const num = parseInt(id.substring(prefix.length));
-        if (num > maxNum) maxNum = num;
-      }
+      const id = String(row[0] || '');
+      if (id.indexOf(prefix) !== 0) return;
+      const num = parseInt(id.substring(prefix.length), 10);
+      if (!isNaN(num) && num > maxNum) maxNum = num;
     });
   }
 
-  // Generate next ID with 4-digit padding
-  const nextNum = String(maxNum + 1).padStart(4, '0');
-  return `${prefix}${nextNum}`;
+  // 4 digits, widening rather than wrapping past 9999.
+  const next = maxNum + 1;
+  return `${prefix}${String(next).padStart(4, '0')}`;
 }
 
 /**

@@ -318,8 +318,12 @@ console.log('\n5. no double counting');
   const again = imp(t, [trip()]);
   ok('a repeat import is held back', again.success === false);
   ok('and flagged as needing confirmation', again.needsConfirmation === true);
+  // Matches BOTH id formats. The generator moved to L27-0001 because Go.gov
+  // truncates a trip name at 40 characters and the ID has to fit in front of
+  // it; legacy REQ-YYYY-NNNN rows still exist and must still be named here.
   ok('naming the existing request',
-     again.warnings.some(w => /REQ-\d+-\d+/.test(w)), again.warnings);
+     again.warnings.some(w => /\b(L\d{2}-\d{4,5}|REQ-\d{4}-\d{3,5})\b/.test(w)),
+     again.warnings);
   ok('with its date and status, so it can be checked',
      again.warnings.some(w => /2026-10-14/.test(w) && /COMPLETED/.test(w)),
      again.warnings);
@@ -356,9 +360,15 @@ console.log('\n5. no double counting');
   ]);
   const ids = batch.data.created.map(c => c.requestId);
   ok('a batch gets distinct request IDs', new Set(ids).size === 3, ids);
-  ok('numbered consecutively', ids.join(',') ===
-     'REQ-2026-0001,REQ-2026-0002,REQ-2026-0003' ||
-     /0001.*0002.*0003/.test(ids.join(',')), ids);
+  ok('numbered consecutively', /0001.*0002.*0003/.test(ids.join(',')), ids);
+  // THE ID MUST AGREE WITH THE FISCAL YEAR IT SPENDS.
+  //
+  // The old generator used the CALENDAR year, so a trip entered on 15 October
+  // 2026 was numbered REQ-2026-xxxx while drawing on FY2027 money, and the
+  // sequence reset on 1 January rather than 1 October. @clolry, twice:
+  // "budgeting all resets on 10/1."
+  ok('and prefixed with the FISCAL year, not the calendar year',
+     ids.every(id => /^L\d{2}-/.test(id)), ids);
 }
 
 // ---------------------------------------------------------------------------
@@ -432,7 +442,9 @@ console.log('\n7. traveller rows, and the even split');
                  totalCost: 12400 })]);
   const tr = t.travelers();
   ok('one row per named traveller', tr.length === 3, tr.length);
-  ok('each linked to the request', tr.every(x => /^REQ-/.test(String(x.Request_ID))));
+  ok('each linked to the request',
+     tr.every(x => /^(L\d{2}-|REQ-)/.test(String(x.Request_ID))),
+     tr.map(x => x.Request_ID));
   ok('with distinct traveller IDs',
      new Set(tr.map(x => x.Traveler_ID)).size === 3);
 

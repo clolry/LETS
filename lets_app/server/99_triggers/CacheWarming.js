@@ -1085,7 +1085,13 @@ function _verifyValidationLibrary() {
   _expectThrow('requireObject("str", "o")', function() { requireObject('str', 'o'); }, 'o');
 
   console.log('--- requireRequestId ---');
-  _expectPass('requireRequestId("REQ-2026-0001")', function() { return requireRequestId('REQ-2026-0001'); }, 'REQ-2026-0001');
+  // Both formats, permanently. The generator moved to L27-0001 because Go.gov
+  // truncates a trip name at 40 characters and the LETS ID has to fit in
+  // front of it; legacy rows keep working.
+  _expectPass('requireRequestId("L27-0001")', function() { return requireRequestId('L27-0001'); }, 'L27-0001');
+  _expectPass('requireRequestId("L27-00001") 5-digit', function() { return requireRequestId('L27-00001'); }, 'L27-00001');
+  _expectThrow('requireRequestId("L27-001") too few digits', function() { requireRequestId('L27-001'); }, 'requestId');
+  _expectPass('requireRequestId("REQ-2026-0001") legacy', function() { return requireRequestId('REQ-2026-0001'); }, 'REQ-2026-0001');
   _expectPass('requireRequestId("REQ-2026-00001") 5-digit', function() { return requireRequestId('REQ-2026-00001'); }, 'REQ-2026-00001');
   _expectThrow('requireRequestId("bogus")', function() { requireRequestId('bogus'); }, 'requestId');
   _expectThrow('requireRequestId("REQ-2026-001") too few digits', function() { requireRequestId('REQ-2026-001'); }, 'requestId');

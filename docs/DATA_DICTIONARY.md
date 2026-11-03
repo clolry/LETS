@@ -170,12 +170,45 @@ This tab gets a section rather than a row because **two incompatible schemas dec
 | Column 1 | `Request_ID` | `RequestID` |
 | Column 2 | `Status` | `Status` ← **the only shared header** |
 | Column 3 | `Trip_Name` | `EventName` |
-| ID format | `REQ-2026-0001` | `LETS-2027-001` |
+| ID format | `L27-0001` (legacy rows: `REQ-2026-0001`) — §3.2.4 | `LETS-2027-001` |
 | Status vocabulary | `PENDING_SECTOR`, `APPROVED_GOGOV`, `COMPLETED` … (15 values, mostly ALL_CAPS) | `Submitted - Pending Budget Check`, `Flagged - Insufficient Funds` … (12 prose values) |
 | Naming convention | `Snake_Case_With_Underscores` | `PascalCaseNoSeparator` |
 | **Written by** | **The live application** | **Nothing** |
 
 This is finding **G-013**.
+
+### 3.2.4 The Request_ID format changed, and why it is short
+
+Current: **`L27-0001`**. Legacy rows keep `REQ-2026-0001` and remain valid for ever.
+
+**Go.gov truncates a trip name at exactly 40 characters** `[VERIFIED]` — measured across 565 real request names: 79 are exactly 40 long, none is longer, and the cut lands mid-word (`'Huntsville TDY – COBRA TDL 1-087 Invento'`).
+
+Travellers are asked to put the LETS ID at the **front** of the Go.gov trip name so the monthly expense report can be matched back automatically. A prefix survives truncation; a suffix is cut away on precisely the long-title trips most likely to be expensive.
+
+| prefix | characters | room left for the title | real titles that fit |
+|---|---|---|---|
+| `REQ-2026-0123 ` | 14 | 26 | 183/565 (32%) |
+| **`L27-0001 `** | **9** | **31** | **342/565 (61%)** |
+
+It is also 8 keystrokes rather than 13, typed by hand into another system every time.
+
+#### The year is the FISCAL year
+
+`generateRequestId` previously used `new Date().getFullYear()`, so a request raised on 15 October 2026 was numbered `REQ-2026-xxxx` while drawing on **FY2027** money — the ID said one year and the budget said another — and the sequence reset on 1 January rather than 1 October.
+
+@clolry, twice: *"our fiscal year is 10/1 through 9/30 so budgeting all resets on 10/1."* The ID now agrees with the budget it consumes.
+
+#### Three places must stay in step
+
+| | accepts |
+|---|---|
+| `Database.generateRequestId` | produces `L<FY2>-NNNN`, widening past 9999 rather than colliding |
+| `Validation.requireRequestId` | **both** forms — it guards a *lookup*, so a stricter rule would make existing requests unfindable rather than prevent anything |
+| `GogovSync.extractLetsId` | both, with the short form matched **more strictly** |
+
+> **Why the short form is matched more strictly.** `REQ` is a distinctive token; `L27` is three characters that can occur by accident. Tested against 1,087 real trip and report names, a loose pattern matched `'Order L270001-A'` and `'Hotel L27 0001 confirm'`. So the short form requires an explicit `-` or `_` separator and refuses an adjacent alphanumeric. The legacy form keeps the loose rule because `REQ` disambiguates itself.
+
+A CI guard asserts all three, checked against each **function body** rather than the file — the first version grepped the whole file and the docblock satisfied it, so deleting the legacy branch left the guard passing. A guard a comment can satisfy is not a guard.
 
 ### 3.2.2 What this dictionary can and cannot say about it
 

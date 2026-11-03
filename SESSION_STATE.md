@@ -112,6 +112,13 @@ exactly 40, zero are longer. So the LETS ID goes at the FRONT of the name —
 a suffix gets truncated away on precisely the long-title trips most likely to
 be expensive. This is the whole basis of the SOP.
 
+**The request ID is now `L27-0001`**, 8 characters, fiscal-year prefixed.
+Legacy `REQ-2026-0001` rows stay valid for ever — the validator guards a
+lookup, so rejecting them would make existing requests unfindable. The short
+form is matched MORE strictly than the legacy one: `L27` is three characters
+that can occur by accident, and a loose pattern matched `Order L270001-A`
+against 1,087 real titles. See DATA_DICTIONARY §3.2.4.
+
 **`Amount Approved`, never `Report Total`.** They differ on 37 of 182 rows by
 $4,569.93. Report Total is what the traveller claimed; Amount Approved is what
 GSA paid.

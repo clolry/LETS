@@ -51,6 +51,42 @@ console.log('--- Go.gov sync test suite ---\n');
 // ---------------------------------------------------------------------------
 console.log('1. the LETS ID parser is tolerant of input, strict about output');
 {
+  // THE CURRENT FORMAT: L27-0001.
+  //
+  // Shortened from REQ-2026-0123 because Go.gov truncates a trip name at
+  // EXACTLY 40 characters — 79 of 565 real names are exactly 40 long and none
+  // is longer, cut mid-word. The LETS ID goes at the FRONT so it survives,
+  // and every character it takes is one the trip name loses.
+  //
+  //   'REQ-2026-0123 '  14 chars, leaves 26 -> 32% of real titles fit
+  //   'L27-0001 '         9 chars, leaves 31 -> 61% fit
+  //
+  // @clolry asked for 4 digits in the sequence.
+  ok('L27-0001', G.extractLetsId('L27-0001') === 'L27-0001');
+  ok('lowercase is accepted', G.extractLetsId('l27-0001') === 'L27-0001');
+  ok('underscore separator', G.extractLetsId('L27_0001') === 'L27-0001');
+  ok('bracketed', G.extractLetsId('[L27-0001] NCMA') === 'L27-0001');
+  ok('at the front of a title',
+     G.extractLetsId('L27-0001 NCMA World Congress') === 'L27-0001');
+  ok('and at the end', G.extractLetsId('NCMA World Congress L27-0001') === 'L27-0001');
+  ok('a 5-digit sequence is not truncated to 4',
+     G.extractLetsId('L27-00012') === 'L27-00012',
+     'greedy capture plus a lookahead, so 00012 is not read as 0001');
+
+  // STRICTER THAN THE LEGACY FORM, deliberately. 'REQ' is a distinctive
+  // token; 'L27' is three characters that could occur by accident. Tested
+  // against 1,087 real trip and report names, a loose pattern matched these:
+  ok('"Order L270001-A" is NOT an ID', G.extractLetsId('Order L270001-A') === '',
+     'a trailing -A means this is somebody else\'s reference number');
+  ok('"Hotel L27 0001 confirm" is NOT an ID',
+     G.extractLetsId('Hotel L27 0001 confirm') === '',
+     'a space is not a valid separator for the short form');
+  ok('"L270001" with no separator is NOT an ID',
+     G.extractLetsId('L270001') === '');
+  ok('"L27-001" with 3 digits is NOT an ID', G.extractLetsId('L27-001') === '');
+  ok('"XL27-0001" is NOT an ID', G.extractLetsId('XL27-0001') === '',
+     'a preceding alphanumeric means it is part of a longer token');
+
   // THE WHOLE SOP RESTS ON THIS. @clolry asked how to instruct users to put
   // the LETS ID into the Go.gov trip name. Three travellers already do it,
   // and each wrote it differently — rejecting any of those forms would
@@ -90,6 +126,11 @@ console.log('1. the LETS ID parser is tolerant of input, strict about output');
   // A trailing 5-digit sequence must not be truncated to 4.
   ok('handles a 5-digit sequence',
      G.extractLetsId('REQ-2026-12345') === 'REQ-2026-12345');
+
+  // The current form wins when both appear. A title carrying both would be
+  // deliberate, and the newer one is the one being promoted.
+  ok('the current form takes precedence over the legacy form',
+     G.extractLetsId('L27-0001 was REQ-2026-0362') === 'L27-0001');
 }
 
 // ---------------------------------------------------------------------------
@@ -466,6 +507,99 @@ console.log('\n8. against the REAL export files, if they are present');
 }
 
 // ---------------------------------------------------------------------------
+console.log('\n8b. generateRequestId agrees with the fiscal year it spends');
+{
+  // The generator lives in 91_setup/Database.js, but it is tested HERE because
+  // the format exists to serve the Go.gov matcher: the ID has to fit inside
+  // Go.gov's 40-character trip name, and extractLetsId has to be able to find
+  // it again.
+  //
+  // Loaded by extracting the function rather than the whole file, which pulls
+  // in the entire database-setup module.
+  const dbSrc = fs.readFileSync('lets_app/server/91_setup/Database.js', 'utf8');
+  const fnSrc = (dbSrc.match(/function generateRequestId\(\)[\s\S]*?\n}/) || [])[0];
+  ok('generateRequestId is extractable', !!fnSrc);
+
+  function gen(nowISO, existingIds) {
+    const c = vm.createContext({
+      console: { log() {}, warn() {}, error() {} },
+      JSON, Object, String, Number, Array, Math, parseInt, isNaN,
+      // Frozen clock, so the fiscal-year boundary is testable rather than
+      // dependent on when the suite runs.
+      Date: class extends Date {
+        constructor(...a) { super(...(a.length ? a : [nowISO])); }
+      },
+      SpreadsheetApp: { openById: () => ({ getSheetByName: () => ({
+        getLastRow: () => 1 + existingIds.length,
+        getRange: () => ({ getValues: () => existingIds.map(i => [i]) })
+      }) }) }
+    });
+    vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID='x'; " +
+                    "var SHEET_NAMES={REQUESTS:'Requests'};", c);
+    vm.runInContext(fnSrc, c);
+    return vm.runInContext('generateRequestId()', c);
+  }
+
+  // THE FISCAL YEAR, NOT THE CALENDAR YEAR.
+  //
+  // The old code used getFullYear(), so a request raised on 15 October 2026
+  // was numbered REQ-2026-xxxx while drawing on FY2027 money — the ID said one
+  // year and the budget said another — and the sequence reset on 1 January
+  // rather than 1 October. @clolry, twice: "budgeting all resets on 10/1."
+  ok('30 Sep 2026 is FY2026', gen('2026-09-30T12:00:00Z', []) === 'L26-0001');
+  ok('1 Oct 2026 rolls to FY2027', gen('2026-10-01T12:00:00Z', []) === 'L27-0001');
+  ok('15 Oct 2026 is FY2027', gen('2026-10-15T12:00:00Z', []) === 'L27-0001',
+     'this is the case the old calendar-year code got wrong');
+  ok('1 Jan 2027 does NOT reset the sequence',
+     gen('2027-01-01T12:00:00Z', ['L27-0007']) === 'L27-0008',
+     'a calendar-year generator would have restarted at 0001 here');
+  ok('30 Sep 2027 is still FY2027', gen('2027-09-30T12:00:00Z', []) === 'L27-0001');
+  ok('1 Oct 2027 rolls to FY2028', gen('2027-10-01T12:00:00Z', []) === 'L28-0001');
+
+  // Sequence behaviour.
+  ok('increments from the highest, not the count',
+     gen('2026-10-15T12:00:00Z', ['L27-0001', 'L27-0009']) === 'L27-0010',
+     'count+1 would reuse L27-0003 after a deletion');
+  ok('widens past 9999 rather than colliding',
+     gen('2026-10-15T12:00:00Z', ['L27-9999']) === 'L27-10000');
+  ok('and extractLetsId can still read a widened id',
+     G.extractLetsId('L27-10000 NCMA') === 'L27-10000');
+
+  // COEXISTENCE. @clolry has already run setupTravelDatabase and may have
+  // legacy rows; renaming them would break every link that cites them.
+  ok('legacy REQ- rows do not affect the sequence',
+     gen('2026-10-15T12:00:00Z', ['REQ-2026-0362', 'REQ-2026-0999']) === 'L27-0001');
+  ok('a prior fiscal year does not either',
+     gen('2026-10-15T12:00:00Z', ['L26-0500']) === 'L27-0001');
+  ok('mixed namespaces resolve correctly',
+     gen('2026-10-15T12:00:00Z',
+         ['REQ-2026-0362', 'L26-0500', 'L27-0003']) === 'L27-0004');
+  ok('junk rows are skipped rather than throwing',
+     gen('2026-10-15T12:00:00Z', ['', 'L27-abc', 'L27-0002', null]) === 'L27-0003');
+
+  // Every generated id must satisfy the validator and the parser, or a
+  // request would be unfindable the moment it was created.
+  const vSrc = fs.readFileSync('lets_app/server/10_lib/Validation.js', 'utf8');
+  const vFn = (vSrc.match(/function requireRequestId[\s\S]*?\n}/) || [])[0];
+  const vc = vm.createContext({});
+  vm.runInContext('function ValidationError(m,f){this.message=m;this.field=f;}' +
+                  'function _fieldLabel(f){return f;}' +
+                  'function requireString(v,f){if(typeof v!=="string"||!v)' +
+                  'throw new ValidationError(f,f);return v;}', vc);
+  vm.runInContext(vFn, vc);
+  const accepts = id => {
+    try { vm.runInContext('requireRequestId(' + JSON.stringify(id) + ')', vc); return true; }
+    catch (e) { return false; }
+  };
+  ['L27-0001', 'L27-10000', 'L26-0001'].forEach(id => {
+    ok('the validator accepts a generated ' + id, accepts(id));
+    ok('and the parser finds it in a title',
+       G.extractLetsId(id + ' NCMA World Congress') === id);
+  });
+  ok('the validator still accepts a legacy id', accepts('REQ-2026-0362'));
+  ok('and rejects a malformed one', !accepts('L27-001') && !accepts('bogus'));
+}
+
 console.log('\n9. negative controls (the suite must be able to fail)');
 {
   const src = fs.readFileSync('lets_app/server/30_services/GogovSync.js', 'utf8');

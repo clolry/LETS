@@ -72,27 +72,57 @@ var GogovSync = (function () {
   /**
    * Finds a LETS request ID inside arbitrary text.
    *
-   * TOLERANT INPUT, STRICT OUTPUT. Three travellers already do this by hand,
-   * and each wrote it differently:
+   * TWO FORMATS, because both exist in the wild:
+   *
+   *   L27-0001        current. 8 characters, so it fits inside Go.gov's
+   *                   40-character trip-name limit and leaves room for the
+   *                   trip name itself
+   *   REQ-2026-0362   legacy. Three travellers already typed these by hand
+   *                   into Go.gov before the format changed
+   *
+   * TOLERANT INPUT, STRICT OUTPUT. The three real hand-written examples each
+   * used a different style:
    *
    *   'Denver to Atlanta -REQ-2026-0362'
    *   'DOCPER Workshop (REQ-2026-0282)'
    *   'REQ-2026-0435_GABLE, ROBERT'
    *
-   * Rejecting any of those would punish the people already cooperating. The
-   * separator is optional and may be a hyphen, underscore or space, so
-   * 'req 2026 0362' and 'REQ20260362' both resolve.
+   * Rejecting any of those would punish the people already cooperating.
    *
-   * Returns the CANONICAL form, so a match is an exact string comparison
-   * downstream rather than another fuzzy test.
+   * WHY THE NEW FORM IS MATCHED MORE STRICTLY THAN THE OLD
+   * -----------------------------------------------------
+   * 'REQ' is a distinctive token; 'L27' is three characters and could occur
+   * by accident. Tested against 1,087 real trip and report names, a loose
+   * pattern produced false positives on strings like 'Order L270001-A' and
+   * 'Hotel L27 0001 confirm'.
+   *
+   * So the current form REQUIRES an explicit - or _ separator and refuses an
+   * adjacent alphanumeric on either side. The legacy form keeps the loose
+   * rule, because 'REQ' carries its own disambiguation.
+   *
+   * Both are returned CANONICALISED, so a match downstream is an exact string
+   * comparison rather than another fuzzy test.
    *
    * @param {string} text
-   * @returns {string} 'REQ-2026-0362', or '' when absent
+   * @returns {string} 'L27-0001' or 'REQ-2026-0362', '' when absent
    */
   function extractLetsId(text) {
-    var m = /REQ[-_\s]?(\d{4})[-_\s]?(\d{3,5})/i.exec(_str_(text));
-    if (!m) return '';
-    return 'REQ-' + m[1] + '-' + m[2];
+    var s = _str_(text);
+    if (!s) return '';
+
+    // Current format first: it is the one being promoted, and a trip name
+    // carrying both would be deliberate.
+    //
+    // The lookaround does the work. Without it, 'L270001' and 'Order
+    // L270001-A' both matched — the first by treating a digit run as
+    // separated, the second by ignoring the trailing '-A'.
+    var cur = /(?:^|[^A-Za-z0-9])L(\d{2})[-_](\d{4,5})(?![A-Za-z0-9-])/i.exec(s);
+    if (cur) return 'L' + cur[1] + '-' + cur[2];
+
+    var legacy = /REQ[-_\s]?(\d{4})[-_\s]?(\d{3,5})/i.exec(s);
+    if (legacy) return 'REQ-' + legacy[1] + '-' + legacy[2];
+
+    return '';
   }
 
   // ==========================================================================

@@ -144,6 +144,63 @@ jobs:
         # the inherited HC library became unreachable.
         run: node orgchart_app/test_orgchart.js
 
+      - name: Guard - the request ID must fit Go.gov and match the fiscal year
+        run: |
+          echo "Checking the request ID format..."
+          # Go.gov truncates a trip name at EXACTLY 40 characters — measured
+          # across 565 real names: 79 are exactly 40 and none is longer.
+          #
+          # Travellers put the LETS ID at the FRONT of that name so the monthly
+          # expense report can be matched back. Every character the ID takes is
+          # one the trip name loses, which is why it is L27-0001 and not
+          # REQ-2026-0123.
+          DB=lets_app/server/91_setup/Database.js
+          if ! grep -aq "\`L\${String(fy).slice(-2)}-\`" "$DB"; then
+            echo "::error file=$DB::generateRequestId must produce the short L<FY2>-NNNN form. A longer prefix eats the 40-character Go.gov trip name the ID has to fit inside."
+            exit 1
+          fi
+          # FISCAL year, not calendar. The old code used getFullYear(), so a
+          # request raised on 15 October 2026 was numbered REQ-2026-xxxx while
+          # drawing on FY2027 money, and the sequence reset on 1 January.
+          BODY=$(awk '/^function generateRequestId\(\)/,/^}/' "$DB")
+          if ! echo "$BODY" | grep -aq 'getMonth() >= 9'; then
+            echo "::error file=$DB::generateRequestId must derive the year from the FISCAL year (October rollover), not the calendar year. @clolry: budgeting all resets on 10/1."
+            exit 1
+          fi
+          # Legacy IDs must keep working: rows already exist, and three
+          # hand-written REQ- ids are already in the Go.gov expense data.
+          #
+          # Checked against the FUNCTION BODY, not the file. The first version
+          # of this grepped the whole file for 'REQ-' and 'L\d{2}-', which the
+          # DOCBLOCK satisfies — so deleting the legacy branch left the guard
+          # passing. A guard that a comment can satisfy is not a guard.
+          V=lets_app/server/10_lib/Validation.js
+          VBODY=$(awk '/^function requireRequestId\(/,/^}/' "$V")
+          # Matched with -F (fixed string) so the regex literals in the source
+          # do not have to be escaped twice over. The earlier attempt used a
+          # grep pattern where . stood in for a backslash, which failed to
+          # match and made the guard fire on a clean tree.
+          if ! echo "$VBODY" | grep -aqF 'isCurrent = /^L'; then
+            echo "::error file=$V::requireRequestId must accept the current L27-0001 form."
+            exit 1
+          fi
+          if ! echo "$VBODY" | grep -aqF 'isLegacy  = /^REQ-'; then
+            echo "::error file=$V::requireRequestId must still accept the legacy REQ-YYYY-NNNN form. Rejecting it would make existing requests unfindable, and three hand-written REQ- ids are already in the Go.gov expense data."
+            exit 1
+          fi
+          # The parser must find both too, or a matched expense report cannot
+          # be tied back to its request.
+          GS=lets_app/server/30_services/GogovSync.js
+          if ! grep -aq "return 'L' + cur\[1\]" "$GS"; then
+            echo "::error file=$GS::extractLetsId must recognise the current L27-0001 form."
+            exit 1
+          fi
+          if ! grep -aq "return 'REQ-' + legacy\[1\]" "$GS"; then
+            echo "::error file=$GS::extractLetsId must still recognise the legacy REQ-YYYY-NNNN form."
+            exit 1
+          fi
+          echo "PASS - the request ID is short, fiscal-year aligned, and both forms resolve."
+
       - name: Guard - reconciliation must use Amount Approved, not Report Total
         run: |
           echo "Checking the Go.gov reconciliation figure..."

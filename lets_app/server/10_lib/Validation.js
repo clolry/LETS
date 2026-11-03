@@ -182,9 +182,25 @@ function requireObject(value, fieldName) {
 }
 
 /**
- * Require a TRIP Request_ID. Format: REQ-YYYY-NNNN (or REQ-YYYY-NNNNN for
- * year rollover safety — current numbering uses 4 digits but we accept 4–6
- * so this guard doesn't break when we cross 9999).
+ * Require a TRIP Request_ID. TWO FORMATS ARE VALID, PERMANENTLY.
+ *
+ *   L<FY2>-NNNN      current, e.g. L27-0001
+ *   REQ-YYYY-NNNN    legacy, e.g. REQ-2026-0362
+ *
+ * WHY BOTH
+ * --------
+ * The format shortened because Go.gov truncates a trip name at exactly 40
+ * characters, and travellers are asked to put the LETS ID at the front of it
+ * so expense reports can be matched back. 'REQ-2026-0123 ' consumed 14 of
+ * those 40; 'L27-0001 ' consumes 9. See Database.generateRequestId.
+ *
+ * Rejecting the legacy form would be the wrong kind of tidy. Requests already
+ * in the database carry it, three hand-written REQ- ids already exist in
+ * @clolry's Go.gov expense data, and this validator guards a LOOKUP — a
+ * stricter rule here would make existing requests unfindable rather than
+ * preventing anything.
+ *
+ * Both accept 4-6 digits so neither breaks at 9999.
  *
  * @param {*} value
  * @param {string} [fieldName='requestId']
@@ -194,8 +210,12 @@ function requireObject(value, fieldName) {
 function requireRequestId(value, fieldName) {
   fieldName = fieldName || 'requestId';
   var str = requireString(value, fieldName);
-  if (!/^REQ-\d{4}-\d{4,6}$/.test(str)) {
-    throw new ValidationError(_fieldLabel(fieldName) + ' is not a valid Request ID format (REQ-YYYY-NNNN)', fieldName);
+  var isCurrent = /^L\d{2}-\d{4,6}$/.test(str);
+  var isLegacy  = /^REQ-\d{4}-\d{4,6}$/.test(str);
+  if (!isCurrent && !isLegacy) {
+    throw new ValidationError(_fieldLabel(fieldName) +
+      ' is not a valid Request ID format (L27-0001, or legacy REQ-YYYY-NNNN)',
+      fieldName);
   }
   return str;
 }
