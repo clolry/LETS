@@ -1,6 +1,7 @@
 test_budget_engine.js
 test_fas_tracker_env.js
 test_budget_config_global.js
+test_city_pairs.js
 preview.html
 node_modules/**
 .git/**
