@@ -926,6 +926,31 @@ function addSuppressEmailsColumn() {
  * @returns {Object} Submitter info { name, email, buCode, buName, orgCode }
  */
 function getSubmitterInfo(email) {
+  // PII BOUNDARY — see 30_services/HCPrivacy.js.
+  //
+  // Browser-callable by any signed-in user (G-001), and it takes an EMAIL as
+  // a parameter — so unrestricted it is a lookup oracle over the whole
+  // roster: pass any colleague's address and read their name, org and BU.
+  //
+  // What it returns is directory-level and deliberately permitted. But a
+  // caller may only look up THEMSELVES unless they hold a privileged role.
+  // Routing and the travel form only ever ask about the active user, so this
+  // costs them nothing.
+  var _self = '';
+  try {
+    _self = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+  } catch (e) {
+    _self = '';
+  }
+  if (email && _self && String(email).toLowerCase() !== _self) {
+    var _tier = (typeof hcCallerTier === 'function')
+      ? hcCallerTier().tier : 'public';
+    if (_tier === 'public') {
+      console.warn('getSubmitterInfo: refused cross-user lookup by ' + _self);
+      return { success: false, error: 'You may only look up your own staffing record.' };
+    }
+  }
+
   if (!email) {
     email = Session.getActiveUser().getEmail();
   }

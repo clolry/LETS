@@ -19,5 +19,16 @@
  * @client
  */
 function getHCStaffingBundle() {
-  return HC.hcGetBundle();
+  // PII BOUNDARY. This is browser-callable by any signed-in user (G-001),
+  // and unsanitized it returned employee ID, email, GS grade, LCAT and
+  // duty-station street address for every person on the roster — ~1100
+  // records once the FAS feed lands. Name plus grade is salary disclosure.
+  //
+  // hcSanitizeBundle reduces each record to the caller's tier and returns the
+  // bundle unchanged for an admin. See 30_services/HCPrivacy.js.
+  var bundle = HC.hcGetBundle();
+  var tier = hcCallerTier();
+  hcLogPiiAccess('getHCStaffingBundle', tier.tier,
+                 (bundle && bundle.data) ? bundle.data.length : 0);
+  return hcSanitizeBundle(bundle);
 }

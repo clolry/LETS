@@ -102,6 +102,13 @@ jobs:
       - name: Feedback pipeline tests
         run: node lets_app/test_feedback.js
 
+      - name: HC PII boundary tests
+        # §2 is an ALLOW-LIST test. A deny-list passes the moment someone adds
+        # a column to HC_Positions — the leak would be silent and the test
+        # green. §7c proves that by patching in a deny-list and watching a new
+        # field leak.
+        run: node lets_app/test_hc_privacy.js
+
       - name: Go.gov sync tests
         # §5 asserts that an expense report is NEVER auto-matched to a request
         # belonging to a different traveller. That assertion FAILED when first
@@ -143,6 +150,76 @@ jobs:
         # rejected because LETS exists in its current form precisely BECAUSE
         # the inherited HC library became unreachable.
         run: node orgchart_app/test_orgchart.js
+
+      - name: Guard - HR PII must not escape the privacy boundary
+        run: |
+          echo "Checking the HC PII boundary..."
+          # Apps Script makes EVERY top-level function browser-callable
+          # (G-001). Before this boundary existed, getHCStaffingBundle
+          # returned employee ID, email, GS grade, LCAT and duty-station
+          # street address for every person on the roster, to any signed-in
+          # user with no role. That is ~1100 records once the FAS feed lands,
+          # and name + grade is salary disclosure.
+          P=lets_app/server/30_services/HCPrivacy.js
+          if [ ! -f "$P" ]; then
+            echo "::error::$P is missing. The HC PII boundary must exist."
+            exit 1
+          fi
+          # ALLOW-LIST, never a deny-list. With a deny-list, a column added to
+          # HC_Positions tomorrow is exposed by default.
+          if ! grep -aq 'allowed.forEach' "$P"; then
+            echo "::error file=$P::hcSanitizeRecord must build its output from an ALLOW-LIST. A deny-list exposes any newly added HC column by default."
+            exit 1
+          fi
+          # These four must never appear in the public or reviewer allow-list.
+          #
+          # Extracted from the two allow-list ARRAYS, not grepped from the
+          # whole file — HC_FIELDS_ADMIN_ONLY lists the same names by design,
+          # so a file-wide grep fired on a correct file. The first version of
+          # this guard did exactly that and failed on a clean tree.
+          LISTS=$(awk '/^var HC_FIELDS_PUBLIC = \[/,/\];/' "$P"; \
+                  awk '/^var HC_FIELDS_REVIEWER = \[/,/\];/' "$P")
+          for F in employeeId grade lcat locationCode; do
+            if echo "$LISTS" | grep -aq "'$F'"; then
+              echo "::error file=$P::'$F' appears in a non-admin allow-list. employeeId joins to payroll systems; name+grade is salary disclosure; lcat implies employment status."
+              exit 1
+            fi
+          done
+          # Every HC entry point must apply the boundary or be admin-gated.
+          # Checked per function body, not by counting.
+          for SPEC in \
+            "getHCStaffingBundle:lets_app/server/30_services/HCStaffing.js:hcSanitizeBundle" \
+            "getTravelFormStaffing:lets_app/server/40_domain/Request.js:hcCallerTier" \
+            "getSubmitterInfo:lets_app/server/91_setup/Database.js:hcCallerTier" \
+            "simulateSubmissionRouting:lets_app/server/40_domain/Submission.js:isTravelAdmin" \
+            "diagHcData:lets_app/server/99_triggers/Diagnostics.js:isTravelAdmin"; do
+            FN="${SPEC%%:*}"
+            REST="${SPEC#*:}"
+            FILE="${REST%%:*}"
+            NEED="${REST##*:}"
+            BODY=$(awk "/^function ${FN}\(/,/^}/" "$FILE")
+            if [ -z "$BODY" ]; then
+              echo "::error file=$FILE::${FN} is missing."
+              exit 1
+            fi
+            # Matched on an ACTUAL CALL, not a mention. The docblock in
+            # getHCStaffingBundle names hcSanitizeBundle in prose, so a bare
+            # substring grep passed even with the call deleted — the same
+            # comment-satisfies-the-guard mistake as the request-ID guard.
+            if ! echo "$BODY" | grep -av '^\s*//' | grep -aq "${NEED}("; then
+              echo "::error file=$FILE::${FN} reads HR data but does not call ${NEED}(). Every top-level function is browser-callable, so this would serve PII to any signed-in user."
+              exit 1
+            fi
+          done
+          # The traveller picker must not key on employeeId: the server
+          # withholds it from non-admins, so an option value of undefined
+          # would select nobody and the form would silently fail.
+          SVC=lets_app/client/shared/hcDataCenterService.html
+          if grep -aq 'value: p.employeeId$' "$SVC"; then
+            echo "::error file=$SVC::The traveller picker must key on positionNumber. employeeId is withheld from non-admin callers, so an employeeId-keyed option resolves to nobody."
+            exit 1
+          fi
+          echo "PASS - HR PII is tier-restricted by allow-list at every entry point."
 
       - name: Guard - the request ID must fit Go.gov and match the fiscal year
         run: |

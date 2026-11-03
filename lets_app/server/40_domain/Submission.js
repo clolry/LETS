@@ -1093,6 +1093,26 @@ function getFASReviewer() {
  * @editor
  */
 function simulateSubmissionRouting(submitterEmail, opts) {
+  // ADMIN ONLY. Tagged @editor, but Apps Script makes every top-level
+  // function browser-callable regardless (G-001) — the tag is documentation,
+  // not a control.
+  //
+  // It takes an arbitrary email and returns that person's name, org, BU and
+  // their whole reviewer chain. Left open it is a roster-enumeration tool,
+  // and a far richer one than getSubmitterInfo: it names their supervisors
+  // too.
+  try {
+    var _who = Session.getActiveUser().getEmail() || '';
+    if (!_who || typeof isTravelAdmin !== 'function' || !isTravelAdmin(_who)) {
+      console.warn('simulateSubmissionRouting: refused non-admin caller ' +
+                   (_who || '(none)'));
+      return { success: false,
+               error: 'Administrator access is required to trace routing for another user.' };
+    }
+  } catch (e) {
+    return { success: false, error: 'Could not determine the active user.' };
+  }
+
   try {
     requireTravelAdmin();
   } catch (e) {

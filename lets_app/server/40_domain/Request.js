@@ -55,6 +55,9 @@ function getNFSWorksheetTemplate() {
  */
 function getTravelFormStaffing() {
   try {
+    // Resolved ONCE, outside the loop: hcCallerTier reads roles, and calling
+    // it per person would be ~1100 role lookups per page load.
+    var _formStaffingTier = hcCallerTier().tier;
     const bundle = HC.hcGetBundle();
     if (!bundle || !bundle.success || !bundle.data) {
       console.warn('getTravelFormStaffing: HC bundle unavailable');
@@ -84,23 +87,40 @@ function getTravelFormStaffing() {
       // Walk supervisor chain to find GS-15 Division Director
       var dd = _findDDFromBundle(pos, pnLookup);
 
-      employees.push({
-        employeeId: pos.employeeId || '',
+      // PII BOUNDARY — see 30_services/HCPrivacy.js.
+      //
+      // This function is browser-callable by any signed-in user (G-001) and
+      // feeds the traveller picker, so it legitimately needs names, emails
+      // and org codes for the WHOLE roster. It does not need the rest.
+      //
+      // Withheld below admin:
+      //   employeeId           joins to payroll/HR systems this app does not own
+      //   lcat                 implies employment status
+      //   dutyStationAddress   a street address for a named individual
+      //   locationCode         internal facility code
+      //
+      // Grade was never in this payload and must not be added: name plus
+      // grade is salary disclosure.
+      var emp = {
         employeeName: pos.employeeName || '',
         email: pos.emailAddress || '',
         orgCode: pos.orgCode || '',
         bu: org.businessUnit || '',
-        lcat: pos.lcat || '',
         dutyLocation: [loc.city, loc.state].filter(Boolean).join(', '),
         supervisorPN: pos.reportsToPositionNumber || '',
         ddName: dd.ddName,
         ddEmail: dd.ddEmail,
-        locationCode: pos.locationCode || '',
-        dutyStationAddress: loc.address1 || '',
         dutyStationCity: loc.city || '',
         dutyStationState: loc.state || '',
         positionNumber: pos.positionNumber || ''
-      });
+      };
+      if (_formStaffingTier === 'admin') {
+        emp.employeeId = pos.employeeId || '';
+        emp.lcat = pos.lcat || '';
+        emp.locationCode = pos.locationCode || '';
+        emp.dutyStationAddress = loc.address1 || '';
+      }
+      employees.push(emp);
     }
 
     console.log('getTravelFormStaffing: Mapped ' + employees.length + ' employees from HC bundle');

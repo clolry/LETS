@@ -111,6 +111,10 @@ window.HCDataCenter = (function() {
     for (var i = 0; i < positions.length; i++) {
       var pos = positions[i];
       if (pos.positionNumber) _positionIndex[pos.positionNumber] = pos;
+      // employeeId is withheld from non-admin callers by the PII boundary
+      // (server: 30_services/HCPrivacy.js), so this index is empty for most
+      // users. Kept because an admin page still benefits from it, and
+      // getEmployee falls back to the position index below.
       if (pos.employeeId) _employeeIndex[pos.employeeId] = pos;
       if (pos.emailAddress) _emailIndex[pos.emailAddress.toLowerCase()] = pos;
     }
@@ -201,8 +205,26 @@ window.HCDataCenter = (function() {
     return _positionIndex[String(positionNumber).trim()] || null;
   }
 
-  function getEmployee(employeeId) {
-    return _employeeIndex[String(employeeId).trim()] || null;
+  /**
+   * Looks a person up by employee ID or position number.
+   *
+   * ACCEPTS EITHER, because employeeId is no longer always present.
+   *
+   * The server withholds employeeId from non-admin callers — it joins to
+   * payroll and HR systems this app does not own. The traveller picker used
+   * it as its option value, so withholding it alone would have made every
+   * selection resolve to null and silently broken traveller entry for every
+   * non-admin user. Found by auditing what the sanitiser removed, not by the
+   * form failing.
+   *
+   * positionNumber is the right key anyway: it identifies a POSITION rather
+   * than a person, it is the primary key of HC_Positions, and the org chart
+   * already joins on it.
+   */
+  function getEmployee(key) {
+    var k = String(key == null ? '' : key).trim();
+    if (!k) return null;
+    return _employeeIndex[k] || _positionIndex[k] || null;
   }
 
   function getByEmail(email) {
@@ -239,15 +261,30 @@ window.HCDataCenter = (function() {
     return _data
       .filter(function(p) { return p.employeeName && p.occupancyStatus !== 'VACANT'; })
       .map(function(p) {
-        return { label: p.employeeName + ' (' + (p.orgCode || '') + ')', value: p.employeeId };
+        // positionNumber, NOT employeeId. The server withholds employeeId
+        // from non-admins, and an option whose value is undefined resolves to
+        // nobody — the picker would appear to work and select nothing.
+        return {
+          label: p.employeeName + ' (' + (p.orgCode || '') + ')',
+          value: p.positionNumber || p.employeeId || ''
+        };
       });
   }
 
+  /**
+   * Keyed the same way getAutocompleteList values are keyed.
+   *
+   * Previously built from _employeeIndex alone, which is empty for a
+   * non-admin caller now that the server withholds employeeId — so the
+   * details lookup returned nothing and the form could not populate a
+   * selected traveller.
+   */
   function getDetailsMap() {
     var map = {};
-    for (var id in _employeeIndex) {
-      map[id] = _employeeIndex[id];
-    }
+    for (var pn in _positionIndex) { map[pn] = _positionIndex[pn]; }
+    // employeeId keys too, for an admin caller and for anything still
+    // holding an ID from a previously saved draft.
+    for (var id in _employeeIndex) { map[id] = _employeeIndex[id]; }
     return map;
   }
 

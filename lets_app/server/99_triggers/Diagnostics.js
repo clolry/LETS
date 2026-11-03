@@ -355,6 +355,23 @@ function diagCityPairs() {
  * @editor
  */
 function diagHcData() {
+  // ADMIN ONLY. Browser-callable like every top-level function (G-001), and
+  // it prints position numbers, names and grades. Logs are not the concern —
+  // the RETURN path is: a browser caller gets whatever this returns, and
+  // Stackdriver output is admin-visible anyway.
+  //
+  // Guarded rather than sanitised: a diagnostic whose output is filtered is
+  // no longer a diagnostic.
+  try {
+    var _who = Session.getActiveUser().getEmail() || '';
+    if (!_who || typeof isTravelAdmin !== 'function' || !isTravelAdmin(_who)) {
+      console.warn('diagHcData: refused non-admin caller ' + (_who || '(none)'));
+      return { success: false, error: 'Administrator access is required.' };
+    }
+  } catch (e) {
+    return { success: false, error: 'Could not determine the active user.' };
+  }
+
   console.log('');
   console.log('--- HC DATA ---');
   try {
