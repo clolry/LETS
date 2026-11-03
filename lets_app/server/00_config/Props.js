@@ -159,7 +159,7 @@ function getOtherCostPercentage() {
 // ============================================================================
 
 /**
- * Email sender/reply-to address. Default 'aastravel@gsa.gov'.
+ * Email sender/reply-to address. Default 'ASD.Travel-Events@gsa.gov'.
  * @returns {string}
  * @server
  */
@@ -169,7 +169,8 @@ function getEmailFromAddress() {
 }
 
 /**
- * Email sender display name. Default 'AAS Travel'.
+ * Email sender display name. Derived from the org short name, so rebranding
+ * via ORG_SHORT_NAME moves the sender too. Default 'ASD Travel & Events'.
  * @returns {string}
  * @server
  */
@@ -432,20 +433,44 @@ function setDOSLastSync(ts) {
 // ============================================================================
 
 /**
- * Initialize email config defaults if not yet set. Idempotent — safe to re-run.
+ * Report the effective email sender configuration. Read-only.
+ *
+ * THIS FUNCTION USED TO WRITE, AND THE WRITE UN-BRANDED THE APP
+ * ------------------------------------------------------------
+ * It set EMAIL_FROM_ADDRESS to 'aastravel@gsa.gov' and EMAIL_FROM_NAME to
+ * 'AAS Travel' whenever those properties were unset — the inherited
+ * workgroup's mailbox and sender name. Because getEmailFromAddress() and
+ * getEmailFromName() only apply their defaults while the property is UNSET,
+ * one call permanently replaced ASD's sender with AAS's, on every outbound
+ * email, with no error anywhere.
+ *
+ * It was reachable: initTravelEmailConfig (Email.js) is a top-level function
+ * and therefore callable from any authenticated browser via
+ * google.script.run. Removing the write closes that path at the source, which
+ * is why this is not solved by adding a role guard.
+ *
+ * WHY IT NOW WRITES NOTHING AT ALL, RATHER THAN WRITING THE RIGHT VALUES
+ * ---------------------------------------------------------------------
+ * Writing the correct values would still be wrong. getEmailFromName()
+ * DERIVES from getOrgShortName(), so persisting its current result would
+ * freeze the sender name and a later ORG_SHORT_NAME change would silently
+ * stop reaching it — the same class of bug, one step removed.
+ *
+ * The getters already supply this deployment's values when unset, so there is
+ * nothing to initialize. Unset is the correct and intended state; a property
+ * exists to let a DIFFERENT workgroup override it.
+ *
+ * @returns {{address: string, name: string}} The effective sender config
  * @editor
  */
 function initEmailConfigDefaults() {
-  if (!_props().getProperty(PROPS_KEYS.EMAIL_FROM_ADDRESS)) {
-    _props().setProperty(PROPS_KEYS.EMAIL_FROM_ADDRESS, 'aastravel@gsa.gov');
-  }
-  if (!_props().getProperty(PROPS_KEYS.EMAIL_FROM_NAME)) {
-    _props().setProperty(PROPS_KEYS.EMAIL_FROM_NAME, 'AAS Travel');
-  }
-  console.log('Email config defaults checked. Current values:', {
+  const effective = {
     address: getEmailFromAddress(),
     name: getEmailFromName()
-  });
+  };
+  console.log('Email sender config (resolved from properties, or defaults ' +
+    'where unset — nothing written):', effective);
+  return effective;
 }
 
 /**

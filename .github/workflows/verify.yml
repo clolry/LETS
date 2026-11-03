@@ -523,16 +523,108 @@ jobs:
           # Comments and STORED values are permitted: 'AAS FO' is an
           # Initial_Review_Level value, and TRIP_FAVICON_ID / _buildAASLogo are
           # identifiers. Display strings are not.
+          #
+          # WHY client/pages/ IS IN THIS LIST.
+          # It was not, and three user-visible strings survived the rebrand
+          # behind a guard that was passing: "Pending AAS FO" in the admin
+          # status-override dropdown, an aastravel@gsa.gov help link on the
+          # request form, and the same address twice on the access-blocked
+          # page. The PATTERN below already matched all three — the guard was
+          # simply never pointed at the directory. Same class as G-072, where
+          # the defect was the guard's reach and not its regex.
+          #
+          # Directories, not a file list, for exactly that reason: a new page
+          # is covered the day it is added rather than the day someone
+          # remembers to extend this step.
           BAD=$(grep -arnE "'[^']*\bTRIP\b|\"[^\"]*\bTRIP\b|aastravel@gsa\.gov" \
                   lets_app/server/30_services/Email.js \
                   lets_app/server/50_pages/Render.js \
+                  lets_app/server/00_config/Props.js \
                   lets_app/client/shared/travelUtils.html \
-                  lets_app/client/controllers/portal/travelPortalController.html \
-                | grep -avE ":[0-9]+:\s*(//|\*|/\*|<!--)" \
-                | grep -avE "TRIP_FAVICON|_buildAASLogo|aas-brand-header|TRAVEL_LOGO" || true)
+                  lets_app/client/pages/ \
+                  lets_app/client/controllers/ \
+                | grep -avE ":[0-9]+:[[:space:]]*(//|\*|/\*|<!--)" \
+                | grep -avE "TRIP_FAVICON|_buildAASLogo|aas-brand-header|TRAVEL_LOGO|AAS_LOGO|trip-blocked" || true)
           if [ -n "$BAD" ]; then
             echo "::error::A hardcoded brand string was found. Use getAppName() / getEmailFromAddress() or a {{appName}} token so another workgroup can rebrand without a code change:"
             echo "$BAD"
+            exit 1
+          fi
+          # The inherited org name as a DISPLAY string, anywhere a user can
+          # read it. Distinct from the check above because "AAS" on its own is
+          # not a TRIP reference and not an email address, so neither pattern
+          # caught "Pending AAS FO" sitting in an <option> for weeks.
+          #
+          # Permitted: 'AAS FO' as a STORED Initial_Review_Level, the AAS_LOGO
+          # / _buildAASLogo / aas-brand-header / --aas-* identifiers, and
+          # getAASOrgScope. Those are code, not copy. Rejected: AAS inside
+          # element text, an option label, a title, a placeholder or an alt.
+          #
+          # TRACKED EXCEPTION — shrink this list, never grow it.
+          #   client/components/Loader.html
+          #     Dead file. Still carries the AAS lettermark and tagline, but
+          #     nothing include()s it — welcomeSvg.html superseded it and
+          #     planeLoader/navLoader cover the rest. Verified unreferenced
+          #     across lets_app/. Excluded rather than rebranded because the
+          #     correct fix is deletion, and deleting it does not belong in a
+          #     branding commit. Remove this exception WITH the file.
+          AASVIS=$(grep -arnE "(>[^<]*\bAAS\b|placeholder=\"[^\"]*\bAAS\b|alt=\"[^\"]*\bAAS\b|title>[^<]*\bAAS\b)" \
+                     lets_app/client/pages/ lets_app/client/components/ \
+                   | grep -avE ":[0-9]+:[[:space:]]*(//|\*|/\*|<!--)" \
+                   | grep -avE "AAS_LOGO|_buildAASLogo|aas-brand-header|getAASOrgScope|--aas-" \
+                   | grep -av '^lets_app/client/components/Loader\.html:' || true)
+          if [ -n "$AASVIS" ]; then
+            echo "::error::The inherited organisation name appears as user-visible text. Route it through <?= foLabel ?> / <?= orgShort ?> / <?= appName ?> (set by _applyBranding) so another workgroup can rebrand without a code change:"
+            echo "$AASVIS"
+            exit 1
+          fi
+          # Every variable a page READS must be one Render.js SETS. Page
+          # templates throw ReferenceError on an unassigned variable — the
+          # failure is a blank page, not a blank string — so a typo'd or
+          # orphaned <?= foo ?> must fail here rather than in front of a user.
+          #
+          # SCOPE, stated honestly: this compares against every
+          # "template.X =" in Render.js, so it catches a name that NOTHING
+          # sets (a typo, or a page still reading a variable whose assignment
+          # was deleted). It does NOT catch a name set by a different page's
+          # server function, because that needs per-function scoping. That
+          # stricter per-page check lives in test_branding.js section 10,
+          # which can express it; this is the cheap net.
+          #
+          # Derived, not hand-listed. A hardcoded list of page-local variables
+          # would be one more thing to forget to update — the exact failure
+          # mode that let three AAS strings through the guard above.
+          SET_VARS=$(sed -n 's/^[[:space:]]*template\.\([A-Za-z0-9_]*\)[[:space:]]*=.*/\1/p' \
+                       lets_app/server/50_pages/Render.js | sort -u)
+          if [ -z "$SET_VARS" ]; then
+            echo "::error file=lets_app/server/50_pages/Render.js::Could not extract any 'template.X =' assignment. If the assignment style changed, update this guard — it is the only thing standing between a typo'd <?= ?> and a blank page."
+            exit 1
+          fi
+          for VAR in $(grep -arhoE '<\?=?!?=[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\?>' \
+                         lets_app/client/pages/ \
+                       | sed -E 's/^<\?=?!?=[[:space:]]*//; s/[[:space:]]*\?>$//' | sort -u); do
+            # Scriptlet keywords, not variables.
+            case "$VAR" in if|for|while|return|else|var|function) continue ;; esac
+            if ! echo "$SET_VARS" | grep -qx "$VAR"; then
+              echo "::error::A page template reads <?= ${VAR} ?>, which no server function in Render.js assigns. An unassigned template variable throws ReferenceError and renders a blank page. Set it, or fix the name."
+              grep -arn "${VAR}" lets_app/client/pages/ | grep -aE '<\?' || true
+              exit 1
+            fi
+          done
+          # The inherited email logo must not come back. A base64 payload is
+          # unreviewable in a diff — two 7 KB blobs look identical to a human
+          # — so this pins the SHA-256 of the AAS asset that shipped from the
+          # TRIP import. The ASD replacement is 480x160, ink #064C9A, ~7 KB.
+          AAS_LOGO_SHA='33fa63c272e971ce950a62d66c68386767365e797f4454ab44194964d0bbaf10'
+          CUR_LOGO_SHA=$(sed -n "s/^const TRAVEL_LOGO_BASE64 = '\([A-Za-z0-9+/=]*\)';$/\1/p" \
+                           lets_app/server/30_services/Email.js \
+                         | tr -d '\n' | sha256sum | cut -d' ' -f1)
+          if [ "$CUR_LOGO_SHA" = "$AAS_LOGO_SHA" ]; then
+            echo "::error file=lets_app/server/30_services/Email.js::TRAVEL_LOGO_BASE64 is the inherited AAS artwork. Rebuild it from brand/ASD_mark_1002x636_blue_transparent.png at 480x160 — see the comment above the constant and brand/README.md."
+            exit 1
+          fi
+          if [ -z "$CUR_LOGO_SHA" ] || [ "$CUR_LOGO_SHA" = "$(printf '' | sha256sum | cut -d' ' -f1)" ]; then
+            echo "::error file=lets_app/server/30_services/Email.js::TRAVEL_LOGO_BASE64 could not be read, or is empty. An empty value silently falls back to the text logo in _buildAASLogo; if that is deliberate, say so here and update this guard."
             exit 1
           fi
           # The email FOOTER. It survived the first rebranding sweep because it was a
@@ -570,6 +662,39 @@ jobs:
             echo "::error file=lets_app/server/30_services/Email.js::sendSubmitterConfirmation no longer starts the progress tracker at 'submitted'. Deriving the stage from the routed review level marks every earlier stage complete on a brand-new request."
             exit 1
           fi
+          # NO INITIALIZER MAY WRITE A BRAND VALUE INTO SCRIPT PROPERTIES.
+          #
+          # initEmailConfigDefaults used to set EMAIL_FROM_ADDRESS to
+          # aastravel@gsa.gov and EMAIL_FROM_NAME to 'AAS Travel' when unset.
+          # The getters only apply their defaults while a property is UNSET,
+          # so one call permanently replaced ASD's sender with the inherited
+          # workgroup's, on every outbound email, with no error. It was
+          # reachable from any browser through initTravelEmailConfig.
+          #
+          # Writing the CORRECT values would also be wrong: getEmailFromName
+          # DERIVES from getOrgShortName, so persisting it would freeze the
+          # sender and a later ORG_SHORT_NAME change would stop reaching it.
+          # Unset is the intended state. A property exists so a DIFFERENT
+          # workgroup can override it.
+          BRANDWRITE=$(grep -anE "setProperty\([^)]*(EMAIL_FROM_ADDRESS|EMAIL_FROM_NAME|APP_NAME|ORG_SHORT_NAME|ORG_LONG_NAME|ORG_SERVICE_NAME|AGENCY_NAME|ORG_FO_LABEL|REVIEW_LABEL_)" \
+                         lets_app/server/00_config/Props.js \
+                       | grep -avE "^[0-9]+:[[:space:]]*(//|\*|/\*)" || true)
+          if [ -n "$BRANDWRITE" ]; then
+            echo "::error file=lets_app/server/00_config/Props.js::An initializer writes a branding property. The getters already default to this deployment's values when unset, and a write turns a default into a frozen literal — which is how the inherited AAS sender address came back. Read, do not write:"
+            echo "$BRANDWRITE"
+            exit 1
+          fi
+          # _applyBranding must stay in step with getBrandingForClient. A key
+          # present in one and missing from the other is either a page that
+          # throws ReferenceError or a client that reads undefined.
+          for KEY in $(sed -n '/^function getBrandingForClient/,/^}/p' \
+                         lets_app/server/00_config/Props.js \
+                       | sed -n 's/^[[:space:]]*\([A-Za-z0-9_]*\):[[:space:]]*get.*/\1/p'); do
+            if ! grep -q "template\.${KEY} = b\.${KEY};" lets_app/server/50_pages/Render.js; then
+              echo "::error file=lets_app/server/50_pages/Render.js::getBrandingForClient exposes '${KEY}' but _applyBranding does not set it on the page template. A page writing <?= ${KEY} ?> would throw ReferenceError and render blank."
+              exit 1
+            fi
+          done
           # Every review surface must read ONE label source. Four status maps
           # plus the help modal each hardcoded 'AAS FO' and 'BU'
           # independently; a property change has to move all of them or the

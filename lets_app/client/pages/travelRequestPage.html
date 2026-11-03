@@ -4,7 +4,7 @@
   <base target="_self">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AAS Travel Request</title>
+  <title><?= appName ?> - New Request</title>
 
   <!-- Bootstrap 5 -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -831,7 +831,7 @@
             </button>
           </div>
           <div class="travel-fixed-footer__center">
-            <span class="help-text">Need help? Contact <a href="https://mail.google.com/mail/?view=cm&fs=1&to=aastravel@gsa.gov&su=Travel%20Request%20Help" target="_blank" rel="noopener" class="help-link">AAS Travel</a></span>
+            <span class="help-text">Need help? Contact <a href="https://mail.google.com/mail/?view=cm&fs=1&to=<?= contactEmail ?>&su=<?= appName ?>%20Request%20Help" target="_blank" rel="noopener" class="help-link"><?= senderName ?></a></span>
           </div>
           <div class="travel-fixed-footer__actions">
             <button type="button" class="btn btn-outline-secondary hidden" id="fixedFooterBack">
@@ -895,7 +895,7 @@
   <!-- Initialize -->
   <script>
     document.addEventListener('DOMContentLoaded', async function() {
-      // Initialize AAS Logo in header
+      // Initialize ASD Logo in header
       const logoContainer = document.getElementById('headerLogo');
       if (logoContainer && window.AAS_LOGO) {
         logoContainer.innerHTML = window.AAS_LOGO.getHTML(36, '', true);
