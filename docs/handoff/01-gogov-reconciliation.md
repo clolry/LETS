@@ -1,31 +1,11 @@
-# Handoff: Go.gov reconciliation
+# Task 1 — Go.gov monthly expense report reconciliation
 
-For Ozel. Everything needed to pick up the reconciliation thread.
+Everything needed to pick up the reconciliation thread.
 
-Read this, then `lets_app/server/30_services/GogovSync.js` top to bottom — its
-header comment carries the reasoning for every design decision and is the
-single most useful thing in the thread.
-
-## 0. Before you branch
-
-**Do not continue `0zelKirkland-patch-1`.** It is already merged into `main`,
-and `main` has moved **8 commits** past it. A diff from `main` to that branch
-shows **2,037 deletions** — reviving it would delete `CityPairs.js`,
-`CityPairSync.js`, their two test suites, the CODEOWNERS file, 65 lines of
-`verify.yml` and most of the README. Those are not changes you made; they are
-the branch being old.
-
-Start clean:
-
-```sh
-git fetch origin
-git switch -c feat/gogov-reconcile origin/sandbox
-```
-
-**Branch from `sandbox`, not `main`.** `sandbox` is 47 commits ahead and is
-where all of the reconciliation groundwork lives — `GogovSync.js` does not
-exist on `main` at all.
-
+Read [`README.md`](README.md) first for the branch situation and the repo
+conventions. Then read this, then `lets_app/server/30_services/GogovSync.js`
+top to bottom — its header comment carries the reasoning for every design
+decision and is the single most useful thing in the thread.
 
 ---
 
@@ -431,64 +411,25 @@ to `verify.yml`.
 
 ---
 
-## 9. Conventions this repo holds you to
+## 9. Conventions, as they apply here
 
-Read `docs/ENHANCEMENT_PLAYBOOK.md` §7.1 and §7.2 first — five rules and five
-prohibitions, each of which fails *silently*. The ones that will bite on this
-thread specifically:
+The full list is in [`README.md`](README.md) — read that section before the
+first commit. Three of its rules land specifically on this thread:
 
-**Give every new helper a TRAILING underscore.** `function foo_()` is private
-to the platform. `function _foo()` is **not** — a leading underscore confers
-nothing, and 118 functions in this repo are named that way. Only the trailing
-form is enforced by Apps Script. Playbook Rule 3.
+**Append columns, never insert.** This thread already added twelve columns to
+`Requests` and they went on the end for exactly that reason.
 
-**Read sheets BY HEADER NAME.** Eighteen access points are order-dependent and
-a column insertion silently misfiles them — **G-014** (Critical, open). Do not
-add a nineteenth.
+**`node --check lets_app/server/01_constants/Sheets.js`** after touching it.
+@clolry's HR thread is adding tabs to the same file.
 
-**Writes ARE positional** — eight of those eighteen are positional write
-arrays. Build a header-keyed record and map it over the schema. Never
-hand-build the array. Playbook §7.2.3.
+**If the mapping UI ever reads an uploaded file through Drive**, that is a new
+Google API call — read Playbook §7.5.1 first. The manifest declares zero
+`oauthScopes`, so adding a service silently widens permissions for every user
+with no code-review signal (**G-006**, Critical).
 
-**Append columns. Never insert, reorder, delete or rename one.** Playbook
-Rule 5. This thread adds twelve columns to `Requests` and they went on the
-end for exactly this reason.
-
-**Do not run `clasp push` locally, and never from the repo root.** CI deploys.
-A root push carries 228 files into an undocumented Apps Script project,
-including another organisation's application — **G-048**. Playbook Rule 1.
-
-**If you add a Google API call, read Playbook §7.5.1 first.** The manifest
-declares zero `oauthScopes`, so scopes are inferred from the APIs your code
-calls — a new service silently widens permissions for every user with no
-code-review signal. **G-006** (Critical). Relevant if the mapping UI ever
-reads an uploaded file via Drive.
-
-**`node --check` after touching `Sheets.js`.** The PR #16 conflict there was
-not safely unionable: `HC_ORGS: 'HC_Orgs'` had no trailing comma, so appending
-after it produced invalid JavaScript, and the schema hunk straddled a nested
-array and the enclosing object's close. Reading the diff did not catch either.
-
-**Add new tabs at the END** of `SHEET_NAMES` and `TRAVEL_SHEET_SCHEMAS`.
-@clolry's HR thread is also adding tabs, and appending at the end keeps the
-conflicts trivially resolvable.
-
-**`verify.yml` and `.claspignore` will conflict on every PR.** 44 and 32
-commits respectively; every feature appends a test step and an ignore line.
-Additive — keep both sides. Not a sign anything is broken.
-
-**Write the negative control before claiming a guard works.** Seven of my
-guards passed when they should have failed, every one found by running the
-control rather than reading the code. The pattern is always an assertion
-against source text that differs trivially from what I pictured — one space
-versus four, a comment satisfying a grep, a slice between markers in the wrong
-order.
-
-**Every browser-callable function needs an explicit auth check.** Apps Script
-exposes all 412 reachable top-level functions to any authenticated browser —
-**G-001**. `importExistingTravel` and `validateExistingTravel` are
-admin-gated; anything new that writes must be too. Playbook §7.7.1 has the
-guard pattern.
+And one that is already satisfied, so do not undo it: `importExistingTravel`
+and `validateExistingTravel` are admin-gated. Anything new that writes must be
+too.
 
 ---
 
@@ -517,36 +458,15 @@ dropping them is not.
 
 ---
 
-## 11. Where the two threads touch
+## 11. What comes after this
 
-@clolry is working the HR thread in parallel: the FAS HR sync, Directory email
-lookup, and the four `sector director` call sites. The split was chosen so the
-file overlap is almost nil.
+[`02-existing-travel-import.md`](02-existing-travel-import.md) is Task 2:
+importing existing travel and proving the budget numbers are right. It reuses
+`BudgetBackfill.js`, which §3.3 here already touches, so the two tasks share a
+file and are deliberately assigned to the same person.
 
-| | yours | @clolry's |
-|---|---|---|
-| owns | `GogovSync.js`, `BudgetBackfill.js`, new reconcile controller | `FasHrSync.js`, `DirectoryLookup.js`, `Access.js`, `Users.js` |
-
-Three shared files, in increasing order of danger:
-
-**`verify.yml` and `.claspignore` will conflict on nearly every PR.** 44 and 32
-commits respectively; every feature appends a step and an ignore line. The
-conflicts are additive — keep both sides. Not a sign anything is broken.
-
-**`Sheets.js` is the one to be careful with.** Both threads add tabs. The PR
-#16 conflict there was *not* safely unionable: `HC_ORGS: 'HC_Orgs'` had no
-trailing comma, so appending after it produced invalid JavaScript, and the
-schema hunk straddled a nested array *and* the enclosing object's close.
-Reading the diff caught neither; `node --check` caught both. Append at the
-**end** of `SHEET_NAMES` and `TRAVEL_SHEET_SCHEMAS`, and run:
-
-```sh
-node --check lets_app/server/01_constants/Sheets.js
-```
-
-**One dependency runs the other way:** the ASD roster filter in §10 needs
-@clolry's HR sync. Build the importer without it — it improves the numbers
-later without a matcher change.
+If Task 1 finishes first, §3.3 of this document and §3 of Task 2 are the same
+work seen from two directions. Do it once.
 
 ---
 
@@ -555,10 +475,10 @@ later without a matcher change.
 | | |
 |---|---|
 | `GogovSync.js` header | every design decision, with the measurement behind it |
-| `docs/ENHANCEMENT_PLAYBOOK.md` §7.1–7.2 | the five rules and five prohibitions. Read before the first commit |
+| [`README.md`](README.md) | branch situation, repo conventions, thread overlap |
 | `git log --grep="Go.gov"` | the commits, each with a VERIFICATION section |
 | `docs/DATA_DICTIONARY.md` §3.5.1b | the backfill state and why it is not a tab |
-| `docs/GAP_REGISTER.md` §6.12 | why `BudgetEngine.js` could not be reused |
+| `docs/GAP_REGISTER.md` | why `BudgetEngine.js` could not be reused — search the heading *"G-016 is worse than unreachable"*; two sections share the number §6.12 |
 | `SESSION_STATE.md` | current state and what is waiting on @clolry |
 
 The commit messages are the design record. `git show c0f3451` covers the
