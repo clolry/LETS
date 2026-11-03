@@ -1543,8 +1543,8 @@
       html +=       '<strong>' + (u.isActive ? 'Active' : 'Inactive') + '</strong>';
       html +=       '<span class="users-slidein__status-hint">' +
                      (u.isActive
-                       ? 'User can access TRIP based on their role assignments.'
-                       : 'User is blocked from TRIP. Roles preserved.') +
+                       ? 'User can access ' + _esc(_L().appName) + ' based on their role assignments.'
+                       : 'User is blocked from ' + _esc(_L().appName) + '. Roles preserved.') +
                    '</span>';
       html +=     '</span>';
       html +=   '</label>';

@@ -404,6 +404,13 @@ function serveReviewerDashboardPage(e) {
  * name appeared in 69 places; @clolry wants a redeploy for a different group to
  * be a configuration change, not a code change.
  *
+ * EVERY KEY HERE MUST BE SET, EVEN IF NO PAGE READS IT YET.
+ * An unset key is not an empty string — <?= someName ?> on a template whose
+ * server function never assigned it throws "ReferenceError: someName is not
+ * defined" and takes the whole page down. That is how the help-modal outage
+ * happened (see the CI guard 'branding must stay configurable'). So this
+ * mirrors getBrandingForClient() in full rather than a subset.
+ *
  * @param {HtmlTemplate} template
  */
 function _applyBranding(template) {
@@ -411,10 +418,13 @@ function _applyBranding(template) {
   template.appName = b.appName;
   template.orgShort = b.orgShort;
   template.orgLong = b.orgLong;
+  template.orgService = b.orgService;
+  template.agency = b.agency;
   template.foLabel = b.foLabel;
   template.sectorLabel = b.sectorLabel;
   template.buLabel = b.buLabel;
   template.contactEmail = b.contactEmail;
+  template.senderName = b.senderName;
   return template;
 }
 
@@ -481,6 +491,6 @@ function serveTravelBudgetDashboardPage(e) {
   return template
     .evaluate()
     .setFaviconUrl('https://drive.google.com/uc?id=' + TRIP_FAVICON_ID + '&export=download&format=png')
-    .setTitle('LETS - Travel Budget & Discretionary Tracker')
+    .setTitle(getAppName() + ' - Travel Budget & Discretionary Tracker')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }

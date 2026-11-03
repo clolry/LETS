@@ -46,7 +46,7 @@
 
 // Branding must be configurable: the app was inherited from another workgroup
 // and still called itself TRIP, signed as AAS, and pointed at aastravel@.
-const fs=require('fs'),vm=require('vm');
+const fs=require('fs'),vm=require('vm'),path=require('path'),crypto=require('crypto');
 let fails=0;
 const ok=(n,c,x)=>{if(c)console.log('  PASS',n);else{console.log('  FAIL',n,x===undefined?'':JSON.stringify(x).slice(0,220));fails++;}};
 
@@ -336,7 +336,6 @@ console.log('9. included files must not reference page template variables');
   //
   // Section 8 checked that PAGES publish branding. It could not catch this,
   // because the page/include distinction is invisible in the file itself.
-  const path = require('path');
   const dirs = ['lets_app/client/shared', 'lets_app/client/components',
                 'lets_app/client/controllers'];
   const offenders = [];
@@ -364,6 +363,146 @@ console.log('9. included files must not reference page template variables');
   const help = fs.readFileSync('lets_app/client/shared/travelHelpModal.html', 'utf8');
   ok('help modal marks the app name for substitution', /data-help-app/.test(help));
   ok('and fills it from branding', /_letsBranding && window\._letsBranding\.appName/.test(help));
+}
+
+console.log('10. no initializer may WRITE a branding property');
+{
+  // THE DEFECT THIS SECTION EXISTS FOR
+  // ----------------------------------
+  // initEmailConfigDefaults set EMAIL_FROM_ADDRESS to 'aastravel@gsa.gov'
+  // and EMAIL_FROM_NAME to 'AAS Travel' whenever they were unset — the
+  // inherited workgroup's mailbox and sender name.
+  //
+  // Section 1 asserted the correct defaults and PASSED the whole time,
+  // because it builds its context with no properties set and never calls the
+  // initializer. A getter's default only applies while the property is
+  // UNSET, and this function's entire job was to set it. So the test and the
+  // defect coexisted: every assertion green, and one call to a
+  // browser-reachable function (initTravelEmailConfig in Email.js) would
+  // have permanently re-branded every outbound email with no error anywhere.
+  //
+  // This executes the initializer and then re-reads, which is the only way
+  // to see it. Asserting on source text would not have caught it either.
+  const store = {};
+  const ctx = vm.createContext({ console: { log() {} }, String, Object, Array,
+    Number, parseInt, parseFloat, isNaN,
+    PropertiesService: { getScriptProperties: () => ({
+      getProperty: k => (k in store ? store[k] : null),
+      setProperty: (k, v) => { store[k] = v; }
+    })}});
+  vm.runInContext(fs.readFileSync('lets_app/server/00_config/Props.js', 'utf8'), ctx);
+  const g = e => vm.runInContext(e, ctx);
+
+  const before = { addr: g('getEmailFromAddress()'), name: g('getEmailFromName()') };
+  g('initEmailConfigDefaults()');
+  const after = { addr: g('getEmailFromAddress()'), name: g('getEmailFromName()') };
+
+  ok('the initializer writes NOTHING to Script Properties',
+     Object.keys(store).length === 0, store);
+  ok('the sender address survives it', after.addr === before.addr, after);
+  ok('the sender name survives it', after.name === before.name, after);
+  ok('and the surviving values are ASD, not the inherited workgroup',
+     after.addr === 'ASD.Travel-Events@gsa.gov' && after.name === 'ASD Travel & Events',
+     after);
+  ok('no AAS value anywhere after init',
+     JSON.stringify(after).indexOf('AAS') === -1 &&
+     JSON.stringify(after).toLowerCase().indexOf('aastravel') === -1, after);
+
+  // The sender name DERIVES from the org short name. Persisting it would
+  // freeze it — the same bug one step removed — so prove the derivation is
+  // still live after the initializer has run.
+  store['ORG_SHORT_NAME'] = 'XYZ';
+  ok('the sender still tracks a later ORG_SHORT_NAME change',
+     g('getEmailFromName()') === 'XYZ Travel & Events', g('getEmailFromName()'));
+}
+
+console.log('11. no user-visible inherited brand string in any page or component');
+{
+  // WHY THIS IS SEPARATE FROM SECTION 3
+  // -----------------------------------
+  // Section 3 checks four named files. Three user-visible AAS strings
+  // survived the rebrand in files it does not look at: "Pending AAS FO" in
+  // the admin status-override dropdown, an aastravel@gsa.gov help link on
+  // the request form, and the same address twice on the access-blocked page.
+  //
+  // The patterns were right; the SCOPE was wrong. So this walks the
+  // directories rather than naming files — a new page is covered the day it
+  // is added, not the day someone remembers to extend a list.
+  const dirs = ['lets_app/client/pages', 'lets_app/client/components'];
+
+  // Dead file, tracked for deletion: nothing include()s Loader.html.
+  // Excluded rather than rebranded because the right fix is removal, and
+  // that does not belong in a branding change. Asserted dead below.
+  const SKIP = new Set(['Loader.html']);
+
+  const files = [];
+  dirs.forEach(d => fs.readdirSync(d).forEach(f => {
+    if (/\.html$/.test(f) && !SKIP.has(f)) files.push(path.join(d, f));
+  }));
+  ok('found pages and components to scan', files.length > 8, files.length);
+
+  const offenders = [];
+  files.forEach(f => {
+    fs.readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+      if (/^\s*(\/\/|\*|\/\*|<!--)/.test(line)) return;
+      // Identifiers are code, not copy: AAS_LOGO, _buildAASLogo,
+      // aas-brand-header, --aas-*, getAASOrgScope, trip-blocked.
+      const code = line
+        .replace(/AAS_LOGO|_buildAASLogo|aas-brand-header|getAASOrgScope|--aas-[\w-]*|trip-blocked[\w-]*|aas-logo/g, '');
+      // User-visible positions only: element text, option labels, titles,
+      // placeholders, alt text.
+      if (/>[^<]*\bAAS\b/.test(code) ||
+          /placeholder="[^"]*\bAAS\b/.test(code) ||
+          /alt="[^"]*\bAAS\b/.test(code) ||
+          /aastravel@gsa\.gov/.test(code) ||
+          /'[^']*\bTRIP\b|"[^"]*\bTRIP\b/.test(code)) {
+        offenders.push(f.split('/').pop() + ':' + (i + 1) + ' -> ' + line.trim().slice(0, 90));
+      }
+    });
+  });
+  ok('no inherited brand string in user-visible page text', offenders.length === 0, offenders);
+
+  // The skipped file is only safe to skip while it stays unreachable.
+  const reachable = [];
+  (function walk(d) {
+    fs.readdirSync(d, { withFileTypes: true }).forEach(e => {
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) return walk(full);
+      if (!/\.(html|js)$/.test(e.name)) return;
+      if (e.name === 'Loader.html') return;
+      const src = fs.readFileSync(full, 'utf8');
+      if (/include\(\s*['"][^'"]*\/Loader['"]\s*\)|createTemplateFromFile\(\s*['"][^'"]*\/Loader['"]/.test(src)) {
+        reachable.push(full);
+      }
+    });
+  })('lets_app');
+  ok('the excluded Loader.html is still unreachable — if this fails, rebrand it or delete it',
+     reachable.length === 0, reachable);
+}
+
+console.log('12. the email logo is the ASD artwork, not the inherited one');
+{
+  // A base64 payload is unreviewable in a diff: two blobs look identical to
+  // a human, so a logo regression is invisible in review. Pin the inherited
+  // asset's hash and assert the live one differs and decodes to a real PNG.
+  const email = fs.readFileSync('lets_app/server/30_services/Email.js', 'utf8');
+  const m = email.match(/const TRAVEL_LOGO_BASE64 = '([A-Za-z0-9+/=]*)';/);
+  ok('TRAVEL_LOGO_BASE64 is present and parseable', !!m);
+
+  const b64 = m ? m[1] : '';
+  ok('it is not empty (empty silently falls back to the text logo)', b64.length > 0);
+
+  const sha = crypto.createHash('sha256').update(b64).digest('hex');
+  const AAS_SHA = '33fa63c272e971ce950a62d66c68386767365e797f4454ab44194964d0bbaf10';
+  ok('it is NOT the inherited AAS artwork', sha !== AAS_SHA, sha);
+
+  const png = Buffer.from(b64, 'base64');
+  ok('it decodes to a PNG', png.slice(1, 4).toString() === 'PNG');
+  const w = png.readUInt32BE(16), h = png.readUInt32BE(20);
+  // Rendered at 240 px wide by _buildAASLogo, so 480 is the 2x floor for a
+  // retina client. Narrower than that and it renders soft.
+  ok('it is at least 2x the 240px render width', w >= 480, { w, h });
+  ok('it has an alpha channel (colour type 6)', png[25] === 6, png[25]);
 }
 
 console.log(fails?('\n'+fails+' FAILURE(S)'):'\nALL ASSERTIONS PASSED!');
