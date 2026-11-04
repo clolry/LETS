@@ -255,6 +255,26 @@ jobs:
         # conclude the function was removed.
         run: node scripts/gen-editor-functions.js --check
 
+      - name: HC chunked cache tests
+        # The real roster is 1,046 positions and 514KB — 5.7x CacheService's
+        # 100KB single-entry cap. @clolry's import logged "payload 514154
+        # bytes exceeds the 90000-byte cache limit ... Serving uncached",
+        # which means _buildBundle_ re-read both HC tabs and re-ran the org
+        # join on EVERY call: the access gate on every page load, both
+        # reviewer dashboards, the budget dashboard and the org chart.
+        #
+        # §3 is the section that earns the rest. A truncated roster is valid
+        # JSON of the right shape — 900 of 1,046 people is indistinguishable
+        # from 146 people having left. Nothing errors: the access gate denies
+        # them, the org chart omits them, and every per-capita share shifts.
+        # CacheService evicts individual entries under pressure, so a partial
+        # chunk set is not hypothetical.
+        #
+        # So a missing chunk, a missing manifest or a byte-length mismatch is
+        # a MISS, never a partial result. §7 patches each of those checks out
+        # and confirms the suite then fails.
+        run: node lets_app/test_hc_chunked_cache.js
+
       - name: HR roster importer tests
         # HC_Positions drives three things that break invisibly: site access
         # (Access.js:416 admits a supervisor on Supervisory_Status === '2'),

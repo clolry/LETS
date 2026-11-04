@@ -445,6 +445,157 @@ var HC = (function () {
   }
 
   // ==========================================================================
+  // INTERNAL — chunked cache, for payloads past the 100KB single-entry cap
+  // ==========================================================================
+  //
+  // THE WARNING THAT PROMPTED THIS WAS CORRECT AND IS NOW LIVE.
+  //
+  //   HC: payload 514154 bytes exceeds the 90000-byte cache limit for
+  //   "hc_bundle_v1". Serving uncached.
+  //
+  // The real roster is 1,046 positions and 514KB — 5.7x the cap. The guard
+  // above did its job: it refused the put rather than letting CacheService
+  // reject it silently, and said what to do. But "serving uncached" means
+  // _buildBundle_ reads BOTH HC tabs and re-runs the org join on EVERY call,
+  // and hcGetBundle is called by the access gate on every page load, by the
+  // reviewer dashboards, by the budget dashboard and by the org chart.
+  //
+  // Three seconds of sheet reads per page, forever, is not a stable state —
+  // and it is the kind of regression that reads as "the app got slow" rather
+  // than as a cache that stopped working.
+  //
+  // WHY putAll/getAll AND NOT A LOOP
+  // --------------------------------
+  // CacheService.putAll and getAll are single round trips. A loop of put()
+  // calls over 7 chunks is 7 round trips on every cache write, which at this
+  // payload size costs more than it saves.
+  //
+  // THE MANIFEST IS WRITTEN LAST AND READ FIRST
+  // -------------------------------------------
+  // A reader that found chunk 0 and assumed the rest were present would
+  // deserialise a truncated roster — and a roster missing its last 150 people
+  // is indistinguishable from a roster where those people left. Both are
+  // "valid" JSON of the right shape.
+  //
+  // So the manifest records the chunk COUNT and the total length, it is
+  // written after every chunk, and the reader verifies that every chunk is
+  // present and that the reassembled string is exactly the expected length
+  // before parsing. Any mismatch is a miss, not a partial result. Chunks
+  // expiring individually is normal — CacheService evicts under pressure — and
+  // this is what makes that safe rather than silently lossy.
+
+  var CACHE_CHUNK_BYTES = 90000;
+
+  /** Chunk key for index i. Versioned with the base key. */
+  function _chunkKey_(key, i) {
+    return key + '__c' + i;
+  }
+
+  function _chunkManifestKey_(key) {
+    return key + '__m';
+  }
+
+  /**
+   * Writes a large value across several cache entries.
+   *
+   * @returns {boolean} true when every chunk and the manifest were written
+   */
+  function _cachePutChunked_(key, value, ttlSeconds) {
+    try {
+      var raw = JSON.stringify(value);
+      var total = raw.length;
+      var count = Math.ceil(total / CACHE_CHUNK_BYTES);
+
+      // CacheService allows ~1000 entries per put; well past anything a
+      // roster will reach, but a runaway payload should fail loudly rather
+      // than write 10,000 keys.
+      if (count > 50) {
+        console.warn('HC: ' + total + ' bytes would need ' + count +
+                     ' chunks for "' + key + '"; refusing. Serving uncached.');
+        return false;
+      }
+
+      var entries = {};
+      for (var i = 0; i < count; i++) {
+        entries[_chunkKey_(key, i)] =
+          raw.substring(i * CACHE_CHUNK_BYTES, (i + 1) * CACHE_CHUNK_BYTES);
+      }
+      // The manifest goes in the SAME putAll, so there is no window in which
+      // chunks exist without it.
+      entries[_chunkManifestKey_(key)] =
+        JSON.stringify({ chunks: count, length: total });
+
+      _cache_().putAll(entries, ttlSeconds);
+      return true;
+    } catch (e) {
+      console.warn('HC: chunked cache write failed for ' + key + ': ' + e.message);
+      return false;
+    }
+  }
+
+  /**
+   * Reads a chunked value back, or null.
+   *
+   * Returns null unless the manifest and EVERY chunk are present and the
+   * reassembled length matches exactly. A partial read is a miss.
+   */
+  function _cacheGetChunked_(key) {
+    try {
+      var manifestRaw = _cache_().get(_chunkManifestKey_(key));
+      if (!manifestRaw) return null;
+
+      var manifest = JSON.parse(manifestRaw);
+      var count = parseInt(manifest.chunks, 10);
+      if (!count || count < 1) return null;
+
+      var keys = [];
+      for (var i = 0; i < count; i++) keys.push(_chunkKey_(key, i));
+
+      var got = _cache_().getAll(keys);
+      var parts = [];
+      for (var j = 0; j < count; j++) {
+        var part = got[_chunkKey_(key, j)];
+        // A single evicted chunk makes the whole value unusable. Treating it
+        // as a miss costs one sheet read; treating it as data would serve a
+        // truncated roster.
+        if (part === null || part === undefined) return null;
+        parts.push(part);
+      }
+
+      var raw = parts.join('');
+      if (raw.length !== manifest.length) {
+        console.warn('HC: chunked cache for "' + key + '" reassembled to ' +
+                     raw.length + ' bytes, expected ' + manifest.length +
+                     '. Treating as a miss.');
+        return null;
+      }
+      return JSON.parse(raw);
+    } catch (e) {
+      console.warn('HC: chunked cache read failed for ' + key + ': ' + e.message);
+      return null;
+    }
+  }
+
+  /** Removes a chunked value's manifest and chunks. */
+  function _cacheRemoveChunked_(key) {
+    try {
+      var manifestRaw = _cache_().get(_chunkManifestKey_(key));
+      var keys = [_chunkManifestKey_(key)];
+      if (manifestRaw) {
+        var count = parseInt(JSON.parse(manifestRaw).chunks, 10) || 0;
+        for (var i = 0; i < count; i++) keys.push(_chunkKey_(key, i));
+      } else {
+        // No manifest: remove a generous fixed range so orphaned chunks from
+        // an interrupted write cannot be reassembled by a later read.
+        for (var k = 0; k < 50; k++) keys.push(_chunkKey_(key, k));
+      }
+      _cache_().removeAll(keys);
+    } catch (e) {
+      console.warn('HC: chunked cache clear failed for ' + key + ': ' + e.message);
+    }
+  }
+
+  // ==========================================================================
   // INTERNAL — build
   // ==========================================================================
 
@@ -493,7 +644,16 @@ var HC = (function () {
    */
   function hcGetBundle() {
     try {
-      var cached = _cacheGet_(CACHE_KEY_BUNDLE);
+      // CHUNKED FIRST, then the single-entry form.
+      //
+      // Both are tried because the two coexist in practice: a deploy that
+      // switches to chunking leaves a single-entry value live for up to six
+      // hours, and an environment whose roster is small enough still writes
+      // one. Reading only the chunked form would discard a warm cache for no
+      // reason; reading only the single form is what produced the 514KB
+      // "serving uncached" warning on every page load.
+      var cached = _cacheGetChunked_(CACHE_KEY_BUNDLE) ||
+                   _cacheGet_(CACHE_KEY_BUNDLE);
       if (cached) {
         var meta = _cacheGet_(CACHE_KEY_META) || {};
         return {
@@ -507,7 +667,17 @@ var HC = (function () {
 
       var built = _buildBundle_();
       var now = new Date().toISOString();
-      _cachePut_(CACHE_KEY_BUNDLE, built.positions, CACHE_CONFIG.TTL.LONG);
+
+      // Try the single entry first — it is one round trip and most
+      // deployments' rosters fit. _cachePut_ returns false rather than
+      // throwing when the payload is too large, which is the signal to chunk.
+      if (!_cachePut_(CACHE_KEY_BUNDLE, built.positions, CACHE_CONFIG.TTL.LONG)) {
+        if (_cachePutChunked_(CACHE_KEY_BUNDLE, built.positions,
+                              CACHE_CONFIG.TTL.LONG)) {
+          console.log('HC: cached ' + built.positions.length +
+                      ' positions in chunks.');
+        }
+      }
       _cachePut_(CACHE_KEY_META, { lastRefreshed: now }, CACHE_CONFIG.TTL.LONG);
 
       return {
@@ -564,7 +734,18 @@ var HC = (function () {
     try {
       var built = _buildBundle_();
       var now = new Date().toISOString();
-      _cachePut_(CACHE_KEY_BUNDLE, built.positions, CACHE_CONFIG.TTL.LONG);
+
+      // Stale chunks are removed BEFORE the write, not after. Writing N
+      // chunks over a previous set of N+2 leaves two orphans, and the
+      // manifest's count would stop the reader seeing them — but only until
+      // the next write produced a LONGER value, at which point the reader
+      // would reassemble a mixture of two generations. Clearing first makes
+      // that impossible rather than improbable.
+      _cacheRemoveChunked_(CACHE_KEY_BUNDLE);
+
+      if (!_cachePut_(CACHE_KEY_BUNDLE, built.positions, CACHE_CONFIG.TTL.LONG)) {
+        _cachePutChunked_(CACHE_KEY_BUNDLE, built.positions, CACHE_CONFIG.TTL.LONG);
+      }
       _cachePut_(CACHE_KEY_ORGS,   built.orgs,      CACHE_CONFIG.TTL.LONG);
       _cachePut_(CACHE_KEY_META,   { lastRefreshed: now }, CACHE_CONFIG.TTL.LONG);
       console.log('HC.hcRefreshBundleCache: cached ' + built.positions.length +
@@ -586,6 +767,12 @@ var HC = (function () {
   function hcCacheInvalidateAll() {
     try {
       _cache_().removeAll([CACHE_KEY_BUNDLE, CACHE_KEY_ORGS, CACHE_KEY_META]);
+      // THE CHUNKS TOO. Without this, clearing the cache after a roster import
+      // removes the single-entry key and leaves the chunk set live for six
+      // hours — so hcGetBundle, which reads chunked FIRST, keeps serving the
+      // pre-import roster. The invalidation would appear to work and the app
+      // would show the old data, which is the worst of both.
+      _cacheRemoveChunked_(CACHE_KEY_BUNDLE);
       console.log('HC.hcCacheInvalidateAll: cleared');
       return true;
     } catch (e) {
@@ -1051,7 +1238,16 @@ var HC = (function () {
     _normalizeOrg:          _normalizeOrg_,
     _grade:                 _grade_,
     _occupancy:             _occupancy_,
-    _joinOrgs:              _joinOrgs_
+    _joinOrgs:              _joinOrgs_,
+
+    // Chunked cache internals, for the test suite. The real roster is 514KB —
+    // 5.7x the single-entry cap — so the reassembly and partial-read
+    // behaviour is load-bearing and must be assertable without CacheService.
+    _cachePutChunked:       _cachePutChunked_,
+    _cacheGetChunked:       _cacheGetChunked_,
+    _cacheRemoveChunked:    _cacheRemoveChunked_,
+    _chunkKey:              _chunkKey_,
+    _chunkManifestKey:      _chunkManifestKey_
   };
 })();
 
