@@ -77,6 +77,20 @@ const GROUPS = [
     match: (f) => /CityPairSync\.js|PerDiemSync\.js|PerDiemGSA\.js/.test(f)
   },
   {
+    // MUST PRECEDE the Diagnostics group below. These live in Diagnostics.js
+    // but two of them WRITE, and the Diagnostics heading promises they do not.
+    // A generated document that makes a false safety claim is worse than one
+    // that is merely incomplete — someone runs `runRosterImport` believing
+    // the heading.
+    title: 'Editor runners — wrappers for functions that take arguments',
+    note: 'The Apps Script Run button passes no arguments, so these wrap the ' +
+          'functions that need them. **`runRosterImport` and ' +
+          '`runDirectoryResolve` WRITE DATA.** The other three write nothing. ' +
+          'Each wrapper prints its result, because a value returned to the ' +
+          'Run button is never displayed.',
+    match: (f, n) => /Diagnostics\.js/.test(f) && /^run[A-Z]/.test(n)
+  },
+  {
     title: 'Diagnostics — safe to run any time, write nothing',
     note: 'Start with `diagAll`. These read and report; none of them change data.',
     match: (f) => /Diagnostics\.js/.test(f)

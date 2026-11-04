@@ -33,6 +33,18 @@
  *   diagFasTrackerRow()         the exact row LETS would send to the FAS tracker
  *   diagFasTrackerHeader()      diffs that row's columns against the live sheet
  *
+ * EDITOR RUNNERS, at the foot of this file. Wrappers for functions that take
+ * arguments, which the Run button cannot supply:
+ *
+ *   runRosterPreview()     preview the HR roster import      writes nothing
+ *   runRosterImport()      apply it                          WRITES
+ *   runDirectoryPreview()  preview the email lookup          writes nothing
+ *   runDirectoryResolve()  apply it, resumable               WRITES
+ *   runBudgetDashboard()   print the FY27 budget payload     writes nothing
+ *
+ * The two that write are the only exception to the rule at the end of this
+ * header, and the reason is in the comment above them.
+ *
  * The Apps Script editor CANNOT pass arguments — the Run button always calls
  * with none. Everything above therefore takes no parameters. One helper does
  * take a state code and is called by the zero-argument wrapper above rather
@@ -57,8 +69,11 @@
  * because the log is reachable, but because the function should refuse to
  * compute the answer for a non-admin regardless.
  *
- * DO NOT add anything here that writes. If a diagnostic ever needs to mutate
- * state, it belongs in 91_setup/ with its own guard and its own review.
+ * DO NOT add anything here that writes — with ONE narrow exception, the
+ * `run…` wrappers at the foot of this file. Two of those do write, and the
+ * reasoning is stated there rather than here so it cannot be read as a general
+ * licence. If a DIAGNOSTIC ever needs to mutate state, it belongs in 91_setup/
+ * with its own guard and its own review.
  */
 
 /**
@@ -1143,4 +1158,193 @@ function diagAccess() {
   } catch (error) {
     console.log('diagAccess FAILED: ' + error.message);
   }
+}
+
+// ============================================================================
+// EDITOR RUNNERS — argument-free wrappers for functions that take parameters
+// ============================================================================
+//
+// WHY THESE EXIST
+// ---------------
+// @clolry: "please add the wrapper to the 99_triggers/Diagnostics file so I can
+// run the functions."
+//
+// The Apps Script Run button calls with NO arguments. importRoster(token) and
+// releaseSetAside(entry) therefore cannot be run from the dropdown at all —
+// they receive undefined and refuse. The workaround is a one-line wrapper, and
+// pasting one into the editor is not a workaround: `clasp push --force`
+// overwrites the project from the repository, so anything typed in the editor
+// is deleted by the next deploy. That is the same loss this file's header
+// describes happening three times during the City Pair work.
+//
+// WHY THEY LOG INSTEAD OF RETURNING
+// ---------------------------------
+// A value returned to the Run button goes nowhere. @clolry ran
+// previewRosterImport twice and saw only the TravelDB reads and "Execution
+// completed" — it had done all its work and displayed none of it, which reads
+// as success. Every wrapper here prints its result.
+//
+// THESE ARE THE ONE EXCEPTION TO THIS FILE'S "DO NOT ADD ANYTHING THAT WRITES"
+// RULE, AND THE EXCEPTION IS NARROW
+// ----------------------------------------------------------------------------
+// runRosterImport and runReleaseSetAside DO write. They are here because the
+// alternative is worse: a wrapper that only exists in the editor is lost on
+// every deploy, and the person who needs it is the one least able to diagnose
+// why it vanished.
+//
+// The guard is that they add NO new authority. Each calls a function that
+// already checks isTravelAdmin and takes its own lock, so a wrapper cannot do
+// anything its target would refuse. What a wrapper CAN do is make a
+// destructive action one click away, so the two that write are named `run…`
+// rather than `diag…`, and each re-runs its own preview rather than accepting a
+// pasted token.
+//
+// DO NOT add a wrapper for a function that lacks its own admin guard.
+
+/**
+ * Preview the HR roster import, and print the result.
+ *
+ * Reads the FAS HRLinks feed, compares it to HC_Positions, and reports what
+ * would change. WRITES NOTHING.
+ *
+ * Read three numbers before importing:
+ *   outOfScope              should be roughly 3,360 — the other four FAS
+ *                           portfolios. If it is near zero, the scope filter
+ *                           is not applying and the import would admit
+ *                           supervisors from other portfolios to LETS.
+ *   remove, NOT test data   should be 0. Anything else means the feed omits
+ *                           someone currently in the roster, and importing
+ *                           would revoke their access.
+ *   occupancyDisagreement   the feed has two status columns; a large count
+ *                           means occupancy is being read from the wrong one,
+ *                           which moves every service centre's budget share.
+ *
+ * @editor
+ */
+function runRosterPreview() {
+  var r = previewRosterImport();
+  if (!r || r.success !== true) {
+    console.log('PREVIEW FAILED:');
+    console.log(JSON.stringify(r, null, 2));
+    return;
+  }
+  // previewRosterImport already logs its own decision-first summary. This
+  // prints the structured payload underneath it for anything the summary
+  // rounds off — the per-service-centre headcount, in particular.
+  console.log('');
+  console.log('--- full payload ---');
+  console.log(JSON.stringify(r.data, null, 2));
+}
+
+/**
+ * Apply the HR roster import. DESTRUCTIVE — replaces every row in
+ * HC_Positions, including deletions.
+ *
+ * TAKES ITS OWN FRESH PREVIEW rather than a pasted token, deliberately. A
+ * token copied out of an earlier log describes a state of the feed that may
+ * have changed since, and confirming a preview nobody re-read is the thing the
+ * token exists to prevent. This way the preview that authorises the import is
+ * always the one that just ran, and its summary is printed above the result.
+ *
+ * STILL REFUSES if the preview reports anything that should stop an import:
+ * removals that are not test data, or zero importable positions. Those are
+ * conditions a human should look at, not click past.
+ *
+ * @editor
+ */
+function runRosterImport() {
+  var p = previewRosterImport();
+  if (!p || p.success !== true) {
+    console.log('PREVIEW FAILED — nothing imported:');
+    console.log(JSON.stringify(p, null, 2));
+    return;
+  }
+
+  var c = p.data.counts;
+
+  // A real person the feed no longer lists loses supervisor-based LETS access
+  // and stops counting toward their org's per-capita share. That may be
+  // correct — people do leave — but it is not something to discover
+  // afterwards.
+  if (c.deletes > 0) {
+    console.log('REFUSING: the import would remove ' + c.deletes +
+                ' position(s) that are NOT test data.');
+    console.log('These people are in HC_Positions and absent from the feed. ' +
+                'Each one removed loses supervisor-based LETS access and ' +
+                'stops counting toward their org\'s per-capita budget share.');
+    console.log('');
+    console.log(JSON.stringify(p.data.deletes, null, 2));
+    console.log('');
+    console.log('If every removal above is correct, apply it with:');
+    console.log('  importRoster(' + JSON.stringify(p.data.token) + ')');
+    console.log('called from a scratch function — this wrapper will not do it ' +
+                'for you.');
+    return;
+  }
+
+  if (!c.positions) {
+    console.log('REFUSING: the feed produced no importable positions.');
+    return;
+  }
+
+  console.log('');
+  console.log('--- applying ---');
+  console.log(JSON.stringify(importRoster(p.data.token), null, 2));
+}
+
+/**
+ * Preview the directory email lookup, and print the result.
+ *
+ * The FAS feed has no email column, and Email_Address is how LETS identifies a
+ * signed-in user (Access.js:435). This resolves addresses from the Google
+ * domain directory by name. WRITES NOTHING.
+ *
+ * Needs the People advanced service: editor -> Services -> People API (v1).
+ *
+ * EXPECT REFUSALS, and read them — they are the useful output. A name matching
+ * two people in the directory is refused rather than guessed, because a wrong
+ * address grants LETS access to the wrong person. Those are the ones to set by
+ * hand.
+ *
+ * @editor
+ */
+function runDirectoryPreview() {
+  var r = previewDirectoryEmails({});
+  console.log(JSON.stringify(r, null, 2));
+}
+
+/**
+ * Resolve directory email addresses and WRITE them to HC_Positions.
+ *
+ * Time-boxed to about four minutes and resumable: run it repeatedly until the
+ * output reports complete:true. Roughly 900 positions at one network call each
+ * does not fit in a single six-minute execution.
+ *
+ * Never overwrites an existing address, and never writes a guess.
+ *
+ * @editor
+ */
+function runDirectoryResolve() {
+  var r = resolveDirectoryEmails({});
+  console.log(JSON.stringify(r, null, 2));
+  if (r && r.success && r.data && !r.data.complete) {
+    console.log('');
+    console.log('NOT COMPLETE — run this again to continue from position ' +
+                r.data.nextIndex + '. Or install the hourly trigger: ' +
+                'installDirectoryLookupTrigger() in ' +
+                '40_domain/DirectoryResolve.js.');
+  }
+}
+
+/**
+ * Print the current budget dashboard payload.
+ *
+ * Useful for checking the FY27 figures without loading the page: the DAC
+ * balances, the set-aside breakdown, the per-service-centre allocations and
+ * the release funding for the FC senior advisor.
+ *
+ * @editor
+ */
+function runBudgetDashboard() {
+  console.log(JSON.stringify(getBudgetDashboard(), null, 2));
 }

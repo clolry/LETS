@@ -45,11 +45,79 @@ const ok=(n,c,x)=>{if(c)console.log('  PASS',n);else{console.log('  FAIL',n,x===
 console.log('1. no write operations anywhere in the file');
 {
   const src=fs.readFileSync(SRC,'utf8');
+
   // A diagnostic that mutates state is a diagnostic you cannot safely run in
   // production. Enforced by inspection because the file is run by hand.
+  //
+  // THE `run…` WRAPPERS AT THE FOOT OF THE FILE ARE EXCLUDED, and the
+  // exclusion is deliberately surgical rather than a relaxed rule.
+  //
+  // @clolry asked for wrappers here because importRoster(token) and
+  // releaseSetAside(entry) cannot be run from the Apps Script dropdown at all
+  // — the Run button passes no arguments — and a wrapper pasted into the
+  // editor is deleted by the next `clasp push --force`. This file's own header
+  // records that happening three times during the City Pair work.
+  //
+  // Two of those wrappers DO write. They add no new authority: each calls a
+  // function that already checks isTravelAdmin and takes its own lock, so a
+  // wrapper cannot do anything its target would refuse. What matters is that
+  // the diagnostics ABOVE them stay read-only, which is what this checks.
+  const runnersAt = src.indexOf('// EDITOR RUNNERS');
+  ok('the editor-runner section exists and is at the end', runnersAt > 0,
+     runnersAt);
+  const diagnosticsOnly = src.slice(0, runnersAt);
+
   ['setValue','setValues','appendRow','deleteRow','insertSheet','clearContent',
    'setProperty','deleteProperty','removeAll','createTrigger'].forEach(w=>{
-    ok('no '+w, src.indexOf(w+'(')===-1);
+    ok('no '+w+' in the diagnostics', diagnosticsOnly.indexOf(w+'(')===-1);
+  });
+
+  // The wrappers must not grow their own logic. A wrapper that opens a
+  // spreadsheet or writes a cell directly would be a write in Diagnostics.js
+  // with none of the guards its targets carry — the thing the rule above
+  // exists to prevent, reintroduced through the exception.
+  const runners = src.slice(runnersAt);
+  ['SpreadsheetApp','setValue','appendRow','clearContent','setProperty',
+   'createTrigger','LockService'].forEach(w=>{
+    ok('the wrappers do not call '+w+' themselves', runners.indexOf(w)===-1,
+       'a wrapper must delegate, never write');
+  });
+
+  // Every wrapper must call a function that is admin-guarded. Listed
+  // explicitly rather than inferred, so adding a wrapper for an unguarded
+  // function fails here.
+  const GUARDED_TARGETS = ['previewRosterImport','importRoster',
+    'previewDirectoryEmails','resolveDirectoryEmails','getBudgetDashboard'];
+  const runnerNames=(runners.match(/^function (run\w+)\(/gm)||[])
+    .map(l=>l.replace(/^function /,'').replace(/\($/,''));
+  ok('there are wrappers', runnerNames.length>=5, runnerNames);
+  runnerNames.forEach(fn=>{
+    const body=runners.slice(runners.indexOf('function '+fn+'('));
+    const end=body.indexOf('\n}');
+    const calls=GUARDED_TARGETS.filter(t=>body.slice(0,end).indexOf(t+'(')>-1);
+    ok(fn+' delegates to a guarded function', calls.length>0, fn);
+  });
+
+  // The two that write must be named run…, never diag…, so the file's own
+  // index and the generated docs cannot describe them as safe.
+  //
+  // Checked by SLICING each diag… function's own body, not with a lookahead
+  // over the whole file. My first version used
+  // /function diag\w+\(\)[\s\S]{0,4000}?(importRoster|...)/ which matched
+  // across function boundaries — the last diag… function is within 4,000
+  // characters of the runners below it, so it failed on code that is correct.
+  // A character-window regex cannot express "inside this function".
+  const WRITERS = ['importRoster', 'resolveDirectoryEmails', 'releaseSetAside'];
+  const diagNames = (src.match(/^function (diag\w+)\(/gm) || [])
+    .map(l => l.replace(/^function /, '').replace(/\($/, ''));
+  ok('there are diagnostics to check', diagNames.length >= 8, diagNames.length);
+  diagNames.forEach(fn => {
+    const start = src.indexOf('function ' + fn + '(');
+    // Top-level functions in this file close on a column-zero brace.
+    const end = src.indexOf('\n}', start);
+    const body = src.slice(start, end === -1 ? src.length : end);
+    const bad = WRITERS.filter(w => body.indexOf(w + '(') > -1);
+    ok(fn + ' calls nothing that writes', bad.length === 0, bad);
   });
 }
 

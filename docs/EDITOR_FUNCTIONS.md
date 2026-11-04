@@ -75,25 +75,37 @@ Per diem rates, GSA City Pair airfares and the directory sweep. Each `install…
 | `setupForeignPerDiemTrigger()` | `lets_app/server/99_triggers/PerDiemSync.js` | 70 | Set up monthly trigger to auto-sync DOS per diem data. Runs on the 2nd |
 | `removeForeignPerDiemTrigger()` | `lets_app/server/99_triggers/PerDiemSync.js` | 94 | Remove the DOS per diem sync trigger. |
 
+## Editor runners — wrappers for functions that take arguments
+
+The Apps Script Run button passes no arguments, so these wrap the functions that need them. **`runRosterImport` and `runDirectoryResolve` WRITE DATA.** The other three write nothing. Each wrapper prints its result, because a value returned to the Run button is never displayed.
+
+| Function | File | Line | What it does |
+|---|---|---:|---|
+| `runRosterPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1224 | Preview the HR roster import, and print the result. |
+| `runRosterImport()` | `lets_app/server/99_triggers/Diagnostics.js` | 1255 | Apply the HR roster import. DESTRUCTIVE — replaces every row in |
+| `runDirectoryPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1311 | Preview the directory email lookup, and print the result. |
+| `runDirectoryResolve()` | `lets_app/server/99_triggers/Diagnostics.js` | 1327 | Resolve directory email addresses and WRITE them to HC_Positions. |
+| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 1348 | Print the current budget dashboard payload. |
+
 ## Diagnostics — safe to run any time, write nothing
 
 Start with `diagAll`. These read and report; none of them change data.
 
 | Function | File | Line | What it does |
 |---|---|---:|---|
-| `diagAll()` | `lets_app/server/99_triggers/Diagnostics.js` | 68 | Runs every diagnostic. Start here after a deploy. |
-| `diagEnvironment()` | `lets_app/server/99_triggers/Diagnostics.js` | 97 | Environment, database binding, and Script Property presence. |
-| `diagCityPairs()` | `lets_app/server/99_triggers/Diagnostics.js` | 257 | City Pair data: how much, how fresh, and does a lookup work. |
-| `diagHcData()` | `lets_app/server/99_triggers/Diagnostics.js` | 357 | HC roster: counts, referential problems, and a live supervisor-chain walk. |
-| `diagAirportPrefs()` | `lets_app/server/99_triggers/Diagnostics.js` | 454 | Stored airport preferences and whether promotion is working. |
-| `diagTriggers()` | `lets_app/server/99_triggers/Diagnostics.js` | 519 | Installed triggers, and whether their handlers still exist. |
-| `diagDutyStationAirports()` | `lets_app/server/99_triggers/Diagnostics.js` | 577 | Does every HC duty-station city resolve to an airport? |
-| `diagUnresolvedCityNames()` | `lets_app/server/99_triggers/Diagnostics.js` | 652 | Zero-argument companion to diagDutyStationAirports. |
-| `diagCityNamesForState(…)` | `lets_app/server/99_triggers/Diagnostics.js` | 709 | Every city name GSA uses in one state, with its airport codes. |
-| `diagFasTrackerRow()` | `lets_app/server/99_triggers/Diagnostics.js` | 803 | Prints the FAS tracker row LETS would submit, beside the expected columns. |
-| `diagFasTrackerHeader()` | `lets_app/server/99_triggers/Diagnostics.js` | 923 | Compares the live tracker header against FAS_TRACKER_COLUMNS. |
-| `diagTripOverviewFields()` | `lets_app/server/99_triggers/Diagnostics.js` | 987 | Trip Overview and budget-attribution fields on recent requests. |
-| `diagAccess()` | `lets_app/server/99_triggers/Diagnostics.js` | 1072 | Who currently holds site access, and by which path. |
+| `diagAll()` | `lets_app/server/99_triggers/Diagnostics.js` | 83 | Runs every diagnostic. Start here after a deploy. |
+| `diagEnvironment()` | `lets_app/server/99_triggers/Diagnostics.js` | 112 | Environment, database binding, and Script Property presence. |
+| `diagCityPairs()` | `lets_app/server/99_triggers/Diagnostics.js` | 272 | City Pair data: how much, how fresh, and does a lookup work. |
+| `diagHcData()` | `lets_app/server/99_triggers/Diagnostics.js` | 372 | HC roster: counts, referential problems, and a live supervisor-chain walk. |
+| `diagAirportPrefs()` | `lets_app/server/99_triggers/Diagnostics.js` | 469 | Stored airport preferences and whether promotion is working. |
+| `diagTriggers()` | `lets_app/server/99_triggers/Diagnostics.js` | 534 | Installed triggers, and whether their handlers still exist. |
+| `diagDutyStationAirports()` | `lets_app/server/99_triggers/Diagnostics.js` | 592 | Does every HC duty-station city resolve to an airport? |
+| `diagUnresolvedCityNames()` | `lets_app/server/99_triggers/Diagnostics.js` | 667 | Zero-argument companion to diagDutyStationAirports. |
+| `diagCityNamesForState(…)` | `lets_app/server/99_triggers/Diagnostics.js` | 724 | Every city name GSA uses in one state, with its airport codes. |
+| `diagFasTrackerRow()` | `lets_app/server/99_triggers/Diagnostics.js` | 818 | Prints the FAS tracker row LETS would submit, beside the expected columns. |
+| `diagFasTrackerHeader()` | `lets_app/server/99_triggers/Diagnostics.js` | 938 | Compares the live tracker header against FAS_TRACKER_COLUMNS. |
+| `diagTripOverviewFields()` | `lets_app/server/99_triggers/Diagnostics.js` | 1002 | Trip Overview and budget-attribution fields on recent requests. |
+| `diagAccess()` | `lets_app/server/99_triggers/Diagnostics.js` | 1087 | Who currently holds site access, and by which path. |
 
 ## Cache warming and adoption checks
 
