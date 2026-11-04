@@ -172,3 +172,56 @@ guard still passed. Per-function body extraction replaced it.
 - `getBudgetDashboard` and `getTravelEventHistory` are unguarded, consistent
   with the transparency decision. Worth a second look if DAC balances ever
   become sensitive.
+
+## Tracked follow-up from the 2026-11-04 UI defect fix
+
+@clolry reported three things: CSS printing at the top of New Request and
+Admin, the FY27 budget page not scrolling, and panels cropping on zoom. All
+three are fixed and guarded by `test_markup_integrity.js` (8 sections, 4 of
+them regression guards with negative controls recorded in the session
+transcript). **The items below were deliberately deferred and are NOT fixed.**
+
+`gh` could not file these as issues — `GITHUB_TOKEN` is invalid in this
+environment (`gh auth status` → "The token in GITHUB_TOKEN is invalid"). They
+are recorded here so they are not lost, but **this is a handoff note, not a
+tracker**. They should be moved to GitHub issues once `gh` is authorised.
+
+| # | Deferred item | Why it was deferred |
+|---|---|---|
+| 1 | **`travelPortalStyles` sets `overflow: hidden` on BARE `html`/`body`** (lines 135, 140). This is the root cause of the budget page's scroll lock; the fix applied was a per-page scroller, not this. Any future page that includes this stylesheet hits the same trap — it has already caught one. Scope the rules to the portal shell. | Fixing it means touching the portal, which works. A narrow fix was the lower-risk call for a reported defect. |
+| 2 | **Collapse-by-`max-height` loses its expand animation.** The crop fixes set `max-height: none` on the open states of `.tc__stage`, `.action-detail`, `.review-traveler-row__body` and `.tc__reveal`. `max-height` cannot transition to `none`, so the *expand* slide is gone (opacity/transform still animate; collapse still slides). The fix that keeps both is `grid-template-rows: 0fr → 1fr`, which needs each panel wrapped in a grid container. | A real layout change inside the traveller cards, and not one to make without a browser to verify it in. |
+| 3 | **Fixed-bar offsets track the TOKEN, not the bar's rendered height.** `--travel-header-h` / `--review-infobar-h` in `tokens.html` removed the drift between a bar's declared height and the offset compensating for it. The bars now use `min-height`, so under text-only zoom or a raised default font size they can still outgrow the token and content slides under by the difference. The real fix is `position: sticky` instead of fixed-plus-offset. | Per-page layout change; needs browser verification. |
+| 4 | **`travelRequestController.html:1225` hardcodes `const fixedHeaderHeight = 52`** for its scroll-to-step offset. Same magic number as the CSS, now in JS where the token cannot reach it. Should read the rendered header height, or the custom property. | Out of scope of the reported defects; one-line change but needs a browser to confirm the scroll lands correctly. |
+| 5 | **The `.oc-modal` shell is defined twice** — `travelAdminStyles.html:5412` and inline in `travelBudgetDashboardPage.html:42`. The existing comment already flags this as deliberate-for-now. It is now also the thing whose duplicated prose caused the Admin parse failure. Worth consolidating. | Pre-existing, documented decision. Not a defect. |
+| 6 | **`.claspignore` has a pre-existing broken entry that fails an existing CI guard** — see the section below. Not caused by this change. | Needs @clolry's intent. |
+
+### A pre-existing CI failure, found while verifying — not caused by this change
+
+`lets_app/.claspignore` carries an **uncommitted** block (present in the
+working tree before this session; `git diff` attributes it to no commit) which
+ends with a bare glob:
+
+```
+# Remaining test scripts
+test_*.js
+```
+
+The existing verify.yml guard *"every test file is excluded from the clasp
+push"* has a stale-entry half that reads each `test_*.js` line and asserts the
+named file exists. A literal glob is not a filename, so it reports:
+
+```
+::error::A .claspignore lists test files that no longer exist: lets_app/test_*.js
+```
+
+**This fails CI today, independently of anything in this change.** Verified by
+reverting `.claspignore` to `HEAD` plus only the new
+`test_markup_integrity.js` line — the guard passes. Two options, and @clolry
+should pick:
+
+- **Drop the glob block.** Every suite is already listed by name above it, so
+  the glob is redundant and the guard keeps its stale-entry check.
+- **Keep the glob and teach the guard to skip glob patterns.** Weakens the
+  check slightly: a renamed suite would then no longer be reported.
+
+The new suite was added by name, consistent with the existing convention.

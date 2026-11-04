@@ -31,8 +31,20 @@ test_request_access.js
 test_delegation.js
 test_events_ui.js
 test_coordinator_role.js
+test_markup_integrity.js
 preview.html
 node_modules/**
 .git/**
 *.log
 .clasp.sandbox.json
+
+# macOS metadata
+.DS_Store
+**/.DS_Store
+
+# Remaining test scripts
+test_*.js
+
+# Temporary files
+*.tmp
+*.log

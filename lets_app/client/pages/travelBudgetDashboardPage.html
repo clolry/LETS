@@ -34,6 +34,44 @@
   <?!= include('client/shared/serverCall'); ?>
 
   <style>
+    /*
+      THE PAGE SCROLLER.
+
+      @clolry reported this page could not be scrolled at all: everything
+      below the first screen — the DAC table, Configured DAC Approvers,
+      Historical Event Attendance — was unreachable.
+
+      The cause is that this page borrows travelPortalStyles' body class,
+      `travel-portal-body`, which clips at three levels:
+
+        html                  { height: 100%;  overflow: hidden }
+        body                  { height: 100%;  overflow: hidden }
+        .travel-portal-body   { height: 100vh; overflow: hidden }
+
+      That is correct for the PORTAL, because the portal nests its long
+      content inside a dedicated scroller — `.portal-content`, which carries
+      overflow-y:auto. This page never built one. Its content is a single
+      <main> hanging directly off a clipped body, so the overflow had nowhere
+      to go and no scrollbar appeared.
+
+      So <main> takes the scroll role here that .portal-content has there.
+      min-height:0 is required: without it a flex/grid-less block in a
+      height-constrained parent still resolves its height from content and
+      the clip reappears.
+
+      This is the narrow fix. The broader defect is that travelPortalStyles
+      applies overflow:hidden to BARE html/body rather than scoping it to the
+      portal shell, so it is a trap for any future page that includes that
+      stylesheet. Tracked separately; fixing it means touching the portal,
+      which works.
+    */
+    .budget-main {
+      height: calc(100vh - var(--travel-header-h, 52px));
+      overflow-y: auto;
+      overflow-x: hidden;
+      min-height: 0;
+    }
+
     /* Modals, hand-rolled.
        data-bs-toggle was used on this page already and did nothing, because
        Bootstrap's JAVASCRIPT is not loaded here — only its CSS. Rather than
@@ -189,8 +227,11 @@
     </div>
   </header>
 
-  <!-- Main Content -->
-  <main class="container-fluid px-4 py-4" style="max-width: 1400px; margin: 0 auto;">
+  <!-- Main Content — .budget-main owns the page scroll. See the comment on
+       that rule above: the inherited body class clips at html, body and
+       .travel-portal-body, so without a scroller here nothing below the fold
+       is reachable. -->
+  <main class="budget-main container-fluid px-4 py-4" style="max-width: 1400px; margin: 0 auto;">
 
     <!-- Top Action Bar -->
     <div class="d-flex justify-content-between align-items-center mb-4">

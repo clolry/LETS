@@ -1697,10 +1697,17 @@
   overflow: hidden;
   /* Bound the section so its body has a height to scroll inside.
      Both grid columns share the same row height since the grid
-     row is sized by the taller section. */
+     row is sized by the taller section.
+
+     The ceiling is in rem, not px. It was 480px, which does not scale with
+     zoom while the 36px rows and 28px headers inside it effectively do — so
+     the fixed head and the list competed for a box that never grew. rem
+     scales with the same zoom that grows the content, keeping the proportion
+     stable. .users-roster__body carries overflow-y:auto, so a long list
+     scrolls inside rather than being cropped. */
   display: flex;
   flex-direction: column;
-  max-height: 480px;
+  max-height: 30rem;
 }
 
 .users-roster__head {

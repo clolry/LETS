@@ -875,18 +875,29 @@ html, body { height: 100%; overflow: hidden; }
   color: var(--color-danger, #ef4444);
 }
 
-/* Collapsible detail panel — uses max-height for animation since the
-   inner content height is dynamic (skeleton vs populated). 600px is a
-   generous ceiling that handles both renderings without clipping. */
+/* Collapsible detail panel. The open state carries NO height ceiling.
+   It was `max-height: 600px`, with a comment calling 600px "a generous
+   ceiling that handles both renderings without clipping" — generous at 100%
+   zoom, and not at 150%, where the same content is taller but the ceiling is
+   not. Over `overflow: hidden` that cropped the reviews and stalled-requests
+   lists with nothing on screen to say rows had been hidden.
+
+   The collapsed state keeps max-height: 0 below, so the COLLAPSE still
+   animates. Only the expand loses its slide, because max-height cannot
+   transition to `none`; opacity still carries it. Same trade-off and same
+   reasoning as .tc__stage in travelRequestStyles. */
 .action-detail {
-  overflow: hidden;
-  max-height: 600px;
+  overflow: visible;
+  max-height: none;
   transition: max-height 0.28s ease, opacity 0.2s ease, margin-bottom 0.28s ease;
   opacity: 1;
 }
 
 .action-detail.is-collapsed {
   max-height: 0;
+  /* Required now that the open state is overflow:visible — without this the
+     collapsed panel's content would spill out of a zero-height box. */
+  overflow: hidden;
   opacity: 0;
   margin-bottom: 0 !important;
   pointer-events: none;
@@ -5293,7 +5304,6 @@ input.typeahead-loading {
   }
   .roster-search { max-width: none; }
 }
-</style>
 
 /* ---- events, set-asides and the proposal queue -------------------------- */
 
@@ -5405,10 +5415,18 @@ input.typeahead-loading {
    nothing at all for exactly that reason.
 
    Defined HERE rather than copied from travelBudgetDashboardPage's inline
-   <style>, where an identical block already lives. The duplication is
+   style block, where an identical copy already lives. The duplication is
    deliberate for now: the budget page's copy is inline and self-contained,
    and moving it would mean touching a page that works. Worth consolidating if
-   a third page needs it. */
+   a third page needs it.
+
+   DO NOT write a literal style start-tag in this comment. These rules once
+   sat AFTER the file's closing tag, which put this prose into the document
+   body — where "<" plus "style" is a START TAG, not text. It opened a
+   raw-text element that swallowed the rest of this file and the whole of
+   travelUsersStyles, and CSS error recovery then ate the .oc-modal rule
+   below, so these dialogs rendered unstyled. test_markup_integrity.js §1
+   and §2 now fail the build on both halves of that. */
 
 .oc-modal {
   position: fixed;
@@ -5464,3 +5482,4 @@ input.typeahead-loading {
 }
 
 .btn-close-x:hover { color: #0f172a; }
+</style>

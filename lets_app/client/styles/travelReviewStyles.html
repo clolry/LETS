@@ -58,7 +58,10 @@ body::-webkit-scrollbar {
   top: 0;
   left: 0;
   right: 0;
-  height: 48px;
+  /* min-height, so rem-sized contents can grow under text-only zoom rather
+     than clipping. Tied to the same token .review-main offsets by. */
+  min-height: var(--header-height, 48px);
+  box-sizing: border-box;
   background: linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%);
   display: flex;
   align-items: center;
@@ -123,10 +126,11 @@ body::-webkit-scrollbar {
    ============================================================================ */
 .review-info-bar {
   position: fixed;
-  top: 48px;
+  top: var(--header-height, 48px);
   left: 0;
   right: 0;
-  height: 60px;
+  min-height: var(--review-infobar-h, 60px);
+  box-sizing: border-box;
   background: white;
   display: flex;
   align-items: stretch;
@@ -293,8 +297,12 @@ body::-webkit-scrollbar {
    MAIN LAYOUT
    ============================================================================ */
 .review-main {
-  margin-top: 108px; /* 48px header + 60px info bar */
-  min-height: calc(100vh - 108px);
+  /* Was a hand-derived 108px, which is .portal-header 48px plus
+     .review-info-bar 60px. Derived from the tokens now so it cannot drift
+     from either bar. Both bars use min-height, so content can still slide
+     under a bar that outgrows its token — see tokens.html. */
+  margin-top: calc(var(--header-height, 48px) + var(--review-infobar-h, 60px));
+  min-height: calc(100vh - var(--header-height, 48px) - var(--review-infobar-h, 60px));
   padding: var(--space-3);
   padding-left: var(--space-3);
   padding-bottom: var(--space-4);
@@ -1461,7 +1469,14 @@ body::-webkit-scrollbar {
 }
 
 .review-traveler-row--expanded .review-traveler-row__body {
-  max-height: 500px;
+  /* Was 500px over the base rule's overflow:hidden, which cropped the
+     expanded traveller detail under browser zoom — clearance, passport and
+     commute fields vanished with nothing to indicate it.
+
+     --editing below already uses max-height:none for the same box, so the
+     expanded state was simply the one that had been missed. */
+  max-height: none;
+  overflow: visible;
   padding: var(--space-3);
   border-top-width: 1px;
 }
@@ -4016,9 +4031,11 @@ body::-webkit-scrollbar {
 .review-sidebar {
   position: fixed;
   right: max(var(--space-4), calc((100vw - 1440px) / 2 + var(--space-4)));
-  top: 120px;
+  /* 120px / 140px were hand-derived from the 108px of fixed chrome plus
+     breathing room. Derived now, for the same reason as .review-main. */
+  top: calc(var(--header-height, 48px) + var(--review-infobar-h, 60px) + 0.75rem);
   width: 240px;
-  max-height: calc(100vh - 140px);
+  max-height: calc(100vh - var(--header-height, 48px) - var(--review-infobar-h, 60px) - 2rem);
   overflow-y: auto;
   overflow-x: hidden;
   background: white;
@@ -4876,8 +4893,8 @@ body::-webkit-scrollbar {
 
 @media (max-width: 600px) {
   .review-info-bar {
-    height: auto;
-    min-height: 60px;
+    /* The base rule already uses min-height, so the bar grows on its own;
+       flex-wrap is what actually changes here. */
     flex-wrap: wrap;
   }
 
@@ -4904,7 +4921,9 @@ body::-webkit-scrollbar {
   }
 
   .review-main {
-    margin-top: 140px;
+    /* 140px was 108px plus ~32px of slack for the wrapped info bar. Derived
+       from the tokens so the base and the wrapped case cannot drift apart. */
+    margin-top: calc(var(--header-height, 48px) + var(--review-infobar-h, 60px) + 2rem);
     padding: var(--space-2);
   }
 

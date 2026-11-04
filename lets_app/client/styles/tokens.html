@@ -149,6 +149,38 @@
     --header-height:             48px;
     --sidebar-width:             280px;
 
+    /* Fixed-chrome heights.
+       -------------------------------------------------------------------
+       Each of these was a magic number repeated across a stylesheet and the
+       content offset that had to match it:
+
+         travelPortalStyles   .travel-header height 52px, .travel-portal-body
+                              padding-top 52px, .travel-main and
+                              .portal-sidebar calc(100vh - 52px), the 900px
+                              drawer top 52px — five places, one number
+         travelRequestStyles  .travel-form-body padding-top 52px against a
+                              .travel-header with NO height at all, only
+                              padding, so its true height is whatever its
+                              rem-sized contents need
+         travelReviewStyles   .review-main margin-top 108px, hand-derived
+                              from .portal-header 48px + .review-info-bar 60px
+
+       They are declared together here so an offset cannot drift from the bar
+       it is compensating for.
+
+       WHAT THIS DOES AND DOES NOT FIX. It removes the drift between a bar's
+       declared height and the offset compensating for it. It does NOT make
+       the offset track the bar's RENDERED height: the bars use min-height so
+       their contents can grow under text-only zoom or a raised default font
+       size, and when they do, content still slides under by the difference.
+       Eliminating that needs position:sticky instead of fixed-plus-offset,
+       which is a layout change per page. Tracked separately.
+
+       NOT changed to rem: these are deliberate px so the chrome stays
+       compact, and it is the contents that need room to grow. */
+    --travel-header-h:           52px;
+    --review-infobar-h:          60px;
+
     /* ========================================================================
        LAYER 5 — Legacy aliases (back-compat for pre-Chunk-16 names)
 

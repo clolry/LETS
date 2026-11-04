@@ -118,7 +118,11 @@ body {
   background: linear-gradient(180deg, var(--travel-gray-100) 0%, var(--travel-gray-50) 100%);
   background-attachment: fixed;
   min-height: 100vh;
-  padding-top: 52px; /* Account for fixed header */
+  /* .travel-header is position:fixed with padding and NO declared height, so
+     its real height is whatever its rem-sized contents need. This offset
+     tracks the token, not that rendered height — see the note on
+     --travel-header-h in tokens.html. */
+  padding-top: var(--travel-header-h, 52px);
 }
 
 .travel-main {
@@ -146,6 +150,17 @@ body {
   left: 0;
   right: 0;
   z-index: 1000;
+  /* min-height pins this to the same token .travel-form-body offsets by.
+     Previously this rule declared no height at all — the bar was just
+     padding plus content, so there was nothing tying it to the 52px the body
+     reserved, and the two could disagree by any amount. */
+  min-height: var(--travel-header-h, 52px);
+  box-sizing: border-box;
+  /* Flex so .travel-header__content stays vertically centred when min-height
+     exceeds the content height; as a plain block it would sit at the top and
+     leave a gap beneath. */
+  display: flex;
+  align-items: center;
   background: linear-gradient(135deg, var(--travel-primary) 0%, var(--travel-primary-dark) 100%);
   color: white;
   padding: 0.5rem 1rem;
@@ -157,6 +172,9 @@ body {
   justify-content: space-between;
   align-items: center;
   width: 100%;
+  /* Fill the now-flex .travel-header. width:100% alone sizes it correctly,
+     but flex:1 keeps that true if the header ever gains a sibling. */
+  flex: 1;
 }
 
 .travel-header__brand {
@@ -4415,6 +4433,33 @@ textarea.focus-expand:focus::placeholder {
 }
 
 /* Progressive Disclosure Stages */
+/*
+  WHY THE OPEN STATES USE max-height:none RATHER THAN A px CEILING
+  ---------------------------------------------------------------
+  Each open state below used to carry a guessed pixel ceiling — 500px for
+  details, 500px for transport, 2000px for costs — over the closed state's
+  `overflow: hidden`. Nothing reset the overflow when the stage opened, so any
+  content taller than the guess was CLIPPED AND SILENTLY GONE. @clolry hit
+  this by zooming: zoom does not change these px ceilings, but it does make
+  the content inside them taller, so transport and per-diem fields started
+  disappearing mid-card.
+
+  Silently cropping a per-diem figure an approver is reading is the worst
+  available outcome here, so the ceiling is removed entirely on the open
+  states and the overflow reset to visible.
+
+  THE TRADE-OFF, stated plainly: the height SLIDE is lost, because
+  max-height cannot transition to `none`. The reveal still animates via
+  opacity and transform, which are declared on the same transition below.
+  The alternative that keeps the slide is grid-template-rows 0fr -> 1fr,
+  which needs each stage wrapped in a grid container — a real layout change
+  inside these cards, and not one to make without a browser to check it in.
+  Tracked separately.
+
+  .tc__reveal immediately below already established this pattern: its open
+  states at `overflow: visible` were correct, and the stage rules were the
+  ones that had been missed.
+*/
 .tc__stage {
   overflow: hidden;
   max-height: 0;
@@ -4428,35 +4473,40 @@ textarea.focus-expand:focus::placeholder {
   max-height: none;
   opacity: 1;
   transform: none;
+  overflow: visible;
 }
 
 /* Revealed stages */
 .tc__stage--revealed {
-  max-height: 1000px;
+  max-height: none;
   opacity: 1;
   transform: translateY(0);
+  overflow: visible;
 }
 
 /* Stage visibility based on card's disclosure stage attribute */
 .tc[data-disclosure-stage="2"] .tc__stage--details,
 .tc[data-disclosure-stage="3"] .tc__stage--details,
 .tc[data-disclosure-stage="4"] .tc__stage--details {
-  max-height: 500px;
+  max-height: none;
   opacity: 1;
   transform: translateY(0);
+  overflow: visible;
 }
 
 .tc[data-disclosure-stage="3"] .tc__stage--transport,
 .tc[data-disclosure-stage="4"] .tc__stage--transport {
-  max-height: 500px;
+  max-height: none;
   opacity: 1;
   transform: translateY(0);
+  overflow: visible;
 }
 
 .tc[data-disclosure-stage="4"] .tc__stage--costs {
-  max-height: 2000px;
+  max-height: none;
   opacity: 1;
   transform: translateY(0);
+  overflow: visible;
 }
 
 /* Reveal fields (hidden until employee selected) */
@@ -4469,7 +4519,7 @@ textarea.focus-expand:focus::placeholder {
 
 .tc__reveal--visible {
   opacity: 1;
-  max-height: 60px;
+  max-height: none;
   overflow: visible;
 }
 
@@ -4478,7 +4528,7 @@ textarea.focus-expand:focus::placeholder {
 .tc[data-disclosure-stage="3"] .tc__reveal,
 .tc[data-disclosure-stage="4"] .tc__reveal {
   opacity: 1;
-  max-height: 200px;
+  max-height: none;
   overflow: visible;
 }
 
@@ -4491,7 +4541,11 @@ textarea.focus-expand:focus::placeholder {
 .tc[data-disclosure-stage="2"] .tc__details-right.tc__reveal,
 .tc[data-disclosure-stage="3"] .tc__details-right.tc__reveal,
 .tc[data-disclosure-stage="4"] .tc__details-right.tc__reveal {
-  max-height: 300px;
+  /* Was 300px. This column holds the Role Justification textarea, which
+     grows on focus (data-rows-focus="3") — so the ceiling cropped the very
+     field the traveller was typing into. See the note on .tc__stage above. */
+  max-height: none;
+  overflow: visible;
 }
 
 /* Role field - narrow since it's just PM, COR, etc */
@@ -6910,7 +6964,6 @@ textarea.focus-expand:focus::placeholder {
   color: var(--color-text-muted, #777);
   line-height: 1.4;
 }
-</style>
 
 /* ---- event picker -------------------------------------------------------
    Sits above the free-text event name. Most travel is ad-hoc, so this is an
@@ -6965,3 +7018,4 @@ textarea.focus-expand:focus::placeholder {
   font-weight: 600;
   color: #475569;
 }
+</style>

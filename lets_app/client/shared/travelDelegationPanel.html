@@ -29,6 +29,28 @@
 -->
 
 <style>
+  /*
+    HIDE THE BOXES WHEN THEY CARRY THE hidden ATTRIBUTE.
+
+    Both elements below are rendered with `hidden` and revealed by the
+    controller setting .hidden = false. But `display: flex` on a class
+    selector OUTRANKS the user-agent's `[hidden] { display: none }`, which is
+    an ordinary (non-important) rule in the UA sheet — so without these two
+    selectors the banner and the modal paint on every page load regardless of
+    the attribute.
+
+    It happened to work only because Bootstrap's reboot carries
+    `[hidden] { display: none !important }`, and Bootstrap is loaded from a
+    CDN. On the one request where that CDN fails, a delegation modal and an
+    amber "you are acting on behalf of…" banner appear permanently open, over
+    every page that includes this panel. Correctness here should not depend on
+    a third-party stylesheet arriving.
+  */
+  .actas-bar[hidden],
+  .dlg-modal[hidden] {
+    display: none;
+  }
+
   /* ---- the act-as banner ------------------------------------------------ */
 
   .actas-bar {

@@ -78,6 +78,21 @@ jobs:
       - name: UI fix regression tests
         run: node lets_app/test_ui_fixes.js
 
+      - name: Markup integrity tests
+        # §2 and §3 are the regression guards for @clolry's report that raw CSS
+        # printed at the top of the New Request and Admin screens: 222 lines of
+        # rules had been appended AFTER the closing style tag of two stylesheet
+        # partials, so they rendered as body text.
+        #
+        # §3 is the only check in this workflow that COMPOSES a page — it
+        # resolves the include graph the way HtmlService does and then parses
+        # the result. Every other guard reads single source files, which is why
+        # none of them could see a defect that only exists after the includes
+        # are resolved. On My Review Queue that defect silently killed
+        # escapeHtml, serverCall and hcDataCenterService, and with them the
+        # amber act-as banner the delegation guard below is written to protect.
+        run: node lets_app/test_markup_integrity.js
+
       - name: FAS tracker column mapping tests
         run: node lets_app/test_fas_tracker_mapping.js
 
