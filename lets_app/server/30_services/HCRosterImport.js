@@ -968,9 +968,21 @@ var HCRosterImport = (function () {
       secondaryColumn: mapped.mapping.secondaryStatus,
       conflicts: conflicts.length,
       samples: conflicts.slice(0, 20),
+      // `mapped.mapping.secondaryStatus`, NOT `secondaryColumn`.
+      //
+      // The latter is a field of the object being BUILT here, not of
+      // `mapped.mapping`, so it read undefined and the note said '...
+      // classified differently by "undefined"'. The count was right and the
+      // sentence was unusable — an admin cannot act on a disagreement without
+      // knowing which column disagrees.
+      //
+      // Nothing failed: JavaScript resolves a missing property to undefined
+      // and string-concatenates it happily. A test asserting only that the
+      // note mentions "the wrong column was chosen" passed throughout, which
+      // is why §1e now asserts the column NAMES appear.
       note: conflicts.length
         ? (conflicts.length + ' row(s) would be classified differently by "' +
-           mapped.mapping.secondaryColumn + '". Occupancy is taken from "' +
+           mapped.mapping.secondaryStatus + '". Occupancy is taken from "' +
            mapped.mapping.occupancyStatus + '" because the feed also carries ' +
            'an "Obligated To" column, which is a position-level concept. If ' +
            'this count is large, the wrong column was chosen and every ' +

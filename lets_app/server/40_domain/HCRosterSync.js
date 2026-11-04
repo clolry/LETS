@@ -255,6 +255,27 @@ function previewRosterImport() {
       orgsByCode[String(o.orgCode || '').toUpperCase()] = o;
     });
 
+    // HC_Orgs MUST CARRY Org_Level, or the roster imports fine and every
+    // budget figure derived from it is silently zero.
+    //
+    // The per-capita split works by walking each position's stored parent
+    // chain to the nearest row whose Org_Level is 'SERVICE_CENTER'. With
+    // HC_Orgs holding only the four seed rows — which have no Org_Level and no
+    // Parent_Org_Code at all — that walk finds nothing, so all 22 service
+    // centres read zero and every allocation is undefined.
+    //
+    // @clolry's first live preview showed exactly this: 1,046 importable
+    // positions, 817 filled, and "service centres 0". The roster was right and
+    // the denominator did not exist. Checked HERE rather than after the import
+    // because the symptom appears on the budget page, two steps removed from
+    // the cause.
+    var levelled = orgs.filter(function (o) {
+      return String(o.orgLevel || '').trim();
+    }).length;
+    var serviceCentres = orgs.filter(function (o) {
+      return String(o.orgLevel || '').toUpperCase() === 'SERVICE_CENTER';
+    }).length;
+
     var scope = getHrOrgScope();
     var parsed = HCRosterImport.parseFeed(values, orgsByCode, { orgScope: scope });
     if (parsed.headerProblems.length) {
@@ -291,6 +312,15 @@ function previewRosterImport() {
       orgScope: parsed.orgScope,
       scopeNote: parsed.scopeNote,
       outOfScopeByPrefix: parsed.outOfScopeByPrefix,
+      // The org hierarchy the per-capita split depends on. Reported even when
+      // healthy, so "service centres 0" is never ambiguous between "no
+      // hierarchy loaded" and "no staff matched".
+      orgHierarchy: {
+        rows: orgs.length,
+        withOrgLevel: levelled,
+        serviceCentres: serviceCentres,
+        ready: serviceCentres > 0
+      },
       counts: {
         feedRows: values.length - 1,
         outOfScope: parsed.outOfScope,
@@ -414,6 +444,31 @@ function _logRosterPreview_(p) {
   L.push('HEADCOUNT — the per-capita budget denominator');
   L.push('  filled positions       ' + filled);
   L.push('  service centres        ' + scTotal);
+
+  // A ZERO HERE HAS TWO VERY DIFFERENT CAUSES and the number alone cannot
+  // tell them apart: either HC_Orgs has no hierarchy to roll up to, or the
+  // roster matched none of it. The first is a missing setup step; the second
+  // would mean the org codes disagree. Naming which one it is saves a
+  // diagnostic round trip.
+  var oh = p.orgHierarchy || {};
+  if (!scTotal) {
+    if (!oh.serviceCentres) {
+      L.push('');
+      L.push('  BLOCKED: HC_Orgs holds ' + (oh.rows || 0) + ' row(s), ' +
+             (oh.withOrgLevel || 0) + ' with an Org_Level, and 0 service ' +
+             'centres. The per-capita split walks each position\'s parent ' +
+             'chain to the nearest SERVICE_CENTER row, so it has nothing to ' +
+             'roll up to and every allocation would be zero.');
+      L.push('  FIX: run hcLoadRealOrgCodes() in 40_domain/HCAdmin.js — it ' +
+             'loads the 137 real ASD org codes with their parents and levels. ' +
+             'Then re-run this preview.');
+    } else {
+      L.push('');
+      L.push('  WARNING: HC_Orgs has ' + oh.serviceCentres + ' service ' +
+             'centre(s) but no imported position rolls up to any of them. ' +
+             'The roster\'s org codes and HC_Orgs disagree.');
+    }
+  }
   L.push('');
 
   if ((p.blocked || []).length) {

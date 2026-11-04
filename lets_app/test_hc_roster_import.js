@@ -292,6 +292,23 @@ console.log('\n1e. the two status columns are cross-checked');
   ok('and the note explains what a large count would mean',
      /the wrong column was chosen/.test(d.note), d.note);
 
+  // THE NOTE MUST NAME BOTH COLUMNS.
+  //
+  // It read '... classified differently by "undefined"' in @clolry's live
+  // output, because the builder referenced mapped.mapping.secondaryColumn —
+  // a field of the object being constructed, not of mapped.mapping. Nothing
+  // threw: JavaScript resolves the missing property to undefined and
+  // concatenates it.
+  //
+  // The assertion above passed throughout, because it only checked for the
+  // explanatory clause. An admin cannot act on a disagreement without knowing
+  // WHICH column disagrees, so the names are now asserted directly.
+  ok('the note names the column occupancy came from',
+     d.note.indexOf('"Position Status"') > -1, d.note);
+  ok('and names the column that disagrees, not "undefined"',
+     d.note.indexOf('"Status"') > -1 && d.note.indexOf('undefined') === -1,
+     d.note);
+
   // Agreement must be silent, or the signal is worthless.
   const agree = R.parseFeed([H2,
     ['90000001', 'A,A', 'FCA0B', 'Filled', 'Active']], null);
@@ -1063,6 +1080,52 @@ console.log('\n16. the preview prints itself to the execution log');
   ok('and the token comes LAST, after everything to be read',
      logger.lastIndexOf('p.token') > logger.indexOf('HEADCOUNT'),
      'putting the token first invites confirming without reading');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n17. the org hierarchy must exist before the roster is useful');
+{
+  // @clolry's first live preview: 1,046 importable positions, 817 filled,
+  // "service centres 0". The roster was correct and the DENOMINATOR did not
+  // exist — HC_Orgs held only the four seed rows, which carry no Org_Level and
+  // no Parent_Org_Code, so the walk to the nearest SERVICE_CENTER found
+  // nothing.
+  //
+  // The import would have succeeded and every per-capita allocation would have
+  // been zero, with the symptom appearing on the budget page two steps from
+  // the cause.
+  const sync = fs.readFileSync('lets_app/server/40_domain/HCRosterSync.js', 'utf8');
+  const diag = fs.readFileSync('lets_app/server/99_triggers/Diagnostics.js', 'utf8');
+
+  ok('the preview counts service centres in HC_Orgs',
+     /orgLevel \|\| ''\)\.toUpperCase\(\) === 'SERVICE_CENTER'/.test(sync), sync.length);
+  ok('and reports the hierarchy state in the payload',
+     /orgHierarchy: \{/.test(sync) && /ready: serviceCentres > 0/.test(sync));
+
+  // A ZERO MUST SAY WHICH CAUSE IT IS. "No hierarchy loaded" and "the roster
+  // matched none of it" are a missing setup step and a data disagreement
+  // respectively, and the count alone cannot distinguish them.
+  ok('a zero names the missing-hierarchy cause',
+     /BLOCKED: HC_Orgs holds/.test(sync), 'the number alone is ambiguous');
+  ok('and names the fix',
+     /run hcLoadRealOrgCodes\(\)/.test(sync));
+  ok('and distinguishes it from a code mismatch',
+     /org codes and HC_Orgs disagree/.test(sync),
+     'a hierarchy that exists but matches nothing is a different problem');
+
+  // runRosterImport must REFUSE, not warn. hcLoadRealOrgCodes is a ten-second
+  // fix and the alternative is a roster whose budget output is silently zero.
+  ok('runRosterImport refuses when the hierarchy is absent',
+     /if \(!oh\.ready\) \{/.test(diag) &&
+     /REFUSING: HC_Orgs has no service-centre hierarchy/.test(diag));
+  ok('and its refusal names hcLoadRealOrgCodes and its file',
+     /hcLoadRealOrgCodes\(\) in 40_domain\/HCAdmin\.js/.test(diag));
+
+  // The check runs BEFORE the deletes check, so the more fundamental problem
+  // is reported first rather than being hidden behind a removal warning.
+  ok('the hierarchy check precedes the deletions check',
+     diag.indexOf('if (!oh.ready)') < diag.indexOf('if (c.deletes > 0)'),
+     'otherwise a removal warning masks a missing hierarchy');
 }
 
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');

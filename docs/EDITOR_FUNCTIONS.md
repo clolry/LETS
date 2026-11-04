@@ -40,7 +40,7 @@ The roster drives approval routing, supervisor-based site access and every per-c
 |---|---|---:|---|
 | `diagnoseHrFeedSource()` | `lets_app/server/40_domain/HCRosterSync.js` | 101 | Reports which HR feed source this DEPLOYMENT is actually reading. |
 | `previewRosterImport()` | `lets_app/server/40_domain/HCRosterSync.js` | 197 | Dry run: what importing the feed would change. |
-| `importRoster(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 512 | Applies the import. Destructive: replaces every row in HC_Positions. |
+| `importRoster(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 567 | Applies the import. Destructive: replaces every row in HC_Positions. |
 | `seedHCTestData(…)` | `lets_app/server/91_setup/HCSeed.js` | 708 | Seeds both HC tabs with FICTIONAL test data. |
 | `validateHCData()` | `lets_app/server/91_setup/HCSeed.js` | 916 | Read-only sanity check on whatever is currently in the HC tabs. |
 
@@ -83,9 +83,9 @@ The Apps Script Run button passes no arguments, so these wrap the functions that
 |---|---|---:|---|
 | `runRosterPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1224 | Preview the HR roster import, and print the result. |
 | `runRosterImport()` | `lets_app/server/99_triggers/Diagnostics.js` | 1255 | Apply the HR roster import. DESTRUCTIVE — replaces every row in |
-| `runDirectoryPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1311 | Preview the directory email lookup, and print the result. |
-| `runDirectoryResolve()` | `lets_app/server/99_triggers/Diagnostics.js` | 1327 | Resolve directory email addresses and WRITE them to HC_Positions. |
-| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 1348 | Print the current budget dashboard payload. |
+| `runDirectoryPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1335 | Preview the directory email lookup, and print the result. |
+| `runDirectoryResolve()` | `lets_app/server/99_triggers/Diagnostics.js` | 1351 | Resolve directory email addresses and WRITE them to HC_Positions. |
+| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 1372 | Print the current budget dashboard payload. |
 
 ## Diagnostics — safe to run any time, write nothing
 

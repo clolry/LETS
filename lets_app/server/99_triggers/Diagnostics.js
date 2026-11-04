@@ -1262,6 +1262,30 @@ function runRosterImport() {
 
   var c = p.data.counts;
 
+  // THE ORG HIERARCHY MUST EXIST FIRST, or the import succeeds and every
+  // budget figure it feeds is zero.
+  //
+  // The per-capita split walks each position's stored parent chain to the
+  // nearest SERVICE_CENTER row in HC_Orgs. With only the four seed rows
+  // loaded — which carry no Org_Level — there is nothing to roll up to.
+  // @clolry's first preview showed 817 filled positions and "service centres
+  // 0" for exactly this reason.
+  //
+  // Refused rather than warned, because the symptom surfaces on the budget
+  // page two steps from the cause, and hcLoadRealOrgCodes is a ten-second fix.
+  var oh = p.data.orgHierarchy || {};
+  if (!oh.ready) {
+    console.log('REFUSING: HC_Orgs has no service-centre hierarchy (' +
+                (oh.rows || 0) + ' row(s), ' + (oh.serviceCentres || 0) +
+                ' service centres).');
+    console.log('Every per-capita budget allocation would be zero, and the ' +
+                'org chart would have nothing to nest positions under.');
+    console.log('');
+    console.log('FIX: run hcLoadRealOrgCodes() in 40_domain/HCAdmin.js, then ' +
+                'run this again.');
+    return;
+  }
+
   // A real person the feed no longer lists loses supervisor-based LETS access
   // and stops counting toward their org's per-capita share. That may be
   // correct — people do leave — but it is not something to discover
