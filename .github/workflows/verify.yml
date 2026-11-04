@@ -228,6 +228,12 @@ jobs:
         # status vocabulary has an EMPTY intersection with what the Requests
         # tab stores, so it would report every DAC at full baseline with zero
         # commitments — plausible, and false.
+        #
+        # §2 pins @clolry's published FY27 figures to the cent: OMD
+        # $54,243.50, IDV $274,828.00, CM $67,428.50, ASD total $396,500.
+        # These are the balances the DACs manage against all year, so a config
+        # edit that moves them must fail here rather than quietly re-derive a
+        # new answer and agree with itself.
         run: node lets_app/test_budget_dashboard.js
 
       - name: Event history tests

@@ -154,6 +154,70 @@ function getOtherCostPercentage() {
   return parseInt(_props().getProperty(PROPS_KEYS.OTHER_COST_PERCENTAGE)) || 30;
 }
 
+/**
+ * Dollar amount of a set-aside whose config entry names a property key.
+ *
+ * @clolry asked for the FC senior advisor figure to be configurable: the
+ * estimate is "about twice a month at approximately $2k/trip" and both halves
+ * of that are approximate. Changing it must not need a deploy.
+ *
+ * WHY THIS LIVES IN Props.js AND NOT IN BudgetConfig.js
+ * -----------------------------------------------------
+ * BudgetConfig.js is evaluated on EVERY execution, before any user code, and a
+ * failure there takes down the whole web app including the travel workflow
+ * (see the `var LETS_CONFIG` note in that file). PropertiesService is an
+ * external call that can throw or be unauthorised. Calling it at
+ * file-evaluation time would put the entire app behind a service that has
+ * nothing to do with rendering a page.
+ *
+ * So the config carries a `amountPropertyKey` string and a default amount, and
+ * this resolves it at READ time, inside BudgetDashboard's try/catch.
+ *
+ * WHY A ZERO IS HONOURED HERE, UNLIKE getOtherCostPercentage ABOVE
+ * ----------------------------------------------------------------
+ * `parseInt(...) || 30` maps a configured 0 to 30, which is right there: a 0%
+ * gross-up is not a supported configuration. A $0 set-aside IS meaningful — it
+ * is how an admin retires a line without a deploy — so this checks for null
+ * and NaN explicitly rather than for falsiness. A `|| fallback` here would
+ * make a deliberate $0 silently become $48,000.
+ *
+ * A NEGATIVE VALUE IS REFUSED, not clamped. A negative set-aside would ADD to
+ * a DAC's discretionary balance, which is money that does not exist, and the
+ * dashboard has no way to show that it happened.
+ *
+ * @param {string} key the PROPS_KEYS-style property name, e.g.
+ *                     'BUDGET_FC_ADVISOR_AMOUNT'
+ * @param {number} defaultAmount used when the property is unset or unusable
+ * @returns {number}
+ * @server
+ */
+function getSetAsideAmountOverride(key, defaultAmount) {
+  var fallback = Number(defaultAmount) || 0;
+  if (!key) return fallback;
+
+  var raw;
+  try {
+    raw = _props().getProperty(String(key));
+  } catch (e) {
+    // An unreadable property store must not blank a budget figure.
+    console.warn('getSetAsideAmountOverride: ' + key + ' unreadable: ' + e.message);
+    return fallback;
+  }
+  if (raw === null || raw === undefined || String(raw).trim() === '') return fallback;
+
+  var n = parseFloat(String(raw).replace(/[$,]/g, ''));
+  if (isNaN(n)) {
+    console.warn('getSetAsideAmountOverride: ' + key + ' is not a number: ' + raw);
+    return fallback;
+  }
+  if (n < 0) {
+    console.warn('getSetAsideAmountOverride: ' + key + ' is negative (' + n +
+                 '); refusing. A negative set-aside would inflate a DAC balance.');
+    return fallback;
+  }
+  return Math.round(n * 100) / 100;
+}
+
 // ============================================================================
 // GETTERS — EMAIL CONFIG
 // ============================================================================

@@ -675,6 +675,176 @@ var HC = (function () {
   }
 
   /**
+   * Which org code a position's travel budget belongs to, at a given level.
+   *
+   * Walks UP the STORED Parent_Org_Code chain until it reaches a row whose
+   * Org_Level matches, and returns that code.
+   *
+   * WHY THE STORED PARENT AND NOT THE CODE'S LENGTH
+   * -----------------------------------------------
+   * Deriving the tree from code length produced a wrong answer and it was not
+   * obvious: FCBA is under FCB, not FCA, and the '0' in FCA0A is a filler, so
+   * FCA0A's parent is FCA and FCA0 does not exist. Depth also varies by branch
+   * — FCA has no OFFICE level while FCB and FCC do — so FCA0A is two levels
+   * deep where FCBAA is three. Commit e421c98 stored both columns for exactly
+   * this reason.
+   *
+   * CYCLE PROTECTION IS NOT THEORETICAL. HC_Orgs is hand-maintainable and a
+   * typo making FCA the parent of FC would hang the walk. The visited set
+   * returns null instead, so one bad row costs one position's attribution
+   * rather than the whole dashboard.
+   *
+   * @param {string} code      the position's Org_Code
+   * @param {Object} byCode    orgCode -> org record
+   * @param {string} wantLevel 'SERVICE_CENTER' | 'DAC' | 'OFFICE' | ...
+   * @returns {string} the matching ancestor's code, or '' when none
+   */
+  function orgAncestorAtLevel(code, byCode, wantLevel) {
+    var want = _str_(wantLevel).toUpperCase();
+    if (!want) return '';
+
+    // Start from the resolved row, not from the raw string: a code absent from
+    // HC_Orgs still resolves to its nearest listed ancestor by prefix, so a
+    // position in an uncatalogued sub-org is attributed rather than dropped.
+    var node = resolveOrgByCode(code, byCode);
+    var visited = {};
+    var depth = 0;
+
+    while (node && depth < 25) {
+      var nodeCode = _str_(node.orgCode).toUpperCase();
+      if (visited[nodeCode]) {
+        console.warn('HC.orgAncestorAtLevel: parent cycle at org ' + nodeCode);
+        return '';
+      }
+      visited[nodeCode] = true;
+
+      if (_str_(node.orgLevel).toUpperCase() === want) return nodeCode;
+
+      var parent = _str_(node.parentOrgCode).toUpperCase();
+      if (!parent) return '';
+      node = byCode[parent] || null;
+      depth++;
+    }
+    return '';
+  }
+
+  /**
+   * Filled and authorised headcount per service centre.
+   *
+   * THIS IS THE DENOMINATOR FOR THE PER-CAPITA BUDGET SPLIT, so what it counts
+   * is a policy decision, not an implementation detail.
+   *
+   * @clolry chose FILLED positions: a vacant seat does not travel. Both counts
+   * are returned regardless, because the choice is only auditable if the
+   * dashboard can show what the other basis would have been. On the real
+   * roster the difference is large and uneven — FCC0B is 9 filled against 8
+   * vacant, and switching basis would nearly double its allocation.
+   *
+   * KEYED ON ORG CODE, NEVER ON NAME
+   * --------------------------------
+   * @clolry: "Due to the service center name repetition, please ensure nothing
+   * ever is based on the name and that we always use the org code."
+   *
+   * He is right and it is not a style preference. 'Acquisition Service Center
+   * 1' is BOTH FCBAB (under Office of MAS) and FCBBA (under Office of Non-MAS),
+   * and the same holds for 2 and 3. A name-keyed roll-up would silently merge
+   * six real service centres into three and hand one DAC's money to another.
+   * `displayName` is carried for rendering only; test_budget_per_capita.js
+   * §2 asserts no allocation path reads it.
+   *
+   * POSITIONS ABOVE THE SERVICE-CENTRE LEVEL ARE NOT DISCARDED
+   * ----------------------------------------------------------
+   * 17 people sit directly at a DAC or office code, above any service centre.
+   * They are returned under orgCode '' with `isAboveServiceCentre: true`, so
+   * they still draw a per-capita share. Dropping them would inflate every
+   * service centre's share of its DAC and the total would still foot, which is
+   * the kind of error nobody finds.
+   *
+   * @param {Array} [positions] pre-fetched bundle, to avoid a second read
+   * @returns {{success: boolean, byOrgCode: Object, byDac: Object,
+   *            counted: number, unattributed: number, error?: string}}
+   */
+  function hcServiceCentreHeadcount(positions) {
+    try {
+      var data = positions;
+      if (!data) {
+        var bundle = hcGetBundle();
+        if (!bundle.success) {
+          return {
+            success: false, error: bundle.error || 'bundle unavailable',
+            byOrgCode: {}, byDac: {}, counted: 0, unattributed: 0
+          };
+        }
+        data = bundle.data;
+      }
+
+      var orgs = hcGetOrgHierarchy();
+      var byCode = {};
+      for (var o = 0; o < orgs.length; o++) {
+        byCode[_str_(orgs[o].orgCode).toUpperCase()] = orgs[o];
+      }
+
+      var byOrgCode = {};
+      var byDac = {};
+      var counted = 0;
+      var unattributed = 0;
+
+      for (var i = 0; i < data.length; i++) {
+        var p = data[i];
+        if (!p) continue;
+
+        var dac = orgAncestorAtLevel(p.orgCode, byCode, 'DAC');
+        if (!dac) {
+          // The AC itself (FC) has no DAC ancestor and is its own pool.
+          dac = orgAncestorAtLevel(p.orgCode, byCode, 'AC');
+        }
+        if (!dac) { unattributed++; continue; }
+
+        var sc = orgAncestorAtLevel(p.orgCode, byCode, 'SERVICE_CENTER');
+        var key = dac + '|' + sc;          // '' sc = above the SC level
+
+        if (!byOrgCode[key]) {
+          byOrgCode[key] = {
+            orgCode: sc,
+            dacOrgCode: dac,
+            isAboveServiceCentre: !sc,
+            // Display only. Not a key, never compared.
+            displayName: sc ? _str_((byCode[sc] || {}).division) : '',
+            filled: 0, vacant: 0, authorised: 0
+          };
+        }
+        if (!byDac[dac]) byDac[dac] = { filled: 0, vacant: 0, authorised: 0 };
+
+        // _occupancy_ already uppercased and defaulted blank to FILLED, so
+        // this is an exact comparison rather than a defensive one. OBLIGATED
+        // counts as NOT filled: the seat is committed to someone who is not
+        // in it yet, so nobody travels against it this year.
+        var isFilled = p.occupancyStatus === 'FILLED';
+
+        byOrgCode[key].authorised++;
+        byDac[dac].authorised++;
+        if (isFilled) { byOrgCode[key].filled++; byDac[dac].filled++; }
+        else { byOrgCode[key].vacant++; byDac[dac].vacant++; }
+        counted++;
+      }
+
+      return {
+        success: true,
+        byOrgCode: byOrgCode,
+        byDac: byDac,
+        counted: counted,
+        unattributed: unattributed
+      };
+    } catch (e) {
+      console.error('HC.hcServiceCentreHeadcount failed: ' + e.message);
+      return {
+        success: false, error: e.message,
+        byOrgCode: {}, byDac: {}, counted: 0, unattributed: 0
+      };
+    }
+  }
+
+  /**
    * Reduced projection for the public org chart.
    *
    * Emits ONLY workgroup name, supervisor name and employee names — no email,
@@ -863,6 +1033,12 @@ var HC = (function () {
     hcWalkSupervisorChain:  hcWalkSupervisorChain,
     hcFindDivisionDirector: hcFindDivisionDirector,
     hcGetOrgChartTree:      hcGetOrgChartTree,
+
+    // Per-capita budget support. Counts only — no names, no emails, no
+    // position numbers — so these sit OUTSIDE the HCPrivacy allow-list rather
+    // than being sanitised by it.
+    hcServiceCentreHeadcount: hcServiceCentreHeadcount,
+    orgAncestorAtLevel:       orgAncestorAtLevel,
 
     // Shared so the validator and the roster editor apply the SAME rule as
     // the join. A second implementation would disagree with the data.

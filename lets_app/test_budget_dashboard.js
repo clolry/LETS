@@ -112,11 +112,21 @@ console.log('1. WHY BudgetEngine.js could not simply be wired up');
 }
 
 // ---------------------------------------------------------------------------
-console.log('\n2. the arithmetic reproduces the mockup\'s intent exactly');
+console.log('\n2. the arithmetic reproduces @clolry\'s FY27 sheet exactly');
 {
-  // The mockup's set-aside figures were computed by hand by whoever built it:
-  // OMD $15,060, IDV $25,280, CM $68,160, total $108,500. If this code agrees
-  // to the cent, the formula matches what @clolry has been reading.
+  // These are the figures @clolry circulated to the DACs. If this code agrees
+  // to the cent, the formula matches what they have been reading.
+  //
+  // The sheet moved twice since the dashboard was first built:
+  //
+  //   1. COE went from CM-only to shared. @clolry: "we finally decided to
+  //      share the costs for COE proportionately across the orgs."
+  //   2. The FY27 Event Plan ($440,000 of travel) and the FC senior advisor
+  //      ($48,000) were added as shared lines.
+  //
+  // So the old $108,500 total is gone. It is NOT restated here as a literal
+  // and then compared to itself — each component is derived from the published
+  // per-DAC columns, so a config edit that changes one line fails here.
   const t = load([]);
   const r = t.run('getBudgetDashboard()');
   ok('builds', r.success === true, r.error);
@@ -131,35 +141,183 @@ console.log('\n2. the arithmetic reproduces the mockup\'s intent exactly');
   ok('total baseline is $997,000', r.data.totals.baseline === 997000,
      r.data.totals.baseline);
 
-  // $12k LC + 15.3% of the $20k FO gap = $15,060.
-  ok('OMD set-asides are $15,060', by.OMD.setAsides.total === 15060,
-     by.OMD.setAsides);
-  ok('IDV set-asides are $25,280', by.IDV.setAsides.total === 25280,
-     by.IDV.setAsides);
-  // $12k LC + $52.5k COE + 18.3% of $20k = $68,160.
-  ok('CM set-asides are $68,160', by.CM.setAsides.total === 68160,
-     by.CM.setAsides);
-  ok('total set-asides are $108,500', r.data.totals.setAsides === 108500,
-     r.data.totals.setAsides);
+  // Each DAC's own LC travel is $12,000, unshared.
+  ok('each DAC self-funds $12,000 of LC travel',
+     by.OMD.setAsides.selfFunded === 12000 &&
+     by.IDV.setAsides.selfFunded === 12000 &&
+     by.CM.setAsides.selfFunded === 12000,
+     [by.OMD.setAsides.selfFunded, by.IDV.setAsides.selfFunded,
+      by.CM.setAsides.selfFunded]);
 
-  // THE FRONT OFFICE MUST NOT CARRY A SHARE OF ITS OWN GAP. Charging it would
-  // be circular, and the mockup correctly showed $0.
-  ok('the Front Office carries no set-asides', by.FO.setAsides.total === 0,
-     by.FO.setAsides);
-  ok('and the shared line is attributed to DACs only',
-     by.OMD.setAsides.enterpriseShared === 3060 &&
-     by.IDV.setAsides.enterpriseShared === 13280 &&
-     by.CM.setAsides.enterpriseShared === 3660,
-     [by.OMD.setAsides.enterpriseShared, by.IDV.setAsides.enterpriseShared,
-      by.CM.setAsides.enterpriseShared]);
-
-  // The three DAC shares must account for the whole shared set-aside, or the
-  // enterprise cost is under-recovered and nobody notices.
+  // The shared pool: $20,000 FO gap + $440,000 event plan + $52,500 COE +
+  // $48,000 advisor = $560,500.
   const sharedSum = by.OMD.setAsides.enterpriseShared +
                     by.IDV.setAsides.enterpriseShared +
                     by.CM.setAsides.enterpriseShared;
-  ok('and the three shares sum to the full $20,000', sharedSum === 20000, sharedSum);
+  ok('the three DAC shares account for the whole $560,500 shared pool',
+     sharedSum === 560500, sharedSum);
+  ok('split 15.3 / 66.4 / 18.3',
+     by.OMD.setAsides.enterpriseShared === 85756.50 &&
+     by.IDV.setAsides.enterpriseShared === 372172.00 &&
+     by.CM.setAsides.enterpriseShared === 102571.50,
+     [by.OMD.setAsides.enterpriseShared, by.IDV.setAsides.enterpriseShared,
+      by.CM.setAsides.enterpriseShared]);
+
+  // @clolry's published Total Set-Asides column, with the advisor added.
+  ok('OMD set-asides are $97,756.50', by.OMD.setAsides.total === 97756.50,
+     by.OMD.setAsides.total);
+  ok('IDV set-asides are $384,172.00', by.IDV.setAsides.total === 384172.00,
+     by.IDV.setAsides.total);
+  ok('CM set-asides are $114,571.50', by.CM.setAsides.total === 114571.50,
+     by.CM.setAsides.total);
+
+  // His published Discretionary Balance column.
+  ok('OMD discretionary is $54,243.50', by.OMD.discretionaryBase === 54243.50,
+     by.OMD.discretionaryBase);
+  ok('IDV discretionary is $274,828.00', by.IDV.discretionaryBase === 274828.00,
+     by.IDV.discretionaryBase);
+  ok('CM discretionary is $67,428.50', by.CM.discretionaryBase === 67428.50,
+     by.CM.discretionaryBase);
+  ok('and the ASD total is $396,500', r.data.totals.discretionaryBase === 396500,
+     r.data.totals.discretionaryBase);
+
+  // THE FRONT OFFICE MUST NOT CARRY A SHARE OF ITS OWN GAP. Charging it would
+  // be circular, and @clolry's sheet correctly shows $0.00 in every shared row
+  // of the FO column.
+  ok('the Front Office carries no SHARED set-aside',
+     by.FO.setAsides.enterpriseShared === 0, by.FO.setAsides);
+
+  // But its whole $4,000 baseline IS committed to LC travel, which is why his
+  // sheet shows ($4,000) in the FO set-aside column and $0.00 remaining. FO
+  // appearing to hold $4,000 of discretionary money would be wrong.
+  ok('FO\'s entire baseline is committed, leaving $0 discretionary',
+     by.FO.setAsides.selfFunded === 4000 && by.FO.discretionaryBase === 0,
+     [by.FO.setAsides.selfFunded, by.FO.discretionaryBase]);
+
+  // THE FIGURE A READER MISJUDGES WITHOUT. FO's $4,000 baseline understates it
+  // 18-fold: the DACs fund its $20,000 LC gap and $48,000 of advisor travel.
+  ok('FO reports $72,000 funded in on its behalf',
+     by.FO.fundedIn.total === 72000, by.FO.fundedIn);
+  ok('and the DACs report none, because they fund rather than receive',
+     by.OMD.fundedIn.total === 0 && by.IDV.fundedIn.total === 0 &&
+     by.CM.fundedIn.total === 0);
+
+  // NOT DOUBLE-COUNTED. The funded-in total is $68,000 of DAC money already
+  // charged to the DACs above; adding it to an allocation would overstate ASD.
+  ok('funded-in is reported separately and not added to any allocation',
+     r.data.totals.baseline === 997000 &&
+     r.data.totals.discretionaryBase === 396500,
+     'adding FO\'s $68,000 of DAC-funded lines would inflate both');
+
+  // The three group subtotals @clolry's sheet shows as separate blocks.
+  ok('set-asides are grouped the way the FY27 sheet groups them',
+     by.OMD.setAsides.byGroup.DAC_SPECIFIC === 12000 &&
+     by.OMD.setAsides.byGroup.EVENT_PLAN === 67320 &&
+     by.OMD.setAsides.byGroup.SHARED_LEADERSHIP === 18436.50,
+     by.OMD.setAsides.byGroup);
+
+  // $150,000 of the $590,000 Event Plan is funded from MARKETING, not travel.
+  // Asserted so that adding it later is a deliberate act with a failing test
+  // rather than a quiet correction.
+  const eventLines = by.IDV.setAsides.lines.filter(l => l.group === 'EVENT_PLAN');
+  ok('the event plan sets aside 23 lines totalling $440,000 of travel',
+     eventLines.length === 23 &&
+     Math.round(eventLines.reduce((s, l) => s + l.amount, 0) * 100) / 100 === 292160,
+     [eventLines.length, eventLines.reduce((s, l) => s + l.amount, 0)]);
 }
+
+// ---------------------------------------------------------------------------
+console.log('\n2b. the configurable set-aside amount');
+{
+  // @clolry: "Please make it configurable but yes, you were correct that it's
+  // $48k". The estimate is "about twice a month at approximately $2k/trip" —
+  // both halves approximate, so it must move without a deploy.
+  const cfg = require('./server/00_config/BudgetConfig.js');
+  const advisor = cfg.defaultSetAsides.find(
+    s => s.id === 'SETASIDE_FC_SENIOR_ADVISOR');
+
+  ok('the advisor line exists and names a property key',
+     !!advisor && advisor.amountPropertyKey === 'BUDGET_FC_ADVISOR_AMOUNT',
+     advisor);
+  ok('and defaults to $48,000, which is 2 trips x 12 months x $2,000',
+     advisor.amount === 48000, advisor.amount);
+  ok('it is SHARED, not charged to FO',
+     advisor.type === 'ENTERPRISE_SHARED' && advisor.benefitsOffice === 'FO',
+     advisor);
+
+  // BudgetConfig.js is evaluated before any user code on every execution and
+  // a failure there takes the whole web app down. So the config must carry a
+  // KEY and the resolution must happen at read time — it must NOT call
+  // PropertiesService at file scope.
+  //
+  // COMMENTS ARE STRIPPED FIRST. The naive grep for /PropertiesService/ FAILED
+  // when written, because the file's own comment EXPLAINS why it must not call
+  // PropertiesService. That is the playbook's recurring trap — an assertion
+  // against source text that a comment satisfies — and it cuts both ways: here
+  // it produced a false failure, but the same shape silently passes when the
+  // comment happens to contain the string the guard wants to see.
+  const cfgSrc = fs.readFileSync('lets_app/server/00_config/BudgetConfig.js', 'utf8');
+  const cfgCode = cfgSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  ok('the comment-stripper left the code intact',
+     /var LETS_CONFIG = \{/.test(cfgCode) && !/MUST BE `var`/.test(cfgCode));
+  ok('BudgetConfig does NOT call PropertiesService',
+     !/PropertiesService/.test(cfgCode),
+     'it is evaluated before user code; a failure there takes down the app');
+
+  const dashSrc = fs.readFileSync('lets_app/server/40_domain/BudgetDashboard.js', 'utf8');
+  ok('the dashboard resolves the override at read time',
+     /getSetAsideAmountOverride/.test(dashSrc));
+
+  // THE DEFECT THIS SHAPE PREVENTS. The dashboard runs in a context where
+  // Props.js may not have loaded — Apps Script load order is alphabetical by
+  // directory — and a budget figure must never render blank because a lookup
+  // failed.
+  const t = load([]);
+  const r = t.run('getBudgetDashboard()');
+  ok('with no Props.js present it falls back to the configured amount',
+     r.success === true &&
+     r.data.offices.find(o => o.officeCode === 'IDV').setAsides.total === 384172.00,
+     'the test harness loads no Props.js, so this exercises the fallback');
+
+  // And the resolver itself, executed rather than read.
+  const pctx = vm.createContext({
+    console: { log() {}, warn() {}, error() {} },
+    String, Number, Math, parseFloat, isNaN, Object, JSON, Date, Boolean, Array,
+    RegExp, Error, parseInt
+  });
+  const store = { BUDGET_FC_ADVISOR_AMOUNT: null };
+  vm.runInContext(
+    'var __store = ' + JSON.stringify(store) + ';\n' +
+    'var PropertiesService = {\n' +
+    '  getScriptProperties: function () {\n' +
+    '    return { getProperty: function (k) { return __store[k]; } };\n' +
+    '  }\n' +
+    '};\n', pctx);
+  vm.runInContext(fs.readFileSync('lets_app/server/00_config/Props.js', 'utf8'),
+                  pctx, { filename: 'Props.js' });
+  const call = (v) => {
+    vm.runInContext('__store.BUDGET_FC_ADVISOR_AMOUNT = ' + JSON.stringify(v) + ';', pctx);
+    return vm.runInContext(
+      'getSetAsideAmountOverride("BUDGET_FC_ADVISOR_AMOUNT", 48000)', pctx);
+  };
+
+  ok('an unset property yields the default', call(null) === 48000);
+  ok('a blank property yields the default', call('   ') === 48000);
+  ok('a set property wins', call('36000') === 36000);
+  ok('and tolerates how a human types money', call('$42,500.50') === 42500.5);
+
+  // A DELIBERATE ZERO MUST SURVIVE. `parseFloat(x) || default` would turn it
+  // into $48,000 — the standard idiom, and wrong here: zero is how an admin
+  // retires a line without a deploy.
+  ok('a configured $0 is HONOURED, not treated as unset', call('0') === 0,
+     'a `|| fallback` idiom would silently restore $48,000');
+
+  // A NEGATIVE WOULD ADD money to a DAC's balance — funds that do not exist,
+  // with nothing on the page to show it happened.
+  ok('a negative amount is refused, not clamped', call('-5000') === 48000);
+  ok('and garbage falls back', call('soon') === 48000);
+}
+
 
 // ---------------------------------------------------------------------------
 console.log('\n3. statuses are classified by what they mean to a budget');
@@ -205,10 +363,10 @@ console.log('\n3. statuses are classified by what they mean to a budget');
      'Pending_DD_Confirmation and Pending_Correction are TitleCase, unlike the rest');
 
   // Available = base - committed - actual.
-  ok('available subtracts both', by.OMD.available === 136940 - 5000,
+  ok('available subtracts both', by.OMD.available === 54243.50 - 5000,
      by.OMD.available);
   ok('and utilisation is a percentage of the discretionary base',
-     by.OMD.utilisationPct === 3.7, by.OMD.utilisationPct);
+     by.OMD.utilisationPct === 9.2, by.OMD.utilisationPct);
 }
 
 // ---------------------------------------------------------------------------
@@ -412,9 +570,21 @@ console.log('\n8. negative controls (the suite must be able to fail)');
   }
 
   // 8b — drop unattributable requests instead of reporting them. §4 must fail.
-  const drops = src.replace(
-    `        out.unattributed.count++;`,
-    `        out.unattributed.count += 0;`);
+  //
+  // THE PATCH TARGET MUST BE UNIQUE. `out.unattributed.count++;` at the same
+  // indentation now appears TWICE — once in spendByOffice and once in
+  // spendByServiceCentre — and String.replace takes the first match, which is
+  // the service-centre one. This control therefore passed while patching code
+  // §4 does not exercise: a negative control that proves nothing, which is
+  // worse than none because it is counted as evidence. Anchored on the
+  // following line, which is unique to spendByOffice.
+  const dropTarget = `        out.unattributed.count++;
+        if (isCommitted) out.unattributed.committed += amount;`;
+  ok('the patch target is unique to spendByOffice',
+     src.split(dropTarget).length === 2, src.split(dropTarget).length - 1);
+  const drops = src.replace(dropTarget,
+    `        out.unattributed.count += 0;
+        if (isCommitted) out.unattributed.committed += amount;`);
   ok('negative control patched the unattributed counter', drops !== src);
   {
     const ctx = vm.createContext({
