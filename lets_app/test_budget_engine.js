@@ -31,7 +31,12 @@ console.log('✔ Proportional shares match specification (15.3%, 66.4%, 18.3%)')
 // and the assertion below used to read `cmSetAsides.selfFundedTotal === 64500`
 // (12,000 LC + 52,500 COE). @clolry: "we finally decided to share the costs
 // for COE proportionately across the orgs."
-const SHARED_POOL = 20000 + 440000 + 52500 + 48000;   // 560,500
+// The advisor's $48,000 is NOT in this pool. It was briefly shared and the
+// Chief of Staff rejected it — @clolry: "he does not want to take additional
+// funds from the orgs ... please restore the $48k back to the DACs
+// discretionary budgets." It is now FUNDED_FROM_RELEASES at $0, paid for by
+// releasing unused Q1 event reservations. See 40_domain/SetAsideRelease.js.
+const SHARED_POOL = 20000 + 440000 + 52500;   // 512,500
 
 const omdSetAsides = BudgetEngine.calculateOfficeSetAsides('OMD', CONFIG.defaultSetAsides, sharesResult.shares);
 console.log('\n2. OMD Set-Asides:');
@@ -39,19 +44,19 @@ console.log('   Self-Funded (DAC LC):', omdSetAsides.selfFundedTotal);
 console.log('   Enterprise Shared (15.3% of $560,500):', omdSetAsides.enterpriseSharedTotal);
 console.log('   Total OMD Set-Asides:', omdSetAsides.totalSetAsides);
 assert.strictEqual(omdSetAsides.selfFundedTotal, 12000);
-assert.strictEqual(omdSetAsides.enterpriseSharedTotal, SHARED_POOL * 0.153); // 85,756.50
-assert.strictEqual(omdSetAsides.totalSetAsides, 97756.50);
+assert.strictEqual(omdSetAsides.enterpriseSharedTotal, SHARED_POOL * 0.153); // 78,412.50
+assert.strictEqual(omdSetAsides.totalSetAsides, 90412.50);
 
 const idvSetAsides = BudgetEngine.calculateOfficeSetAsides('IDV', CONFIG.defaultSetAsides, sharesResult.shares);
 assert.strictEqual(idvSetAsides.selfFundedTotal, 12000);
-assert.strictEqual(idvSetAsides.enterpriseSharedTotal, SHARED_POOL * 0.664); // 372,172.00
-assert.strictEqual(idvSetAsides.totalSetAsides, 384172.00);
+assert.strictEqual(idvSetAsides.enterpriseSharedTotal, SHARED_POOL * 0.664); // 340,300.00
+assert.strictEqual(idvSetAsides.totalSetAsides, 352300.00);
 
 const cmSetAsides = BudgetEngine.calculateOfficeSetAsides('CM', CONFIG.defaultSetAsides, sharesResult.shares);
 // 12,000 LC only now. The COE's $52,500 is in the shared pool above.
 assert.strictEqual(cmSetAsides.selfFundedTotal, 12000);
-assert.strictEqual(cmSetAsides.enterpriseSharedTotal, SHARED_POOL * 0.183); // 102,571.50
-assert.strictEqual(cmSetAsides.totalSetAsides, 114571.50);
+assert.strictEqual(cmSetAsides.enterpriseSharedTotal, SHARED_POOL * 0.183); // 93,787.50
+assert.strictEqual(cmSetAsides.totalSetAsides, 105787.50);
 
 // The three shares must account for the WHOLE pool, or the enterprise cost is
 // under-recovered and no single DAC row looks wrong.
@@ -87,16 +92,16 @@ console.log('   Remaining Discretionary Balance:', omdInitial.remainingDiscretio
 // manages against all year, so they are asserted as LITERALS rather than
 // re-derived from the config: a config edit that moves them must fail here
 // loudly, not quietly compute a new "correct" answer and agree with itself.
-// 152,000 - 97,756.50 = 54,243.50
-assert.strictEqual(omdInitial.remainingDiscretionaryBalance, 54243.50);
+// 152,000 - 90,412.50 = 61,587.50
+assert.strictEqual(omdInitial.remainingDiscretionaryBalance, 61587.50);
 
 const idvInitial = BudgetEngine.calculateOfficeBudgetSummary('IDV', stateInitial);
-// 659,000 - 384,172.00 = 274,828.00
-assert.strictEqual(idvInitial.remainingDiscretionaryBalance, 274828.00);
+// 659,000 - 352,300.00 = 306,700.00
+assert.strictEqual(idvInitial.remainingDiscretionaryBalance, 306700.00);
 
 const cmInitial = BudgetEngine.calculateOfficeBudgetSummary('CM', stateInitial);
-// 182,000 - 114,571.50 = 67,428.50
-assert.strictEqual(cmInitial.remainingDiscretionaryBalance, 67428.50);
+// 182,000 - 105,787.50 = 76,212.50
+assert.strictEqual(cmInitial.remainingDiscretionaryBalance, 76212.50);
 
 const foInitial = BudgetEngine.calculateOfficeBudgetSummary('FO', stateInitial);
 // 4,000 - 4,000 = 0
@@ -105,9 +110,9 @@ assert.strictEqual(foInitial.remainingDiscretionaryBalance, 0);
 assert.strictEqual(
   omdInitial.remainingDiscretionaryBalance + idvInitial.remainingDiscretionaryBalance +
   cmInitial.remainingDiscretionaryBalance + foInitial.remainingDiscretionaryBalance,
-  396500);
+  444500);
 console.log('✔ Discretionary balances match the published FY27 figures ' +
-            '(OMD $54,243.50, IDV $274,828.00, CM $67,428.50, total $396,500)');
+            '(OMD $61,587.50, IDV $306,700.00, CM $76,212.50, total $444,500)');
 
 // 4. Verify Expense Commitment & Double-Counting Prevention
 console.log('\n4. Testing Expense Lifecycle & Double-Counting Prevention:');
@@ -129,9 +134,9 @@ const stateWithTrip1 = {
 const omdWithEstimate = BudgetEngine.calculateOfficeBudgetSummary('OMD', stateWithTrip1);
 console.log('   Pending Estimate committed: $5,000');
 console.log('   Remaining Discretionary Balance:', omdWithEstimate.remainingDiscretionaryBalance);
-// 54,243.50 - 5,000 = 49,243.50
+// 61,587.50 - 5,000 = 56,587.50
 assert.strictEqual(omdWithEstimate.pendingEstimates, 5000);
-assert.strictEqual(omdWithEstimate.remainingDiscretionaryBalance, 49243.50);
+assert.strictEqual(omdWithEstimate.remainingDiscretionaryBalance, 56587.50);
 
 // Trip 1 completes and reconciles with Actual of $5,400 (Variance: +$400)
 const stateWithTrip1Reconciled = {
@@ -154,10 +159,10 @@ console.log('   Trip Reconciled: Actuals posted $5,400');
 console.log('   Pending Estimates (cleared):', omdReconciled.pendingEstimates);
 console.log('   Posted Actuals:', omdReconciled.postedActuals);
 console.log('   Remaining Discretionary Balance:', omdReconciled.remainingDiscretionaryBalance);
-// 54,243.50 - 5,400 = 48,843.50
+// 61,587.50 - 5,400 = 56,187.50
 assert.strictEqual(omdReconciled.pendingEstimates, 0);
 assert.strictEqual(omdReconciled.postedActuals, 5400);
-assert.strictEqual(omdReconciled.remainingDiscretionaryBalance, 48843.50);
+assert.strictEqual(omdReconciled.remainingDiscretionaryBalance, 56187.50);
 console.log('✔ Double-counting prevented: estimate cleared and actual posted');
 
 // 5. Verify Mid-Year Budget Adjustments
@@ -181,8 +186,8 @@ const omdAdjusted = BudgetEngine.calculateOfficeBudgetSummary('OMD', stateWithAd
 console.log('   OMD Total Allocation with +$10k:', omdAdjusted.totalAllocation);
 console.log('   Revised Available Discretionary Balance:', omdAdjusted.remainingDiscretionaryBalance);
 assert.strictEqual(omdAdjusted.totalAllocation, 162000);
-// 162,000 - 97,756.50 - 5,400 = 58,843.50
-assert.strictEqual(omdAdjusted.remainingDiscretionaryBalance, 58843.50);
+// 162,000 - 90,412.50 - 5,400 = 66,187.50
+assert.strictEqual(omdAdjusted.remainingDiscretionaryBalance, 66187.50);
 console.log('✔ Mid-year budget adjustments successfully updated and reconciled');
 
 // 6. Verify Budget Check Gatekeeper

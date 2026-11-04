@@ -286,31 +286,6 @@ var LETS_CONFIG = {
                    '(Larry and Udaya) LC travel gap'
     },
     {
-      // @clolry: "FC has a senior advisor that is required to travel to DC
-      // about twice a month at approximately $2k/trip."
-      //
-      // 2 trips x 12 months x $2,000 = $48,000. @clolry first said ~$24,000
-      // and confirmed $48,000 once the arithmetic was shown, and asked for the
-      // figure to be configurable — so the amount below is a DEFAULT and
-      // BUDGET_FC_ADVISOR_AMOUNT overrides it without a deploy.
-      //
-      // Resolved at read time by BudgetDashboard, not here: this file is
-      // evaluated on every execution and must not depend on
-      // PropertiesService. See the `var` note at the top — a load-time failure
-      // in this file takes down the whole web app, including the travel
-      // workflow that does not use this object at all.
-      id: 'SETASIDE_FC_SENIOR_ADVISOR',
-      title: 'FC Senior Advisor - DC travel',
-      group: 'SHARED_LEADERSHIP',
-      type: 'ENTERPRISE_SHARED',
-      targetOffice: 'SHARED_DAC',
-      benefitsOffice: 'FO',
-      amount: 48000.00,
-      amountPropertyKey: 'BUDGET_FC_ADVISOR_AMOUNT',
-      description: 'Recurring DC travel for the FC senior advisor, ' +
-                   'approximately twice monthly at $2,000 per trip'
-    },
-    {
       // MOVED FROM SELF_FUNDED. This was 'funded solely by CM DAC' and is now
       // shared, on @clolry's confirmation: "we finally decided to share the
       // costs for COE proportionately across the orgs."
@@ -326,6 +301,66 @@ var LETS_CONFIG = {
       amount: 52500.00,
       description: 'Center of Excellence for Outcome Based Contracting, ' +
                    'shared proportionately across the three DACs'
+    },
+
+    // ---- The FC senior advisor, funded from RELEASED set-asides ------------
+    //
+    // WHY THIS LINE IS $0 AND NOT $48,000
+    // -----------------------------------
+    // It was briefly ENTERPRISE_SHARED at $48,000, charging the DACs
+    // $7,344 / $31,872 / $8,784 and cutting ASD discretionary from $444,500 to
+    // $396,500. The Chief of Staff rejected that.
+    //
+    // @clolry: "he does not want to take additional funds from the orgs to
+    // fund the FC senior advisor's $48k of travel - there are some events that
+    // we set-aside funds in Q1 that did not happen so we think that we should
+    // be able to pull from those set-aside funds for his travel - please
+    // restore the $48k back to the DACs discretionary budgets."
+    //
+    // So the requirement is intact — the advisor still travels, and the cost is
+    // still real — but the FUNDING SOURCE moved from a new charge to money
+    // already reserved for Q1 events that did not happen. Q1 holds $50,000 of
+    // event-plan reservations, which is where the $48,000 comes from.
+    //
+    // THE AMOUNT IS 0 HERE ON PURPOSE. A released set-aside is a DATA event,
+    // not configuration: which event was cancelled, how much it held, who
+    // authorised the release and what the money went to are all facts that
+    // happen during the year. They live in Event_Set_Asides with Status
+    // RELEASED, and BudgetDashboard reads them — see SetAsideRelease.js.
+    //
+    // The line is kept rather than deleted so that:
+    //   - the advisor's travel has a named set-aside to draw against, which is
+    //     what makes the spend traceable to its funding decision;
+    //   - a reader asking "what happened to the $48k advisor line?" finds this
+    //     comment instead of a silent absence;
+    //   - restoring the shared charge, if the decision reverses again, is an
+    //     amount change rather than a reconstruction.
+    //
+    // fundedFromReleases marks it as expecting external funding, so the
+    // dashboard can show the advisor's commitments against released money and
+    // flag an overrun rather than presenting a $0 reservation as unlimited.
+    {
+      id: 'SETASIDE_FC_SENIOR_ADVISOR',
+      title: 'FC Senior Advisor - DC travel',
+      group: 'SHARED_LEADERSHIP',
+      // NOT ENTERPRISE_SHARED. That is the whole point of the change: a shared
+      // line is charged to the three DACs by proportional share, which is
+      // exactly what the Chief of Staff refused.
+      type: 'FUNDED_FROM_RELEASES',
+      targetOffice: 'SHARED_DAC',
+      benefitsOffice: 'FO',
+      amount: 0.00,
+      fundedFromReleases: true,
+      // The expected annual cost, for comparison against what has actually
+      // been released. NOT a charge — officeSetAsides must never add this to
+      // an office's set-aside total, which is asserted in
+      // test_budget_dashboard.js §2.
+      expectedAnnualCost: 48000.00,
+      amountPropertyKey: 'BUDGET_FC_ADVISOR_AMOUNT',
+      description: 'Recurring DC travel for the FC senior advisor, ' +
+                   'approximately twice monthly at $2,000 per trip. Funded ' +
+                   'from released Q1 event set-asides rather than from a new ' +
+                   'charge against the DACs.'
     }
 
   ].concat(_letsEventPlanSetAsides_()),

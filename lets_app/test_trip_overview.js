@@ -100,6 +100,31 @@ console.log('1. schema has somewhere to put them');
      S.Requests.indexOf('Grand_Total')>-1 &&
      S.Requests.indexOf('Grand_Total')<rpos[0],
      'Grand_Total is the ESTIMATE; Actual_Total is what GSA actually paid');
+
+  // THE SOURCE-PROVENANCE BLOCK. The daily liability-log sync needs to know
+  // which requests it owns, and the budget dashboard needs to know which
+  // fiscal year each cost is charged to.
+  //
+  // Charged_Fiscal_Year is NOT derivable from the travel dates. @clolry: "The
+  // date the expense report is filed is what determines which fiscal year it
+  // gets charged to." 11 of the 30 log rows are September 2026 travel and 8
+  // were filed in October, so they are FY27 money — about $9,200 that
+  // attributing by travel date would push into a closed year.
+  const SOURCE_BLOCK = ['Source_System','Source_Row_Key','Source_Row_Number',
+    'Source_Synced_At','Charged_Fiscal_Year','Charged_FY_Basis'];
+  const spos = SOURCE_BLOCK.map(c=>S.Requests.indexOf(c));
+  ok('every source-provenance column exists', spos.every(p=>p>-1),
+     SOURCE_BLOCK.filter((c,i)=>spos[i]===-1));
+  ok('they are contiguous', spos.every((p,i)=>i===0||p===spos[i-1]+1), spos);
+  ok('and sit after the event-catalogue link',
+     spos[0]===S.Requests.indexOf('Event_Proposal_ID')+1, spos[0]);
+
+  // The basis must be STORED, not inferred. A trip with no expense report yet
+  // has a provisional year, and a dashboard that cannot tell provisional from
+  // settled will present a guess as a fact.
+  ok('the fiscal-year basis is a column of its own',
+     S.Requests.indexOf('Charged_FY_Basis') > S.Requests.indexOf('Charged_Fiscal_Year'),
+     'the year without its basis is an unqualified claim');
 }
 
 console.log('2. submission row width matches the schema exactly');

@@ -285,6 +285,41 @@ function _distinctTravelerOrgCodes_(travelers) {
   return out;
 }
 
+/**
+ * The fiscal year a new request's cost is provisionally charged to.
+ *
+ * @clolry's rule is that the date the expense report is APPROVED decides the
+ * year — not the travel date, and not the submission date.
+ *
+ * A request being submitted has no expense report, so the real answer does not
+ * exist yet. The travel end date is the best proxy and is written with a
+ * PROVISIONAL_NOT_YET_APPROVED basis beside it, so the dashboard can say the
+ * attribution is not settled. The reconciliation overwrites both when the
+ * voucher is approved.
+ *
+ * Blank would be the other option and is worse: the dashboard groups by this
+ * column, so a blank would drop a brand-new request out of the current year's
+ * figures entirely — invisible, and in the direction that understates
+ * commitments.
+ *
+ * NOT shared with LiabilityLogSync.fiscalYearOf, deliberately. That module is
+ * an IIFE assigning to a global, and Apps Script load order within a directory
+ * is alphabetical: 30_services loads before 40_domain today, but relying on
+ * that for a value written into every submitted request would make the form
+ * depend on a sync service it has nothing else to do with. Both are asserted
+ * to agree in test_liability_log_sync.js.
+ *
+ * @param {string|Date} endDate travel end date
+ * @returns {string} 'FY27', or '' when the date is unusable
+ */
+function _chargedFiscalYear_(endDate) {
+  if (!endDate) return '';
+  var d = (endDate instanceof Date) ? endDate : new Date(endDate);
+  if (isNaN(d.getTime())) return '';
+  var fy = (d.getMonth() >= 9) ? d.getFullYear() + 1 : d.getFullYear();
+  return 'FY' + String(fy).slice(-2);
+}
+
 
 function submitTravelRequestV2(formData) {
   try {
@@ -476,7 +511,36 @@ function submitTravelRequestV2(formData) {
       // described an event that does not exist yet — the request is
       // submittable and a coordinator links it afterwards.
       formData.eventId || '',                                      // Event_ID
-      formData.eventProposalId || ''                               // Event_Proposal_ID
+      formData.eventProposalId || '',                              // Event_Proposal_ID
+
+      // ======================================================================
+      // EXTERNAL SOURCE PROVENANCE — blank for a LETS-native request
+      // ======================================================================
+      //
+      // Same positional reasoning as the reconciliation block above: appendRow
+      // pads a short row silently, so omitting these would not fail — it would
+      // leave the columns permanently blank on every form submission and the
+      // width guard in verify.yml would catch it later, as it has before.
+      //
+      // Source_System is blank rather than 'lets', because the question these
+      // answer is "did this come in from outside?". A request created on the
+      // form has no external source, and writing a value would mean the
+      // ledger's "imported" filter had to know to exclude it.
+      '',                                                          // Source_System
+      '',                                                          // Source_Row_Key
+      '',                                                          // Source_Row_Number
+      '',                                                          // Source_Synced_At
+
+      // Charged fiscal year. @clolry's rule is the date the expense report is
+      // APPROVED, which for a request being submitted has not happened — so
+      // the basis is PROVISIONAL and the year comes from the travel dates
+      // until the reconciliation posts an approval.
+      //
+      // Derived here rather than left blank: the budget dashboard groups by
+      // this column, and a blank would drop a brand-new request out of the
+      // current year's figures entirely.
+      _chargedFiscalYear_(formData.eventEndDate),                  // Charged_Fiscal_Year
+      'PROVISIONAL_NOT_YET_APPROVED'                               // Charged_FY_Basis
     ];
 
     // Write request row

@@ -117,16 +117,19 @@ console.log('\n2. the arithmetic reproduces @clolry\'s FY27 sheet exactly');
   // These are the figures @clolry circulated to the DACs. If this code agrees
   // to the cent, the formula matches what they have been reading.
   //
-  // The sheet moved twice since the dashboard was first built:
+  // THE SHARED POOL IS $512,500 AND THE ADVISOR IS NOT IN IT.
   //
-  //   1. COE went from CM-only to shared. @clolry: "we finally decided to
-  //      share the costs for COE proportionately across the orgs."
-  //   2. The FY27 Event Plan ($440,000 of travel) and the FC senior advisor
-  //      ($48,000) were added as shared lines.
+  // The advisor was briefly ENTERPRISE_SHARED at $48,000, which charged the
+  // DACs $7,344 / $31,872 / $8,784 and cut ASD discretionary to $396,500. The
+  // Chief of Staff rejected that — @clolry: "he does not want to take
+  // additional funds from the orgs to fund the FC senior advisor's $48k of
+  // travel ... please restore the $48k back to the DACs discretionary
+  // budgets."
   //
-  // So the old $108,500 total is gone. It is NOT restated here as a literal
-  // and then compared to itself — each component is derived from the published
-  // per-DAC columns, so a config edit that changes one line fails here.
+  // It is now FUNDED_FROM_RELEASES at $0, paid for by releasing Q1 event
+  // reservations that went unused. §2c covers that mechanism. The assertions
+  // below are the restored figures, which match @clolry's original table and
+  // the Allowance cell on his Travel Summary tab.
   const t = load([]);
   const r = t.run('getBudgetDashboard()');
   ok('builds', r.success === true, r.error);
@@ -149,37 +152,50 @@ console.log('\n2. the arithmetic reproduces @clolry\'s FY27 sheet exactly');
      [by.OMD.setAsides.selfFunded, by.IDV.setAsides.selfFunded,
       by.CM.setAsides.selfFunded]);
 
-  // The shared pool: $20,000 FO gap + $440,000 event plan + $52,500 COE +
-  // $48,000 advisor = $560,500.
+  // The shared pool: $20,000 FO gap + $440,000 event plan + $52,500 COE.
+  // The advisor's $48,000 is NOT here — that is the Chief of Staff's decision,
+  // expressed as arithmetic.
   const sharedSum = by.OMD.setAsides.enterpriseShared +
                     by.IDV.setAsides.enterpriseShared +
                     by.CM.setAsides.enterpriseShared;
-  ok('the three DAC shares account for the whole $560,500 shared pool',
-     sharedSum === 560500, sharedSum);
+  ok('the three DAC shares account for the whole $512,500 shared pool',
+     sharedSum === 512500, sharedSum);
   ok('split 15.3 / 66.4 / 18.3',
-     by.OMD.setAsides.enterpriseShared === 85756.50 &&
-     by.IDV.setAsides.enterpriseShared === 372172.00 &&
-     by.CM.setAsides.enterpriseShared === 102571.50,
+     by.OMD.setAsides.enterpriseShared === 78412.50 &&
+     by.IDV.setAsides.enterpriseShared === 340300.00 &&
+     by.CM.setAsides.enterpriseShared === 93787.50,
      [by.OMD.setAsides.enterpriseShared, by.IDV.setAsides.enterpriseShared,
       by.CM.setAsides.enterpriseShared]);
 
-  // @clolry's published Total Set-Asides column, with the advisor added.
-  ok('OMD set-asides are $97,756.50', by.OMD.setAsides.total === 97756.50,
+  // @clolry's published Total Set-Asides column.
+  ok('OMD set-asides are $90,412.50', by.OMD.setAsides.total === 90412.50,
      by.OMD.setAsides.total);
-  ok('IDV set-asides are $384,172.00', by.IDV.setAsides.total === 384172.00,
+  ok('IDV set-asides are $352,300.00', by.IDV.setAsides.total === 352300.00,
      by.IDV.setAsides.total);
-  ok('CM set-asides are $114,571.50', by.CM.setAsides.total === 114571.50,
+  ok('CM set-asides are $105,787.50', by.CM.setAsides.total === 105787.50,
      by.CM.setAsides.total);
 
-  // His published Discretionary Balance column.
-  ok('OMD discretionary is $54,243.50', by.OMD.discretionaryBase === 54243.50,
+  // His published Discretionary Balance column, restored.
+  ok('OMD discretionary is $61,587.50', by.OMD.discretionaryBase === 61587.50,
      by.OMD.discretionaryBase);
-  ok('IDV discretionary is $274,828.00', by.IDV.discretionaryBase === 274828.00,
+  ok('IDV discretionary is $306,700.00', by.IDV.discretionaryBase === 306700.00,
      by.IDV.discretionaryBase);
-  ok('CM discretionary is $67,428.50', by.CM.discretionaryBase === 67428.50,
+  ok('CM discretionary is $76,212.50', by.CM.discretionaryBase === 76212.50,
      by.CM.discretionaryBase);
-  ok('and the ASD total is $396,500', r.data.totals.discretionaryBase === 396500,
+  ok('and the ASD total is back to $444,500',
+     r.data.totals.discretionaryBase === 444500,
      r.data.totals.discretionaryBase);
+
+  // THE REGRESSION THAT WOULD COST THE DACS $48,000. If a future edit makes
+  // FUNDED_FROM_RELEASES chargeable, or flips the advisor back to
+  // ENTERPRISE_SHARED, every figure above moves and this names why.
+  const advisorLines = [].concat(
+    by.OMD.setAsides.lines, by.IDV.setAsides.lines, by.CM.setAsides.lines,
+    by.FO.setAsides.lines
+  ).filter(l => l.id === 'SETASIDE_FC_SENIOR_ADVISOR');
+  ok('the advisor line charges NO office anything',
+     advisorLines.length === 0,
+     'a FUNDED_FROM_RELEASES line must not appear in any office set-aside total');
 
   // THE FRONT OFFICE MUST NOT CARRY A SHARE OF ITS OWN GAP. Charging it would
   // be circular, and @clolry's sheet correctly shows $0.00 in every shared row
@@ -194,26 +210,37 @@ console.log('\n2. the arithmetic reproduces @clolry\'s FY27 sheet exactly');
      by.FO.setAsides.selfFunded === 4000 && by.FO.discretionaryBase === 0,
      [by.FO.setAsides.selfFunded, by.FO.discretionaryBase]);
 
-  // THE FIGURE A READER MISJUDGES WITHOUT. FO's $4,000 baseline understates it
-  // 18-fold: the DACs fund its $20,000 LC gap and $48,000 of advisor travel.
-  ok('FO reports $72,000 funded in on its behalf',
-     by.FO.fundedIn.total === 72000, by.FO.fundedIn);
+  // THE FIGURE A READER MISJUDGES WITHOUT. FO's $4,000 baseline understates
+  // it: the DACs fund its $20,000 LC gap on top.
+  //
+  // $24,000, not $72,000. The advisor's $48,000 is no longer a charge, and a
+  // FUNDED_FROM_RELEASES line contributes 0 to funded-in — counting its
+  // expectedAnnualCost here would claim $48,000 was funded when nothing has
+  // been released yet.
+  ok('FO reports $24,000 funded in on its behalf',
+     by.FO.fundedIn.total === 24000, by.FO.fundedIn);
+  ok('and the advisor appears as a release-funded line worth $0 so far',
+     by.FO.fundedIn.lines.some(l => l.id === 'SETASIDE_FC_SENIOR_ADVISOR' &&
+                                    l.amount === 0 &&
+                                    l.fundedFromReleases === true &&
+                                    l.expectedCost === 48000),
+     by.FO.fundedIn.lines);
   ok('and the DACs report none, because they fund rather than receive',
      by.OMD.fundedIn.total === 0 && by.IDV.fundedIn.total === 0 &&
      by.CM.fundedIn.total === 0);
 
-  // NOT DOUBLE-COUNTED. The funded-in total is $68,000 of DAC money already
-  // charged to the DACs above; adding it to an allocation would overstate ASD.
+  // NOT DOUBLE-COUNTED. The funded-in total is DAC money already charged to
+  // the DACs above; adding it to an allocation would overstate ASD.
   ok('funded-in is reported separately and not added to any allocation',
      r.data.totals.baseline === 997000 &&
-     r.data.totals.discretionaryBase === 396500,
-     'adding FO\'s $68,000 of DAC-funded lines would inflate both');
+     r.data.totals.discretionaryBase === 444500,
+     'adding FO\'s $20,000 of DAC-funded gap to its allocation would inflate both');
 
   // The three group subtotals @clolry's sheet shows as separate blocks.
   ok('set-asides are grouped the way the FY27 sheet groups them',
      by.OMD.setAsides.byGroup.DAC_SPECIFIC === 12000 &&
      by.OMD.setAsides.byGroup.EVENT_PLAN === 67320 &&
-     by.OMD.setAsides.byGroup.SHARED_LEADERSHIP === 18436.50,
+     by.OMD.setAsides.byGroup.SHARED_LEADERSHIP === 11092.50,
      by.OMD.setAsides.byGroup);
 
   // $150,000 of the $590,000 Event Plan is funded from MARKETING, not travel.
@@ -239,10 +266,18 @@ console.log('\n2b. the configurable set-aside amount');
   ok('the advisor line exists and names a property key',
      !!advisor && advisor.amountPropertyKey === 'BUDGET_FC_ADVISOR_AMOUNT',
      advisor);
-  ok('and defaults to $48,000, which is 2 trips x 12 months x $2,000',
-     advisor.amount === 48000, advisor.amount);
-  ok('it is SHARED, not charged to FO',
-     advisor.type === 'ENTERPRISE_SHARED' && advisor.benefitsOffice === 'FO',
+  // $0 CHARGED, $48,000 EXPECTED. The two numbers mean different things and
+  // the split is the whole mechanism: amount is what any office pays, and
+  // expectedAnnualCost is what the travel will cost and therefore how much
+  // has to be released to cover it.
+  ok('it charges $0, because the DACs do not fund it',
+     advisor.amount === 0, advisor.amount);
+  ok('and expects $48,000, which is 2 trips x 12 months x $2,000',
+     advisor.expectedAnnualCost === 48000, advisor.expectedAnnualCost);
+  ok('it is FUNDED_FROM_RELEASES, not charged to anyone',
+     advisor.type === 'FUNDED_FROM_RELEASES' &&
+     advisor.fundedFromReleases === true &&
+     advisor.benefitsOffice === 'FO',
      advisor);
 
   // BudgetConfig.js is evaluated before any user code on every execution and
@@ -276,7 +311,7 @@ console.log('\n2b. the configurable set-aside amount');
   const r = t.run('getBudgetDashboard()');
   ok('with no Props.js present it falls back to the configured amount',
      r.success === true &&
-     r.data.offices.find(o => o.officeCode === 'IDV').setAsides.total === 384172.00,
+     r.data.offices.find(o => o.officeCode === 'IDV').setAsides.total === 352300.00,
      'the test harness loads no Props.js, so this exercises the fallback');
 
   // And the resolver itself, executed rather than read.
@@ -363,10 +398,10 @@ console.log('\n3. statuses are classified by what they mean to a budget');
      'Pending_DD_Confirmation and Pending_Correction are TitleCase, unlike the rest');
 
   // Available = base - committed - actual.
-  ok('available subtracts both', by.OMD.available === 54243.50 - 5000,
+  ok('available subtracts both', by.OMD.available === 61587.50 - 5000,
      by.OMD.available);
   ok('and utilisation is a percentage of the discretionary base',
-     by.OMD.utilisationPct === 9.2, by.OMD.utilisationPct);
+     by.OMD.utilisationPct === 8.1, by.OMD.utilisationPct);
 }
 
 // ---------------------------------------------------------------------------

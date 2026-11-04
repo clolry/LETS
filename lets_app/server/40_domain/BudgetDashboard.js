@@ -195,6 +195,18 @@ var BudgetDashboard = (function () {
                'your ' + Math.round(share * 1000) / 10 + '% share of $' +
                amount.toLocaleString());
       }
+
+      // FUNDED_FROM_RELEASES IS CHARGED TO NOBODY. Falling through here is the
+      // behaviour, not an omission: the money comes from reservations that
+      // were already taken out of a DAC's budget for an event that did not
+      // happen, so charging it again would take the same money twice.
+      //
+      // This is the mechanism that restores $444,500 of discretionary funds.
+      // The advisor line was ENTERPRISE_SHARED at $48,000 and cost the DACs
+      // $7,344 / $31,872 / $8,784; it now costs them nothing.
+      //
+      // Asserted in test_budget_dashboard.js §2 — if a future edit makes this
+      // type chargeable, every DAC balance moves and the test fails.
     });
 
     return {
@@ -254,6 +266,26 @@ var BudgetDashboard = (function () {
 
     all.forEach(function (sa) {
       if (sa.benefitsOffice !== officeCode) return;
+
+      // A FUNDED_FROM_RELEASES line carries amount 0 in config, because the
+      // money comes from released reservations rather than from a charge. Its
+      // config amount must NOT be summed as funded-in — doing so would report
+      // $0 of advisor travel as funded when $48,000 is expected. What has
+      // actually been released is a data question, answered by
+      // releaseFundingFor below and reported separately.
+      if (sa.type === 'FUNDED_FROM_RELEASES') {
+        lines.push({
+          id: sa.id,
+          title: sa.title,
+          amount: 0,
+          fundedBy: 'RELEASED_SET_ASIDES',
+          isSelfFunded: false,
+          fundedFromReleases: true,
+          expectedCost: round2(sa.expectedAnnualCost)
+        });
+        return;
+      }
+
       var amount = setAsideAmount(sa);
       total += amount;
       lines.push({
@@ -268,6 +300,87 @@ var BudgetDashboard = (function () {
     });
 
     return { total: round2(total), lines: lines };
+  }
+
+  /**
+   * Funding status of every set-aside paid for out of released reservations.
+   *
+   * The FC senior advisor is the only one today. The Chief of Staff refused to
+   * charge its $48,000 to the DACs — @clolry: "he does not want to take
+   * additional funds from the orgs" — so it is funded by releasing Q1 event
+   * reservations that were not used.
+   *
+   * WHY THE DASHBOARD HAS TO SHOW THIS AT ALL
+   * -----------------------------------------
+   * Because the config line is $0. Without this block the advisor's travel
+   * appears against a $0 reservation, which reads as "no budget needed"
+   * rather than "budget expected from somewhere else". A traveller booking
+   * against it would see no constraint, and nobody would notice the money had
+   * never actually been released.
+   *
+   * So this reports expected vs released vs shortfall. A shortfall is a real
+   * condition — the decision to fund from releases does not itself release
+   * anything — and it is surfaced rather than smoothed over.
+   *
+   * @returns {{available: boolean, lines: Array, note: string}}
+   */
+  function releaseFundingFor() {
+    var out = { available: false, lines: [], note: '' };
+    var all = (LETS_CONFIG && LETS_CONFIG.defaultSetAsides) || [];
+    var expecting = all.filter(function (sa) {
+      return sa.type === 'FUNDED_FROM_RELEASES';
+    });
+    if (!expecting.length) return out;
+
+    if (typeof SetAsideRelease === 'undefined' || typeof Events === 'undefined') {
+      out.note = 'Release records are unavailable, so funding for these lines ' +
+                 'cannot be confirmed.';
+      out.lines = expecting.map(function (sa) {
+        return {
+          id: sa.id, title: sa.title,
+          expectedCost: round2(sa.expectedAnnualCost),
+          releasedTotal: null, shortfall: null, isFullyFunded: false,
+          releases: []
+        };
+      });
+      return out;
+    }
+
+    var releases = [];
+    try {
+      var db = new TravelDB();
+      releases = SetAsideRelease.readReleases(Events.readSetAsides(db));
+    } catch (e) {
+      // Same reasoning as the spend read: an unreadable sheet must not blank
+      // the page, but "unknown" and "zero" are different claims and the note
+      // says which this is.
+      console.warn('BudgetDashboard: release records unavailable: ' + e.message);
+      out.note = 'Release records could not be read: ' + e.message;
+    }
+
+    out.lines = expecting.map(function (sa) {
+      var f = SetAsideRelease.fundingFor(sa.id, releases,
+                                         round2(sa.expectedAnnualCost));
+      return {
+        id: sa.id,
+        title: sa.title,
+        benefitsOffice: sa.benefitsOffice || '',
+        expectedCost: f.expectedCost,
+        releasedTotal: f.releasedTotal,
+        shortfall: f.shortfall,
+        isFullyFunded: f.isFullyFunded,
+        releases: f.releases
+      };
+    });
+
+    out.available = true;
+    if (!out.note) {
+      out.note = 'These lines are funded by releasing reservations from events ' +
+                 'that did not happen, NOT by a charge against the DACs — so ' +
+                 'they do not reduce any discretionary balance. A shortfall ' +
+                 'means the money has not been released yet.';
+    }
+    return out;
   }
 
 
@@ -881,6 +994,11 @@ var BudgetDashboard = (function () {
       return successResponse({
         offices: offices,
         serviceCentres: serviceCentres,
+        // Set-asides funded by releasing unused reservations rather than by a
+        // charge. The advisor line is $0 in config on purpose, so without this
+        // the page would show its travel against a $0 reservation and read it
+        // as "no budget needed".
+        releaseFunding: releaseFundingFor(),
         totals: {
           baseline: sum(function (o) { return o.baselineAllocation; }),
           setAsides: sum(function (o) { return o.setAsides.total; }),
@@ -951,6 +1069,7 @@ var BudgetDashboard = (function () {
     officeSetAsides: officeSetAsides,
     setAsideAmount: setAsideAmount,
     fundedInFor: fundedInFor,
+    releaseFundingFor: releaseFundingFor,
     serviceCentreAllocations: serviceCentreAllocations,
     spendByOffice: spendByOffice,
     spendByServiceCentre: spendByServiceCentre,

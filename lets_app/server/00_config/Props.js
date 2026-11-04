@@ -60,7 +60,45 @@ const PROPS_KEYS = {
   AGENCY_NAME:                  'AGENCY_NAME',
   ORG_FO_LABEL:                 'ORG_FO_LABEL',
   REVIEW_LABEL_SECTOR:          'REVIEW_LABEL_SECTOR',
-  REVIEW_LABEL_BU:              'REVIEW_LABEL_BU'
+  REVIEW_LABEL_BU:              'REVIEW_LABEL_BU',
+
+  // ------------------------------------------------------------------
+  // EXTERNAL DATA SOURCES
+  // ------------------------------------------------------------------
+  //
+  // THE HR ROSTER'S ONLY AUTHORITATIVE SOURCE.
+  //
+  // @clolry: "please make sure that when we seed the HR roster that we remove
+  // ALL test records and are relying only on the sheet identified in the
+  // system properties and completely ignore my sheet from May."
+  //
+  // That instruction came out of a real error. Melissa Mould was reported as
+  // unattributed, and the reason was that the May staffing plan
+  // (reference_excel_files/Copy of ASD Staffing Plan 5-12-26.xlsx) places her
+  // in FCBBB with supervisory status 8, while the FAS HR feed has her in
+  // FCBBBB as a status-2 supervisor. The May file is six months stale.
+  //
+  // The consequence was not one wrong row. Every per-capita service-centre
+  // figure produced before this property existed was computed from that stale
+  // file, so all 22 shares need recomputing from the feed. A roster that is
+  // quietly out of date produces allocations that look precise and are wrong,
+  // which is worse than an obvious gap.
+  //
+  // So: HCRosterImport reads THIS property and nothing else. There is no
+  // fallback to a bundled file, and no default — an unset property is an
+  // error, because defaulting to a stale roster is the failure being
+  // prevented.
+  FAS_HR_FEED:                  'FAS_HRLinks_Feed',
+  // Tab within that spreadsheet. Separate so the tab can be renamed without
+  // re-pasting the ID, and because the feed workbook holds several sheets.
+  FAS_HR_FEED_TAB:              'FAS_HRLinks_Feed_Tab',
+
+  // The travel coordinator's ASD FY27 Travel/Liability Log, pulled daily until
+  // LETS is mandatory. @clolry: "this is a temporary process only until the
+  // system is fully in use then we'll discontinue the importing of existing
+  // travel." See 30_services/LiabilityLogSync.js.
+  LIABILITY_LOG_SHEET:          'LIABILITY_LOG_SHEET_ID',
+  LIABILITY_LOG_TAB:            'LIABILITY_LOG_TAB'
 };
 
 // Cache the handle once per execution (cheap; avoids repeated GAS scope lookups).
@@ -216,6 +254,116 @@ function getSetAsideAmountOverride(key, defaultAmount) {
     return fallback;
   }
   return Math.round(n * 100) / 100;
+}
+
+// ============================================================================
+// GETTERS — EXTERNAL DATA SOURCES
+// ============================================================================
+
+/**
+ * The FAS HRLinks feed: the ONLY authoritative source for the HR roster.
+ *
+ * @clolry: "please make sure that when we seed the HR roster that we remove
+ * ALL test records and are relying only on the sheet identified in the system
+ * properties and completely ignore my sheet from May."
+ *
+ * RETURNS AN ERROR RATHER THAN A DEFAULT, which is the point. Every other
+ * getter in this file falls back to a sensible value; this one must not,
+ * because the plausible fallbacks are all stale rosters and a stale roster
+ * produces allocations that look precise and are wrong.
+ *
+ * The concrete case: the May 2026 staffing plan places Melissa Mould in FCBBB
+ * at supervisory status 8. The HR feed has her in FCBBBB as a status-2
+ * supervisor. Every per-capita service-centre allocation computed before this
+ * property existed came from the May file, so all 22 shares are suspect until
+ * recomputed from the feed.
+ *
+ * @returns {{ok: boolean, spreadsheetId: string, tabName: string,
+ *            error: string}}
+ * @server
+ */
+function getFasHrFeedSource() {
+  var id = '';
+  var tab = '';
+  try {
+    id = String(_props().getProperty(PROPS_KEYS.FAS_HR_FEED) || '').trim();
+    tab = String(_props().getProperty(PROPS_KEYS.FAS_HR_FEED_TAB) || '').trim();
+  } catch (e) {
+    return {
+      ok: false, spreadsheetId: '', tabName: '',
+      error: 'Could not read Script Properties: ' + e.message
+    };
+  }
+
+  if (!id) {
+    return {
+      ok: false, spreadsheetId: '', tabName: '',
+      error: 'Script Property ' + PROPS_KEYS.FAS_HR_FEED + ' is not set. The ' +
+             'HR roster has no other source — there is deliberately no ' +
+             'fallback, because defaulting to a stale roster silently ' +
+             'misattributes every org\'s budget. Set it in Project Settings ' +
+             'then re-run the import.'
+    };
+  }
+
+  // A pasted Google Sheets URL rather than a bare ID is the likeliest setup
+  // mistake, and it is recoverable without troubling anyone.
+  var m = id.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) id = m[1];
+
+  return {
+    ok: true,
+    spreadsheetId: id,
+    // The tab defaults because the feed workbook's sheet name is known and
+    // stable; the ID cannot default because it identifies the data itself.
+    tabName: tab || 'FAS_HRLinks_Feed',
+    error: ''
+  };
+}
+
+/**
+ * The travel coordinator's ASD FY27 Travel/Liability Log.
+ *
+ * Temporary. @clolry: "this is a temporary process only until the system is
+ * fully in use then we'll discontinue the importing of existing travel."
+ *
+ * Same no-default rule as the HR feed, for a weaker but still real reason: a
+ * wrong spreadsheet here imports someone else's travel as ASD commitments.
+ *
+ * @returns {{ok: boolean, spreadsheetId: string, tabName: string,
+ *            error: string}}
+ * @server
+ */
+function getLiabilityLogSource() {
+  var id = '';
+  var tab = '';
+  try {
+    id = String(_props().getProperty(PROPS_KEYS.LIABILITY_LOG_SHEET) || '').trim();
+    tab = String(_props().getProperty(PROPS_KEYS.LIABILITY_LOG_TAB) || '').trim();
+  } catch (e) {
+    return {
+      ok: false, spreadsheetId: '', tabName: '',
+      error: 'Could not read Script Properties: ' + e.message
+    };
+  }
+
+  if (!id) {
+    return {
+      ok: false, spreadsheetId: '', tabName: '',
+      error: 'Script Property ' + PROPS_KEYS.LIABILITY_LOG_SHEET + ' is not ' +
+             'set, so there is no travel log to pull from.'
+    };
+  }
+
+  var m = id.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) id = m[1];
+
+  return {
+    ok: true,
+    spreadsheetId: id,
+    tabName: tab || 'Travel FY27',
+    error: ''
+  };
 }
 
 // ============================================================================
@@ -557,7 +705,26 @@ function _verifyAllPropsKeys() {
     'MILEAGE_RATE_EFFECTIVE_DATE',    // has a default
     'TRAVEL_USERS_DATA_UPDATED',      // has a default
     'DOD_LAST_SYNC',                  // populated by first sync
-    'DOS_LAST_SYNC'                   // populated by first sync
+    'DOS_LAST_SYNC',                  // populated by first sync
+
+    // Branding has defaults for THIS deployment, so an unset key still
+    // produces correct output. Listed because _verifyAllPropsKeys otherwise
+    // reports eight false MISSINGs on a working install.
+    'APP_NAME', 'ORG_SHORT_NAME', 'ORG_LONG_NAME', 'ORG_SERVICE_NAME',
+    'AGENCY_NAME', 'ORG_FO_LABEL', 'REVIEW_LABEL_SECTOR', 'REVIEW_LABEL_BU',
+
+    // The tab names default to the known tab in each workbook; the IDs do not
+    // and must not.
+    'FAS_HR_FEED_TAB',
+    'LIABILITY_LOG_TAB'
+
+    // DELIBERATELY NOT OPTIONAL: FAS_HR_FEED and LIABILITY_LOG_SHEET.
+    //
+    // A missing spreadsheet ID has no safe default. Defaulting the HR feed to
+    // a bundled file is the exact failure @clolry asked to prevent — the May
+    // staffing plan put Melissa Mould in the wrong org and every per-capita
+    // figure derived from it was wrong while looking precise. These two must
+    // be reported MISSING so setup is incomplete until they are set.
   ]);
 
   var ok = 0, missing = 0, byKey = {};

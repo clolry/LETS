@@ -241,7 +241,62 @@ const TRAVEL_SHEET_SCHEMAS = {
     // alternative and would be wrong: a traveller should not wait on a
     // coordinator to file a request with a deadline.
     'Event_ID',
-    'Event_Proposal_ID'
+    'Event_Proposal_ID',
+
+    // ======================================================================
+    // EXTERNAL SOURCE PROVENANCE — appended, same positional reasoning
+    // ======================================================================
+    //
+    // Set by 30_services/LiabilityLogSync.js, which pulls the travel
+    // coordinator's ASD FY27 Travel/Liability Log once a day. @clolry: "it
+    // wouldn't hurt for the next few months until we deploy and force
+    // everyone to use the system - it would be good to do a daily pull."
+    //
+    // WHY A KEY COLUMN AND NOT A CONTENT HASH
+    // ---------------------------------------
+    // A recurring sync has to recognise the row it imported yesterday, or it
+    // writes the same 30 trips every morning. The log's own Document Number
+    // is empty on 29 of 30 rows, so it cannot be the key.
+    //
+    // So the sync generates a key, writes it back into a LETS_Key column on
+    // the source sheet, and matches on it thereafter.
+    //
+    // Hashing the content was the alternative and is worse: fixing a typo in
+    // the surname, date or cost changes the hash, so the sync sees a new trip
+    // and imports it while the old one remains — double-counting a DAC's
+    // money as the RESULT of a correction. A written-back key survives edits
+    // to every other column, which is the whole point.
+    'Source_System',          // 'liability-log' | '' for a LETS-native request
+    'Source_Row_Key',         // the LETS_Key written back to the source sheet
+    'Source_Row_Number',      // where it was last seen. Diagnostic only — rows
+                              // move when the coordinator sorts, so this is
+                              // never matched on
+    'Source_Synced_At',
+
+    // The fiscal year this trip's cost is charged to, and how that was
+    // decided.
+    //
+    // @clolry: "it's not the submission date - it's the date that their
+    // expense report is approved (column S 'Voucher Approved') that determines
+    // the fiscal year."
+    //
+    // NOT the travel date and NOT the submission date. The rule moved twice
+    // while this was being built, so the difference is recorded: across the 30
+    // log rows, attributing by travel start gives 18 FY27 / 11 FY26 / 1 FY21,
+    // by voucher submitted 17 FY27 / 3 FY26, and by voucher APPROVED all 20
+    // approved rows are FY27. Three rows — Calhoun, Dean, Henry — submitted in
+    // late September and were approved on 1 October; a submitted-date rule
+    // would drop $4,119.21 of real FY27 spend into a closed year.
+    //
+    // Basis is stored alongside because a trip whose voucher is not yet
+    // APPROVED has no answer at all, so its year is a provisional guess from
+    // the travel end date. The daily sync re-evaluates it, so the trip
+    // corrects itself the morning after approval — but until then the
+    // dashboard must be able to say the figure is provisional rather than
+    // present it as settled.
+    'Charged_Fiscal_Year',
+    'Charged_FY_Basis'        // VOUCHER_APPROVED | PROVISIONAL_NOT_YET_APPROVED
+                              // | UNKNOWN
   ],
 
   // Destination/leg info - one row per leg
