@@ -792,5 +792,99 @@ console.log('\n11. seedHCTestData cannot overwrite a real roster');
      addrs.filter(a => !/@example\.(gov|com)'/.test(a)));
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n12. the tab is resolved tolerantly, but never fuzzily');
+{
+  // previewRosterImport failed twice with the same message — Tab
+  // "FAS_HRLinks_Feed" was not found — the second time AFTER the default had
+  // been corrected to 'FAS' in the repository. The deployment was stale, and
+  // that is invisible from the editor: the log is identical whether the
+  // default is wrong or the code is old.
+  const sync = fs.readFileSync('lets_app/server/40_domain/HCRosterSync.js', 'utf8');
+
+  ok('the tab default is FAS, not the property name',
+     /tabName: tab \|\| 'FAS'/.test(
+       fs.readFileSync('lets_app/server/00_config/Props.js', 'utf8')),
+     'defaulting a value to the key that holds it was the original mistake');
+
+  // THE REAL WORKBOOK HAS A TAB WITH A TRAILING SPACE: 'NEW - NTE REPORT '.
+  // getSheetByName is exact, so a name typed without noticing that space
+  // fails with an error reading "does not exist" about a tab that plainly
+  // does.
+  ok('tab lookup tolerates whitespace and case', /_findFeedTab_/.test(sync));
+  const finder = sync.slice(sync.indexOf('function _findFeedTab_'),
+                            sync.indexOf('function diagnoseHrFeedSource'));
+  ok('it tries exact first', /ss\.getSheetByName\(want\)/.test(finder));
+  ok('then trimmed', /getName\(\)\.trim\(\) === want/.test(finder));
+  ok('then case-insensitive', /toLowerCase\(\) === lower/.test(finder));
+
+  // AND STOPS THERE. 'FAS' must not resolve to 'FAS Recruit Data from STAR' —
+  // that tab is in the same workbook, has different columns, and would
+  // produce a roster of the wrong people.
+  ok('it does NOT do prefix or substring matching',
+     !/indexOf\(want\)/.test(finder) && !/startsWith/.test(finder),
+     '"FAS" must not match "FAS Recruit Data from STAR"');
+
+  // Both read paths must use it, or the preview succeeds and the import
+  // fails on the same workbook.
+  ok('both the preview and the import use the tolerant lookup',
+     (sync.match(/_findFeedTab_\(ss, source\.tabName\)/g) || []).length >= 2,
+     'a preview that resolves where the import does not is worse than both ' +
+     'failing');
+
+  // The error must name the actual tabs, quoted, or an admin cannot see the
+  // trailing space that is causing the failure.
+  ok('the failure quotes every tab name it found',
+     /'"' \+ n \+ '"'/.test(sync),
+     'an unquoted list hides the trailing space in "NEW - NTE REPORT "');
+  ok('and names the property to set',
+     /PROPS_KEYS\.FAS_HR_FEED_TAB/.test(sync));
+  ok('and warns that a stale deployment produces this same message',
+     /older version of the code/.test(sync),
+     'this exact confusion cost a diagnostic round trip');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n13. the deployment can be told apart from the code');
+{
+  const sync = fs.readFileSync('lets_app/server/40_domain/HCRosterSync.js', 'utf8');
+
+  // A VERSION MARKER is the only way to tell "the default is wrong" from "the
+  // deployment is behind the repository" without a second round trip.
+  ok('there is a diagnostic entry point',
+     /function diagnoseHrFeedSource\(\)/.test(sync));
+  const diag = sync.slice(sync.indexOf('function diagnoseHrFeedSource'),
+                          sync.indexOf('function previewRosterImport'));
+  ok('it carries a version marker', /var MARKER = '/.test(diag),
+     'if the marker is absent from the output, the deploy is stale and ' +
+     'nothing else in the output can be trusted');
+  ok('it reports the resolved spreadsheet and tab',
+     /spreadsheetId: source\.spreadsheetId/.test(diag) &&
+     /tabName: source\.tabName/.test(diag));
+  ok('it lists the tabs actually present', /ss\.getSheets\(\)\.map/.test(diag));
+
+  // The tab property must be printed with JSON.stringify, not bare. A
+  // trailing space is otherwise invisible and that is the bug it diagnoses.
+  ok('property values are printed quoted',
+     /JSON\.stringify\(rawTab\)/.test(diag),
+     'a bare print hides the whitespace that caused the failure');
+
+  // It must NOT print the spreadsheet ID in full — the log is readable by
+  // anyone with project access, and the ID is a capability.
+  ok('the spreadsheet ID is reported as a length, not a value',
+     /String\(rawId\)\.length \+ ' chars'/.test(diag),
+     'an execution log is wider-read than the property store');
+
+  // The header row, so a mapping failure is diagnosable in the same run.
+  ok('it prints the feed header row',
+     /headerRow/.test(diag) && /getRange\(1, 1, 1, found\.getLastColumn\(\)\)/.test(diag));
+
+  // Read-only: this is the function an admin runs when confused, so it must
+  // be safe to run at any time.
+  ok('it writes nothing',
+     !/setValue|appendRow|clearContent|setProperty/.test(diag),
+     'the diagnostic must be safe to run on a live roster');
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);

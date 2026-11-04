@@ -30,6 +30,160 @@
  */
 
 /**
+ * Finds a tab by name, tolerating the ways a sheet name goes wrong.
+ *
+ * getSheetByName is EXACT. Three things defeat it in practice, and the FAS
+ * workbook demonstrates one of them: its tab list includes
+ * 'NEW - NTE REPORT ' with a trailing space. A name typed into a Script
+ * Property without noticing that space fails, and the error reads as "the tab
+ * does not exist" when it plainly does.
+ *
+ * So: exact first, then trimmed, then case-insensitive on the trimmed form.
+ *
+ * WHY NOT FUZZY. There is no partial or prefix matching. 'FAS' must not
+ * resolve to 'FAS Recruit Data from STAR' — that tab exists in the same
+ * workbook, has different columns, and importing it would produce a roster of
+ * the wrong people. A near-miss here is a silently wrong roster, which is the
+ * failure this whole module is shaped against, so the tolerance stops at
+ * whitespace and case.
+ *
+ * @param {Spreadsheet} ss
+ * @param {string} wanted
+ * @returns {Sheet|null}
+ */
+function _findFeedTab_(ss, wanted) {
+  var want = String(wanted || '').trim();
+  if (!want) return null;
+
+  var exact = ss.getSheetByName(want);
+  if (exact) return exact;
+
+  var sheets = ss.getSheets();
+  var i;
+
+  // Trailing/leading whitespace on EITHER side.
+  for (i = 0; i < sheets.length; i++) {
+    if (sheets[i].getName().trim() === want) return sheets[i];
+  }
+
+  // Case differences.
+  var lower = want.toLowerCase();
+  for (i = 0; i < sheets.length; i++) {
+    if (sheets[i].getName().trim().toLowerCase() === lower) return sheets[i];
+  }
+
+  return null;
+}
+
+/**
+ * Reports which HR feed source this DEPLOYMENT is actually reading.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * previewRosterImport failed twice with the same message — Tab
+ * "FAS_HRLinks_Feed" was not found — the second time AFTER the default had
+ * been changed to 'FAS' and the fix was on the sandbox branch. The code
+ * running in Apps Script was an older deploy, which is invisible from inside
+ * the editor: the log looks identical whether the default is wrong or the
+ * deployment is stale.
+ *
+ * Diagnosing that cost a round trip. This function makes the question
+ * answerable in one run: it prints the resolved source, the property values,
+ * the tab names actually present, and a VERSION MARKER that only exists in
+ * this revision. If the marker is absent from the output, the deployment is
+ * behind the repository and nothing else in the output can be trusted.
+ *
+ * Reads nothing and writes nothing. Safe to run at any time.
+ *
+ * @returns {Object}
+ * @editor
+ */
+function diagnoseHrFeedSource() {
+  // Bumped whenever the resolution logic changes. Its only job is to prove
+  // which revision is deployed.
+  var MARKER = 'hr-feed-diag-v2-tab-default-FAS';
+
+  var out = {
+    marker: MARKER,
+    propertyKeys: {
+      id: PROPS_KEYS.FAS_HR_FEED,
+      tab: PROPS_KEYS.FAS_HR_FEED_TAB
+    },
+    propertyValues: {},
+    resolved: null,
+    tabsPresent: [],
+    tabResolves: false,
+    notes: []
+  };
+
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var rawId = props.getProperty(PROPS_KEYS.FAS_HR_FEED);
+    var rawTab = props.getProperty(PROPS_KEYS.FAS_HR_FEED_TAB);
+    out.propertyValues[PROPS_KEYS.FAS_HR_FEED] =
+      rawId ? ('set, ' + String(rawId).length + ' chars') : 'NOT SET';
+    // The tab name is shown verbatim and quoted, because a trailing space is
+    // invisible otherwise and that is exactly what 'NEW - NTE REPORT ' has.
+    out.propertyValues[PROPS_KEYS.FAS_HR_FEED_TAB] =
+      rawTab === null ? 'NOT SET (falling back to the built-in default)'
+                      : JSON.stringify(rawTab);
+  } catch (e) {
+    out.notes.push('Could not read Script Properties: ' + e.message);
+  }
+
+  var source = getFasHrFeedSource();
+  out.resolved = {
+    ok: source.ok,
+    spreadsheetId: source.spreadsheetId,
+    tabName: source.tabName,
+    error: source.error
+  };
+
+  if (!source.ok) {
+    out.notes.push(source.error);
+    console.log(JSON.stringify(out, null, 2));
+    return out;
+  }
+
+  try {
+    var ss = SpreadsheetApp.openById(source.spreadsheetId);
+    out.spreadsheetName = ss.getName();
+    out.tabsPresent = ss.getSheets().map(function (s) {
+      var n = s.getName();
+      return {
+        // Quoted so whitespace is visible.
+        name: JSON.stringify(n),
+        rows: s.getLastRow(),
+        columns: s.getLastColumn()
+      };
+    });
+    var found = _findFeedTab_(ss, source.tabName);
+    out.tabResolves = !!found;
+    if (found) {
+      out.notes.push('Tab resolved to "' + found.getName() + '" with ' +
+                     found.getLastRow() + ' rows and ' +
+                     found.getLastColumn() + ' columns.');
+      // The header row, so a mapping problem can be diagnosed without a
+      // second run.
+      if (found.getLastColumn() > 0) {
+        out.headerRow = found.getRange(1, 1, 1, found.getLastColumn())
+          .getValues()[0].map(function (h) { return String(h); });
+      }
+    } else {
+      out.notes.push('Tab "' + source.tabName + '" does not resolve. Set ' +
+                     PROPS_KEYS.FAS_HR_FEED_TAB + ' to one of the names above, ' +
+                     'copied exactly.');
+    }
+  } catch (e) {
+    out.notes.push('Could not open the spreadsheet: ' + e.message +
+                   ' — check the ID and that this account has read access.');
+  }
+
+  console.log(JSON.stringify(out, null, 2));
+  return out;
+}
+
+/**
  * Dry run: what importing the feed would change.
  *
  * Reads the feed, compares it to HC_Positions, and returns the adds, changes,
@@ -55,13 +209,19 @@ function previewRosterImport() {
     var values;
     try {
       var ss = SpreadsheetApp.openById(source.spreadsheetId);
-      var sheet = ss.getSheetByName(source.tabName);
+      var sheet = _findFeedTab_(ss, source.tabName);
       if (!sheet) {
         var names = ss.getSheets().map(function (s) { return s.getName(); });
         return errorResponse(
-          'Tab "' + source.tabName + '" was not found in the HR feed. Tabs ' +
-          'present: ' + names.join(', ') + '. Set ' +
-          PROPS_KEYS.FAS_HR_FEED_TAB + ' if the tab has been renamed.');
+          'Tab "' + source.tabName + '" was not found in the HR feed.\n' +
+          'Tabs present: ' + names.map(function (n) {
+            return '"' + n + '"';
+          }).join(', ') + '\n' +
+          'FIX: set the Script Property ' + PROPS_KEYS.FAS_HR_FEED_TAB +
+          ' to one of those names.\n' +
+          'NOTE: if the tab name above looks correct, this deployment is ' +
+          'running an older version of the code — the property is read first ' +
+          'and overrides the built-in default, so setting it works either way.');
       }
 
       // READ ONLY THE MAPPED COLUMNS' WORTH OF WIDTH, not getDataRange().
@@ -275,7 +435,7 @@ function importRoster(token) {
     if (!source.ok) return errorResponse(source.error);
 
     var ss = SpreadsheetApp.openById(source.spreadsheetId);
-    var feedSheet = ss.getSheetByName(source.tabName);
+    var feedSheet = _findFeedTab_(ss, source.tabName);
     if (!feedSheet) {
       return errorResponse('Tab "' + source.tabName + '" not found in the HR feed.');
     }
