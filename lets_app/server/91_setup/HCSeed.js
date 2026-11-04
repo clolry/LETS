@@ -663,17 +663,45 @@ var HC_SEED_POSITIONS = [
 ];
 
 /**
- * Seeds both HC tabs.
+ * Seeds both HC tabs with FICTIONAL test data.
  *
  * REPLACES the contents of HC_Positions and HC_Orgs — it does not merge. This
  * is seed data for an empty or test environment, and a merge would make the
  * result depend on whatever was already there, which is the opposite of what a
  * reproducible test fixture needs.
  *
- * Refuses to run when either tab already holds data unless `force` is true, so
- * it cannot quietly overwrite a real roster that someone has started building.
+ * DO NOT RUN THIS AGAINST AN ENVIRONMENT WITH A REAL ROSTER.
+ * ---------------------------------------------------------
+ * The 16 positions below are invented people — Marguerite Okonkwo, Desmond
+ * Whitaker and so on, all @example.gov. They exist to exercise the supervisor
+ * walk, the grade comparison and the org join without needing real HR data.
  *
- * @param {boolean} [force=false] overwrite existing rows
+ * They are also, until the roster is imported, what the per-capita budget
+ * split, the public org chart and the supervisor-based site access gate all
+ * read. @clolry: "please make sure that when we seed the HR roster that we
+ * remove ALL test records and are relying only on the sheet identified in the
+ * system properties."
+ *
+ * The real roster comes from 40_domain/HCRosterSync.importRoster, which reads
+ * the FAS_HRLinks_Feed Script Property and removes these fixtures as part of
+ * the import. THAT is the function to run on a real deployment; this one is
+ * for a test environment only.
+ *
+ * TWO GUARDS, BECAUSE `force` IS NOT ENOUGH
+ * -----------------------------------------
+ * The existing `force` flag stops an accidental overwrite, but `force: true`
+ * is exactly what someone types when they are determined, and it would then
+ * replace a real 900-person roster with 16 fictional people — silently
+ * revoking site access for every supervisor and skewing every budget
+ * allocation.
+ *
+ * So this additionally REFUSES, even with force, when the existing rows look
+ * real: non-@example.gov addresses, or more positions than the fixture holds.
+ * Overwriting a real roster with test data has no legitimate use, and an
+ * explicit refusal costs a minute while the alternative costs a day of
+ * confusion about why nobody can sign in.
+ *
+ * @param {boolean} [force=false] overwrite existing FIXTURE rows
  * @returns {Object} { success, positions, orgs, message }
  * @editor
  */
@@ -701,6 +729,46 @@ function seedHCTestData(force) {
     // Guard against overwriting a real roster.
     var existingPositions = Math.max(0, posSheet.getLastRow() - 1);
     var existingOrgs = Math.max(0, orgSheet.getLastRow() - 1);
+
+    // THE REAL-DATA REFUSAL, checked before `force` is consulted.
+    //
+    // Sampling the email column rather than counting rows, because the
+    // decisive question is whether these are invented people. An
+    // @example.gov address is RFC 2606 reserved and can never be a GSA
+    // mailbox, so anything else is a real person.
+    if (existingPositions > 0) {
+      var emailCol = TRAVEL_SHEET_SCHEMAS[SHEET_NAMES.HC_POSITIONS]
+        .indexOf('Email_Address') + 1;
+      var realLooking = 0;
+      if (emailCol > 0) {
+        var emails = posSheet
+          .getRange(2, emailCol, existingPositions, 1).getValues();
+        emails.forEach(function (r) {
+          var e = String(r[0] || '').trim().toLowerCase();
+          if (e && e.indexOf('@example.gov') === -1 &&
+              e.indexOf('@example.com') === -1) {
+            realLooking++;
+          }
+        });
+      }
+
+      if (realLooking > 0 || existingPositions > HC_SEED_POSITIONS.length) {
+        return {
+          success: false,
+          aborted: true,
+          error: 'REFUSED: ' + SHEET_NAMES.HC_POSITIONS + ' holds ' +
+                 existingPositions + ' positions, ' + realLooking +
+                 ' with real email addresses. This function would replace ' +
+                 'them with ' + HC_SEED_POSITIONS.length + ' FICTIONAL test ' +
+                 'people, revoking supervisor-based LETS access and skewing ' +
+                 'every per-capita budget allocation. There is no `force` for ' +
+                 'this. To reload the real roster, run importRoster() — it ' +
+                 'reads the FAS_HRLinks_Feed property and removes test ' +
+                 'records as part of the import.'
+        };
+      }
+    }
+
     if ((existingPositions > 0 || existingOrgs > 0) && force !== true) {
       return {
         success: false,
@@ -710,6 +778,7 @@ function seedHCTestData(force) {
                'Re-run as seedHCTestData(true) if that is what you intend.'
       };
     }
+
 
     var now = new Date();
     var actor = 'hc-seed';

@@ -1,0 +1,598 @@
+/**
+ * Automated Verification Script for the HR roster importer.
+ *
+ * WHAT THIS PROTECTS
+ * ------------------
+ * HC_Positions drives three things that are easy to break invisibly:
+ *
+ *   1. SITE ACCESS. Access.js:416 admits a supervisor to LETS on the strength
+ *      of Supervisory_Status === '2'. A value that arrives as the NUMBER 2, or
+ *      as '2.0' from a spreadsheet numeric column, fails that comparison and
+ *      silently denies access to every supervisor in the roster.
+ *   2. APPROVAL ROUTING. The GS-15 Division Director lookup is a STRING
+ *      comparison on Grade, so a cell holding 07 that arrives as the number 7
+ *      fails every grade check — the VT-03 defect HCAdmin already guards for a
+ *      single edit.
+ *   3. EVERY BUDGET ALLOCATION. The per-capita split divides each DAC's
+ *      discretionary balance by its share of FILLED positions, so the
+ *      occupancy rule decides where the money goes.
+ *
+ * WHY THIS MODULE EXISTS AT ALL — and it was my error
+ * --------------------------------------------------
+ * I reported Melissa Mould as unattributable, having read the May 2026
+ * staffing plan, which places her in FCBBB at supervisory status 8. The FAS HR
+ * feed has her in FCBBBB as a status-2 supervisor.
+ *
+ * The damage was not one row. Every per-capita figure reported before this
+ * existed came from that stale file — 807 filled positions, 22 service-centre
+ * shares, every dollar. §7 is the guard that no code path can read the May
+ * file again.
+ *
+ * Run: node lets_app/test_hc_roster_import.js
+ */
+
+const fs = require('fs');
+const path = require('path');
+const R = require('./server/30_services/HCRosterImport.js');
+
+let fails = 0;
+const ok = (n, c, x) => {
+  if (c) console.log('  PASS', n);
+  else {
+    console.log('  FAIL', n, x === undefined ? '' : String(x).slice(0, 300));
+    fails++;
+  }
+};
+
+/** A feed row builder, so each test states only what it is about. */
+const HEADERS = ['Position Number', 'Reports To Position Number', 'Employee ID',
+                 'Employee Name', 'Email Address', 'Org Code', 'Position Title',
+                 'Grade', 'Supervisory Status', 'Work Status', 'LCAT',
+                 'Location Code', 'Duty Station Address',
+                 'Duty Station City', 'State'];
+const row = (o = {}) => [
+  o.pn ?? '90000001', o.reportsTo ?? '', o.empId ?? '0010001',
+  o.name ?? 'Doe,Jane A', o.email ?? 'jane.doe@gsa.gov', o.org ?? 'FCA0B',
+  o.title ?? 'Program Analyst', o.grade ?? '13', o.supv ?? '8',
+  o.work ?? 'Active', o.lcat ?? '', o.loc ?? '', o.addr ?? '',
+  o.city ?? 'Washington', o.state ?? 'DC'
+];
+
+console.log('--- HR roster importer test suite ---\n');
+
+// ---------------------------------------------------------------------------
+console.log('1. the column mapping is proposed, and refuses to guess');
+{
+  // The feed's real headers are not known here, and the same concept is
+  // spelled several ways across government HR exports.
+  const m = R.proposeMapping(HEADERS);
+  ok('maps the canonical header spellings',
+     m.mapping.positionNumber === 'Position Number' &&
+     m.mapping.orgCode === 'Org Code' &&
+     m.mapping.supervisoryStatus === 'Supervisory Status',
+     m.mapping);
+  ok('and nothing is missing', m.missing.length === 0, m.missing);
+
+  // The May export's spellings, which are what a real GSA roster looks like.
+  const may = R.proposeMapping(['Office Symbol', 'Full Name',
+                                'Position #      (PN)', 'Position Title',
+                                'Location City (Duty Station)', 'State',
+                                'Work Status', 'Location Code', 'Supv Status']);
+  ok('maps a real-world header set with different names',
+     may.mapping.orgCode === 'Office Symbol' &&
+     may.mapping.employeeName === 'Full Name' &&
+     may.mapping.supervisoryStatus === 'Supv Status',
+     may.mapping);
+  // 'Position #      (PN)' carries SIX internal spaces in the real file.
+  ok('and tolerates collapsed internal whitespace in a header',
+     may.mapping.positionNumber === 'Position #      (PN)',
+     may.mapping.positionNumber);
+  ok('with no required field missing', may.missing.length === 0, may.missing);
+
+  // THE REFUSAL. A wrong guess on orgCode misattributes every dollar; on
+  // supervisoryStatus it changes who can sign in. Neither fails visibly.
+  const bad = R.proposeMapping(['Name', 'Title', 'Email']);
+  ok('a feed with no position-number column is REFUSED',
+     bad.missing.indexOf('positionNumber') > -1, bad.missing);
+  ok('and a feed with no org column is REFUSED',
+     bad.missing.indexOf('orgCode') > -1, bad.missing);
+
+  const parsed = R.parseFeed([['Name', 'Title'], ['x', 'y']]);
+  ok('parseFeed stops rather than importing a partial mapping',
+     parsed.headerProblems.length > 0 && parsed.rows.length === 0,
+     parsed.headerProblems);
+  ok('and the message lists what the feed actually contained',
+     /Columns found in the feed/.test(parsed.headerProblems[0] || ''),
+     'an admin cannot fix a mapping failure without seeing the headers');
+
+  // reportsTo is deliberately NOT required: the org hierarchy is stored
+  // explicitly in HC_Orgs, so budget attribution survives without it.
+  ok('a supervisor column is NOT required',
+     R.REQUIRED_FIELDS.indexOf('reportsTo') === -1,
+     'org codes carry budget attribution; reportsTo only affects routing');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n2. the three fields a spreadsheet silently corrupts');
+{
+  // GRADE — the VT-03 defect. Every grade comparison in LETS is a string
+  // comparison, including the GS-15 Division Director lookup.
+  ok('a numeric 7 becomes "07"', R.normalizeGrade(7) === '07', R.normalizeGrade(7));
+  ok('"07" stays "07"', R.normalizeGrade('07') === '07');
+  ok('a float 13.0 becomes "13"', R.normalizeGrade('13.0') === '13',
+     R.normalizeGrade('13.0'));
+  ok('SES is left alone', R.normalizeGrade('SES') === 'SES');
+  ok('VT-03 is left alone', R.normalizeGrade('VT-03') === 'VT-03');
+  ok('and a blank stays blank', R.normalizeGrade(null) === '');
+
+  // SUPERVISORY STATUS — this field grants LETS access on its own. The May
+  // export carried '8' on 663 rows and '8.0' on 11 for the same meaning,
+  // which is what a spreadsheet does to a numeric column.
+  ok('"8.0" becomes "8"', R.normalizeSupervisoryStatus('8.0') === '8');
+  ok('"2.0" becomes "2"', R.normalizeSupervisoryStatus('2.0') === '2',
+     'a supervisor whose status reads 2.0 would be denied LETS access');
+  ok('a numeric 2 becomes the string "2"',
+     R.normalizeSupervisoryStatus(2) === '2',
+     typeof R.normalizeSupervisoryStatus(2));
+  // An unknown code is PRESERVED, not blanked. HR owns this vocabulary.
+  ok('an unrecognised code is preserved, not defaulted',
+     R.normalizeSupervisoryStatus('9') === '9',
+     'inventing a default is worse than carrying a value we flag');
+
+  // OCCUPANCY — this decides the per-capita denominator.
+  ok('a name saying VACANT is vacant',
+     R.normalizeOccupancy('Active', 'VACANT (New position)') === 'VACANT',
+     'the May export marked 107 seats this way in the NAME field');
+  ok('a real name with no status is FILLED',
+     R.normalizeOccupancy('', 'Mould,Melissa J') === 'FILLED');
+  ok('no name at all is VACANT',
+     R.normalizeOccupancy('Active', '') === 'VACANT',
+     'a seat with no occupant does not travel');
+  ok('an explicit Obligated status is kept',
+     R.normalizeOccupancy('Obligated', 'Doe,Jane') === 'OBLIGATED',
+     'committed to someone not yet in post — not filled, and not vacant');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n3. rows that must be blocked, and rows that must not be');
+{
+  const feed = [HEADERS,
+    row({ pn: '90000001', name: 'Alpha,A' }),
+    row({ pn: '90000001', name: 'Beta,B' }),              // duplicate PN
+    row({ pn: '90000003', name: 'Gamma,G', org: '' }),     // no org
+    row({ pn: '', name: '' }),                            // spacer
+    row({ pn: '90000005', name: 'Delta,D', email: '' }),   // no email
+    row({ pn: '90000006', name: 'Eps,E', reportsTo: '90000006' }) // self-report
+  ];
+  const p = R.parseFeed(feed, null);
+
+  // THE DUPLICATE KEY. The later row wins every lookup and the earlier person
+  // becomes invisible to routing, access and the org chart.
+  const dupe = p.blocked.find(b => b.row.positionNumber === '90000001' &&
+                                   b.row.employeeName === 'Beta,B');
+  ok('a duplicate position number is BLOCKED', !!dupe, p.blocked.map(b => b.row.employeeName));
+  ok('and the message names the row it collides with',
+     /already appeared on row 2/.test((dupe && dupe.problems[0]) || ''),
+     dupe && dupe.problems);
+  ok('the FIRST of the two is still imported',
+     p.rows.some(r => r.positionNumber === '90000001' && r.employeeName === 'Alpha,A'));
+
+  ok('a position with no org code is BLOCKED',
+     p.blocked.some(b => b.row.employeeName === 'Gamma,G'),
+     'without an org code this person\'s travel attributes to no budget');
+
+  ok('a self-reporting position is BLOCKED',
+     p.blocked.some(b => b.row.positionNumber === '90000006'),
+     'it would hang every page that walks the supervisor chain');
+
+  ok('a blank spacer row is skipped, not blocked', p.skipped === 1, p.skipped);
+
+  // A MISSING EMAIL IS A WARNING. Blocking forty people over it would leave
+  // LETS running on fictional data, which is the worse outcome.
+  ok('a missing email WARNS but still imports',
+     p.rows.some(r => r.positionNumber === '90000005') &&
+     p.warnings.some(w => w.positionNumber === '90000005'),
+     p.warnings);
+
+  // An unknown org code is a warning too: it still resolves to its nearest
+  // listed ancestor, so the money lands in the right DAC.
+  const orgIdx = { FCA: { orgCode: 'FCA' } };
+  const unknown = R.parseFeed([HEADERS, row({ org: 'FCAZZZ' })], orgIdx);
+  ok('an org code absent from HC_Orgs warns but imports',
+     unknown.rows.length === 1 && unknown.warnings.length === 1,
+     unknown.warnings);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n4. supervisor cycles are found across the SET, not per row');
+{
+  // A cycle is invisible when either row is examined alone: A reports to B
+  // reports to A is two individually valid rows. HCAdmin checks this per
+  // edit; a bulk import has to check per batch.
+  const rows = [
+    { positionNumber: 'A', reportsToPositionNumber: 'B', sourceRow: 2 },
+    { positionNumber: 'B', reportsToPositionNumber: 'C', sourceRow: 3 },
+    { positionNumber: 'C', reportsToPositionNumber: 'A', sourceRow: 4 },
+    { positionNumber: 'D', reportsToPositionNumber: '', sourceRow: 5 },
+    { positionNumber: 'E', reportsToPositionNumber: 'D', sourceRow: 6 }
+  ];
+  const c = R.findSupervisorCycles(rows);
+
+  ok('a three-node cycle is detected', c.cycles.length === 1, c.cycles);
+  ok('all three members are named',
+     c.cycles[0].length === 3 && c.cycles[0].indexOf('A') > -1, c.cycles[0]);
+
+  // CLEARED, NOT DROPPED. These are real people; a broken routing pointer is
+  // recoverable, a missing person is not, and their budget attribution is
+  // unaffected either way.
+  ok('their supervisor pointers are cleared', c.cleared === 3, c.cleared);
+  ok('and the rows survive',
+     rows[0].reportsToPositionNumber === '' && rows[0].cycleCleared === true,
+     rows[0]);
+
+  // A VALID chain must be untouched, or every roster loses its routing.
+  ok('a valid chain is NOT cleared',
+     rows[4].reportsToPositionNumber === 'D', rows[4]);
+  ok('and a root with no supervisor is fine',
+     rows[3].reportsToPositionNumber === '' && !rows[3].cycleCleared);
+
+  // Two independent cycles, to prove the walk does not stop at the first.
+  const two = R.findSupervisorCycles([
+    { positionNumber: 'P', reportsToPositionNumber: 'Q', sourceRow: 2 },
+    { positionNumber: 'Q', reportsToPositionNumber: 'P', sourceRow: 3 },
+    { positionNumber: 'X', reportsToPositionNumber: 'Y', sourceRow: 4 },
+    { positionNumber: 'Y', reportsToPositionNumber: 'X', sourceRow: 5 }
+  ]);
+  ok('two separate cycles are both found', two.cycles.length === 2, two.cycles);
+
+  // A dangling pointer is not a cycle and must not be reported as one.
+  const dangle = R.findSupervisorCycles([
+    { positionNumber: 'M', reportsToPositionNumber: 'GONE', sourceRow: 2 }
+  ]);
+  ok('a dangling supervisor pointer is not a cycle',
+     dangle.cycles.length === 0 && dangle.cleared === 0, dangle);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n5. the 16 fictional people are identified by their own markers');
+{
+  // @clolry: "remove ALL test records". Detected by the fixture's markers, NOT
+  // by "anything the feed does not mention" — that would also delete a real
+  // person the feed happens to omit this week.
+  const existing = [
+    { positionNumber: 'FC-0001', employeeName: 'Marguerite Okonkwo',
+      emailAddress: 'marguerite.okonkwo@example.gov', createdBy: 'hc-seed' },
+    { positionNumber: 'FCA-0002', employeeName: 'Thandiwe Mbeki-Lawson',
+      emailAddress: 'thandiwe@example.gov', createdBy: 'hc-seed' },
+    { positionNumber: '90012345', employeeName: 'Mould,Melissa J',
+      emailAddress: 'melissa.mould@gsa.gov', createdBy: 'admin@gsa.gov' },
+    // A real person whose email is missing — must NOT be mistaken for a
+    // fixture just because it cannot be matched on the domain.
+    { positionNumber: '90067890', employeeName: 'Real,Person',
+      emailAddress: '', createdBy: 'admin@gsa.gov' }
+  ];
+  const seed = R.identifySeedRows(existing);
+
+  ok('the @example.gov fixtures are found', seed.length === 2,
+     seed.map(s => s.positionNumber));
+  ok('a real @gsa.gov person is NOT flagged',
+     !seed.some(s => s.positionNumber === '90012345'));
+  ok('and nor is a real person with no email',
+     !seed.some(s => s.positionNumber === '90067890'),
+     'a blank email is not evidence of being fictional');
+
+  // Each of the three markers independently.
+  ok('Created_By hc-seed alone is enough',
+     R.identifySeedRows([{ positionNumber: 'X1', emailAddress: 'a@gsa.gov',
+                           createdBy: 'hc-seed' }]).length === 1);
+  ok('the synthetic FC-0001 numbering alone is enough',
+     R.identifySeedRows([{ positionNumber: 'FCB-0003', emailAddress: 'a@gsa.gov',
+                           createdBy: 'admin' }]).length === 1);
+  ok('a real 8-digit position number is not synthetic',
+     R.identifySeedRows([{ positionNumber: '00123456', emailAddress: 'a@gsa.gov',
+                           createdBy: 'admin' }]).length === 0);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n6. the diff separates fixtures from real people');
+{
+  const existing = [
+    { positionNumber: 'FC-0001', employeeName: 'Marguerite Okonkwo',
+      emailAddress: 'm@example.gov', createdBy: 'hc-seed', orgCode: 'FC' },
+    { positionNumber: '90012345', employeeName: 'Mould,Melissa J',
+      emailAddress: 'melissa.mould@gsa.gov', createdBy: 'admin',
+      orgCode: 'FCBBB', supervisoryStatus: '8', occupancyStatus: 'FILLED' },
+    { positionNumber: '90099999', employeeName: 'Departed,Person',
+      emailAddress: 'd@gsa.gov', createdBy: 'admin', orgCode: 'FCA',
+      occupancyStatus: 'FILLED' }
+  ];
+  const incoming = [
+    // THE CORRECTION THAT PROMPTED THIS MODULE. The May file had Mould in
+    // FCBBB at status 8; the feed has her in FCBBBB at status 2.
+    { positionNumber: '90012345', employeeName: 'Mould,Melissa J',
+      emailAddress: 'melissa.mould@gsa.gov', orgCode: 'FCBBBB',
+      supervisoryStatus: '2', occupancyStatus: 'FILLED' },
+    { positionNumber: '90055555', employeeName: 'New,Hire',
+      emailAddress: 'n@gsa.gov', orgCode: 'FCA0B', occupancyStatus: 'FILLED' }
+  ];
+  const d = R.diffRoster(incoming, existing);
+
+  ok('a new position is an add', d.adds.length === 1 &&
+     d.adds[0].positionNumber === '90055555', d.adds);
+
+  const mould = d.changes.find(c => c.row.positionNumber === '90012345');
+  ok('Mould is reported as changed', !!mould, d.changes);
+  ok('her org code move FCBBB -> FCBBBB is named',
+     mould.fields.some(f => f.field === 'orgCode' &&
+                            f.from === 'FCBBB' && f.to === 'FCBBBB'),
+     mould.fields);
+  ok('and her supervisory status 8 -> 2, which changes her LETS access',
+     mould.fields.some(f => f.field === 'supervisoryStatus' &&
+                            f.from === '8' && f.to === '2'),
+     mould.fields);
+
+  // THE SPLIT THAT MATTERS. "Removing 1 fictional fixture" and "removing 1
+  // real person the feed no longer lists" are very different confirmations.
+  ok('the fictional row is a SEED delete',
+     d.seedDeletes.length === 1 && d.seedDeletes[0].positionNumber === 'FC-0001',
+     d.seedDeletes);
+  ok('the departed real person is a separate, flagged delete',
+     d.deletes.length === 1 && d.deletes[0].positionNumber === '90099999',
+     d.deletes);
+
+  // A case-only difference is not a change, or every import reports the whole
+  // roster as modified and the real changes are unreadable.
+  const caseOnly = R.diffRoster(
+    [{ positionNumber: 'P1', emailAddress: 'A@GSA.GOV', orgCode: 'fca' }],
+    [{ positionNumber: 'P1', emailAddress: 'a@gsa.gov', orgCode: 'FCA' }]);
+  ok('a case-only email or org difference is not a change',
+     caseOnly.changes.length === 0 && caseOnly.unchanged.length === 1,
+     caseOnly.changes);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n7. the May spreadsheet can never be read again');
+{
+  // THE GUARD FOR MY OWN ERROR. I read Copy of ASD Staffing Plan 5-12-26.xlsx
+  // and reported allocations from it. Every per-capita figure in that report
+  // was wrong because the file is six months stale.
+  //
+  // @clolry: "completely ignore my sheet from May."
+  const serverFiles = [];
+  (function walk(dir) {
+    fs.readdirSync(dir, { withFileTypes: true }).forEach((e) => {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith('.js')) serverFiles.push(p);
+    });
+  })('lets_app/server');
+
+  const offenders = [];
+  serverFiles.forEach((f) => {
+    const src = fs.readFileSync(f, 'utf8');
+    // Strip comments: this file's own prose names the May file while
+    // explaining why it must not be read, and several server files now do the
+    // same. A naive grep reports those as violations.
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '')
+                    .replace(/^\s*\/\/.*$/gm, '');
+    if (/Staffing Plan|staffing_plan|reference_excel_files/i.test(code)) {
+      offenders.push(f);
+    }
+  });
+  ok('no server file references the May staffing plan or the reference folder',
+     offenders.length === 0, offenders);
+
+  // And the roster has exactly one source, which must be the Script Property.
+  const sync = fs.readFileSync('lets_app/server/40_domain/HCRosterSync.js', 'utf8');
+  ok('the importer reads the FAS HR feed property',
+     /getFasHrFeedSource\(\)/.test(sync));
+
+  const props = fs.readFileSync('lets_app/server/00_config/Props.js', 'utf8');
+  ok('and that property is FAS_HRLinks_Feed',
+     /FAS_HR_FEED:\s*'FAS_HRLinks_Feed'/.test(props));
+
+  // NO DEFAULT. Every other getter in Props.js falls back to something
+  // sensible; this one must not, because every available fallback is a stale
+  // roster — which is the failure being prevented.
+  const getter = props.slice(props.indexOf('function getFasHrFeedSource'),
+                             props.indexOf('function getLiabilityLogSource'));
+  ok('an unset HR feed property is an ERROR, not a default',
+     /ok:\s*false/.test(getter) && /is not set/.test(getter),
+     'defaulting to a stale roster is exactly what went wrong');
+  ok('and the error explains why there is no fallback',
+     /no other source|no fallback/i.test(getter), getter.slice(0, 200));
+
+  // The two spreadsheet IDs must not be in the OPTIONAL set, or setup can
+  // complete without them and the importer fails at the point of use.
+  const optionalBlock = props.slice(props.indexOf('const OPTIONAL = new Set(['),
+                                    props.indexOf(']);', props.indexOf('const OPTIONAL')));
+  ok('FAS_HR_FEED is NOT optional',
+     !/'FAS_HR_FEED'/.test(optionalBlock), optionalBlock.slice(0, 200));
+  ok('LIABILITY_LOG_SHEET is NOT optional',
+     !/'LIABILITY_LOG_SHEET'/.test(optionalBlock));
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n8. the import cannot wipe the roster, and cannot run unconfirmed');
+{
+  const sync = fs.readFileSync('lets_app/server/40_domain/HCRosterSync.js', 'utf8');
+
+  // THE WORST OUTCOME THIS FILE PREVENTS. A feed that parses to nothing —
+  // wrong tab, cleared sheet, permissions change returning headers only —
+  // would replace the roster with nothing and revoke supervisor-based LETS
+  // access for everyone.
+  ok('an empty parse result REFUSES to import',
+     /if \(!parsed\.rows\.length\)/.test(sync) &&
+     /would remove every position/.test(sync),
+     'there is no legitimate reason to import zero positions');
+
+  // Confirmation is mandatory, because this deletes HR rows.
+  ok('importRoster requires a preview token',
+     /indexOf\('roster_'\) !== 0/.test(sync));
+  ok('both entry points are admin-gated',
+     (sync.match(/_hcAdminGuard_\(\)/g) || []).length >= 2);
+  ok('and it takes the script lock',
+     /LockService\.getScriptLock\(\)/.test(sync));
+
+  // Created_At must survive. Stamping it `now` on every import makes the
+  // whole roster look created today and destroys the only record of when a
+  // position first appeared.
+  ok('Created_At is preserved for an existing position',
+     /createdAtByPn\[r\.positionNumber\] \|\| now/.test(sync));
+
+  // Leading zeros. Employee_ID '0010001' and Grade '07' both lose theirs
+  // unless the column is pinned to text BEFORE the write.
+  ok('identifier columns are pinned to text before writing',
+     /setNumberFormat\('@'\)/.test(sync) &&
+     sync.indexOf("setNumberFormat('@')") < sync.indexOf('sheet.getRange(2, 1, rows.length'),
+     'pinning after the write is too late — Sheets has already coerced 07 to 7');
+
+  // The HC bundle is cached for six hours. Without invalidation the dashboard
+  // serves the OLD roster, the admin concludes the import failed, and runs it
+  // again.
+  ok('the HC cache is invalidated after a write',
+     /hcCacheInvalidateAll\(\)/.test(sync));
+
+  // The preview must state the headcount consequence, because that is the
+  // whole budget impact of the roster.
+  ok('the preview reports filled headcount and says what it drives',
+     /per-capita budget split divides by/.test(sync));
+  ok('and warns separately about deleting non-test positions',
+     /are NOT test data/.test(sync));
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n9. the headcount preview matches the live rule');
+{
+  // The preview counts rows that are not written yet, so it duplicates
+  // HCData.hcServiceCentreHeadcount's rule. Duplicated rules drift, so this
+  // asserts they agree on the shape that matters.
+  const orgs = [
+    { orgCode: 'FC', parentOrgCode: '', orgLevel: 'AC' },
+    { orgCode: 'FCB', parentOrgCode: 'FC', orgLevel: 'DAC' },
+    { orgCode: 'FCBB', parentOrgCode: 'FCB', orgLevel: 'OFFICE' },
+    { orgCode: 'FCBBB', parentOrgCode: 'FCBB', orgLevel: 'SERVICE_CENTER' },
+    { orgCode: 'FCBBBB', parentOrgCode: 'FCBBB', orgLevel: 'DIVISION' }
+  ];
+  const rows = [
+    { orgCode: 'FCBBBB', occupancyStatus: 'FILLED' },
+    { orgCode: 'FCBBBB', occupancyStatus: 'VACANT' },
+    { orgCode: 'FCBBB', occupancyStatus: 'FILLED' },
+    { orgCode: 'FCB', occupancyStatus: 'FILLED' },        // above SC level
+    { orgCode: 'FCBBBBZZ', occupancyStatus: 'FILLED' },   // unlisted sub-org
+    { orgCode: 'ZZZZ', occupancyStatus: 'FILLED' }        // unattributable
+  ];
+  const h = R.previewHeadcount(rows, orgs);
+
+  // A DIVISION rolls up to its service centre. Mould sits at FCBBBB, which is
+  // Division 2 of Acquisition Service Center 2.
+  ok('a division-level position rolls up to its service centre',
+     h['FCB|FCBBB'] && h['FCB|FCBBB'].filled === 3,
+     h['FCB|FCBBB']);
+  ok('and its vacant seat is counted separately, not dropped',
+     h['FCB|FCBBB'].vacant === 1 && h['FCB|FCBBB'].authorised === 4,
+     h['FCB|FCBBB']);
+
+  // An unlisted code resolves to its nearest listed ancestor by prefix — the
+  // same rule HCData.resolveOrgByCode uses — so the money still lands.
+  ok('an org code absent from HC_Orgs resolves to its nearest parent',
+     h['FCB|FCBBB'].filled === 3,
+     'FCBBBBZZ must count toward FCBBB, not vanish');
+
+  // Someone sitting directly at the DAC is NOT discarded. Dropping them would
+  // inflate every service centre's share and the total would still foot.
+  ok('a position above any service centre gets its own bucket',
+     h['FCB|'] && h['FCB|'].filled === 1 &&
+     h['FCB|'].orgCode === '', h['FCB|']);
+
+  // And a genuinely unattributable code is reported, not silently lost.
+  ok('an unattributable position is reported',
+     h.UNATTRIBUTED && h.UNATTRIBUTED.filled === 1, h.UNATTRIBUTED);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n10. negative controls (the suite must be able to fail)');
+{
+  // 10a — if the duplicate check is removed, §3 must fail.
+  const src = fs.readFileSync('lets_app/server/30_services/HCRosterImport.js', 'utf8');
+  const noDupe = src.replace(
+    "} else if (seenPositionNumbers && row.positionNumber in seenPositionNumbers) {",
+    "} else if (false) {");
+  ok('negative control patched the duplicate check', noDupe !== src);
+  {
+    const mod = { exports: {} };
+    new Function('module', 'exports', noDupe)(mod, mod.exports);
+    const p = mod.exports.parseFeed(
+      [HEADERS, row({ pn: 'D1', name: 'A,A' }), row({ pn: 'D1', name: 'B,B' })], null);
+    ok('a patched build imports BOTH duplicate rows', p.rows.length === 2,
+       'so section 3 is exercising a real guard — and both would be in the roster');
+  }
+
+  // 10b — if occupancy defaults to FILLED regardless of name, §2 must fail and
+  // every vacant seat would inflate its org's per-capita share.
+  const vacantFilled = src.replace(
+    "if (!name || /\\bVACANT\\b/.test(name.toUpperCase())) return 'VACANT';",
+    "if (false) return 'VACANT';");
+  ok('negative control patched the vacancy rule', vacantFilled !== src);
+  {
+    const mod = { exports: {} };
+    new Function('module', 'exports', vacantFilled)(mod, mod.exports);
+    ok('a patched build counts a VACANT seat as FILLED',
+       mod.exports.normalizeOccupancy('Active', 'VACANT (New position)') === 'FILLED',
+       'so section 2 is real: 107 vacant seats would skew every allocation');
+  }
+
+  // 10c — if the cycle walk only looks one hop, §4 must fail.
+  const shallow = src.replace('depth < 200', 'depth < 1');
+  ok('negative control patched the cycle depth', shallow !== src);
+  {
+    const mod = { exports: {} };
+    new Function('module', 'exports', shallow)(mod, mod.exports);
+    const c = mod.exports.findSupervisorCycles([
+      { positionNumber: 'A', reportsToPositionNumber: 'B', sourceRow: 2 },
+      { positionNumber: 'B', reportsToPositionNumber: 'C', sourceRow: 3 },
+      { positionNumber: 'C', reportsToPositionNumber: 'A', sourceRow: 4 }
+    ]);
+    ok('a patched build misses a three-node cycle', c.cycles.length === 0,
+       'so section 4 is real: the cycle would hang every org-chart page');
+  }
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n11. seedHCTestData cannot overwrite a real roster');
+{
+  // The fixture loader has a `force` flag, but `force: true` is exactly what
+  // someone types when they are determined — and it would then replace a real
+  // 900-person roster with 16 fictional people, revoking supervisor-based
+  // LETS access for everyone and skewing every budget allocation.
+  const seed = fs.readFileSync('lets_app/server/91_setup/HCSeed.js', 'utf8');
+
+  ok('it refuses when existing rows have real email addresses',
+     /REFUSED: /.test(seed) && /with real email addresses/.test(seed),
+     'an @example.gov address is RFC 2606 reserved, so anything else is real');
+
+  // Checked BEFORE force is consulted, or the flag defeats the guard.
+  const realCheck = seed.indexOf('realLooking > 0');
+  const forceCheck = seed.indexOf('force !== true');
+  ok('and that check runs BEFORE the force flag is read',
+     realCheck > -1 && forceCheck > -1 && realCheck < forceCheck,
+     'otherwise force:true bypasses the only guard that matters');
+
+  ok('the refusal has no override',
+     /There is no `force` for/.test(seed), 'overwriting a real roster ' +
+     'with test data has no legitimate use');
+
+  // And it must point at the right function, or the reader works around it.
+  ok('it names importRoster as the correct alternative',
+     /run importRoster\(\)/.test(seed));
+
+  // The fixture emails must stay on a reserved domain, so identifySeedRows
+  // keeps working and nothing can ever be delivered to an invented person.
+  const addrs = seed.match(/email: '[^']+'/g) || [];
+  ok('every fixture email is on a reserved domain',
+     addrs.length > 0 && addrs.every(a => /@example\.(gov|com)'/.test(a)),
+     addrs.filter(a => !/@example\.(gov|com)'/.test(a)));
+}
+
+console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
+process.exit(fails ? 1 : 0);

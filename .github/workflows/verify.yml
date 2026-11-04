@@ -243,6 +243,31 @@ jobs:
         # reserve money against it.
         run: node lets_app/test_event_history.js
 
+      - name: HR roster importer tests
+        # HC_Positions drives three things that break invisibly: site access
+        # (Access.js:416 admits a supervisor on Supervisory_Status === '2'),
+        # approval routing (the GS-15 Division Director lookup is a STRING
+        # comparison on Grade), and every per-capita budget allocation.
+        #
+        # §2 covers the three fields a spreadsheet silently corrupts. The May
+        # export carried '8' on 663 rows and '8.0' on 11 for the same meaning;
+        # a status of '8.0' or a numeric 2 fails the access comparison and
+        # denies LETS to real supervisors.
+        #
+        # §7 is the guard for a real error. Per-capita figures were reported
+        # from reference_excel_files/Copy of ASD Staffing Plan 5-12-26.xlsx,
+        # which places Melissa Mould in FCBBB at supervisory status 8 where
+        # the FAS HR feed has her in FCBBBB at status 2. The file is six
+        # months stale, so all 22 service-centre shares derived from it were
+        # wrong while looking precise. No server file may reference it, and
+        # getFasHrFeedSource returns an ERROR rather than a default — every
+        # available fallback is a stale roster.
+        #
+        # §8 covers the two destructive guards: an empty parse result refuses
+        # to import (a wrong tab would otherwise wipe the roster and revoke
+        # everyone's access), and importRoster requires a preview token.
+        run: node lets_app/test_hc_roster_import.js
+
       - name: Org chart tests
         # Includes the cross-project agreement check: orgchart_app/HCRead.js is
         # a deliberate SECOND implementation of lets_app HCData.js, so both are
