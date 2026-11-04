@@ -371,6 +371,10 @@ function previewRosterImport(opts) {
       // them. A large disagreement count means the wrong one was chosen, and
       // that moves every per-capita share.
       occupancyDisagreement: parsed.occupancyDisagreement,
+      // People holding two positions — a temp promotion plus their permanent
+      // seat held open as OBLIGATED. Benign, because the split counts FILLED
+      // only, but `doubleCounted` must be zero or the denominator is wrong.
+      duplicatePeople: parsed.duplicatePeople,
       headcount: headcount,
       notes: _rosterPreviewNotes_(parsed, diff, existing)
     };
@@ -438,6 +442,22 @@ function _logRosterPreview_(p) {
        p.occupancyDisagreement.comparable === false)) {
     L.push('OCCUPANCY CROSS-CHECK');
     L.push('  ' + p.occupancyDisagreement.note);
+    L.push('');
+  }
+
+  var dp = p.duplicatePeople;
+  if (dp && dp.peopleWithMultiplePositions) {
+    L.push('PEOPLE HOLDING TWO POSITIONS');
+    L.push('  ' + dp.note);
+    if (dp.doubleCounted) {
+      dp.doubleCountedSamples.forEach(function (e) {
+        L.push('  DOUBLE-COUNTED: ' + e.employeeName + ' — ' +
+               e.positions.map(function (x) {
+                 return x.positionNumber + ' ' + x.orgCode + ' ' +
+                        x.occupancyStatus;
+               }).join('; '));
+      });
+    }
     L.push('');
   }
 
@@ -655,6 +675,14 @@ function _rosterPreviewNotes_(parsed, diff, existing) {
       (parsed.occupancyDisagreement.conflicts ||
        parsed.occupancyDisagreement.comparable === false)) {
     notes.push(parsed.occupancyDisagreement.note);
+  }
+
+  // Only when it is a PROBLEM. The benign case — a temp promotion beside an
+  // obligated permanent seat — is already handled by counting FILLED only,
+  // and repeating it as a note on every run would train a reader to skip the
+  // notes block.
+  if (parsed.duplicatePeople && parsed.duplicatePeople.doubleCounted) {
+    notes.push(parsed.duplicatePeople.note);
   }
 
   var filled = 0;

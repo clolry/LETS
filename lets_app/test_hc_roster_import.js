@@ -1284,5 +1284,106 @@ console.log('\n19. the log limit does not eat the headcount table');
      'the Run button passes no arguments, so the normal case must log');
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n20. one person holding two positions is counted once');
+{
+  // @clolry: "The obligated positions that I could find are ones that show
+  // the person in a temp promotion so they are listed on the sheet twice
+  // (once as temp promotion and once as obligated)."
+  //
+  // I had this backwards. I suggested the denominator should be 823 rather
+  // than 817 because the OBLIGATED rows' A/T action codes looked active —
+  // true, and irrelevant. An OBLIGATED row is the person's PERMANENT seat held
+  // open while they serve a temp promotion, and the same human is also on a
+  // FILLED temp-promotion row. Counting OBLIGATED would DOUBLE-COUNT six
+  // people, not find six missing ones. 817 is right.
+  const H = ['Position#', 'Employee ID', 'Employee Name', 'Dept ID (Org)',
+             'Position Status'];
+
+  const real = R.parseFeed([H,
+    // One person, two positions: temp promotion + permanent seat.
+    ['90001', '0012345', 'Kelly,Shaun Michael', 'FCBAB', 'Filled'],
+    ['90002', '0012345', 'Kelly,Shaun Michael', 'FCB0A', 'Obligated'],
+    ['90003', '0067890', 'Other,Person', 'FCBAB', 'Filled']
+  ], null);
+
+  // BOTH ROWS ARE KEPT. They are real positions, and HC_Positions is a
+  // position table — merging them would lose the permanent seat the person
+  // returns to.
+  ok('both positions are imported', real.rows.length === 3, real.rows.length);
+
+  const d = real.duplicatePeople;
+  ok('the person holding two positions is detected',
+     d.peopleWithMultiplePositions === 1, d);
+  ok('and is resolved by occupancy, not flagged as a problem',
+     d.resolvedByOccupancy === 1 && d.doubleCounted === 0, d);
+  ok('the note explains the temp-promotion shape',
+     /temporary promotion plus their permanent seat/.test(d.note), d.note);
+
+  // THE HEADCOUNT IS THE POINT. The person must appear once.
+  const orgs = [
+    { orgCode: 'FC', parentOrgCode: '', orgLevel: 'AC' },
+    { orgCode: 'FCB', parentOrgCode: 'FC', orgLevel: 'DAC' },
+    { orgCode: 'FCB0A', parentOrgCode: 'FCB', orgLevel: 'SERVICE_CENTER' },
+    { orgCode: 'FCBA', parentOrgCode: 'FCB', orgLevel: 'OFFICE' },
+    { orgCode: 'FCBAB', parentOrgCode: 'FCBA', orgLevel: 'SERVICE_CENTER' }
+  ];
+  const hc = R.previewHeadcount(real.rows, orgs);
+  const filled = Object.keys(hc).reduce((s, k) => s + hc[k].filled, 0);
+  ok('the filled headcount counts each PERSON once', filled === 2, hc);
+  ok('and attributes them to their TEMP-PROMOTION org',
+     hc['FCB|FCBAB'].filled === 2 && hc['FCB|FCB0A'].filled === 0,
+     'that is where they currently work, so where travel would be approved');
+  ok('while the permanent seat still counts as a vacancy there',
+     hc['FCB|FCB0A'].vacant === 1 && hc['FCB|FCB0A'].authorised === 1,
+     hc['FCB|FCB0A']);
+
+  // THE CASE THAT WOULD BREAK THE BUDGET. Two FILLED rows for one person
+  // double-counts them in the denominator, shifting every service-centre
+  // share by a fraction nobody would notice.
+  const bad = R.parseFeed([H,
+    ['90001', '0012345', 'Kelly,Shaun', 'FCBAB', 'Filled'],
+    ['90002', '0012345', 'Kelly,Shaun', 'FCB0A', 'Filled']
+  ], null);
+  ok('two FILLED rows for one person are flagged',
+     bad.duplicatePeople.doubleCounted === 1, bad.duplicatePeople);
+  ok('and the note says the shares are wrong',
+     /counted twice in the per-capita denominator/.test(bad.duplicatePeople.note),
+     bad.duplicatePeople.note);
+  ok('with the positions named so it can be resolved',
+     bad.duplicatePeople.doubleCountedSamples[0].positions.length === 2,
+     bad.duplicatePeople.doubleCountedSamples[0]);
+
+  // MATCHED ON EMPLOYEE ID, NOT NAME. Two people sharing a name is a near
+  // certainty at 1,046 positions, and a name-only match would report every
+  // namesake pair as a duplicate person.
+  const namesakes = R.parseFeed([H,
+    ['90001', '0011111', 'Smith,Michael', 'FCBAB', 'Filled'],
+    ['90002', '0022222', 'Smith,Michael', 'FCBAC', 'Filled']
+  ], null);
+  ok('two different people with the same name are NOT a duplicate',
+     namesakes.duplicatePeople.peopleWithMultiplePositions === 0,
+     namesakes.duplicatePeople);
+
+  // Falls back to the name only when there is no ID to match on.
+  const noId = R.parseFeed(
+    [['Position#', 'Employee Name', 'Dept ID (Org)', 'Position Status'],
+     ['90001', 'Kelly,Shaun', 'FCBAB', 'Filled'],
+     ['90002', 'Kelly,Shaun', 'FCB0A', 'Obligated']], null);
+  ok('with no Employee ID column it falls back to the name',
+     noId.duplicatePeople.peopleWithMultiplePositions === 1,
+     noId.duplicatePeople);
+
+  // Vacant seats have no occupant, so they must not all collapse into one
+  // "person" named VACANT.
+  const vacants = R.parseFeed([H,
+    ['90001', '', 'VACANT', 'FCBAB', 'Vacant'],
+    ['90002', '', 'VACANT', 'FCBAC', 'Vacant']
+  ], null);
+  ok('vacant seats are not treated as one person holding two positions',
+     vacants.duplicatePeople.peopleWithMultiplePositions === 0,
+     vacants.duplicatePeople);
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);

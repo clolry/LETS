@@ -394,13 +394,32 @@ var HCRosterImport = (function () {
    *
    * THIS DECIDES THE PER-CAPITA DENOMINATOR, so it must not guess generously.
    *
-   * The FAS feed's 'Position Status' is the source. OBLIGATED is a real state
-   * in it — the feed carries an '"Obligated To" Employee Name' column, which
-   * only makes sense if a position can be obligated to someone not yet in it.
+   * WHAT OBLIGATED MEANS IN THIS FEED, AND WHY EXCLUDING IT IS CORRECT
+   * -----------------------------------------------------------------
+   * I had this backwards and @clolry corrected it: "The obligated positions
+   * that I could find are ones that show the person in a temp promotion so
+   * they are listed on the sheet twice (once as temp promotion and once as
+   * obligated)."
+   *
+   * So an OBLIGATED row is a person's PERMANENT seat, held open while they
+   * serve a temporary promotion elsewhere. The same human also appears on the
+   * temp-promotion row, which is FILLED. They are two real positions and one
+   * traveller.
+   *
+   * Counting OBLIGATED as filled would therefore DOUBLE-COUNT six people, not
+   * find six missing ones. I had suggested the denominator should be 823
+   * rather than 817 on the reasoning that their 'A'/'T' action codes looked
+   * active — which was true and irrelevant. 817 is right, and it is right
+   * because excluding OBLIGATED de-duplicates the person rather than because
+   * an obligated seat does not travel.
+   *
+   * The headcount attributes such a person to their TEMP-PROMOTION org, which
+   * is where they currently work and therefore where their travel would be
+   * approved. That is the better of the two answers available.
+   *
    * LETS already treats OBLIGATED as not-filled for access
-   * (Access.js:439 excludes it) and the per-capita split counts only FILLED,
-   * which is right: a seat committed to someone who has not arrived generates
-   * no travel this year.
+   * (Access.js:439 excludes it), which is consistent: the person signs in
+   * against their temp-promotion row.
    *
    * A row whose NAME says vacant is vacant regardless of the status column.
    * The May export marked 107 seats with 'VACANT (New position)' in the name
@@ -823,9 +842,121 @@ var HCRosterImport = (function () {
 
     out.emailCoverage = emailCoverage(out.rows, mapped);
     out.occupancyDisagreement = occupancyDisagreement(out.rows, mapped);
+    out.duplicatePeople = duplicatePeople(out.rows);
     out.scopeNote = scopeNote(out);
 
     return out;
+  }
+
+  /**
+   * People holding more than one position.
+   *
+   * @clolry: "The obligated positions that I could find are ones that show the
+   * person in a temp promotion so they are listed on the sheet twice (once as
+   * temp promotion and once as obligated)."
+   *
+   * WHY THIS IS REPORTED AND NOT DE-DUPLICATED
+   * ------------------------------------------
+   * Both rows are real POSITIONS — the permanent seat held open, and the
+   * temporary one being worked — and HC_Positions is a position table keyed on
+   * Position_Number. Merging them would lose the permanent seat, which still
+   * exists and which the person returns to.
+   *
+   * The duplication only matters for HEADCOUNT, and that is already handled:
+   * the per-capita split counts FILLED only, the permanent seat is OBLIGATED,
+   * so the person is counted once — in their temp-promotion org, which is
+   * where they currently work and where their travel would be approved.
+   *
+   * So this exists to make the invariant CHECKABLE rather than assumed. If a
+   * person ever appeared twice as FILLED, they would be double-counted in the
+   * denominator and the budget would silently misallocate. That is the thing
+   * worth detecting, and it is reported separately from the benign case.
+   *
+   * MATCHED ON EMPLOYEE ID WHEN PRESENT, name only as a fallback. Two people
+   * can share a name; an Employee ID is the person. A name-only match would
+   * report a false duplicate for every pair of namesakes, which at 1,046
+   * positions is a near certainty.
+   *
+   * @param {Array} rows
+   * @returns {Object}
+   */
+  function duplicatePeople(rows) {
+    var byPerson = {};
+
+    (rows || []).forEach(function (r) {
+      // VACANT SEATS ARE SKIPPED FIRST, before any key is built.
+      //
+      // Found by the test: a vacant row carries the placeholder name 'VACANT'
+      // and no Employee ID, so keying on the name collapsed every vacancy
+      // into ONE "person holding N positions". On the real roster that is 229
+      // vacancies reported as a single person with 229 jobs.
+      //
+      // Harmless to the arithmetic — none are FILLED, so nothing is
+      // double-counted — and corrosive to the report, which exists to make a
+      // real double-count visible. A permanent line of nonsense in a
+      // diagnostic is how a reader learns to stop reading it.
+      if (r.occupancyStatus === 'VACANT') return;
+
+      // An ID is the person; a name is a label. Prefixed so an ID of '12345'
+      // cannot collide with a name that happens to be '12345'.
+      var key = r.employeeId ? ('id:' + r.employeeId)
+                             : ('nm:' + _str_(r.employeeName).toUpperCase());
+      if (key === 'nm:') return;              // no name and no ID: not a person
+      if (!byPerson[key]) byPerson[key] = [];
+      byPerson[key].push(r);
+    });
+
+    var benign = [];
+    var doubleCounted = [];
+
+    Object.keys(byPerson).forEach(function (key) {
+      var held = byPerson[key];
+      if (held.length < 2) return;
+
+      var filled = held.filter(function (r) {
+        return r.occupancyStatus === 'FILLED';
+      });
+
+      var entry = {
+        employeeId: held[0].employeeId,
+        employeeName: held[0].employeeName,
+        positions: held.map(function (r) {
+          return {
+            positionNumber: r.positionNumber,
+            orgCode: r.orgCode,
+            occupancyStatus: r.occupancyStatus,
+            officeTitle: r.officeTitle
+          };
+        })
+      };
+
+      // THE CASE THAT MATTERS. Two FILLED rows for one person means the
+      // per-capita denominator counts them twice, and every service-centre
+      // share shifts by a fraction nobody would notice.
+      if (filled.length > 1) doubleCounted.push(entry);
+      else benign.push(entry);
+    });
+
+    return {
+      peopleWithMultiplePositions: benign.length + doubleCounted.length,
+      // Counted once — a temp promotion plus an obligated permanent seat.
+      resolvedByOccupancy: benign.length,
+      resolvedSamples: benign.slice(0, 10),
+      // Counted twice. Should be zero.
+      doubleCounted: doubleCounted.length,
+      doubleCountedSamples: doubleCounted.slice(0, 20),
+      note: doubleCounted.length
+        ? (doubleCounted.length + ' person(s) hold more than one FILLED ' +
+           'position, so they are counted twice in the per-capita ' +
+           'denominator and every service-centre share is slightly wrong. ' +
+           'This needs a decision — see the samples.')
+        : (benign.length
+            ? (benign.length + ' person(s) hold two positions — typically a ' +
+               'temporary promotion plus their permanent seat held open as ' +
+               'OBLIGATED. Each is counted ONCE, in their temp-promotion org, ' +
+               'because the split counts FILLED only. No double-counting.')
+            : 'Nobody holds more than one position.')
+    };
   }
 
   /**
@@ -1144,6 +1275,7 @@ var HCRosterImport = (function () {
     DEFAULT_ORG_SCOPE: DEFAULT_ORG_SCOPE,
     isInScope: isInScope,
     scopeNote: scopeNote,
+    duplicatePeople: duplicatePeople,
     proposeMapping: proposeMapping,
     normalizeGrade: normalizeGrade,
     parsePayPlanGrade: parsePayPlanGrade,
