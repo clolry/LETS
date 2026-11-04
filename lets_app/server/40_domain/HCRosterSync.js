@@ -255,8 +255,10 @@ function previewRosterImport() {
       orgsByCode[String(o.orgCode || '').toUpperCase()] = o;
     });
 
-    var parsed = HCRosterImport.parseFeed(values, orgsByCode);
+    var scope = getHrOrgScope();
+    var parsed = HCRosterImport.parseFeed(values, orgsByCode, { orgScope: scope });
     if (parsed.headerProblems.length) {
+      console.error(parsed.headerProblems.join('\n'));
       return { success: false, problems: parsed.headerProblems };
     }
 
@@ -273,7 +275,7 @@ function previewRosterImport() {
                 diff.adds.length + 'a' + diff.changes.length + 'c' +
                 (diff.deletes.length + diff.seedDeletes.length) + 'd';
 
-    return successResponse({
+    var payload = {
       token: token,
       source: {
         spreadsheetId: source.spreadsheetId,
@@ -284,8 +286,15 @@ function previewRosterImport() {
       },
       mapping: parsed.mapping,
       unmappedColumns: parsed.unmapped,
+      // WHICH ORG THIS IMPORT IS LIMITED TO. The feed is all of FAS; without
+      // this the import would admit other portfolios' supervisors to LETS.
+      orgScope: parsed.orgScope,
+      scopeNote: parsed.scopeNote,
+      outOfScopeByPrefix: parsed.outOfScopeByPrefix,
       counts: {
         feedRows: values.length - 1,
+        outOfScope: parsed.outOfScope,
+        noOrgCode: parsed.noOrgCode,
         positions: parsed.rows.length,
         skippedNonPositions: parsed.skipped,
         blocked: parsed.blocked.length,
@@ -330,11 +339,98 @@ function previewRosterImport() {
       occupancyDisagreement: parsed.occupancyDisagreement,
       headcount: headcount,
       notes: _rosterPreviewNotes_(parsed, diff, existing)
-    });
+    };
+
+    // LOGGED, NOT JUST RETURNED.
+    //
+    // Run from the editor's Run button, a returned object goes nowhere — the
+    // execution log showed only the TravelDB reads and "Execution completed",
+    // so @clolry ran this and saw nothing. The whole point of a dry run is
+    // that a human reads it before confirming a destructive import, and a
+    // dry run whose output is invisible is worse than none: it looks like it
+    // succeeded.
+    _logRosterPreview_(payload);
+    return successResponse(payload);
   } catch (e) {
     console.error('previewRosterImport failed: ' + e.message);
     return errorResponse('Could not preview the roster import: ' + e.message);
   }
+}
+
+/**
+ * Prints the preview to the execution log, decision-first.
+ *
+ * Ordered by what stops an import, not by what is easy to format: the scope
+ * note, then the counts, then the things that change who can sign in, then
+ * the headcount that moves the budget. The confirmation token is last,
+ * because reading everything above it is the point of the exercise.
+ */
+function _logRosterPreview_(p) {
+  var L = [];
+  var c = p.counts;
+
+  L.push('=== previewRosterImport — NOTHING HAS BEEN WRITTEN ===');
+  L.push('source: ' + p.source.tabName + ' tab of the sheet in ' +
+         p.source.propertyKey);
+  L.push('');
+  L.push('SCOPE');
+  L.push('  ' + p.scopeNote);
+  L.push('');
+  L.push('COUNTS');
+  L.push('  feed rows              ' + c.feedRows);
+  L.push('  out of scope           ' + c.outOfScope);
+  L.push('  no org code            ' + c.noOrgCode);
+  L.push('  non-position rows      ' + c.skippedNonPositions);
+  L.push('  blocked by validation  ' + c.blocked);
+  L.push('  -> importable          ' + c.positions);
+  L.push('');
+  L.push('CHANGES TO HC_Positions (currently ' + c.currentPositions + ' rows)');
+  L.push('  add                    ' + c.adds);
+  L.push('  change                 ' + c.changes);
+  L.push('  unchanged              ' + c.unchanged);
+  L.push('  remove, fictional      ' + c.seedDeletes);
+  L.push('  remove, NOT test data  ' + c.deletes +
+         (c.deletes ? '   <-- CHECK THIS' : ''));
+  L.push('');
+
+  if (p.emailCoverage) {
+    L.push('EMAIL / LETS ACCESS');
+    L.push('  ' + p.emailCoverage.impact);
+    L.push('');
+  }
+
+  if (p.occupancyDisagreement && p.occupancyDisagreement.conflicts) {
+    L.push('OCCUPANCY CROSS-CHECK');
+    L.push('  ' + p.occupancyDisagreement.note);
+    L.push('');
+  }
+
+  var filled = 0;
+  var scTotal = 0;
+  Object.keys(p.headcount || {}).forEach(function (k) {
+    filled += p.headcount[k].filled;
+    if (p.headcount[k].orgCode) scTotal++;
+  });
+  L.push('HEADCOUNT — the per-capita budget denominator');
+  L.push('  filled positions       ' + filled);
+  L.push('  service centres        ' + scTotal);
+  L.push('');
+
+  if ((p.blocked || []).length) {
+    L.push('FIRST BLOCKED ROWS');
+    p.blocked.slice(0, 10).forEach(function (b) {
+      L.push('  row ' + b.row.sourceRow + ' ' + b.row.employeeName + ': ' +
+             b.problems.join(' | '));
+    });
+    L.push('');
+  }
+
+  (p.notes || []).forEach(function (n) { L.push('NOTE: ' + n); });
+  L.push('');
+  L.push('To apply, call importRoster with this token:');
+  L.push('  ' + p.token);
+
+  console.log(L.join('\n'));
 }
 
 /**
@@ -455,7 +551,8 @@ function importRoster(token) {
       orgsByCode[String(o.orgCode || '').toUpperCase()] = o;
     });
 
-    var parsed = HCRosterImport.parseFeed(values, orgsByCode);
+    var scope = getHrOrgScope();
+    var parsed = HCRosterImport.parseFeed(values, orgsByCode, { orgScope: scope });
     if (parsed.headerProblems.length) {
       return { success: false, problems: parsed.headerProblems };
     }
@@ -563,6 +660,9 @@ function importRoster(token) {
 
     console.log('=== importRoster ===');
     console.log('source: ' + source.spreadsheetId + ' / ' + source.tabName);
+    console.log('scope: ' + parsed.orgScope + ' — excluded ' +
+                parsed.outOfScope + ' out-of-scope and ' + parsed.noOrgCode +
+                ' org-less row(s)');
     console.log('by: ' + actor);
     console.log('positions written: ' + rows.length + ' (' + filled + ' filled)');
     console.log('adds ' + diff.adds.length + ', changes ' + diff.changes.length +

@@ -93,6 +93,21 @@ const PROPS_KEYS = {
   // re-pasting the ID, and because the feed workbook holds several sheets.
   FAS_HR_FEED_TAB:              'FAS_HRLinks_Feed_Tab',
 
+  // WHICH ORG THIS DEPLOYMENT OWNS. The feed's FAS tab is 4,274 rows covering
+  // all five FAS portfolios; ASD is about 914 of them.
+  //
+  // Without a scope filter the import writes every FAS employee into
+  // HC_Positions, and Access.js:435 grants LETS access to anyone there whose
+  // Supervisory_Status is '2' — several hundred supervisors from other
+  // portfolios, admitted silently. It would also publish them to the org
+  // chart and inflate every per-capita denominator fourfold.
+  //
+  // A PROPERTY rather than a constant because @clolry: "eventually we need to
+  // build this for use across all 5 FAS portfolios, but for now we're focused
+  // on getting it working for ASD/FC." Widening the scope then is a property
+  // change, not a code change.
+  HR_ORG_SCOPE:                 'HR_ORG_SCOPE',
+
   // The travel coordinator's ASD FY27 Travel/Liability Log, pulled daily until
   // LETS is mandatory. @clolry: "this is a temporary process only until the
   // system is fully in use then we'll discontinue the importing of existing
@@ -330,6 +345,48 @@ function getFasHrFeedSource() {
     tabName: tab || 'FAS',
     error: ''
   };
+}
+
+/**
+ * The org code prefix this deployment owns.
+ *
+ * Defaults to 'FC' — ASD. The feed's FAS tab carries all five FAS portfolios,
+ * and importing the other four would grant LETS access to their supervisors
+ * (Access.js:435 admits anyone in HC_Positions with Supervisory_Status '2'),
+ * publish them to the org chart, and make every per-capita budget share
+ * meaningless by quadrupling the denominator.
+ *
+ * DEFAULTS RATHER THAN ERRORING, unlike the feed ID above. The difference is
+ * which way the failure points: an unset spreadsheet ID has no safe answer, so
+ * guessing would read a stale roster. An unset scope has a safe answer — the
+ * narrowest one, this deployment's own org — and defaulting to it can only
+ * ever import too FEW people, which is visible and recoverable. Defaulting
+ * wide would import too many, which is neither.
+ *
+ * @returns {string}
+ * @server
+ */
+function getHrOrgScope() {
+  var raw = '';
+  try {
+    raw = String(_props().getProperty(PROPS_KEYS.HR_ORG_SCOPE) || '').trim();
+  } catch (e) {
+    console.warn('getHrOrgScope: property unreadable, using FC: ' + e.message);
+    return 'FC';
+  }
+  if (!raw) return 'FC';
+
+  // Letters and digits only. A stray comma or space would silently widen or
+  // void the scope — ' FC' matches nothing once anchored, and 'FC,FA' matches
+  // nothing either, so both would import zero positions and look like a
+  // different bug entirely.
+  var code = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!code) {
+    console.warn('getHrOrgScope: "' + raw + '" contains no usable org code; ' +
+                 'using FC.');
+    return 'FC';
+  }
+  return code;
 }
 
 /**
@@ -727,7 +784,12 @@ function _verifyAllPropsKeys() {
     // The tab names default to the known tab in each workbook; the IDs do not
     // and must not.
     'FAS_HR_FEED_TAB',
-    'LIABILITY_LOG_TAB'
+    'LIABILITY_LOG_TAB',
+
+    // Defaults to 'FC' (ASD), the NARROWEST scope. Safe to leave unset:
+    // defaulting narrow can only import too few people, which is visible.
+    // Defaulting wide would admit other portfolios' supervisors to LETS.
+    'HR_ORG_SCOPE'
 
     // DELIBERATELY NOT OPTIONAL: FAS_HR_FEED and LIABILITY_LOG_SHEET.
     //

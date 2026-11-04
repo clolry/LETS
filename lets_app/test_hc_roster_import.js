@@ -372,9 +372,16 @@ console.log('\n3. rows that must be blocked, and rows that must not be');
   ok('the FIRST of the two is still imported',
      p.rows.some(r => r.positionNumber === '90000001' && r.employeeName === 'Alpha,A'));
 
-  ok('a position with no org code is BLOCKED',
-     p.blocked.some(b => b.row.employeeName === 'Gamma,G'),
-     'without an org code this person\'s travel attributes to no budget');
+  // A POSITION WITH NO ORG CODE IS EXCLUDED BY SCOPE, NOT BLOCKED.
+  //
+  // It used to be blocked by validateRow. The scope filter now runs FIRST and
+  // drops it before validation, which is the right order — see §14 — but it
+  // moved the row from `blocked` to the `noOrgCode` count. Asserting the old
+  // location would have passed only because the row was absent from `rows`,
+  // which is the same outcome for the wrong reason.
+  ok('a position with no org code never reaches the roster',
+     !p.rows.some(r => r.employeeName === 'Gamma,G') && p.noOrgCode === 1,
+     [p.noOrgCode, p.rows.map(r => r.employeeName)]);
 
   ok('a self-reporting position is BLOCKED',
      p.blocked.some(b => b.row.positionNumber === '90000006'),
@@ -884,6 +891,178 @@ console.log('\n13. the deployment can be told apart from the code');
   ok('it writes nothing',
      !/setValue|appendRow|clearContent|setProperty/.test(diag),
      'the diagnostic must be safe to run on a live roster');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n14. org scope — the feed is all of FAS, not just ASD');
+{
+  // THE DEFECT THIS PREVENTS. The FAS tab is 4,274 rows across five FAS
+  // portfolios; ASD is about 914. Without a scope filter the import writes
+  // roughly 3,360 non-ASD people into HC_Positions, and Access.js:435 grants
+  // LETS access to ANYONE there whose Supervisory_Status is '2' — several
+  // hundred supervisors from other portfolios, admitted silently. It would
+  // also publish them to the org chart and quadruple the per-capita
+  // denominator.
+  ok('the default scope is FC', R.DEFAULT_ORG_SCOPE === 'FC',
+     R.DEFAULT_ORG_SCOPE);
+
+  ok('an ASD code is in scope', R.isInScope('FCBBBB') === true);
+  ok('the root FC itself is in scope', R.isInScope('FC') === true);
+  ok('another portfolio is not', R.isInScope('QMAB') === false);
+  ok('nor is AAS', R.isInScope('FA10') === false);
+
+  // ANCHORED, NOT A SUBSTRING TEST. 'XFC001' contains 'FC' and is not ours;
+  // a substring match would import it.
+  ok('a code merely CONTAINING the prefix is out of scope',
+     R.isInScope('XFC001') === false,
+     'indexOf without the === 0 anchor would let this through');
+
+  ok('the scope is configurable for a narrower org',
+     R.isInScope('FCA0B', 'FCA') === true &&
+     R.isInScope('FCB0A', 'FCA') === false,
+     '@clolry: eventually all 5 FAS portfolios, ASD first');
+
+  const H = ['Position#', 'Employee Name', 'Dept ID (Org)',
+             'Position Status', 'Supv Status'];
+  const p = R.parseFeed([H,
+    ['1', 'Asd,Person', 'FCBBBB', 'Filled', '2'],
+    ['2', 'Other,Supervisor', 'QMAB', 'Filled', '2'],
+    ['3', 'Other,Two', 'QMAC', 'Filled', '8'],
+    ['4', 'NoOrg,Person', '', 'Filled', '8'],
+    ['5', 'Aas,Person', 'FA10', 'Filled', '2']
+  ], null);
+
+  ok('only the in-scope position is imported',
+     p.rows.length === 1 && p.rows[0].employeeName === 'Asd,Person',
+     p.rows.map(r => r.employeeName));
+  ok('out-of-scope rows are counted', p.outOfScope === 3, p.outOfScope);
+  ok('and a row with no org code is counted separately',
+     p.noOrgCode === 1, p.noOrgCode);
+
+  // SEPARATE COUNTS, because "we cannot tell whose this is" and "this belongs
+  // to another portfolio" need different responses — the first may be an ASD
+  // person with a blank cell.
+  ok('the two exclusion reasons are not conflated',
+     p.outOfScope === 3 && p.noOrgCode === 1,
+     'a blank org code may be an ASD person; an out-of-scope one is not');
+
+  // The prefix breakdown is what makes 3,360 vanished rows confirmable as
+  // "other portfolios" rather than "the org column was read wrongly" — both
+  // produce the same count.
+  ok('excluded rows are broken down by prefix',
+     p.outOfScopeByPrefix.QM === 2 && p.outOfScopeByPrefix.FA === 1,
+     p.outOfScopeByPrefix);
+  ok('and the note names the risk of getting this wrong',
+     /grant LETS access to supervisors outside/.test(p.scopeNote),
+     p.scopeNote);
+
+  // SCOPE IS DECIDED BEFORE THE DUPLICATE CHECK. If it were not, an
+  // out-of-scope position number colliding with an in-scope one would BLOCK
+  // the ASD row — someone in another portfolio could make an ASD person
+  // invisible to routing and access.
+  const collide = R.parseFeed([H,
+    ['SHARED1', 'Asd,Person', 'FCBBBB', 'Filled', '2'],
+    ['SHARED1', 'Other,Person', 'QMAB', 'Filled', '2']
+  ], null);
+  ok('an out-of-scope duplicate key does NOT block the in-scope row',
+     collide.rows.length === 1 &&
+     collide.rows[0].employeeName === 'Asd,Person' &&
+     collide.blocked.length === 0,
+     [collide.rows.map(r => r.employeeName), collide.blocked.length]);
+
+  // And validation is not wasted on rows about to be discarded, or the
+  // blocked list fills with thousands of irrelevant problems and buries the
+  // handful that concern ASD.
+  const noisy = R.parseFeed([H,
+    ['', 'Other,NoPn', 'QMAB', 'Filled', '2'],
+    ['9', 'Asd,Person', 'FCBBBB', 'Filled', '2']
+  ], null);
+  ok('out-of-scope rows do not appear in the blocked list',
+     noisy.blocked.length === 0 && noisy.rows.length === 1,
+     noisy.blocked);
+
+  // Everything downstream must be computed on the SURVIVING rows only.
+  ok('email coverage counts only in-scope staff',
+     p.emailCoverage.staffedPositions === 1, p.emailCoverage);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n15. the scope property defaults narrow, never wide');
+{
+  const props = fs.readFileSync('lets_app/server/00_config/Props.js', 'utf8');
+
+  ok('there is an HR_ORG_SCOPE property',
+     /HR_ORG_SCOPE:\s*'HR_ORG_SCOPE'/.test(props));
+
+  // The slice must START AT THE JSDOC, not at the `function` keyword. My
+  // first version sliced from `function getHrOrgScope` and then asserted on
+  // the explanatory comment — which sits ABOVE that point, so the assertion
+  // could only ever fail. The same slice-excludes-the-doc mistake would
+  // silently PASS for any assertion about the body, which is why it is worth
+  // naming.
+  const docStart = props.lastIndexOf('/**',
+                                     props.indexOf('function getHrOrgScope'));
+  const getter = props.slice(docStart,
+                             props.indexOf('function getLiabilityLogSource'));
+
+  // UNLIKE THE FEED ID, THIS DEFAULTS. The difference is which way the
+  // failure points: defaulting the scope narrow can only import too FEW
+  // people, which is visible and recoverable. Defaulting wide imports too
+  // many, which is neither.
+  ok('an unset scope defaults to FC, the narrowest',
+     /if \(!raw\) return 'FC';/.test(getter), getter.slice(0, 300));
+  ok('and the comment explains why this defaults where the feed ID does not',
+     /narrowest/.test(getter) && /no safe answer/.test(getter),
+     'the asymmetry needs stating, or someone will "fix" the inconsistency');
+
+  // A stray comma or space would silently void the scope — ' FC' matches
+  // nothing once anchored, and 'FC,FA' matches nothing either. Both would
+  // import ZERO positions and look like an entirely different bug.
+  ok('punctuation is stripped rather than voiding the scope',
+     /replace\(\/\[\^A-Z0-9\]\/g, ''\)/.test(getter), getter);
+  ok('and an unusable value falls back to FC rather than matching nothing',
+     /no usable org code/.test(getter), getter);
+
+  // Both read paths must apply it, or the preview and the import disagree
+  // about who is being imported.
+  const sync = fs.readFileSync('lets_app/server/40_domain/HCRosterSync.js', 'utf8');
+  ok('both the preview and the import pass the scope through',
+     (sync.match(/parseFeed\(values, orgsByCode, \{ orgScope: scope \}\)/g) || [])
+       .length === 2,
+     'a preview that imports a different set than the import is worse than ' +
+     'either being wrong');
+  ok('the import logs what scope excluded',
+     /excluded ' \+\s*\n?\s*parsed\.outOfScope/.test(sync) ||
+     /parsed\.outOfScope \+/.test(sync), 'the audit trail needs the count');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n16. the preview prints itself to the execution log');
+{
+  // @clolry ran previewRosterImport from the editor and the log showed only
+  // the TravelDB reads and "Execution completed". A returned object goes
+  // nowhere from the Run button — so the dry run did all its work and showed
+  // nothing, which is worse than failing: it looks like it succeeded.
+  const sync = fs.readFileSync('lets_app/server/40_domain/HCRosterSync.js', 'utf8');
+
+  ok('the preview logs its payload', /_logRosterPreview_\(payload\)/.test(sync));
+
+  const logger = sync.slice(sync.indexOf('function _logRosterPreview_'),
+                            sync.indexOf('function importRoster'));
+  ok('it states plainly that nothing was written',
+     /NOTHING HAS BEEN WRITTEN/.test(logger), logger.slice(0, 200));
+  ok('it leads with the scope note',
+     logger.indexOf('SCOPE') < logger.indexOf('COUNTS'),
+     'the first question is which people this covers');
+  ok('it flags removals that are NOT test data',
+     /CHECK THIS/.test(logger),
+     'a real person removed loses LETS access and their org\'s headcount share');
+  ok('it reports the email impact', /emailCoverage\.impact/.test(logger));
+  ok('it reports the filled headcount and names what it drives',
+     /per-capita budget denominator/.test(logger));
+  ok('and the token comes LAST, after everything to be read',
+     logger.lastIndexOf('p.token') > logger.indexOf('HEADCOUNT'),
+     'putting the token first invites confirming without reading');
 }
 
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');

@@ -192,6 +192,63 @@ var HCRosterImport = (function () {
    */
   var REQUIRED_FIELDS = ['positionNumber', 'employeeName', 'orgCode'];
 
+  /**
+   * The org code prefix this deployment owns.
+   *
+   * THE FAS TAB IS ALL OF FAS, NOT ASD. 4,274 rows against ASD's ~914.
+   * Without this filter the import would write roughly 3,360 non-ASD people
+   * into HC_Positions, and the consequence is not merely wrong data:
+   *
+   *   Access.js:435   grants LETS access to ANYONE in HC_Positions whose
+   *                   Supervisory_Status is '2'. Importing all of FAS would
+   *                   silently admit several hundred supervisors from other
+   *                   portfolios.
+   *   hcGetOrgChartTree  publishes every imported name to a chart reachable by
+   *                   any domain user with the link.
+   *   the per-capita split  divides by filled headcount, so a denominator
+   *                   four times too large makes every service-centre
+   *                   allocation meaningless.
+   *
+   * WHY A PREFIX AND NOT "RESOLVES AGAINST HC_Orgs"
+   * -----------------------------------------------
+   * The obvious filter is to drop any row whose org code is absent from
+   * HC_Orgs. That would be wrong in a way that is hard to see: HCData's
+   * resolveOrgByCode deliberately falls back to the nearest listed ANCESTOR by
+   * prefix, so a real ASD person in a sub-org nobody has catalogued yet still
+   * resolves — and validateRow treats an unlisted code as a WARNING for
+   * exactly that reason.
+   *
+   * That tolerance is right for ASD codes and catastrophic for non-ASD ones.
+   * Scope has to be decided on the prefix, before the resolve, or the
+   * tolerance that protects ASD staff lets all of FAS in.
+   *
+   * CONFIGURABLE BECAUSE THIS WILL GROW. @clolry: "eventually we need to build
+   * this for use across all 5 FAS portfolios, but for now we're focused on
+   * getting it working for ASD/FC." So the prefix is a parameter with an ASD
+   * default, not a literal buried in a condition — widening it later is a
+   * config change rather than a hunt through the import path.
+   */
+  var DEFAULT_ORG_SCOPE = 'FC';
+
+  /**
+   * Is this org code within the scope this deployment owns?
+   *
+   * ANCHORED AT THE START, and the code must be the prefix itself or extend
+   * it. A substring test would be wrong in both directions: 'XFC001' contains
+   * 'FC' and is not ours, and an ASD code is always FC followed by more
+   * letters.
+   *
+   * @param {string} orgCode
+   * @param {string} [scope] defaults to 'FC'
+   * @returns {boolean}
+   */
+  function isInScope(orgCode, scope) {
+    var code = _str_(orgCode).toUpperCase();
+    var prefix = _str_(scope || DEFAULT_ORG_SCOPE).toUpperCase();
+    if (!code || !prefix) return false;
+    return code.indexOf(prefix) === 0;
+  }
+
   /** Collapses whitespace and lowercases, for header comparison. */
   function _norm_(h) {
     return _str_(h).toLowerCase().replace(/\s+/g, ' ');
@@ -670,12 +727,23 @@ var HCRosterImport = (function () {
    * @param {Object} [orgCodesByCode] HC_Orgs index
    * @returns {Object}
    */
-  function parseFeed(values, orgCodesByCode) {
+  function parseFeed(values, orgCodesByCode, opts) {
+    var o = opts || {};
+    var scope = _str_(o.orgScope || DEFAULT_ORG_SCOPE).toUpperCase();
+
     var out = {
       rows: [], skipped: 0, blocked: [], warnings: [],
       mapping: {}, unmapped: [], headerProblems: [],
       cycles: [], cyclesCleared: 0,
-      emailCoverage: null, occupancyDisagreement: null
+      emailCoverage: null, occupancyDisagreement: null,
+      orgScope: scope,
+      outOfScope: 0,
+      // Which org prefixes were seen and excluded, with counts. Reported
+      // rather than silently dropped: 3,360 rows disappearing needs to be
+      // confirmable as "the other four FAS portfolios" and not as a mapping
+      // fault that read the wrong column.
+      outOfScopeByPrefix: {},
+      noOrgCode: 0
     };
 
     if (!values || values.length < 2) {
@@ -704,6 +772,33 @@ var HCRosterImport = (function () {
       var row = interpretRow(values[r], mapped, r + 1);
       if (!row) { out.skipped++; continue; }
 
+      // SCOPE IS DECIDED FIRST, before validation and before the duplicate
+      // check.
+      //
+      // Order matters here in a way that is easy to get wrong. If scope were
+      // checked after the duplicate check, a non-ASD position number
+      // colliding with an ASD one would BLOCK the ASD row — a person outside
+      // this deployment's org could make someone inside it invisible. And
+      // validating rows we are about to discard would fill the blocked list
+      // with thousands of irrelevant problems, burying the handful that
+      // concern ASD.
+      if (!row.orgCode) {
+        // No org code at all. Counted separately from out-of-scope, because
+        // "we cannot tell whose this is" and "this belongs to another
+        // portfolio" need different responses — the first may be an ASD
+        // person with a blank cell.
+        out.noOrgCode++;
+        continue;
+      }
+      if (!isInScope(row.orgCode, scope)) {
+        out.outOfScope++;
+        // First two characters is the portfolio granularity for FAS codes.
+        var prefix = row.orgCode.slice(0, 2);
+        out.outOfScopeByPrefix[prefix] =
+          (out.outOfScopeByPrefix[prefix] || 0) + 1;
+        continue;
+      }
+
       var checked = validateRow(row, seen, orgCodesByCode);
       if (checked.problems.length) {
         out.blocked.push({ row: row, problems: checked.problems });
@@ -725,8 +820,40 @@ var HCRosterImport = (function () {
 
     out.emailCoverage = emailCoverage(out.rows, mapped);
     out.occupancyDisagreement = occupancyDisagreement(out.rows, mapped);
+    out.scopeNote = scopeNote(out);
 
     return out;
+  }
+
+  /**
+   * The sentence explaining what scope excluded, and why that is correct.
+   *
+   * An admin seeing "914 of 4,274 rows imported" needs to know immediately
+   * whether 3,360 rows vanished because they belong to other portfolios or
+   * because the org column was read wrongly. Both produce the same count.
+   */
+  function scopeNote(out) {
+    var kept = out.rows.length;
+    var excluded = out.outOfScope;
+    if (!excluded && !out.noOrgCode) {
+      return 'Every row in the feed is within scope "' + out.orgScope + '".';
+    }
+
+    var prefixes = Object.keys(out.outOfScopeByPrefix).sort(function (a, b) {
+      return out.outOfScopeByPrefix[b] - out.outOfScopeByPrefix[a];
+    }).slice(0, 8).map(function (p) {
+      return p + ' (' + out.outOfScopeByPrefix[p] + ')';
+    });
+
+    return 'Scope "' + out.orgScope + '": kept ' + kept + ' position(s), ' +
+           'excluded ' + excluded + ' whose org code is outside it' +
+           (prefixes.length ? ' — by prefix: ' + prefixes.join(', ') : '') +
+           (out.noOrgCode ? ('; ' + out.noOrgCode + ' row(s) had no org code ' +
+                             'at all and were also excluded') : '') + '. ' +
+           'This feed covers all of FAS, so exclusion is expected. Check the ' +
+           'prefixes above look like other portfolios rather than mangled ' +
+           'ASD codes — importing out-of-scope staff would grant LETS access ' +
+           'to supervisors outside this organisation.';
   }
 
   /**
@@ -927,6 +1054,9 @@ var HCRosterImport = (function () {
   return {
     FIELD_HINTS: FIELD_HINTS,
     REQUIRED_FIELDS: REQUIRED_FIELDS,
+    DEFAULT_ORG_SCOPE: DEFAULT_ORG_SCOPE,
+    isInScope: isInScope,
+    scopeNote: scopeNote,
     proposeMapping: proposeMapping,
     normalizeGrade: normalizeGrade,
     parsePayPlanGrade: parsePayPlanGrade,
