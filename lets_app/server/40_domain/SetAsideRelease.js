@@ -343,6 +343,7 @@ if (typeof module !== 'undefined' && module.exports) {
  * @param {Object} entry { sourceSetAsideId, amount, destination, reason }
  * @returns {Object} successResponse({ releaseId }) | errorResponse
  * @client
+ * @editor  Needs an entry object, so call it from a one-line wrapper.
  */
 function releaseSetAside(entry) {
   var who = '';

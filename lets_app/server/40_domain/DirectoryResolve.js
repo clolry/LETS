@@ -119,6 +119,7 @@ function _directorySearch_(parsed) {
  * @param {Object} [opts] { startIndex, maxLookups, includeExisting }
  * @returns {Object} successResponse | errorResponse
  * @client
+ * @editor  Takes no required arguments; safe to Run directly.
  */
 function previewDirectoryEmails(opts) {
   var denied = _hcAdminGuard_();
@@ -178,6 +179,7 @@ function previewDirectoryEmails(opts) {
  * @param {Object} [opts] { startIndex, maxLookups, includeExisting }
  * @returns {Object} successResponse | errorResponse
  * @client
+ * @editor  Resumes from the saved index when run with no arguments.
  */
 function resolveDirectoryEmails(opts) {
   var denied = _hcAdminGuard_();

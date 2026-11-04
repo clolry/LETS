@@ -243,6 +243,18 @@ jobs:
         # reserve money against it.
         run: node lets_app/test_event_history.js
 
+      - name: Guard - the editor-function index is current
+        # @clolry: "when you tell me to run a function, please tell me which
+        # file it's in - there are over 100 and so it's a lot to look
+        # through." There are 606 top-level functions across the server tree,
+        # 74 of them tagged @editor.
+        #
+        # docs/EDITOR_FUNCTIONS.md is GENERATED from that tag. This guard
+        # exists because a stale index is worse than no index: it sends a
+        # reader to a file that no longer holds the function, and they
+        # conclude the function was removed.
+        run: node scripts/gen-editor-functions.js --check
+
       - name: HR roster importer tests
         # HC_Positions drives three things that break invisibly: site access
         # (Access.js:416 admits a supervisor on Supervisory_Status === '2'),

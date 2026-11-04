@@ -192,6 +192,7 @@ function diagnoseHrFeedSource() {
  *
  * @returns {Object} successResponse({ ... }) | errorResponse
  * @client
+ * @editor  Run this from the editor before importing. Admin-only either way.
  */
 function previewRosterImport() {
   var denied = _hcAdminGuard_();
@@ -409,6 +410,8 @@ function _rosterPreviewNotes_(parsed, diff, existing) {
  * @param {string} token the token from previewRosterImport
  * @returns {Object} successResponse({ ... }) | errorResponse
  * @client
+ * @editor  Needs the token from previewRosterImport, so call it from a
+ *          one-line wrapper rather than the Run dropdown.
  */
 function importRoster(token) {
   var denied = _hcAdminGuard_();

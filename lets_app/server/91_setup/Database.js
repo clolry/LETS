@@ -48,6 +48,8 @@ const TRAVEL_DB_CONFIG = {
  * Main setup function - creates all Travel Request sheets with headers
  * Run this once to initialize the database
  * @returns {Object} Result with success status and details
+ * @editor  The first thing to run in a new environment. Nothing else works
+ *          until every tab exists.
  */
 function setupTravelDatabase() {
   try {

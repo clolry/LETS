@@ -50,3 +50,12 @@ reference_excel_files/Travel requests*.xls
 # The ASD staffing plan: 806 named staff with position numbers, titles and
 # duty stations. Same reasoning as above, and more of it.
 reference_excel_files/*Staffing Plan*.xlsx
+# The ASD FY27 Travel/Liability Log: named travellers, routes, dates and
+# dollar amounts for 30 real trips. @clolry shares it locally so the importer
+# can be written against the real column shapes; it must not be committed.
+#
+# LiabilityLogSync.js reads it from the spreadsheet named in the
+# LIABILITY_LOG_SHEET_ID script property, never from this folder — and
+# test_hc_roster_import.js §7 fails the build if any server file references
+# this directory at all.
+reference_excel_files/*Travel_Liability Log*.xlsx
