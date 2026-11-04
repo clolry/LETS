@@ -288,7 +288,14 @@ console.log('\n1e. the two status columns are cross-checked');
   ok('the cross-check runs when both columns exist', !!d, d);
   ok('it names which column was used',
      d.primaryColumn === 'Position Status' && d.secondaryColumn === 'Status', d);
+  ok('comparable columns are compared', d.comparable === true, d);
   ok('a disagreeing row is reported', d.conflicts === 1, d);
+  // The sample must show BOTH raw values, or it cannot be judged. primaryValue
+  // was hardcoded '' and every sample reported an empty string for the one
+  // field that would have revealed the comparison was meaningless.
+  ok('and the sample shows both raw values',
+     d.samples[0].primaryValue === 'FILLED' &&
+     d.samples[0].secondaryValue === 'VACANT', d.samples[0]);
   ok('and the note explains what a large count would mean',
      /the wrong column was chosen/.test(d.note), d.note);
 
@@ -322,6 +329,49 @@ console.log('\n1e. the two status columns are cross-checked');
      ['90000001', 'A,A', 'FCA0B', 'Filled']], null);
   ok('a single-status feed skips the check',
      one.occupancyDisagreement === null, one.occupancyDisagreement);
+
+  // THE REAL FEED'S SECOND COLUMN IS NOT AN OCCUPANCY COLUMN AT ALL.
+  //
+  // @clolry's live preview reported "6 row(s) would be classified differently
+  // by Status", which reads as a small data inconsistency and was nothing of
+  // the kind. The Status column holds 'A' and 'T' — personnel ACTION codes.
+  // normalizeOccupancy recognises neither, so every value fell through to its
+  // FILLED default: a FILLED row agreed by accident, a VACANT row agreed
+  // because the name test fires first, and ONLY the 6 OBLIGATED rows could
+  // ever differ.
+  //
+  // The check could not have produced any other number. 6 against 1,046 reads
+  // as "the columns broadly agree" when the truth is that they are not
+  // comparable. That is worse than no check, because it invites a decision.
+  const action = R.parseFeed([H2,
+    ['90000001', 'Filled,Person', 'FCA0B', 'Filled', 'A'],
+    ['90000002', 'Obligated,Person', 'FCA0B', 'Obligated', 'A'],
+    ['90000003', 'Another,Person', 'FCA0B', 'Filled', 'T'],
+    ['90000004', 'VACANT', 'FCA0B', 'Vacant', '']
+  ], null);
+  const a = action.occupancyDisagreement;
+  ok('an action-code column is detected as incomparable',
+     a.comparable === false, a);
+  ok('and reports ZERO conflicts rather than a meaningless count',
+     a.conflicts === 0,
+     'the old code would have reported 1 here — the OBLIGATED row');
+  ok('it lists the actual values found',
+     a.secondaryValues.join(' ').indexOf('A (2)') > -1 &&
+     a.secondaryValues.join(' ').indexOf('T (1)') > -1,
+     a.secondaryValues);
+  ok('and says the column choice is confirmed BY THE DATA',
+     /CONFIRMED by the data rather than assumed/.test(a.note), a.note);
+
+  // The threshold must not be so tight that a real occupancy column with a
+  // few odd values is thrown out.
+  const mostly = R.parseFeed([H2,
+    ['1', 'A,A', 'FCA0B', 'Filled', 'Filled'],
+    ['2', 'B,B', 'FCA0B', 'Filled', 'Filled'],
+    ['3', 'C,C', 'FCA0B', 'Filled', 'X']
+  ], null);
+  ok('a mostly-occupancy column is still compared',
+     mostly.occupancyDisagreement.comparable === true,
+     mostly.occupancyDisagreement);
 }
 
 // ---------------------------------------------------------------------------
@@ -1126,6 +1176,112 @@ console.log('\n17. the org hierarchy must exist before the roster is useful');
   ok('the hierarchy check precedes the deletions check',
      diag.indexOf('if (!oh.ready)') < diag.indexOf('if (c.deletes > 0)'),
      'otherwise a removal warning masks a missing hierarchy');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n18. clearing the roster is deliberate, guarded and fails closed');
+{
+  // @clolry: "Remove all data in the existing HC sheet - I added our team for
+  // testing purposes."
+  //
+  // Needed because runRosterImport REFUSES removals that are not recognisable
+  // fixtures, and 8 of the 24 rows are hand-entered team members with real
+  // @gsa.gov addresses. identifySeedRows is right to decline those — the
+  // answer is a deliberate clear, not a weaker refusal.
+  const seed = fs.readFileSync('lets_app/server/91_setup/HCSeed.js', 'utf8');
+  const fn = seed.slice(seed.indexOf('function clearHCPositions'));
+  const body = fn.slice(0, fn.indexOf('\n}\n'));
+
+  ok('clearHCPositions exists', body.length > 500, body.length);
+
+  // FAILS CLOSED. My first version used
+  //   (typeof _hcAdminGuard_ === 'function') ? _hcAdminGuard_() : null
+  // which SKIPS the admin check when the guard is absent and then deletes
+  // every row. For a destructive function, a missing guard must mean refuse.
+  ok('a missing admin guard REFUSES rather than proceeding',
+     /typeof _hcAdminGuard_ !== 'function'/.test(body) &&
+     /Refusing to clear the roster/.test(body),
+     'the ternary form fails OPEN, which is the wrong direction for a delete');
+  ok('and it still calls the guard when present',
+     /var denied = _hcAdminGuard_\(\);/.test(body));
+
+  // HC_Orgs IS REFERENCE DATA. The per-capita split walks each position's
+  // parent chain to the nearest SERVICE_CENTER row in it, so clearing it
+  // would make every allocation zero — the exact defect §17 guards against.
+  ok('it clears HC_POSITIONS only',
+     body.indexOf('SHEET_NAMES.HC_POSITIONS') > -1 &&
+     body.indexOf('SHEET_NAMES.HC_ORGS') === -1,
+     'clearing HC_Orgs would zero every per-capita allocation');
+
+  // DRY RUN BY DEFAULT, because the Run button passes no arguments. A misclick
+  // must list and stop.
+  ok('it is a dry run unless confirmed', /if \(confirm !== true\)/.test(body));
+  ok('and a dry run reports success, not failure',
+     /success: true, removed: 0, rows: rows, dryRun: true/.test(body),
+     'a correct dry run returning success:false reads as a malfunction');
+
+  // NAMES PRINTED BEFORE THE DELETE. An admin running this against the wrong
+  // environment should see real names scroll past and stop — only possible if
+  // the rows are printed before the write, not counted after it.
+  const printAt = body.indexOf('rows.forEach(function (r) {');
+  const clearAt = body.indexOf('.clearContent()');
+  ok('every row is printed BEFORE anything is deleted',
+     printAt > -1 && clearAt > -1 && printAt < clearAt,
+     'counting after the fact is not a safeguard');
+  ok('and each row is labelled fixture or real',
+     /looksLikeFixture \? '\[fixture\] ' : '\[real\]/.test(body),
+     'the 16-vs-8 distinction must be visible, not inferred');
+
+  // The cache is six hours long. Without invalidation the access gate, org
+  // chart and budget dashboard all keep serving deleted rows.
+  ok('the HC cache is invalidated after the clear',
+     /hcCacheInvalidateAll\(\)/.test(body));
+  ok('and it takes the script lock',
+     /LockService\.getScriptLock\(\)/.test(body),
+     'saveHCPosition and importRoster both read the roster to validate');
+
+  // It must point at what to do next, or the roster is left empty and the
+  // app is in a worse state than before.
+  ok('it names the next step',
+     /runRosterPreview\(\)/.test(body), 'an empty roster is not a resting state');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n19. the log limit does not eat the headcount table');
+{
+  // @clolry's run printed "Logging output too large. Truncating output." and
+  // the thing cut off was the headcount — the one block the per-capita budget
+  // depends on. It sits last in a payload carrying 1,046 positions' worth of
+  // diff, so it is always the casualty.
+  const sync = fs.readFileSync('lets_app/server/40_domain/HCRosterSync.js', 'utf8');
+  const diag = fs.readFileSync('lets_app/server/99_triggers/Diagnostics.js', 'utf8');
+
+  ok('there is a dedicated headcount printer',
+     /function showServiceCentreHeadcount\(\)/.test(sync));
+  ok('and it is admin-gated', /function showServiceCentreHeadcount\(\) \{\n  var denied = _hcAdminGuard_\(\);/.test(sync));
+
+  // runRosterPreview must NOT dump the whole payload any more.
+  ok('runRosterPreview no longer prints the entire payload',
+     !/JSON\.stringify\(r\.data, null, 2\)/.test(diag),
+     'that is what triggered the truncation');
+  ok('it prints selected blocks instead',
+     /--- column mapping ---/.test(diag) &&
+     /--- would REMOVE \(not test data\) ---/.test(diag));
+  ok('and points at the headcount printer',
+     /showServiceCentreHeadcount\(\) in 40_domain\/HCRosterSync\.js/.test(diag));
+
+  // THE QUIET FLAG IS A PARAMETER, NOT A FUNCTION SWAP. My first version
+  // reassigned _logRosterPreview_ and restored it in a finally block. That
+  // works — Apps Script function declarations are mutable globals — and is a
+  // trap: two concurrent executions share those globals, so one run could
+  // silence another's output or restore a stale reference.
+  ok('the quiet mode is an option, not a global reassignment',
+     /previewRosterImport\(\{ quiet: true \}\)/.test(sync) &&
+     !/_logRosterPreview_ = function \(\) \{\}/.test(sync),
+     'swapping a global function is not safe under concurrent executions');
+  ok('and the default still logs',
+     /if \(!quiet\) _logRosterPreview_\(payload\);/.test(sync),
+     'the Run button passes no arguments, so the normal case must log');
 }
 
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');

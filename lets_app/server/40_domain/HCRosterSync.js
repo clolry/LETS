@@ -194,9 +194,13 @@ function diagnoseHrFeedSource() {
  * @client
  * @editor  Run this from the editor before importing. Admin-only either way.
  */
-function previewRosterImport() {
+function previewRosterImport(opts) {
   var denied = _hcAdminGuard_();
   if (denied) return denied;
+
+  // The Run button passes no arguments, so `opts` is undefined in the normal
+  // case and the preview logs — which is the whole point of it.
+  var quiet = !!(opts && opts.quiet);
 
   try {
     var source = getFasHrFeedSource();
@@ -379,7 +383,7 @@ function previewRosterImport() {
     // that a human reads it before confirming a destructive import, and a
     // dry run whose output is invisible is worse than none: it looks like it
     // succeeded.
-    _logRosterPreview_(payload);
+    if (!quiet) _logRosterPreview_(payload);
     return successResponse(payload);
   } catch (e) {
     console.error('previewRosterImport failed: ' + e.message);
@@ -429,7 +433,9 @@ function _logRosterPreview_(p) {
     L.push('');
   }
 
-  if (p.occupancyDisagreement && p.occupancyDisagreement.conflicts) {
+  if (p.occupancyDisagreement &&
+      (p.occupancyDisagreement.conflicts ||
+       p.occupancyDisagreement.comparable === false)) {
     L.push('OCCUPANCY CROSS-CHECK');
     L.push('  ' + p.occupancyDisagreement.note);
     L.push('');
@@ -489,6 +495,112 @@ function _logRosterPreview_(p) {
 }
 
 /**
+ * The per-service-centre headcount, as a readable table.
+ *
+ * SEPARATE FROM THE PREVIEW BECAUSE OF THE LOG LIMIT. @clolry's run printed
+ * "Logging output too large. Truncating output." and the headcount — the one
+ * block the budget depends on — was the thing cut off, because it sits last in
+ * a payload containing 1,046 positions' worth of diff.
+ *
+ * So this prints only the table, in about 30 lines. It re-runs the preview
+ * rather than taking a payload, because a function that needs an argument
+ * cannot be run from the editor's Run button at all.
+ *
+ * @editor
+ */
+function showServiceCentreHeadcount() {
+  var denied = _hcAdminGuard_();
+  if (denied) return denied;
+
+  var r = previewRosterImportQuiet();
+  if (!r || r.success !== true) {
+    console.log(JSON.stringify(r, null, 2));
+    return r;
+  }
+
+  var hc = r.data.headcount || {};
+  var orgs = HC.hcGetOrgHierarchy() || [];
+  var nameByCode = {};
+  orgs.forEach(function (o) {
+    nameByCode[String(o.orgCode || '').toUpperCase()] = o.division || '';
+  });
+
+  // Grouped by DAC, because that is the pool each per-capita share divides.
+  var byDac = {};
+  Object.keys(hc).forEach(function (key) {
+    var b = hc[key];
+    if (!byDac[b.dacOrgCode]) byDac[b.dacOrgCode] = [];
+    byDac[b.dacOrgCode].push(b);
+  });
+
+  var L = [];
+  L.push('=== Service-centre headcount (FILLED positions) ===');
+  L.push('');
+  L.push('DAC   Org code  Filled  Vacant  Share   Service centre');
+
+  var grandFilled = 0;
+  Object.keys(byDac).sort().forEach(function (dac) {
+    var list = byDac[dac];
+    var dacFilled = list.reduce(function (s, b) { return s + b.filled; }, 0);
+    grandFilled += dacFilled;
+
+    list.sort(function (a, b) {
+      // Above-service-centre staff lead their DAC's block.
+      if (!a.orgCode !== !b.orgCode) return a.orgCode ? 1 : -1;
+      return a.orgCode < b.orgCode ? -1 : 1;
+    }).forEach(function (b) {
+      var share = dacFilled ? (b.filled / dacFilled * 100) : 0;
+      L.push(
+        _pad_(dac, 6) +
+        _pad_(b.orgCode || '—', 10) +
+        _lpad_(String(b.filled), 6) + '  ' +
+        _lpad_(String(b.vacant), 6) + '  ' +
+        _lpad_(share.toFixed(2) + '%', 7) + ' ' +
+        (b.orgCode ? (nameByCode[b.orgCode] || '') : '(above service-centre level)'));
+    });
+    L.push(_pad_(dac, 6) + _pad_('TOTAL', 10) + _lpad_(String(dacFilled), 6));
+    L.push('');
+  });
+
+  L.push('ASD total filled: ' + grandFilled);
+  L.push('');
+  L.push('These are counts only — no names, no emails. The per-capita split ' +
+         'divides each DAC\'s discretionary balance by its share column above.');
+  console.log(L.join('\n'));
+  return r.data.headcount;
+}
+
+function _pad_(v, n) {
+  var s = String(v);
+  while (s.length < n) s += ' ';
+  return s;
+}
+
+function _lpad_(v, n) {
+  var s = String(v);
+  while (s.length < n) s = ' ' + s;
+  return s;
+}
+
+/**
+ * previewRosterImport without the log output.
+ *
+ * Used by showServiceCentreHeadcount, which prints its own table and would
+ * otherwise emit the full preview above it — pushing the table past the log
+ * limit, which is the problem it exists to solve.
+ *
+ * An OPTION, not a reassignment of _logRosterPreview_. My first version
+ * swapped the logger out and restored it in a finally block, which works
+ * because Apps Script function declarations are mutable globals — and is a
+ * trap: two concurrent executions share those globals, so one run could
+ * silence the other's output, or restore a stale reference. A parameter cannot
+ * do that.
+ */
+function previewRosterImportQuiet() {
+  return previewRosterImport({ quiet: true });
+}
+
+/**
  * The sentences an admin needs before confirming.
  *
  * Built here rather than in the client so the warnings cannot be styled away,
@@ -535,7 +647,13 @@ function _rosterPreviewNotes_(parsed, diff, existing) {
     notes.push(parsed.emailCoverage.impact);
   }
 
-  if (parsed.occupancyDisagreement && parsed.occupancyDisagreement.conflicts) {
+  // Printed whether or not there are conflicts, because "the second column is
+  // not an occupancy column" is the useful finding and it produces ZERO
+  // conflicts. Suppressing it on a zero count would hide the confirmation
+  // that the right column was chosen.
+  if (parsed.occupancyDisagreement &&
+      (parsed.occupancyDisagreement.conflicts ||
+       parsed.occupancyDisagreement.comparable === false)) {
     notes.push(parsed.occupancyDisagreement.note);
   }
 

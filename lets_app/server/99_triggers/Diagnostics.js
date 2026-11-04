@@ -1228,12 +1228,54 @@ function runRosterPreview() {
     console.log(JSON.stringify(r, null, 2));
     return;
   }
-  // previewRosterImport already logs its own decision-first summary. This
-  // prints the structured payload underneath it for anything the summary
-  // rounds off — the per-service-centre headcount, in particular.
+
+  // THE FULL PAYLOAD IS NO LONGER PRINTED HERE.
+  //
+  // It was, and @clolry's run hit "Logging output too large. Truncating
+  // output." — with the headcount table, the one block the budget depends on,
+  // as the thing cut off. It sits last in a payload carrying 1,046 positions'
+  // worth of diff, so it is always the casualty.
+  //
+  // previewRosterImport logs its own decision-first summary above this, which
+  // is what a human needs. The detail blocks are printed SELECTIVELY below,
+  // smallest-first, so nothing important is lost to truncation.
+  var d = r.data;
+
   console.log('');
-  console.log('--- full payload ---');
-  console.log(JSON.stringify(r.data, null, 2));
+  console.log('--- column mapping ---');
+  console.log(JSON.stringify(d.mapping, null, 2));
+
+  if ((d.deletes || []).length) {
+    console.log('');
+    console.log('--- would REMOVE (not test data) ---');
+    d.deletes.forEach(function (p2) {
+      console.log('  ' + p2.positionNumber + '  ' + p2.employeeName +
+                  '  ' + p2.orgCode);
+    });
+  }
+
+  if ((d.blocked || []).length) {
+    console.log('');
+    console.log('--- blocked rows ---');
+    d.blocked.slice(0, 25).forEach(function (b) {
+      console.log('  row ' + b.row.sourceRow + '  ' + b.row.employeeName +
+                  ': ' + b.problems.join(' | '));
+    });
+  }
+
+  if (d.occupancyDisagreement && (d.occupancyDisagreement.samples || []).length) {
+    console.log('');
+    console.log('--- occupancy cross-check samples ---');
+    d.occupancyDisagreement.samples.slice(0, 10).forEach(function (c) {
+      console.log('  ' + c.positionNumber + '  ' + c.employeeName +
+                  '  primary="' + c.primaryValue + '" -> ' + c.chosen +
+                  ',  secondary="' + c.secondaryValue + '" -> ' + c.alternative);
+    });
+  }
+
+  console.log('');
+  console.log('For the per-service-centre headcount table, run ' +
+              'showServiceCentreHeadcount() in 40_domain/HCRosterSync.js.');
 }
 
 /**
@@ -1314,6 +1356,37 @@ function runRosterImport() {
   console.log('');
   console.log('--- applying ---');
   console.log(JSON.stringify(importRoster(p.data.token), null, 2));
+}
+
+/**
+ * Empty HC_Positions. DESTRUCTIVE.
+ *
+ * @clolry: "Remove all data in the existing HC sheet - I added our team for
+ * testing purposes."
+ *
+ * Needed because runRosterImport deliberately REFUSES when the import would
+ * remove positions that are not recognisable fixtures. Eight of the 24 current
+ * rows are hand-entered team members with real @gsa.gov addresses, so
+ * identifySeedRows correctly declines to treat them as test data. The right
+ * answer is a deliberate clear, not a weaker refusal.
+ *
+ * Leaves HC_Orgs alone. That is reference data — 137 org codes with their
+ * parents and levels — and the per-capita budget split walks each position's
+ * parent chain to the nearest SERVICE_CENTER row in it. Clearing it would make
+ * every allocation zero.
+ *
+ * TWO STEPS. This prints every row it would remove and stops; pass true to the
+ * underlying function to apply it. The dry run is the default because the Run
+ * button passes no arguments, so a misclick lists and halts.
+ *
+ * @editor
+ */
+function runClearHCPositions() {
+  var r = clearHCPositions(true);
+  console.log('');
+  console.log(JSON.stringify({
+    success: r.success, removed: r.removed, error: r.error, message: r.message
+  }, null, 2));
 }
 
 /**

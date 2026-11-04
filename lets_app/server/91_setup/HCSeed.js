@@ -1055,3 +1055,180 @@ function validateHCData() {
     return { success: false, error: error.message, problems: [] };
   }
 }
+
+/**
+ * Empties HC_Positions. Keeps HC_Orgs.
+ *
+ * @clolry: "Remove all data in the existing HC sheet - I added our team for
+ * testing purposes."
+ *
+ * WHY A DEDICATED FUNCTION RATHER THAN LETTING THE IMPORT DO IT
+ * ------------------------------------------------------------
+ * importRoster already replaces every row, so this looks redundant. It is not,
+ * for two reasons.
+ *
+ * First, runRosterImport REFUSES when the preview reports removals that are
+ * not test data — 8 of @clolry's 24 rows are hand-entered team members with
+ * real @gsa.gov addresses, so identifySeedRows correctly declines to treat
+ * them as fixtures. That refusal is right in general: a real person silently
+ * dropped from the roster loses supervisor-based LETS access. The answer is a
+ * deliberate clear, not a weaker refusal.
+ *
+ * Second, clearing and importing are different decisions with different
+ * evidence. Mixing them would mean the only way to discard test data is to run
+ * a 1,046-row import, and the only way to see what was discarded is to read
+ * the import's output afterwards.
+ *
+ * WHY HC_Orgs IS LEFT ALONE
+ * -------------------------
+ * HC_Orgs is REFERENCE data reconstructed from an authoritative list of 137 org
+ * codes; HC_Positions is PEOPLE. Clearing the orgs here would be the
+ * destructive mistake it would look like a convenience: the per-capita budget
+ * split walks each position's parent chain to the nearest SERVICE_CENTER row in
+ * HC_Orgs, so an empty HC_Orgs makes every allocation zero. loadRealOrgCodes
+ * rebuilds it; this must not quietly undo that.
+ *
+ * WHAT IT PRINTS BEFORE DELETING
+ * ------------------------------
+ * Every row it is about to remove, named, with its org code and whether it
+ * looks like a fixture. An admin running this on the wrong environment should
+ * see 1,046 real names scroll past and stop, and the only way that is possible
+ * is if the names are printed BEFORE the write rather than counted after it.
+ *
+ * @param {boolean} [confirm=false] must be true. The Run button passes no
+ *        arguments, so a misclick in the editor lists the rows and stops.
+ * @returns {Object} { success, removed, rows, message }
+ * @editor
+ */
+function clearHCPositions(confirm) {
+  // FAILS CLOSED. My first version read
+  //   (typeof _hcAdminGuard_ === 'function') ? _hcAdminGuard_() : null
+  // which SKIPS the admin check entirely if the guard is missing, and then
+  // deletes every row in the roster. For a destructive function the absence
+  // of a guard must mean "refuse", never "proceed unguarded".
+  //
+  // _hcAdminGuard_ lives in 40_domain/HCAdmin.js and Apps Script hoists
+  // top-level declarations across every file, so it is present in practice.
+  // That is exactly why the fail-open was invisible: it would never have
+  // triggered until someone split the files differently.
+  if (typeof _hcAdminGuard_ !== 'function') {
+    return {
+      success: false,
+      error: 'The HR admin guard (_hcAdminGuard_, 40_domain/HCAdmin.js) is ' +
+             'unavailable, so this cannot verify the caller is an ' +
+             'administrator. Refusing to clear the roster.'
+    };
+  }
+  var denied = _hcAdminGuard_();
+  if (denied) return denied;
+
+  // Serialized against saveHCPosition and importRoster: both read the roster
+  // to validate, and a concurrent clear would have them validate against a
+  // half-empty table.
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(typeof LOCK_TIMEOUT_MS !== 'undefined' ? LOCK_TIMEOUT_MS : 30000);
+  } catch (e) {
+    return { success: false, error: 'Another HR edit is in progress. Try again in a moment.' };
+  }
+
+  try {
+    if (!TRAVEL_DB_SPREADSHEET_ID) {
+      return { success: false, error: 'TRAVEL_DB_SPREADSHEET_ID is not set.' };
+    }
+
+    var ss = SpreadsheetApp.openById(TRAVEL_DB_SPREADSHEET_ID);
+    var sheet = ss.getSheetByName(SHEET_NAMES.HC_POSITIONS);
+    if (!sheet) {
+      return {
+        success: false,
+        error: SHEET_NAMES.HC_POSITIONS + ' tab not found. Run ' +
+               'setupTravelDatabase() first.'
+      };
+    }
+
+    var headers = TRAVEL_SHEET_SCHEMAS[SHEET_NAMES.HC_POSITIONS];
+    var lastRow = sheet.getLastRow();
+    var count = Math.max(0, lastRow - 1);
+
+    if (!count) {
+      console.log('clearHCPositions: ' + SHEET_NAMES.HC_POSITIONS +
+                  ' is already empty.');
+      return { success: true, removed: 0, rows: [], message: 'Already empty.' };
+    }
+
+    // Read and print BEFORE deciding, so a dry run is as informative as the
+    // real one.
+    var col = {};
+    headers.forEach(function (h, i) { col[h] = i; });
+    var data = sheet.getRange(2, 1, count, headers.length).getValues();
+
+    var rows = data.map(function (r) {
+      var email = String(r[col['Email_Address']] || '').trim().toLowerCase();
+      return {
+        positionNumber: String(r[col['Position_Number']] || '').trim(),
+        employeeName: String(r[col['Employee_Name']] || '').trim(),
+        orgCode: String(r[col['Org_Code']] || '').trim(),
+        emailAddress: email,
+        createdBy: String(r[col['Created_By']] || '').trim(),
+        // Stated per row so the distinction @clolry hit — 16 fixtures and 8
+        // hand-entered team members — is visible rather than inferred.
+        looksLikeFixture: email.indexOf('@example.gov') > -1 ||
+                          email.indexOf('@example.com') > -1 ||
+                          String(r[col['Created_By']] || '').toLowerCase() === 'hc-seed'
+      };
+    });
+
+    var fixtures = rows.filter(function (r) { return r.looksLikeFixture; }).length;
+
+    console.log('=== clearHCPositions ===');
+    console.log(count + ' row(s) in ' + SHEET_NAMES.HC_POSITIONS + ': ' +
+                fixtures + ' fictional fixture(s), ' + (count - fixtures) +
+                ' with real addresses.');
+    console.log('');
+    rows.forEach(function (r) {
+      console.log('  ' + (r.looksLikeFixture ? '[fixture] ' : '[real]    ') +
+                  (r.positionNumber || '(no PN)') + '  ' +
+                  (r.employeeName || '(no name)') + '  ' +
+                  (r.orgCode || '(no org)') +
+                  (r.emailAddress ? ('  ' + r.emailAddress) : ''));
+    });
+    console.log('');
+
+    if (confirm !== true) {
+      // NOT AN ERROR. The Run button passes no arguments, so this is the
+      // expected first outcome: it lists what would go and stops. Returning
+      // success:false would make a correct dry run look like a failure.
+      console.log('NOTHING REMOVED — this was a dry run.');
+      console.log('To remove all ' + count + ' row(s), call ' +
+                  'clearHCPositions(true) from a wrapper, or run ' +
+                  'runClearHCPositions() in 99_triggers/Diagnostics.js.');
+      return {
+        success: true, removed: 0, rows: rows, dryRun: true,
+        message: count + ' row(s) listed above. Nothing removed.'
+      };
+    }
+
+    sheet.getRange(2, 1, count, headers.length).clearContent();
+
+    // The HC bundle is cached for six hours. Without this the access gate, the
+    // org chart and the budget dashboard all keep serving the rows that were
+    // just deleted, and an admin reasonably concludes the clear did nothing.
+    try { new TravelDB().invalidate(SHEET_NAMES.HC_POSITIONS); } catch (e) { /* non-fatal */ }
+    try { HC.hcCacheInvalidateAll(); } catch (e) { /* non-fatal */ }
+
+    console.log('REMOVED ' + count + ' row(s). HC_Orgs was not touched.');
+    console.log('Next: runRosterPreview() then runRosterImport() in ' +
+                '99_triggers/Diagnostics.js.');
+
+    return {
+      success: true, removed: count, rows: rows, dryRun: false,
+      message: 'Removed ' + count + ' position(s). HC_Orgs untouched.'
+    };
+  } catch (error) {
+    console.error('clearHCPositions failed: ' + error.message);
+    return { success: false, error: error.message };
+  } finally {
+    try { lock.releaseLock(); } catch (e) { /* already released */ }
+  }
+}

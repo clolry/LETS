@@ -473,6 +473,9 @@ var HCRosterImport = (function () {
       lcat: _str_(get('lcat')) || pay.series,
       supervisoryStatus: normalizeSupervisoryStatus(get('supervisoryStatus')),
       occupancyStatus: occupancy,
+      // The RAW cell, carried so the cross-check can show what the two
+      // columns actually said. Never written to the roster.
+      occupancyStatusRaw: _str_(get('occupancyStatus')),
       // Carried for the disagreement check only. Never written to the roster.
       secondaryStatus: secondary,
       obligatedTo: _str_(get('obligatedTo')),
@@ -945,6 +948,72 @@ var HCRosterImport = (function () {
     if (!('secondaryStatus' in idx) || !('occupancyStatus' in idx)) return null;
     if (idx.secondaryStatus === idx.occupancyStatus) return null;
 
+    // THE VOCABULARIES ARE COMPARED BEFORE THE ROWS.
+    //
+    // The first version of this ran normalizeOccupancy over the secondary
+    // column and reported every row where the answer differed. Against the
+    // real feed that produced "6 row(s) would be classified differently",
+    // which looked like a small data inconsistency and was nothing of the
+    // kind.
+    //
+    // The secondary column holds 'A' and 'T' — personnel ACTION codes, a
+    // different vocabulary entirely. normalizeOccupancy recognises none of
+    // them, so every value fell through to its FILLED default. The arithmetic
+    // consequence: a FILLED row "agreed" by accident, a VACANT row agreed
+    // because the name test fires first, and ONLY the 6 OBLIGATED rows could
+    // ever differ. The check could not have returned any other number, and a
+    // reader comparing 6 against 1,046 would conclude the columns broadly
+    // agree — the opposite of the truth, which is that they are not
+    // comparable at all.
+    //
+    // So: establish whether the secondary column speaks the occupancy
+    // vocabulary. If it does not, say so and report NO conflicts, because a
+    // conflict count between incommensurable columns is a meaningless number
+    // that invites a decision.
+    var KNOWN = /VACAN|OBLIGAT|FILL|ENCUMBER/;
+    var secondaryValues = {};
+    var recognised = 0;
+    var seenValues = 0;
+
+    (rows || []).forEach(function (r) {
+      var v = _str_(r.secondaryStatus).toUpperCase();
+      if (!v) return;
+      seenValues++;
+      secondaryValues[v] = (secondaryValues[v] || 0) + 1;
+      if (KNOWN.test(v)) recognised++;
+    });
+
+    var distinct = Object.keys(secondaryValues).sort(function (a, b) {
+      return secondaryValues[b] - secondaryValues[a];
+    });
+    var sampleValues = distinct.slice(0, 8).map(function (v) {
+      return v + ' (' + secondaryValues[v] + ')';
+    });
+
+    // A column that speaks occupancy will use recognisable words on most
+    // rows. Half is a deliberately loose bar: the point is to separate
+    // 'Filled/Vacant' from 'A/T', not to grade near-misses.
+    var comparable = seenValues > 0 && recognised >= seenValues / 2;
+
+    if (!comparable) {
+      return {
+        primaryColumn: mapped.mapping.occupancyStatus,
+        secondaryColumn: mapped.mapping.secondaryStatus,
+        comparable: false,
+        conflicts: 0,
+        samples: [],
+        secondaryValues: sampleValues,
+        note: 'The "' + mapped.mapping.secondaryStatus + '" column does not ' +
+              'hold occupancy values — its values are ' +
+              sampleValues.join(', ') + ', which look like personnel action ' +
+              'codes rather than Filled/Vacant/Obligated. So there is nothing ' +
+              'to cross-check, and occupancy is correctly taken from "' +
+              mapped.mapping.occupancyStatus + '". CONFIRMED by the data ' +
+              'rather than assumed from the "Obligated To" column being ' +
+              'present.'
+      };
+    }
+
     var conflicts = [];
     (rows || []).forEach(function (r) {
       var secondary = _str_(r.secondaryStatus).toUpperCase();
@@ -957,7 +1026,11 @@ var HCRosterImport = (function () {
           employeeName: r.employeeName,
           chosen: r.occupancyStatus,
           alternative: alt,
-          primaryValue: '',
+          // The RAW primary value, not ''. It was hardcoded empty, so every
+          // sample reported `"primaryValue": ""` — the one field that would
+          // have shown the conflict was between 'Obligated' and 'A' and
+          // therefore not a conflict at all.
+          primaryValue: _str_(r.occupancyStatusRaw).toUpperCase(),
           secondaryValue: secondary
         });
       }
@@ -966,8 +1039,10 @@ var HCRosterImport = (function () {
     return {
       primaryColumn: mapped.mapping.occupancyStatus,
       secondaryColumn: mapped.mapping.secondaryStatus,
+      comparable: true,
       conflicts: conflicts.length,
       samples: conflicts.slice(0, 20),
+      secondaryValues: sampleValues,
       // `mapped.mapping.secondaryStatus`, NOT `secondaryColumn`.
       //
       // The latter is a field of the object being BUILT here, not of
