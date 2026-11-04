@@ -268,6 +268,35 @@ jobs:
         # everyone's access), and importRoster requires a preview token.
         run: node lets_app/test_hc_roster_import.js
 
+      - name: Directory email lookup tests
+        # The FAS HR feed has 33 columns and no email address, but
+        # Email_Address is how LETS decides who someone IS: Access.js:435
+        # admits a supervisor by matching the signed-in user against it, and
+        # Access.js:982 finds a Division Director the same way.
+        #
+        # So a WRONG address is far worse than none — it grants LETS access to
+        # the wrong person, makes them a candidate approver, and points a
+        # reviewer's contact link at them, with no symptom. Name matching is
+        # inherently ambiguous (GSA has more than one Michael Smith), so the
+        # module REFUSES an ambiguous match rather than choosing.
+        #
+        # §6 is the section that earns the rest: three negative controls that
+        # each turn a refusal into a guess, proving the refusals are real.
+        # 6a takes the first of two Michael Smiths; 6b matches Michael to
+        # Mary on a forename initial; 6c accepts a surname-only name.
+        #
+        # §7 pins the integration choice. AdminDirectory.Users.list needs
+        # admin.directory.user.readonly, which only a Workspace super admin
+        # can authorise — and this app runs as USER_ACCESSING, so it would
+        # fail for every ordinary user. People.searchDirectoryPeople reads the
+        # same directory under a scope any domain user can grant.
+        #
+        # It also asserts the manifest does NOT pin an explicit oauthScopes
+        # list: Apps Script derives scopes from the code, and an explicit list
+        # replaces that inference, so adding one to cover directory.readonly
+        # would silently break every scope not enumerated in it.
+        run: node lets_app/test_directory_lookup.js
+
       - name: Org chart tests
         # Includes the cross-project agreement check: orgchart_app/HCRead.js is
         # a deliberate SECOND implementation of lets_app HCData.js, so both are

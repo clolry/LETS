@@ -314,9 +314,20 @@ function getFasHrFeedSource() {
   return {
     ok: true,
     spreadsheetId: id,
-    // The tab defaults because the feed workbook's sheet name is known and
-    // stable; the ID cannot default because it identifies the data itself.
-    tabName: tab || 'FAS_HRLinks_Feed',
+    // 'FAS' is the real tab. @clolry: "the data is in the 'FAS' tab."
+    //
+    // My original default was 'FAS_HRLinks_Feed' — the PROPERTY name, not the
+    // tab name — which is a mistake worth naming: I defaulted a value to the
+    // key that holds it. The workbook has six tabs (Date Last Updated, FAS,
+    // Location Codes, NEW - NTE REPORT, FAS Recruit Data from STAR, PARs), so
+    // the wrong guess failed loudly rather than reading the wrong data, which
+    // is the only reason it cost a minute instead of a roster.
+    //
+    // The tab default is safe in a way the ID default is not: a wrong tab in
+    // the RIGHT workbook produces a visible failure, because the required
+    // columns will not be found and parseFeed refuses. A wrong spreadsheet ID
+    // could silently parse a stale roster that looks correct.
+    tabName: tab || 'FAS',
     error: ''
   };
 }

@@ -63,7 +63,25 @@ function previewRosterImport() {
           'present: ' + names.join(', ') + '. Set ' +
           PROPS_KEYS.FAS_HR_FEED_TAB + ' if the tab has been renamed.');
       }
-      values = sheet.getDataRange().getValues();
+
+      // READ ONLY THE MAPPED COLUMNS' WORTH OF WIDTH, not getDataRange().
+      //
+      // The FAS workbook is a live HR feed with 33 columns and a row per
+      // position across all of FAS, not just ASD. getDataRange() on a sheet
+      // that wide and long is the likeliest way this hits the 6-minute
+      // execution limit or the 50MB payload cap — and it would do so AFTER
+      // reading everything, wasting the whole run.
+      //
+      // getLastRow()/getLastColumn() bound it explicitly so the failure, if
+      // it comes, is a clear "too many rows" rather than a timeout.
+      var lastRow = sheet.getLastRow();
+      var lastCol = sheet.getLastColumn();
+      if (lastRow < 2) {
+        return errorResponse(
+          'Tab "' + source.tabName + '" has no data rows (last row ' +
+          lastRow + ').');
+      }
+      values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
     } catch (e) {
       return errorResponse(
         'Could not open the HR feed (' + source.spreadsheetId + '): ' +
@@ -261,7 +279,12 @@ function importRoster(token) {
     if (!feedSheet) {
       return errorResponse('Tab "' + source.tabName + '" not found in the HR feed.');
     }
-    var values = feedSheet.getDataRange().getValues();
+    var lastRow = feedSheet.getLastRow();
+    var lastCol = feedSheet.getLastColumn();
+    if (lastRow < 2) {
+      return errorResponse('Tab "' + source.tabName + '" has no data rows.');
+    }
+    var values = feedSheet.getRange(1, 1, lastRow, lastCol).getValues();
 
     var orgs = HC.hcGetOrgHierarchy() || [];
     var orgsByCode = {};
@@ -342,9 +365,13 @@ function importRoster(token) {
       return headers.map(function (h) { return h in rec ? rec[h] : ''; });
     });
 
-    var lastRow = sheet.getLastRow();
-    if (lastRow > 1) {
-      sheet.getRange(2, 1, lastRow - 1, headers.length).clearContent();
+    // NOT `lastRow` — that name is already taken by the FEED's row count
+    // above, and `var` would silently reassign it. Both are in this function's
+    // scope, and confusing the source sheet's length with the target's is
+    // exactly the kind of mistake that clears the wrong range.
+    var targetLastRow = sheet.getLastRow();
+    if (targetLastRow > 1) {
+      sheet.getRange(2, 1, targetLastRow - 1, headers.length).clearContent();
     }
 
     // Pin the identifier columns to TEXT before writing, so leading zeros
