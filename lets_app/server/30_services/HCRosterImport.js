@@ -72,31 +72,107 @@ var HCRosterImport = (function () {
    * same concept is spelled several ways across government HR exports. Matched
    * case-insensitively and whitespace-collapsed, because ' Authorization
    * Submitted' in the travel log proved that real headers carry stray spaces.
+   *
+   * THE REAL FAS HRLINKS HEADERS ARE NOW KNOWN and are listed first in each
+   * array below. @clolry supplied all 33. Four of them needed thought:
+   *
+   *   'Position#'       no space before the hash. My original hints had
+   *                     'Position Number', 'Position #' and 'PN' and missed
+   *                     this, so positionNumber came back unmapped and the
+   *                     import correctly refused. That refusal is why the gap
+   *                     was visible at all.
+   *   'Dept ID (Org)'   the org code. 'POI' is the other candidate and is NOT
+   *                     used — see the note on orgCode below.
+   *   'PP-Series-Grd'   a COMPOSITE, 'GS-0343-15'. Needs splitting, not
+   *                     reading. See parsePayPlanGrade.
+   *   'Position Status' chosen over the bare 'Status' column. See the note on
+   *                     occupancyStatus below.
+   *
+   * THERE IS NO EMAIL COLUMN. All 33 headers, and not one carries an address.
+   * That is a blocking problem for site access rather than a missing nicety —
+   * see the emailAddress entry.
    */
   var FIELD_HINTS = {
-    positionNumber: ['Position Number', 'Position #', 'Position # (PN)', 'PN',
+    // 'Position#' (no space) is the real header. The spaced variants are kept
+    // because an export tool that pretty-prints headers would produce them.
+    positionNumber: ['Position#', 'Position #', 'Position Number',
+                     'Position # (PN)', 'Position #      (PN)', 'PN',
                      'Position Nbr', 'Position_Number', 'Position ID'],
-    reportsTo:      ['Reports To Position Number', 'Supervisor Position Number',
-                     'Reports To', 'Supervisor PN', 'Reports To PN',
-                     'Supervisor Position'],
+
+    // 'Reports To Position #' is a position number, which is what the
+    // supervisor walk joins on. There is also a 'Reports To Name' column; it
+    // is deliberately NOT used, because a name is not a key — two people can
+    // share one, and HCData.hcWalkSupervisorChain follows position numbers.
+    reportsTo:      ['Reports To Position #', 'Reports To Position Number',
+                     'Supervisor Position Number', 'Reports To', 'Supervisor PN',
+                     'Reports To PN', 'Supervisor Position'],
+
     employeeId:     ['Employee ID', 'Employee Id', 'EMPLID', 'Emp ID',
                      'Employee Number'],
     employeeName:   ['Employee Name', 'Full Name', 'Name', 'Employee'],
-    emailAddress:   ['Email Address', 'Email', 'Work Email', 'Email Addr'],
-    orgCode:        ['Org Code', 'Office Symbol', 'Organization',
-                     'Org Symbol', 'Organizational Code'],
+
+    // NOT IN THE FEED. Every spelling below is a guess at a column that does
+    // not exist in the 33 headers @clolry supplied. Kept so that if HRLinks
+    // ever adds one it is picked up, and so the absence is explicit rather
+    // than an oversight. The import proceeds without it and reports the
+    // consequence — see REQUIRED_FIELDS and emailCoverage.
+    emailAddress:   ['Email Address', 'Email', 'Work Email', 'Email Addr',
+                     'EMail', 'Business Email', 'GSA Email'],
+
+    // 'Dept ID (Org)' is the org code: FCBBBB and friends.
+    //
+    // 'POI' — Point of Interest / Personnel Office Identifier — is NOT used.
+    // A POI is a payroll servicing code and several orgs share one, so keying
+    // budget attribution off it would merge unrelated service centres. The
+    // whole per-capita split depends on this column being the org code, so
+    // the wrong choice here misattributes every dollar.
+    orgCode:        ['Dept ID (Org)', 'Dept ID', 'Org Code', 'Office Symbol',
+                     'Organization', 'Org Symbol', 'Organizational Code'],
+
     officeTitle:    ['Position Title', 'Office Title', 'Title', 'Job Title'],
-    grade:          ['Grade', 'Pay Grade', 'GS Grade', 'Grade Level'],
-    supervisoryStatus: ['Supervisory Status', 'Supv Status', 'Supv',
+
+    // 'PP-Series-Grd' holds pay plan, occupational series and grade in one
+    // field. parsePayPlanGrade splits it; normalizeGrade is applied to the
+    // grade component only.
+    grade:          ['PP-Series-Grd', 'PP-Series-Grade', 'Grade', 'Pay Grade',
+                     'GS Grade', 'Grade Level'],
+
+    supervisoryStatus: ['Supv Status', 'Supervisory Status', 'Supv',
                         'Supervisor Status', 'Supervisory Code'],
-    occupancyStatus: ['Occupancy Status', 'Work Status', 'Position Status',
+
+    // 'Position Status' over the bare 'Status'.
+    //
+    // The feed has BOTH, and they are not the same question. Alongside them
+    // sits '"Obligated To" Employee Name', which only makes sense if one of
+    // these columns can say OBLIGATED — that is a POSITION's state, not a
+    // person's. 'Status' with no qualifier is most likely the employee's
+    // personnel action status (Active/Separated), which would count a
+    // separated employee's seat as filled.
+    //
+    // This is a JUDGEMENT, not a certainty, and it decides the per-capita
+    // denominator. previewRosterImport prints the mapping so it can be checked
+    // against real values before the import is confirmed, and
+    // occupancyDisagreement below reports when the two columns conflict.
+    occupancyStatus: ['Position Status', 'Occupancy Status', 'Work Status',
                       'Filled/Vacant', 'Status'],
+
+    // The second status column, read only to detect disagreement with the
+    // first. Never used as the occupancy source.
+    secondaryStatus: ['Status'],
+
+    // Who a position is obligated to. Its presence corroborates that
+    // 'Position Status' is the position-level column.
+    obligatedTo:     ['"Obligated To" Employee Name', 'Obligated To Employee Name',
+                      'Obligated To'],
+
     lcat:           ['LCAT', 'Labor Category', 'Occupational Series', 'Series'],
     locationCode:   ['Location Code', 'Duty Station Code', 'Location'],
-    dutyAddress:    ['Duty Station Address', 'Duty Address', 'Address'],
-    dutyCity:       ['Duty Station City', 'Location City (Duty Station)',
-                     'Duty City', 'City'],
-    dutyState:      ['Duty Station State', 'State', 'Duty State']
+    dutyAddress:    ['Location Address', 'Duty Station Address', 'Duty Address',
+                     'Address'],
+    dutyCity:       ['Location City', 'Duty Station City',
+                     'Location City (Duty Station)', 'Duty City', 'City'],
+    dutyState:      ['Location State', 'Duty Station State', 'State',
+                     'Duty State']
   };
 
   /**
@@ -189,7 +265,8 @@ var HCRosterImport = (function () {
    * THE VT-03 DEFECT, from HCAdmin.validateHCPosition: a sheet cell holding 07
    * arrives as the number 7, String(7) is '07' to nobody, and every grade
    * comparison in LETS is a string comparison — including the GS-15 Division
-   * Director lookup that approval routing depends on.
+   * Director lookup that approval routing depends on (HCData.js:669,
+   * Access.js:133, Request.js:137 all compare against '15').
    *
    * Non-numeric grades (SES, ES, VT-03) pass through untouched.
    */
@@ -202,15 +279,77 @@ var HCRosterImport = (function () {
   }
 
   /**
+   * Splits the FAS feed's 'PP-Series-Grd' composite.
+   *
+   * The feed does not carry a grade column. It carries 'GS-0343-15' — pay
+   * plan, occupational series, grade — in one field, and LETS needs the grade
+   * alone because three call sites compare it to the string '15' to find a
+   * Division Director for approval routing.
+   *
+   * Storing the composite in Grade would break all three silently: 'GS-0343-15'
+   * is not '15', so every approval would route past its Division Director and
+   * nothing would announce that it had happened.
+   *
+   * SES AND ES HAVE NO NUMERIC GRADE. 'ES-0340-00' is a Senior Executive, and
+   * '00' is not a grade — it is the absence of one. Returning '00' would be
+   * worse than returning the pay plan, because '00' sorts and compares as a
+   * real low grade. So a 00 grade yields the PAY PLAN as the grade, which is
+   * what the HCSeed fixture already does for its SES rows.
+   *
+   * The series is kept and lands in LCAT, where it is more useful than the
+   * free-text labour category LETS has never populated.
+   *
+   * @param {*} v the raw cell
+   * @returns {{payPlan: string, series: string, grade: string}}
+   */
+  function parsePayPlanGrade(v) {
+    var s = _str_(v).toUpperCase();
+    if (!s) return { payPlan: '', series: '', grade: '' };
+
+    // PP-SERIES-GRADE, e.g. GS-0343-15, ES-0340-00, WG-4749-08.
+    var m = s.match(/^([A-Z]{2})[-\s]*(\d{3,4})[-\s]*(\d{1,2})$/);
+    if (m) {
+      var plan = m[1];
+      var series = m[2];
+      var grade = m[3];
+      // '00' means no numeric grade — SES, ES, SV and similar.
+      if (grade === '00' || grade === '0') {
+        return { payPlan: plan, series: series, grade: plan };
+      }
+      return { payPlan: plan, series: series, grade: normalizeGrade(grade) };
+    }
+
+    // PP-GRADE with no series, e.g. 'VT-03'. HCAdmin's validator already
+    // mentions VT-03 as a real shape.
+    var m2 = s.match(/^([A-Z]{2})[-\s]*(\d{1,2})$/);
+    if (m2) {
+      return { payPlan: m2[1], series: '', grade: normalizeGrade(m2[2]) };
+    }
+
+    // A bare number, or something unrecognised. Pass it through rather than
+    // blanking it: a value we cannot parse is still evidence, and validateRow
+    // will flag a grade that matches nothing.
+    return { payPlan: '', series: '', grade: normalizeGrade(s) };
+  }
+
+  /**
    * Normalises occupancy to FILLED | VACANT | OBLIGATED.
    *
-   * The feed may express this as a work status, or not at all. A row whose
-   * NAME says vacant is vacant regardless of what the status column holds —
-   * the May export used 'VACANT (New position)' in the name field for 107
-   * seats, and reading only a status column would have counted all of them as
+   * THIS DECIDES THE PER-CAPITA DENOMINATOR, so it must not guess generously.
+   *
+   * The FAS feed's 'Position Status' is the source. OBLIGATED is a real state
+   * in it — the feed carries an '"Obligated To" Employee Name' column, which
+   * only makes sense if a position can be obligated to someone not yet in it.
+   * LETS already treats OBLIGATED as not-filled for access
+   * (Access.js:439 excludes it) and the per-capita split counts only FILLED,
+   * which is right: a seat committed to someone who has not arrived generates
+   * no travel this year.
+   *
+   * A row whose NAME says vacant is vacant regardless of the status column.
+   * The May export marked 107 seats with 'VACANT (New position)' in the name
+   * field, and reading only a status column would have counted all of them as
    * staffed.
    *
-   * THIS DECIDES THE PER-CAPITA DENOMINATOR, so it must not guess generously.
    * An unrecognised value on a row that HAS a real name defaults to FILLED,
    * because a named person occupies their seat; a row with no name at all is
    * VACANT.
@@ -223,6 +362,7 @@ var HCRosterImport = (function () {
     if (s.indexOf('VACAN') > -1) return 'VACANT';
     if (s.indexOf('OBLIGAT') > -1) return 'OBLIGATED';
     if (s.indexOf('FILL') > -1) return 'FILLED';
+    if (s.indexOf('ENCUMBER') > -1) return 'FILLED';
     return 'FILLED';
   }
 
@@ -251,6 +391,14 @@ var HCRosterImport = (function () {
     // banner. The May export had 272 of them among 409 rows.
     if (!pn && !name) return null;
 
+    // The feed's composite pay-plan field. See parsePayPlanGrade: storing
+    // 'GS-0343-15' in Grade would break the three string comparisons that
+    // locate a Division Director for approval routing.
+    var pay = parsePayPlanGrade(get('grade'));
+
+    var occupancy = normalizeOccupancy(get('occupancyStatus'), name);
+    var secondary = _str_(get('secondaryStatus'));
+
     return {
       sourceRow: rowNumber,
       positionNumber: pn,
@@ -260,10 +408,17 @@ var HCRosterImport = (function () {
       emailAddress: _str_(get('emailAddress')).toLowerCase(),
       orgCode: org,
       officeTitle: _str_(get('officeTitle')),
-      grade: normalizeGrade(get('grade')),
+      grade: pay.grade,
+      payPlan: pay.payPlan,
+      // The occupational series is more useful than the free-text labour
+      // category LETS has never populated, so it lands in LCAT when the feed
+      // has no LCAT column of its own.
+      lcat: _str_(get('lcat')) || pay.series,
       supervisoryStatus: normalizeSupervisoryStatus(get('supervisoryStatus')),
-      occupancyStatus: normalizeOccupancy(get('occupancyStatus'), name),
-      lcat: _str_(get('lcat')),
+      occupancyStatus: occupancy,
+      // Carried for the disagreement check only. Never written to the roster.
+      secondaryStatus: secondary,
+      obligatedTo: _str_(get('obligatedTo')),
       locationCode: _str_(get('locationCode')),
       dutyStationAddress: _str_(get('dutyAddress')),
       dutyStationCity: _str_(get('dutyCity')),
@@ -319,12 +474,10 @@ var HCRosterImport = (function () {
       if (!row.employeeName) {
         problems.push('A filled position with no name.');
       }
-      if (!row.emailAddress) {
-        // Reported, not blocked. A staffed seat without an email cannot be
-        // notified or matched for site access, and nothing else reports it.
-        warnings.push('No email address, so this person cannot be notified ' +
-                      'or matched for LETS access.');
-      } else if (row.emailAddress.indexOf('@') === -1) {
+      // NOT blocked, and NOT warned per row either when the whole feed lacks
+      // an email column — 900 identical warnings would bury the real ones.
+      // parseFeed reports the aggregate instead; see emailCoverage.
+      if (row.emailAddress && row.emailAddress.indexOf('@') === -1) {
         warnings.push('Email "' + row.emailAddress + '" is not an email address.');
       }
     }
@@ -521,7 +674,8 @@ var HCRosterImport = (function () {
     var out = {
       rows: [], skipped: 0, blocked: [], warnings: [],
       mapping: {}, unmapped: [], headerProblems: [],
-      cycles: [], cyclesCleared: 0
+      cycles: [], cyclesCleared: 0,
+      emailCoverage: null, occupancyDisagreement: null
     };
 
     if (!values || values.length < 2) {
@@ -569,7 +723,133 @@ var HCRosterImport = (function () {
     out.cycles = cyc.cycles;
     out.cyclesCleared = cyc.cleared;
 
+    out.emailCoverage = emailCoverage(out.rows, mapped);
+    out.occupancyDisagreement = occupancyDisagreement(out.rows, mapped);
+
     return out;
+  }
+
+  /**
+   * How many staffed positions have an email address, and what that costs.
+   *
+   * THE FAS HRLINKS FEED HAS NO EMAIL COLUMN. All 33 headers, and not one
+   * carries an address. That is not a cosmetic gap:
+   *
+   *   Access.js:435-441   the HC supervisor access gate matches the signed-in
+   *                       user's email against Email_Address. With none, no
+   *                       supervisor is admitted by that rule and roughly 184
+   *                       status-2 supervisors lose their only automatic route
+   *                       into LETS.
+   *   Access.js:982       the Division Director lookup matches on email too.
+   *   HCPrivacy.js:79     emailAddress is on the reviewer allow-list because
+   *                       "a reviewer must be able to contact a traveller".
+   *
+   * Reported as an aggregate rather than as a warning per row, because 900
+   * identical warnings bury the ones that matter. previewRosterImport surfaces
+   * this prominently: an admin needs to see it BEFORE confirming an import
+   * that would blank a column the access gate reads.
+   *
+   * WHY THE IMPORT STILL PROCEEDS. The alternative is staying on 16 fictional
+   * people, which breaks the same access gate AND every budget allocation.
+   * Importing a roster with no emails is strictly better, and the gap is
+   * fixable afterwards — the Google Directory lookup already scoped in
+   * docs/handoff/README.md item A resolves an address from a name, which is
+   * exactly this problem.
+   *
+   * @param {Array} rows
+   * @param {Object} mapped
+   * @returns {Object}
+   */
+  function emailCoverage(rows, mapped) {
+    var staffed = 0;
+    var withEmail = 0;
+    var supervisorsWithout = 0;
+
+    (rows || []).forEach(function (r) {
+      if (r.occupancyStatus === 'VACANT') return;
+      staffed++;
+      if (r.emailAddress && r.emailAddress.indexOf('@') > -1) withEmail++;
+      else if (r.supervisoryStatus === '2') supervisorsWithout++;
+    });
+
+    var hasColumn = 'emailAddress' in (mapped.index || {});
+    return {
+      columnPresent: hasColumn,
+      columnName: mapped.mapping ? (mapped.mapping.emailAddress || '') : '',
+      staffedPositions: staffed,
+      withEmail: withEmail,
+      without: staffed - withEmail,
+      supervisorsWithoutEmail: supervisorsWithout,
+      // The sentence an admin has to read, not a number they have to
+      // interpret.
+      impact: hasColumn
+        ? ((staffed - withEmail) + ' of ' + staffed + ' staffed positions ' +
+           'have no email address. Those people cannot be matched for LETS ' +
+           'access or notified.')
+        : ('The feed has NO email column, so Email_Address will be blank for ' +
+           'all ' + staffed + ' staffed positions. This matters: the HC ' +
+           'supervisor access rule in Access.js matches the signed-in user ' +
+           'against Email_Address, so ' + supervisorsWithout + ' supervisor(s) ' +
+           'will not be admitted to LETS by that rule. Explicit Travel_Users ' +
+           'roles still work. Importing is still better than staying on ' +
+           'fictional test data, which breaks the same rule and every budget ' +
+           'figure — but the email gap needs closing separately.')
+    };
+  }
+
+  /**
+   * Rows where the feed's two status columns disagree.
+   *
+   * The FAS feed has both 'Position Status' and a bare 'Status'. This module
+   * reads the first, on the reasoning that an '"Obligated To" Employee Name'
+   * column only makes sense beside a POSITION-level status — but that is a
+   * judgement, and it decides the per-capita denominator.
+   *
+   * So when the two columns suggest different occupancy, say so. A handful of
+   * disagreements is normal; hundreds would mean the wrong column was chosen,
+   * and that is worth catching before the allocations move.
+   *
+   * @param {Array} rows
+   * @param {Object} mapped
+   * @returns {Object|null} null when the feed has only one status column
+   */
+  function occupancyDisagreement(rows, mapped) {
+    var idx = mapped.index || {};
+    if (!('secondaryStatus' in idx) || !('occupancyStatus' in idx)) return null;
+    if (idx.secondaryStatus === idx.occupancyStatus) return null;
+
+    var conflicts = [];
+    (rows || []).forEach(function (r) {
+      var secondary = _str_(r.secondaryStatus).toUpperCase();
+      if (!secondary) return;
+      // What the OTHER column would have concluded, by the same rule.
+      var alt = normalizeOccupancy(r.secondaryStatus, r.employeeName);
+      if (alt !== r.occupancyStatus) {
+        conflicts.push({
+          positionNumber: r.positionNumber,
+          employeeName: r.employeeName,
+          chosen: r.occupancyStatus,
+          alternative: alt,
+          primaryValue: '',
+          secondaryValue: secondary
+        });
+      }
+    });
+
+    return {
+      primaryColumn: mapped.mapping.occupancyStatus,
+      secondaryColumn: mapped.mapping.secondaryStatus,
+      conflicts: conflicts.length,
+      samples: conflicts.slice(0, 20),
+      note: conflicts.length
+        ? (conflicts.length + ' row(s) would be classified differently by "' +
+           mapped.mapping.secondaryColumn + '". Occupancy is taken from "' +
+           mapped.mapping.occupancyStatus + '" because the feed also carries ' +
+           'an "Obligated To" column, which is a position-level concept. If ' +
+           'this count is large, the wrong column was chosen and every ' +
+           'per-capita share is affected.')
+        : 'Both status columns agree on every row.'
+    };
   }
 
   /**
@@ -649,6 +929,9 @@ var HCRosterImport = (function () {
     REQUIRED_FIELDS: REQUIRED_FIELDS,
     proposeMapping: proposeMapping,
     normalizeGrade: normalizeGrade,
+    parsePayPlanGrade: parsePayPlanGrade,
+    emailCoverage: emailCoverage,
+    occupancyDisagreement: occupancyDisagreement,
     normalizeSupervisoryStatus: normalizeSupervisoryStatus,
     normalizeOccupancy: normalizeOccupancy,
     interpretRow: interpretRow,

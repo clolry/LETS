@@ -113,6 +113,201 @@ console.log('1. the column mapping is proposed, and refuses to guess');
 }
 
 // ---------------------------------------------------------------------------
+console.log('\n1b. the REAL FAS HRLinks headers, as supplied by @clolry');
+{
+  // All 33, verbatim. This is the mapping the import will actually use, so it
+  // is asserted column by column rather than counted.
+  const FAS = ['Position Status', 'Status', '"Obligated To" Employee Name',
+    'Employee ID', 'Employee Name', 'Position#', 'PAR#', 'Position Title',
+    'PP-Series-Grd', 'FPL', 'PD #', 'Dept ID (Org)', 'POI',
+    'Location Description', 'Location Address', 'Location City',
+    'Location State', 'Location Code', 'Work Sch', 'Reports To Name',
+    'Reports To Position #', 'Accounting Code', 'FLSA', 'BUS code',
+    'Appt Hire NTE Date', 'Temp Prom Expiration Date', 'Detail Position',
+    'Detail Expiration Date', 'WIG Due Date',
+    'Last Career Ladder Promotion Date', 'Detailee', 'Sub-Agency',
+    'Supv Status'];
+
+  const m = R.proposeMapping(FAS);
+  ok('nothing required is missing', m.missing.length === 0, m.missing);
+
+  // 'Position#' has NO space before the hash. My original hints had 'Position
+  // Number', 'Position #' and 'PN' and missed it, so the import refused —
+  // which is how the gap became visible instead of silently importing a
+  // roster with no join key.
+  ok('Position# maps despite having no space',
+     m.mapping.positionNumber === 'Position#', m.mapping.positionNumber);
+
+  // 'Dept ID (Org)' not 'POI'. A POI is a payroll servicing code shared by
+  // several orgs, so keying budget attribution off it would merge unrelated
+  // service centres.
+  ok('the org code comes from Dept ID (Org)',
+     m.mapping.orgCode === 'Dept ID (Org)', m.mapping.orgCode);
+  ok('and NOT from POI',
+     m.mapping.orgCode !== 'POI' && m.unmapped.indexOf('POI') > -1,
+     'a POI is shared across orgs; it would merge service centres');
+
+  // The supervisor join must be on the position NUMBER, not the name. Two
+  // people can share a name, and hcWalkSupervisorChain follows numbers.
+  ok('the supervisor join uses Reports To Position #',
+     m.mapping.reportsTo === 'Reports To Position #', m.mapping.reportsTo);
+  ok('and ignores Reports To Name',
+     m.unmapped.indexOf('Reports To Name') > -1,
+     'a name is not a key — the chain joins on position numbers');
+
+  // 'Position Status' over the bare 'Status'. The feed has both; the choice
+  // decides the per-capita denominator.
+  ok('occupancy comes from Position Status',
+     m.mapping.occupancyStatus === 'Position Status', m.mapping.occupancyStatus);
+  ok('and the bare Status column is read only for cross-checking',
+     m.mapping.secondaryStatus === 'Status', m.mapping.secondaryStatus);
+
+  ok('grade comes from the PP-Series-Grd composite',
+     m.mapping.grade === 'PP-Series-Grd', m.mapping.grade);
+  ok('supervisory status comes from Supv Status',
+     m.mapping.supervisoryStatus === 'Supv Status');
+
+  // THE GAP THAT MATTERS. 33 columns and not one email address.
+  ok('there is NO email column in the feed',
+     !('emailAddress' in m.mapping),
+     'Access.js matches the signed-in user against Email_Address');
+  ok('and emailAddress is deliberately not a required field',
+     R.REQUIRED_FIELDS.indexOf('emailAddress') === -1,
+     'requiring it would block the import and leave LETS on fictional data');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n1c. PP-Series-Grd is split, not stored whole');
+{
+  // Three call sites compare Grade to the STRING '15' to find a Division
+  // Director for approval routing — HCData.js:669, Access.js:133,
+  // Request.js:137. Storing 'GS-0343-15' would make all three fail and
+  // nothing would announce it: every approval would route past its DD.
+  const gs15 = R.parsePayPlanGrade('GS-0343-15');
+  ok('GS-0343-15 yields grade "15"', gs15.grade === '15', gs15);
+  ok('and keeps the pay plan and series', gs15.payPlan === 'GS' &&
+     gs15.series === '0343', gs15);
+
+  // The VT-03 defect: a single-digit grade must be zero-padded or it fails
+  // every string comparison in the system.
+  ok('GS-1102-07 yields "07", not "7"',
+     R.parsePayPlanGrade('GS-1102-07').grade === '07',
+     R.parsePayPlanGrade('GS-1102-07'));
+
+  // SES AND ES HAVE NO NUMERIC GRADE. '00' is the absence of one, and
+  // returning it would be worse than returning the pay plan because '00'
+  // compares and sorts as a real low grade — an SES would read as junior to a
+  // GS-07.
+  const es = R.parsePayPlanGrade('ES-0340-00');
+  ok('ES-0340-00 yields "ES", not "00"', es.grade === 'ES', es);
+  ok('and SV-1801-00 yields "SV"',
+     R.parsePayPlanGrade('SV-1801-00').grade === 'SV');
+
+  // VT-03 is pay plan + grade with no series. HCAdmin's validator already
+  // names this shape.
+  const vt = R.parsePayPlanGrade('VT-03');
+  ok('VT-03 yields grade "03" with no series',
+     vt.grade === '03' && vt.series === '', vt);
+
+  // An unparseable value passes through rather than being blanked: a value we
+  // cannot read is still evidence.
+  ok('a bare 13 still yields "13"', R.parsePayPlanGrade('13').grade === '13');
+  ok('and a blank stays blank', R.parsePayPlanGrade('').grade === '');
+
+  // The series lands in LCAT, which LETS has never populated.
+  const FAS_MIN = ['Position#', 'Employee Name', 'Dept ID (Org)', 'PP-Series-Grd'];
+  const p = R.parseFeed([FAS_MIN,
+    ['90000001', 'Doe,Jane', 'FCA0B', 'GS-0343-15']], null);
+  ok('the occupational series lands in LCAT',
+     p.rows[0].lcat === '0343', p.rows[0]);
+  ok('and the grade is the bare number',
+     p.rows[0].grade === '15', p.rows[0].grade);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n1d. the missing email column is reported as an aggregate');
+{
+  // 900 identical per-row warnings would bury the ones that matter, so this
+  // is one block an admin reads before confirming.
+  const FAS_MIN = ['Position#', 'Employee Name', 'Dept ID (Org)',
+                   'Position Status', 'Supv Status'];
+  const p = R.parseFeed([FAS_MIN,
+    ['90000001', 'Supervisor,A', 'FCA0B', 'Filled', '2'],
+    ['90000002', 'Worker,B', 'FCA0B', 'Filled', '8'],
+    ['90000003', 'VACANT', 'FCA0B', 'Vacant', '']
+  ], null);
+
+  const ec = p.emailCoverage;
+  ok('the absence of the column is detected',
+     ec && ec.columnPresent === false, ec);
+  ok('only STAFFED positions are counted',
+     ec.staffedPositions === 2, ec.staffedPositions);
+  ok('and supervisors without email are counted separately',
+     ec.supervisorsWithoutEmail === 1, ec.supervisorsWithoutEmail);
+
+  // The message has to name the consequence, not just the number — an admin
+  // cannot weigh "0 of 2 have email" without knowing what email does.
+  ok('the impact names the access rule it breaks',
+     /Access\.js/.test(ec.impact) && /supervisor access rule/.test(ec.impact),
+     ec.impact);
+  ok('and says explicit Travel_Users roles still work',
+     /Travel_Users/.test(ec.impact), ec.impact);
+  ok('and says importing is still the better option',
+     /still better than staying on/.test(ec.impact), ec.impact);
+
+  // No per-row spam.
+  ok('no per-row email warnings are emitted', p.warnings.length === 0,
+     p.warnings);
+
+  // With a column present, the aggregate counts real blanks instead.
+  const withCol = R.parseFeed(
+    [['Position#', 'Employee Name', 'Dept ID (Org)', 'Position Status', 'Email Address'],
+     ['90000001', 'A,A', 'FCA0B', 'Filled', 'a@gsa.gov'],
+     ['90000002', 'B,B', 'FCA0B', 'Filled', '']], null);
+  ok('with a column present it counts the blanks',
+     withCol.emailCoverage.columnPresent === true &&
+     withCol.emailCoverage.without === 1,
+     withCol.emailCoverage);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n1e. the two status columns are cross-checked');
+{
+  // The feed has 'Position Status' AND a bare 'Status'. Occupancy comes from
+  // the first, on the reasoning that an '"Obligated To" Employee Name' column
+  // only makes sense beside a position-level status. That is a judgement, and
+  // it decides the per-capita denominator — so a disagreement is reported.
+  const H2 = ['Position#', 'Employee Name', 'Dept ID (Org)',
+              'Position Status', 'Status'];
+  const p = R.parseFeed([H2,
+    ['90000001', 'A,A', 'FCA0B', 'Filled', 'Active'],
+    ['90000002', 'B,B', 'FCA0B', 'Filled', 'Vacant']   // the columns disagree
+  ], null);
+
+  const d = p.occupancyDisagreement;
+  ok('the cross-check runs when both columns exist', !!d, d);
+  ok('it names which column was used',
+     d.primaryColumn === 'Position Status' && d.secondaryColumn === 'Status', d);
+  ok('a disagreeing row is reported', d.conflicts === 1, d);
+  ok('and the note explains what a large count would mean',
+     /the wrong column was chosen/.test(d.note), d.note);
+
+  // Agreement must be silent, or the signal is worthless.
+  const agree = R.parseFeed([H2,
+    ['90000001', 'A,A', 'FCA0B', 'Filled', 'Active']], null);
+  ok('full agreement reports zero conflicts',
+     agree.occupancyDisagreement.conflicts === 0,
+     agree.occupancyDisagreement);
+
+  // A feed with only one status column has nothing to cross-check.
+  const one = R.parseFeed(
+    [['Position#', 'Employee Name', 'Dept ID (Org)', 'Position Status'],
+     ['90000001', 'A,A', 'FCA0B', 'Filled']], null);
+  ok('a single-status feed skips the check',
+     one.occupancyDisagreement === null, one.occupancyDisagreement);
+}
+
+// ---------------------------------------------------------------------------
 console.log('\n2. the three fields a spreadsheet silently corrupts');
 {
   // GRADE — the VT-03 defect. Every grade comparison in LETS is a string
@@ -187,12 +382,15 @@ console.log('\n3. rows that must be blocked, and rows that must not be');
 
   ok('a blank spacer row is skipped, not blocked', p.skipped === 1, p.skipped);
 
-  // A MISSING EMAIL IS A WARNING. Blocking forty people over it would leave
-  // LETS running on fictional data, which is the worse outcome.
-  ok('a missing email WARNS but still imports',
-     p.rows.some(r => r.positionNumber === '90000005') &&
-     p.warnings.some(w => w.positionNumber === '90000005'),
-     p.warnings);
+  // A MISSING EMAIL IS NOT A PER-ROW WARNING ANY MORE. The FAS feed has no
+  // email column at all, so warning per row would emit ~900 identical lines
+  // and bury the real problems. §1d asserts the aggregate that replaced it.
+  ok('a missing email still imports the position',
+     p.rows.some(r => r.positionNumber === '90000005'),
+     'blocking on email would leave LETS running on fictional data');
+  ok('and does NOT emit a per-row warning',
+     !p.warnings.some(w => w.positionNumber === '90000005'),
+     'see §1d: the email gap is reported once, as an aggregate');
 
   // An unknown org code is a warning too: it still resolves to its nearest
   // listed ancestor, so the money lands in the right DAC.

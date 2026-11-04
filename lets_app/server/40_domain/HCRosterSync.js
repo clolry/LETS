@@ -140,6 +140,15 @@ function previewRosterImport() {
         };
       }),
       supervisorCycles: parsed.cycles.slice(0, 20),
+      // THE FEED HAS NO EMAIL COLUMN. Surfaced as its own block rather than
+      // buried in warnings, because Access.js matches the signed-in user
+      // against Email_Address — importing a roster with none costs every
+      // supervisor their automatic route into LETS.
+      emailCoverage: parsed.emailCoverage,
+      // The feed has two status columns and occupancy is taken from one of
+      // them. A large disagreement count means the wrong one was chosen, and
+      // that moves every per-capita share.
+      occupancyDisagreement: parsed.occupancyDisagreement,
       headcount: headcount,
       notes: _rosterPreviewNotes_(parsed, diff, existing)
     });
@@ -187,6 +196,17 @@ function _rosterPreviewNotes_(parsed, diff, existing) {
                'their supervisor pointer CLEARED, because a cycle hangs every ' +
                'page that walks the chain. Their budget attribution is ' +
                'unaffected; approval routing for them needs fixing in the feed.');
+  }
+
+  // THE EMAIL GAP, stated before the headcount because it is the one thing in
+  // this preview that makes the system worse in one respect while making it
+  // better overall. An admin must not discover it after confirming.
+  if (parsed.emailCoverage && parsed.emailCoverage.impact) {
+    notes.push(parsed.emailCoverage.impact);
+  }
+
+  if (parsed.occupancyDisagreement && parsed.occupancyDisagreement.conflicts) {
+    notes.push(parsed.occupancyDisagreement.note);
   }
 
   var filled = 0;
