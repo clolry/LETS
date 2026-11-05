@@ -422,18 +422,45 @@ var HC = (function () {
     }
   }
 
-  function _cachePut_(key, value, ttlSeconds) {
+  /**
+   * Writes one cache entry. Returns false when the payload is too large.
+   *
+   * @param {string} key
+   * @param {*} value
+   * @param {number} ttlSeconds
+   * @param {boolean} [chunkFallbackFollows] the caller will chunk on false.
+   *        AN OVERSIZE PAYLOAD IS THE DESIGNED PATH FOR THE ROSTER, not a
+   *        failure: the real roster is 514KB against a 90KB cap, so every
+   *        single run logged
+   *
+   *          HC: payload 514154 bytes exceeds the 90000-byte cache limit
+   *
+   *        as a WARNING, immediately followed by 'HC: cached 1046 positions in
+   *        chunks'. The chunking worked; the warning said otherwise, and a log
+   *        that cries wolf on its own healthy path is how a real warning gets
+   *        scrolled past. So a caller that is about to chunk says so, and this
+   *        reports the size at log level instead.
+   * @returns {boolean}
+   */
+  function _cachePut_(key, value, ttlSeconds, chunkFallbackFollows) {
     try {
       var raw = JSON.stringify(value);
       if (raw.length > CACHE_MAX_BYTES) {
         // Do not attempt the put. CacheService rejects oversized values and
         // the failure is easy to miss, producing a permanent silent cache miss
         // that re-reads the sheet on every single request.
-        console.warn(
-          'HC: payload ' + raw.length + ' bytes exceeds the ' + CACHE_MAX_BYTES +
-          '-byte cache limit for "' + key + '". Serving uncached. If the roster ' +
-          'has grown past this, HCData.js needs chunked caching (see ' +
-          'CACHE_CONFIG.CHUNK_SIZE in 01_constants/Cache.js for the established pattern).');
+        if (chunkFallbackFollows) {
+          console.log(
+            'HC: payload ' + raw.length + ' bytes exceeds the ' +
+            CACHE_MAX_BYTES + '-byte single-entry cache limit for "' + key +
+            '"; chunking instead.');
+        } else {
+          console.warn(
+            'HC: payload ' + raw.length + ' bytes exceeds the ' + CACHE_MAX_BYTES +
+            '-byte cache limit for "' + key + '". Serving uncached. If the roster ' +
+            'has grown past this, HCData.js needs chunked caching (see ' +
+            'CACHE_CONFIG.CHUNK_SIZE in 01_constants/Cache.js for the established pattern).');
+        }
         return false;
       }
       _cache_().put(key, raw, ttlSeconds);
@@ -671,11 +698,22 @@ var HC = (function () {
       // Try the single entry first — it is one round trip and most
       // deployments' rosters fit. _cachePut_ returns false rather than
       // throwing when the payload is too large, which is the signal to chunk.
-      if (!_cachePut_(CACHE_KEY_BUNDLE, built.positions, CACHE_CONFIG.TTL.LONG)) {
+      //
+      // The fourth argument tells it a chunked write follows, so the size
+      // report is a log rather than a warning: on this roster the oversize
+      // branch is the NORMAL path and warning about it buried the real ones.
+      if (!_cachePut_(CACHE_KEY_BUNDLE, built.positions, CACHE_CONFIG.TTL.LONG,
+                      true)) {
         if (_cachePutChunked_(CACHE_KEY_BUNDLE, built.positions,
                               CACHE_CONFIG.TTL.LONG)) {
           console.log('HC: cached ' + built.positions.length +
                       ' positions in chunks.');
+        } else {
+          // NOW it is a real failure: neither form stored anything, so every
+          // subsequent call re-reads both HC tabs and re-runs the org join.
+          console.warn('HC: could not cache the bundle in a single entry OR ' +
+                       'in chunks. Serving uncached — expect seconds of ' +
+                       'sheet reads on every page load.');
         }
       }
       _cachePut_(CACHE_KEY_META, { lastRefreshed: now }, CACHE_CONFIG.TTL.LONG);
@@ -743,7 +781,8 @@ var HC = (function () {
       // that impossible rather than improbable.
       _cacheRemoveChunked_(CACHE_KEY_BUNDLE);
 
-      if (!_cachePut_(CACHE_KEY_BUNDLE, built.positions, CACHE_CONFIG.TTL.LONG)) {
+      if (!_cachePut_(CACHE_KEY_BUNDLE, built.positions, CACHE_CONFIG.TTL.LONG,
+                      true)) {
         _cachePutChunked_(CACHE_KEY_BUNDLE, built.positions, CACHE_CONFIG.TTL.LONG);
       }
       _cachePut_(CACHE_KEY_ORGS,   built.orgs,      CACHE_CONFIG.TTL.LONG);
@@ -1246,6 +1285,10 @@ var HC = (function () {
     _cachePutChunked:       _cachePutChunked_,
     _cacheGetChunked:       _cacheGetChunked_,
     _cacheRemoveChunked:    _cacheRemoveChunked_,
+    // Exposed so a test can assert on its LOG LEVEL. An oversize payload is
+    // the designed path for this roster, and warning about it on every page
+    // load is what trained the reader to ignore the warning.
+    _cachePut:              _cachePut_,
     _chunkKey:              _chunkKey_,
     _chunkManifestKey:      _chunkManifestKey_
   };

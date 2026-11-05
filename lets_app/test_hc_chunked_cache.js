@@ -432,5 +432,122 @@ console.log('\n7. negative controls (the suite must be able to fail)');
   }
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n8. the designed path does not log as a failure');
+{
+  // @clolry's log, on every single run:
+  //
+  //   HC: payload 514154 bytes exceeds the 90000-byte cache limit for
+  //   "hc_bundle_v1". Serving uncached.           <- console.warn
+  //   HC: cached 1046 positions in chunks.        <- console.log
+  //
+  // The chunking WORKED. The warning above it says it did not, and 'Serving
+  // uncached' is a specific false claim: the bundle was cached. A log that
+  // cries wolf on its own healthy path is how a genuine warning gets scrolled
+  // past — and this one appears on every page load.
+  const src = fs.readFileSync('lets_app/server/20_data/HCData.js', 'utf8');
+  const put = src.slice(src.indexOf('function _cachePut_'),
+                        src.indexOf('// INTERNAL — chunked cache'));
+
+  // The caller that is about to chunk SAYS SO, and the size report drops to
+  // log level for that caller only.
+  ok('_cachePut_ takes a flag for a following chunked write',
+     /chunkFallbackFollows/.test(put), put.slice(0, 300));
+  ok('an expected oversize is logged, not warned',
+     /if \(chunkFallbackFollows\) \{\s*\n\s*console\.log\(/.test(put),
+     'the oversize branch is the normal path for a 514KB roster');
+  ok('and it says chunking follows rather than "Serving uncached"',
+     /chunking instead/.test(put), put.slice(0, 600));
+
+  // STILL A WARNING WHEN NOTHING WILL CHUNK. A caller with no fallback that
+  // silently served uncached would be the original bug, and that path is
+  // live: CACHE_KEY_ORGS and CACHE_KEY_META are written without a fallback.
+  ok('an oversize with no fallback is still a warning',
+     /console\.warn\(\s*\n?\s*'HC: payload '/.test(put) &&
+     /Serving uncached/.test(put),
+     'orgs and meta have no chunked fallback, so for them it is real');
+
+  const fn = src.slice(src.indexOf('function hcGetBundle'),
+                       src.indexOf('function hcGetOrgHierarchy'));
+  ok('hcGetBundle declares that it will chunk',
+     /_cachePut_\(CACHE_KEY_BUNDLE, built\.positions, CACHE_CONFIG\.TTL\.LONG,\s*\n?\s*true\)/
+       .test(fn), fn.slice(0, 600));
+
+  // AND THE REAL FAILURE IS NOW VISIBLE. Previously, if BOTH the single put
+  // and the chunked put failed, the single put's warning was the only signal
+  // and it had already been discounted as noise — so total cache failure and
+  // the healthy path logged almost the same thing.
+  ok('failing both ways warns',
+     /could not cache the bundle in a single entry OR/.test(fn),
+     'neither form stored anything; every call re-reads both HC tabs');
+
+  const refresh = src.slice(src.indexOf('function hcRefreshBundleCache'),
+                            src.indexOf('function hcCacheInvalidateAll'));
+  ok('hcRefreshBundleCache declares it too',
+     /CACHE_CONFIG\.TTL\.LONG,\s*\n?\s*true\)/.test(refresh),
+     'the warming trigger runs hourly and logged the same false warning');
+
+  // BEHAVIOURAL, NOT JUST TEXTUAL. The assertions above read source; these
+  // two run it, because the log LEVEL is the whole fix and a regex on the
+  // source could pass while the branch did something else.
+  const runPut = (text) => {
+    const warnings = [];
+    const logs = [];
+    const cache = makeCache();
+    const sandbox = {
+      console: {
+        log: (m) => logs.push(String(m)),
+        warn: (m) => warnings.push(String(m)),
+        error() {}
+      },
+      JSON, Date, Object, String, Number, Array, Math, isNaN, parseInt,
+      parseFloat, RegExp, Error, Boolean,
+      CacheService: { getScriptCache: () => cache },
+      SpreadsheetApp: { openById: () => { throw new Error('no sheet'); } },
+      PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) }
+    };
+    const ctx = vm.createContext(sandbox);
+    vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID='x';", ctx);
+    vm.runInContext(fs.readFileSync('lets_app/server/01_constants/Cache.js', 'utf8'), ctx);
+    vm.runInContext(fs.readFileSync('lets_app/server/01_constants/Sheets.js', 'utf8'), ctx);
+    vm.runInContext(text, ctx, { filename: 'HCData.undertest.js' });
+    return { HC: vm.runInContext('HC', ctx), warnings, logs };
+  };
+
+  {
+    const { HC, warnings, logs } = runPut(src);
+    const stored = HC._cachePut('hc_bundle_v1', roster(1046), 21600, true);
+    ok('an oversize put still returns false so the caller chunks',
+       stored === false);
+    ok('and emits NO warning when a chunked write follows',
+       warnings.length === 0, warnings);
+    ok('but does report the size at log level',
+       logs.some((l) => /exceeds the/.test(l) && /chunking instead/.test(l)),
+       logs);
+
+    // The no-fallback caller — orgs, meta — must still be warned.
+    const { HC: H2, warnings: w2 } = runPut(src);
+    H2._cachePut('hc_orgs_v1', roster(1046), 21600);
+    ok('a caller with no fallback is still warned',
+       w2.some((w) => /Serving uncached/.test(w)), w2);
+  }
+
+  // NEGATIVE CONTROL: drop the flag and the healthy path warns again.
+  const noFlag = src.replace(
+    `      if (!_cachePut_(CACHE_KEY_BUNDLE, built.positions, CACHE_CONFIG.TTL.LONG,
+                      true)) {`,
+    `      if (!_cachePut_(CACHE_KEY_BUNDLE, built.positions, CACHE_CONFIG.TTL.LONG)) {`);
+  ok('negative control patched the flag', noFlag !== src);
+  {
+    // Call _cachePut_ with an oversize payload exactly as the patched caller
+    // would, minus the flag.
+    const { HC, warnings } = runPut(noFlag);
+    HC._cachePut('hc_bundle_v1', roster(1046), 21600);
+    ok('a build without the flag warns on the designed path',
+       warnings.some((w) => /Serving uncached/.test(w)),
+       'so section 8 is real: this fired on every page load');
+  }
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);
