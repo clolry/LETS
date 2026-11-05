@@ -40,8 +40,8 @@ The roster drives approval routing, supervisor-based site access and every per-c
 |---|---|---:|---|
 | `diagnoseHrFeedSource()` | `lets_app/server/40_domain/HCRosterSync.js` | 101 | Reports which HR feed source this DEPLOYMENT is actually reading. |
 | `previewRosterImport(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 197 | Dry run: what importing the feed would change. |
-| `showServiceCentreHeadcount()` | `lets_app/server/40_domain/HCRosterSync.js` | 531 | The per-service-centre headcount, as a readable table. |
-| `importRoster(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 713 | Applies the import. Destructive: replaces every row in HC_Positions. |
+| `showServiceCentreHeadcount()` | `lets_app/server/40_domain/HCRosterSync.js` | 553 | The per-service-centre headcount, as a readable table. |
+| `importRoster(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 735 | Applies the import. Destructive: replaces every row in HC_Positions. |
 | `seedHCTestData(…)` | `lets_app/server/91_setup/HCSeed.js` | 708 | Seeds both HC tabs with FICTIONAL test data. |
 | `validateHCData()` | `lets_app/server/91_setup/HCSeed.js` | 916 | Read-only sanity check on whatever is currently in the HC tabs. |
 | `clearHCPositions(…)` | `lets_app/server/91_setup/HCSeed.js` | 1103 | Empties HC_Positions. Keeps HC_Orgs. |
@@ -52,12 +52,12 @@ The HR feed carries no email column, and Email_Address is how LETS identifies a 
 
 | Function | File | Line | What it does |
 |---|---|---:|---|
-| `previewDirectoryEmails(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 128 | Dry run: what the directory would resolve, without writing anything. |
-| `diagnoseDirectoryBuild()` | `lets_app/server/40_domain/DirectoryResolve.js` | 198 | Reports which build of the directory matcher is deployed. |
-| `diagnoseDirectoryMatch(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 345 | Prints the RAW directory response for one name. |
-| `resolveDirectoryEmails(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 426 | Resolves and WRITES email addresses onto HC_Positions. |
-| `syncDirectoryEmails()` | `lets_app/server/40_domain/DirectoryResolve.js` | 576 | Trigger entry point: resumes the sweep where it stopped. |
-| `installDirectoryLookupTrigger()` | `lets_app/server/40_domain/DirectoryResolve.js` | 593 | Installs an hourly trigger until the sweep completes. |
+| `previewDirectoryEmails(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 133 | Dry run: what the directory would resolve, without writing anything. |
+| `diagnoseDirectoryBuild()` | `lets_app/server/40_domain/DirectoryResolve.js` | 203 | Reports which build of the directory matcher is deployed. |
+| `diagnoseDirectoryMatch(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 350 | Prints the RAW directory response for one name. |
+| `resolveDirectoryEmails(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 431 | Resolves and WRITES email addresses onto HC_Positions. |
+| `syncDirectoryEmails()` | `lets_app/server/40_domain/DirectoryResolve.js` | 581 | Trigger entry point: resumes the sweep where it stopped. |
+| `installDirectoryLookupTrigger()` | `lets_app/server/40_domain/DirectoryResolve.js` | 598 | Installs an hourly trigger until the sweep completes. |
 
 ## Budget
 
@@ -90,7 +90,9 @@ The Apps Script Run button passes no arguments, so these wrap the functions that
 | `runClearHCPositions()` | `lets_app/server/99_triggers/Diagnostics.js` | 1384 | Empty HC_Positions. DESTRUCTIVE. |
 | `runDirectoryPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1408 | Preview the directory email lookup, and print the result. |
 | `runDirectoryResolve()` | `lets_app/server/99_triggers/Diagnostics.js` | 1458 | Resolve directory email addresses and WRITE them to HC_Positions. |
-| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 1479 | Print the current budget dashboard payload. |
+| `runEmailResolutionQueue()` | `lets_app/server/99_triggers/Diagnostics.js` | 1486 | Show the email-resolution queue: who needs an address, and what to offer. |
+| `runSaveEmailOverride()` | `lets_app/server/99_triggers/Diagnostics.js` | 1544 | Record one admin email decision. |
+| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 1577 | Print the current budget dashboard payload. |
 
 ## Diagnostics — safe to run any time, write nothing
 

@@ -325,6 +325,28 @@ function previewRosterImport(opts) {
         serviceCentres: serviceCentres,
         ready: serviceCentres > 0
       },
+      // Admin-resolved email addresses that the import will RE-APPLY. Shown
+      // because the alternative — an admin seeing "1,046 rows replaced" and
+      // wondering whether their corrections survive — is a question the
+      // preview should answer before it is asked.
+      emailOverrides: (function () {
+        try {
+          var o = readEmailOverrides();
+          var withEmail = 0;
+          Object.keys(o).forEach(function (k) { if (o[k].email) withEmail++; });
+          return {
+            stored: Object.keys(o).length,
+            withAddress: withEmail,
+            note: Object.keys(o).length
+              ? (withEmail + ' admin-resolved address(es) will be re-applied ' +
+                 'after the import, so they are not lost.')
+              : 'No admin-resolved addresses are stored yet.'
+          };
+        } catch (e2) {
+          return { stored: null, withAddress: null,
+                   note: 'Could not read the override tab: ' + e2.message };
+        }
+      })(),
       counts: {
         feedRows: values.length - 1,
         outOfScope: parsed.outOfScope,
@@ -798,13 +820,49 @@ function importRoster(token) {
       }
     });
 
+    // ADMIN-RESOLVED ADDRESSES, RE-APPLIED.
+    //
+    // @clolry: "we need a way to save these so they aren't replaced when we
+    // pull the daily feed - once we make the match we need to keep it."
+    //
+    // This import CLEARS HC_Positions, so without this an address an admin
+    // resolved by hand is destroyed by the next daily run. The person stops
+    // being able to sign in days later, with nothing connecting cause to
+    // effect — and the natural response is to type it in again, and lose it
+    // again.
+    //
+    // The feed has no email column at all today, so every address in the
+    // roster came either from the directory sweep or from an admin. If the
+    // feed ever gains one, the FEED wins: HR is authoritative about an
+    // address it actually publishes, and an override exists to fill a gap
+    // rather than to contradict the source.
+    var overrides = {};
+    try {
+      overrides = readEmailOverrides();
+    } catch (oe) {
+      // A missing or unreadable override tab must not block the import, but
+      // it MUST be loud: proceeding silently would quietly blank every
+      // resolved address.
+      console.error('importRoster: could not read ' +
+                    SHEET_NAMES.HC_EMAIL_OVERRIDES + ': ' + oe.message +
+                    ' — admin-resolved email addresses will NOT be ' +
+                    're-applied by this run.');
+    }
+    var overridesApplied = 0;
+
     var rows = parsed.rows.map(function (r) {
+      var email = r.emailAddress;
+      if (!email && overrides[r.positionNumber] &&
+          overrides[r.positionNumber].email) {
+        email = overrides[r.positionNumber].email;
+        overridesApplied++;
+      }
       var rec = {
         'Position_Number': r.positionNumber,
         'Reports_To_Position_Number': r.reportsToPositionNumber,
         'Employee_ID': r.employeeId,
         'Employee_Name': r.employeeName,
-        'Email_Address': r.emailAddress,
+        'Email_Address': email,
         'Org_Code': r.orgCode,
         'Office_Title': r.officeTitle,
         'Grade': r.grade,
@@ -866,6 +924,8 @@ function importRoster(token) {
                 ' org-less row(s)');
     console.log('by: ' + actor);
     console.log('positions written: ' + rows.length + ' (' + filled + ' filled)');
+    console.log('admin-resolved emails re-applied: ' + overridesApplied +
+                ' of ' + Object.keys(overrides).length + ' stored');
     console.log('adds ' + diff.adds.length + ', changes ' + diff.changes.length +
                 ', removed ' + (diff.deletes.length + diff.seedDeletes.length) +
                 ' (' + diff.seedDeletes.length + ' fictional)');
@@ -882,7 +942,9 @@ function importRoster(token) {
       removed: diff.deletes.length + diff.seedDeletes.length,
       seedRemoved: diff.seedDeletes.length,
       blocked: parsed.blocked.length,
-      supervisorCyclesCleared: parsed.cyclesCleared
+      supervisorCyclesCleared: parsed.cyclesCleared,
+      emailOverridesApplied: overridesApplied,
+      emailOverridesStored: Object.keys(overrides).length
     }, 'Imported ' + rows.length + ' positions (' + filled + ' filled) from ' +
        'the FAS HR feed. ' + diff.seedDeletes.length + ' fictional test ' +
        'record(s) removed.');

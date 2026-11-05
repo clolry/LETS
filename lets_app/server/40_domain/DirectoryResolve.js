@@ -39,6 +39,11 @@
 /** Script Property holding the resume index for the directory sweep. */
 var DIRECTORY_RESUME_KEY = 'DIRECTORY_LOOKUP_RESUME_INDEX';
 
+function _str2_(v) {
+  if (v === null || v === undefined) return '';
+  return String(v).trim();
+}
+
 /**
  * Searches the domain directory for one parsed name.
  *
@@ -60,7 +65,7 @@ function _directorySearch_(parsed) {
       'appsscript.json already declares the dependency.');
   }
 
-  var query = parsed.first + ' ' + parsed.last;
+  var query = _str2_(parsed.query) || (parsed.first + ' ' + parsed.last);
   var res;
   try {
     res = People.People.searchDirectoryPeople({
@@ -600,4 +605,390 @@ function installDirectoryLookupTrigger() {
   console.log('installDirectoryLookupTrigger: hourly. Remove it once the ' +
               'sweep reports complete and new hires are rare.');
   return { success: true };
+}
+
+// ============================================================================
+// MANUAL RESOLUTION — the admin-facing half
+// ============================================================================
+//
+// @clolry: "can we get a user interface where it prompts the admin to resolve
+// the names and provides potential matches? For instance Kittrell,Angela K
+// should have Kittrell,Kim offered as a potential match. Also, we need a way
+// to save these so they aren't replaced when we pull the daily feed - once we
+// make the match we need to keep it."
+//
+// Two requirements, and the second is the one that would have bitten silently.
+//
+// THE OVERRIDE TAB EXISTS BECAUSE THE IMPORT CLEARS THE ROSTER
+// ------------------------------------------------------------
+// importRoster replaces every row in HC_Positions. An address typed into the
+// roster editor would survive until the next daily pull and then vanish — the
+// person stops being able to sign in days after the correction, with nothing
+// linking cause to effect, and the natural response is to type it in again.
+//
+// So a resolved address is stored in HC_Email_Overrides, keyed on
+// Position_Number, and re-applied by the import. HC_Positions is the feed's to
+// overwrite; the override tab is the organisation's.
+//
+// WHY A SEPARATE TAB RATHER THAN A PROTECTED COLUMN
+// -------------------------------------------------
+// A "do not overwrite this column" rule would have to live inside the import's
+// write path, which is precisely where a later refactor would not look. A
+// separate tab cannot be clobbered by a sheet-clearing import at all.
+
+/**
+ * Positions still needing a human decision, with candidates to offer.
+ *
+ * Returns the queue the resolution UI renders. Each entry carries the roster
+ * name, the directory candidates that share the surname, and WHY each is
+ * being suggested — because the reason is what an admin judges, not the
+ * resemblance.
+ *
+ * SUGGESTIONS ARE NOT MATCHES. These use looser rules than the automatic
+ * path, deliberately: a wrong suggestion costs a moment's reading, a wrong
+ * auto-match grants someone else's access. Nothing here writes.
+ *
+ * @param {Object} [opts] { limit, startIndex }
+ * @returns {Object} successResponse | errorResponse
+ * @client
+ */
+function getEmailResolutionQueue(opts) {
+  var denied = _hcAdminGuard_();
+  if (denied) return denied;
+
+  try {
+    if (typeof People === 'undefined' || !People || !People.People) {
+      return errorResponse(
+        'The People advanced service is not enabled. Apps Script editor: ' +
+        'Services -> Add a service -> People API (v1).');
+    }
+
+    var o = opts || {};
+    var limit = parseInt(o.limit, 10) || 15;
+    var start = parseInt(o.startIndex, 10) || 0;
+
+    var bundle = HC.hcGetBundle();
+    if (!bundle.success) {
+      return errorResponse('Could not read the roster: ' + bundle.error);
+    }
+
+    var overrides = readEmailOverrides();
+    var queue = [];
+    var examined = 0;
+    var i = start;
+    var deadline = Date.now() + 120000;
+
+    for (; i < bundle.data.length && queue.length < limit; i++) {
+      var p = bundle.data[i];
+      if (!p || p.occupancyStatus === 'VACANT') continue;
+      if (!p.employeeName) continue;
+      // Already has an address, from the feed or a previous resolution.
+      if (p.emailAddress) continue;
+      // Already decided by an admin, even if the roster has not caught up.
+      if (overrides[p.positionNumber]) continue;
+
+      if (Date.now() > deadline) break;
+
+      var parsed = DirectoryLookup.parseName(p.employeeName);
+      var candidates = [];
+      try {
+        candidates = _directorySearch_(parsed);
+      } catch (e) {
+        candidates = [];
+      }
+      examined++;
+
+      // If the automatic matcher WOULD resolve this, it does not belong in a
+      // manual queue — the sweep will handle it.
+      var auto = DirectoryLookup.pickMatch(parsed, candidates, p.orgCode);
+      if (auto.email) continue;
+
+      // SURNAME-ONLY QUERY, as a second attempt.
+      //
+      // 'Angela Kittrell' returns nothing when the directory holds 'Kim
+      // Kittrell' — the forename is what fails. Searching the surname alone
+      // is what makes a nickname findable at all, and it is safe HERE in a
+      // way it would never be in the automatic path, because every result is
+      // shown to a human rather than written.
+      var broader = candidates;
+      if (!candidates.length || !DirectoryLookup
+            .suggestCandidates(parsed, candidates, p.orgCode).length) {
+        try {
+          broader = _directorySearch_({
+            first: '', last: parsed.last, query: parsed.last
+          });
+        } catch (e2) {
+          broader = candidates;
+        }
+      }
+
+      var suggestions = DirectoryLookup.suggestCandidates(
+        parsed, broader, p.orgCode);
+
+      queue.push({
+        positionNumber: p.positionNumber,
+        employeeName: p.employeeName,
+        orgCode: p.orgCode,
+        officeTitle: p.officeTitle,
+        supervisoryStatus: p.supervisoryStatus,
+        // Named so the UI can say WHY this person matters: a supervisor with
+        // no address cannot sign in at all.
+        isSupervisor: String(p.supervisoryStatus) === '2',
+        parsedName: parsed,
+        autoRefusalReason: auto.reason || '',
+        suggestions: suggestions.slice(0, 8)
+      });
+    }
+
+    return successResponse({
+      queue: queue,
+      nextIndex: i,
+      complete: i >= bundle.data.length,
+      examined: examined,
+      // The whole population, so the UI can show progress rather than just a
+      // page of work.
+      totalNeedingEmail: bundle.data.filter(function (x) {
+        return x && x.occupancyStatus !== 'VACANT' && x.employeeName &&
+               !x.emailAddress && !overrides[x.positionNumber];
+      }).length,
+      overridesStored: Object.keys(overrides).length
+    });
+  } catch (e) {
+    console.error('getEmailResolutionQueue failed: ' + e.message);
+    return errorResponse('Could not build the resolution queue: ' + e.message);
+  }
+}
+
+/**
+ * Records an admin's decision, and writes it to the roster.
+ *
+ * WRITES TWO PLACES, and both are necessary:
+ *
+ *   HC_Email_Overrides   the durable record. Survives every import.
+ *   HC_Positions         so the change takes effect now rather than after the
+ *                        next daily pull.
+ *
+ * Writing only the override tab would mean a correction did nothing until
+ * tomorrow. Writing only the roster is the data loss this exists to prevent.
+ *
+ * AN EMPTY EMAIL IS A DELIBERATE 'NO ADDRESS' RECORD, not an error. Some
+ * people genuinely have no mailbox — contractors, pending arrivals — and
+ * recording that stops them reappearing in the queue every day. It is stored
+ * with a reason rather than silently skipped.
+ *
+ * @param {Object} entry { positionNumber, email, matchedDirectoryName, notes }
+ * @returns {Object} successResponse | errorResponse
+ * @client
+ */
+function saveEmailOverride(entry) {
+  var denied = _hcAdminGuard_();
+  if (denied) return denied;
+
+  var e = entry || {};
+  var pn = String(e.positionNumber || '').trim();
+  var email = String(e.email || '').trim().toLowerCase();
+
+  if (!pn) return errorResponse('A position number is required.');
+  if (email && email.indexOf('@') === -1) {
+    return errorResponse('"' + email + '" is not an email address.');
+  }
+  // A no-address record must say why, or it is indistinguishable from a
+  // mistake and nobody will dare clear it later.
+  if (!email && !String(e.notes || '').trim()) {
+    return errorResponse(
+      'Recording "no address" requires a note explaining why — otherwise a ' +
+      'later reader cannot tell a deliberate decision from an accident.');
+  }
+
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(typeof LOCK_TIMEOUT_MS !== 'undefined' ? LOCK_TIMEOUT_MS : 30000);
+  } catch (lockErr) {
+    return errorResponse('Another HR edit is in progress. Try again in a moment.');
+  }
+
+  try {
+    var bundle = HC.hcGetBundle();
+    var position = null;
+    if (bundle.success) {
+      for (var i = 0; i < bundle.data.length; i++) {
+        if (String(bundle.data[i].positionNumber) === pn) {
+          position = bundle.data[i];
+          break;
+        }
+      }
+    }
+    if (!position) {
+      return errorResponse('Position ' + pn + ' is not in the roster.');
+    }
+
+    // ONE ADDRESS, ONE PERSON. Two positions sharing a mailbox means one of
+    // them will match the wrong person at the access gate, and whichever is
+    // found first wins — a non-deterministic authorisation.
+    if (email) {
+      var clash = findPositionWithEmail_(bundle.data, email, pn);
+      if (clash) {
+        return errorResponse(
+          email + ' is already on position ' + clash.positionNumber + ' (' +
+          clash.employeeName + '). Two positions sharing an address makes ' +
+          'the access gate match whichever it finds first, so this is ' +
+          'refused. Clear the other one first if this is a correction.');
+      }
+    }
+
+    var actor = _hcAdminActor_();
+    var now = new Date();
+
+    writeEmailOverrideRow_({
+      positionNumber: pn,
+      employeeName: position.employeeName,
+      email: email,
+      method: email ? (String(e.matchedDirectoryName || '').trim()
+                        ? 'ADMIN_CONFIRMED' : 'ADMIN_MANUAL')
+                    : 'ADMIN_NO_ADDRESS',
+      matchedDirectoryName: String(e.matchedDirectoryName || '').trim(),
+      notes: String(e.notes || '').trim(),
+      actor: actor,
+      now: now
+    });
+
+    var applied = applyEmailToRoster_(pn, email, actor, now);
+
+    try { new TravelDB().invalidate(SHEET_NAMES.HC_POSITIONS); } catch (ce) { /* non-fatal */ }
+    try { HC.hcCacheInvalidateAll(); } catch (ce2) { /* non-fatal */ }
+
+    console.log('saveEmailOverride: ' + actor + ' set ' + pn + ' (' +
+                position.employeeName + ') to ' +
+                (email || '[no address]') +
+                (applied ? '' : ' — override stored, roster row not found'));
+
+    return successResponse(
+      { positionNumber: pn, email: email, rosterUpdated: applied },
+      email ? ('Saved ' + email + ' for ' + position.employeeName +
+               '. This will survive the daily roster import.')
+            : ('Recorded "no address" for ' + position.employeeName + '.'));
+  } catch (err) {
+    console.error('saveEmailOverride failed: ' + err.message);
+    return errorResponse('Could not save: ' + err.message);
+  } finally {
+    try { lock.releaseLock(); } catch (relErr) { /* already released */ }
+  }
+}
+
+/** A position other than `excludePn` already holding this address. */
+function findPositionWithEmail_(positions, email, excludePn) {
+  var want = String(email).toLowerCase();
+  for (var i = 0; i < (positions || []).length; i++) {
+    var p = positions[i];
+    if (!p || !p.emailAddress) continue;
+    if (String(p.positionNumber) === String(excludePn)) continue;
+    if (String(p.emailAddress).toLowerCase() === want) return p;
+  }
+  return null;
+}
+
+/**
+ * Every stored override, keyed on position number.
+ *
+ * Returns {} rather than throwing when the tab is absent, so a deployment
+ * that has not run setupTravelDatabase still imports — the overrides are
+ * additive, and their absence must not block the roster.
+ *
+ * @returns {Object} positionNumber -> override record
+ */
+function readEmailOverrides() {
+  var out = {};
+  try {
+    var ss = SpreadsheetApp.openById(TRAVEL_DB_SPREADSHEET_ID);
+    var sheet = ss.getSheetByName(SHEET_NAMES.HC_EMAIL_OVERRIDES);
+    if (!sheet) return out;
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return out;
+
+    var headers = TRAVEL_SHEET_SCHEMAS[SHEET_NAMES.HC_EMAIL_OVERRIDES];
+    var col = {};
+    headers.forEach(function (h, i) { col[h] = i; });
+
+    var rows = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+    rows.forEach(function (r) {
+      var pn = String(r[col['Position_Number']] || '').trim();
+      if (!pn) return;
+      // Is_Active false is a RETIRED override, not a deleted one. The row
+      // stays so the decision and its reversal are both on record.
+      var active = r[col['Is_Active']];
+      if (active === false || String(active).toUpperCase() === 'FALSE') return;
+      // Later row wins, so a re-resolution supersedes without an edit in
+      // place — append-only, like every other audit surface here.
+      out[pn] = {
+        positionNumber: pn,
+        employeeName: String(r[col['Employee_Name_At_Resolution']] || ''),
+        email: String(r[col['Email_Address']] || '').trim().toLowerCase(),
+        method: String(r[col['Resolution_Method']] || ''),
+        matchedDirectoryName: String(r[col['Matched_Directory_Name']] || ''),
+        notes: String(r[col['Notes']] || '')
+      };
+    });
+  } catch (e) {
+    console.warn('readEmailOverrides: ' + e.message);
+  }
+  return out;
+}
+
+/** Appends one override row. */
+function writeEmailOverrideRow_(o) {
+  var ss = SpreadsheetApp.openById(TRAVEL_DB_SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(SHEET_NAMES.HC_EMAIL_OVERRIDES);
+  if (!sheet) {
+    throw new Error(SHEET_NAMES.HC_EMAIL_OVERRIDES + ' tab not found. Run ' +
+                    'setupTravelDatabase() to create it.');
+  }
+
+  var headers = TRAVEL_SHEET_SCHEMAS[SHEET_NAMES.HC_EMAIL_OVERRIDES];
+  var rec = {
+    'Position_Number': o.positionNumber,
+    'Employee_Name_At_Resolution': o.employeeName,
+    'Email_Address': o.email,
+    'Resolution_Method': o.method,
+    'Matched_Directory_Name': o.matchedDirectoryName,
+    'Notes': o.notes,
+    'Is_Active': true,
+    'Created_By': o.actor,
+    'Created_At': o.now,
+    'Updated_By': o.actor,
+    'Updated_At': o.now
+  };
+  // Mapped over the schema headers, never built by hand: writes are
+  // positional (docs/DATA_DICTIONARY.md §3.9).
+  var row = headers.map(function (h) { return h in rec ? rec[h] : ''; });
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, headers.length)
+       .setValues([row]);
+}
+
+/** Writes an address straight onto the roster row. */
+function applyEmailToRoster_(positionNumber, email, actor, now) {
+  var ss = SpreadsheetApp.openById(TRAVEL_DB_SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(SHEET_NAMES.HC_POSITIONS);
+  if (!sheet) return false;
+
+  var headers = TRAVEL_SHEET_SCHEMAS[SHEET_NAMES.HC_POSITIONS];
+  var pnCol = headers.indexOf('Position_Number') + 1;
+  var emailCol = headers.indexOf('Email_Address') + 1;
+  var byCol = headers.indexOf('Updated_By') + 1;
+  var atCol = headers.indexOf('Updated_At') + 1;
+  if (pnCol < 1 || emailCol < 1) return false;
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return false;
+
+  var keys = sheet.getRange(2, pnCol, lastRow - 1, 1).getValues();
+  for (var i = 0; i < keys.length; i++) {
+    if (String(keys[i][0]).trim() !== String(positionNumber).trim()) continue;
+    var rowNum = i + 2;
+    sheet.getRange(rowNum, emailCol).setValue(email);
+    if (byCol > 0) sheet.getRange(rowNum, byCol).setValue('override:' + actor);
+    if (atCol > 0) sheet.getRange(rowNum, atCol).setValue(now);
+    return true;
+  }
+  return false;
 }

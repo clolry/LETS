@@ -93,7 +93,7 @@ console.log('1. no write operations anywhere in the file');
   // makes a function one click away in the editor.
   const GUARDED_TARGETS = ['previewRosterImport','importRoster',
     'previewDirectoryEmails','resolveDirectoryEmails','getBudgetDashboard',
-    'clearHCPositions'];
+    'clearHCPositions','getEmailResolutionQueue','saveEmailOverride'];
   const runnerNames=(runners.match(/^function (run\w+)\(/gm)||[])
     .map(l=>l.replace(/^function /,'').replace(/\($/,''));
   ok('there are wrappers', runnerNames.length>=5, runnerNames);
@@ -114,7 +114,7 @@ console.log('1. no write operations anywhere in the file');
   // characters of the runners below it, so it failed on code that is correct.
   // A character-window regex cannot express "inside this function".
   const WRITERS = ['importRoster', 'resolveDirectoryEmails', 'releaseSetAside',
-                   'clearHCPositions'];
+                   'clearHCPositions', 'saveEmailOverride'];
   const diagNames = (src.match(/^function (diag\w+)\(/gm) || [])
     .map(l => l.replace(/^function /, '').replace(/\($/, ''));
   ok('there are diagnostics to check', diagNames.length >= 8, diagNames.length);

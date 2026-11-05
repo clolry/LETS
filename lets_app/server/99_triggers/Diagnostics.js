@@ -1468,6 +1468,104 @@ function runDirectoryResolve() {
 }
 
 /**
+ * Show the email-resolution queue: who needs an address, and what to offer.
+ *
+ * @clolry: "can we get a user interface where it prompts the admin to resolve
+ * the names and provides potential matches? For instance Kittrell,Angela K
+ * should have Kittrell,Kim offered as a potential match."
+ *
+ * This is the data behind that UI, printed. It exists ahead of the UI because
+ * the suggestions are the part worth checking: a queue that offers the wrong
+ * people is worse than no queue, and that is judgeable from a log before any
+ * HTML is written.
+ *
+ * WRITES NOTHING. Use runSaveEmailOverride to record a decision.
+ *
+ * @editor
+ */
+function runEmailResolutionQueue() {
+  var r = getEmailResolutionQueue({ limit: 15 });
+  if (!r || r.success !== true) {
+    console.log(JSON.stringify(r, null, 2));
+    return;
+  }
+
+  var d = r.data;
+  console.log('=== email resolution queue — NOTHING WAS WRITTEN ===');
+  console.log(d.totalNeedingEmail + ' staffed position(s) still have no ' +
+              'address. ' + d.overridesStored + ' already resolved by hand.');
+  console.log('Examined ' + d.examined + ' position(s) for this page; ' +
+              'next index ' + d.nextIndex + '.');
+  console.log('');
+
+  if (!d.queue.length) {
+    console.log('Nothing in this page needs a decision.');
+    return;
+  }
+
+  d.queue.forEach(function (q) {
+    console.log((q.isSupervisor ? '[SUPERVISOR] ' : '') +
+                q.employeeName + '  ' + q.positionNumber + '  ' + q.orgCode);
+    if (q.officeTitle) console.log('    ' + q.officeTitle);
+    if (!q.suggestions.length) {
+      console.log('    no directory candidate shares this surname');
+    }
+    q.suggestions.forEach(function (sug) {
+      console.log('    [' + sug.reason + (sug.orgAgrees ? ' +org' : '') +
+                  ']  ' + sug.directoryName + '  ' + sug.email);
+    });
+    // The exact call to accept one, because retyping a position number from a
+    // log is how the wrong person gets an address.
+    if (q.suggestions.length) {
+      console.log('    accept: saveEmailOverride({positionNumber:"' +
+                  q.positionNumber + '", email:"' + q.suggestions[0].email +
+                  '", matchedDirectoryName:"' +
+                  q.suggestions[0].directoryName + '"})');
+    }
+    console.log('');
+  });
+
+  console.log('To record a decision, run runSaveEmailOverride() after editing ' +
+              'the values at the top of that function.');
+}
+
+/**
+ * Record one admin email decision.
+ *
+ * EDIT THE THREE VALUES BELOW, then Run. The Apps Script Run button passes no
+ * arguments, and a wrapper taking them from a prompt would be a form — which
+ * is what the real UI will be. This is the editor path until then.
+ *
+ * Writes to HC_Email_Overrides (durable, survives every import) AND to
+ * HC_Positions (so it takes effect now rather than tomorrow).
+ *
+ * @editor
+ */
+function runSaveEmailOverride() {
+  // ---- EDIT THESE -------------------------------------------------------
+  var POSITION_NUMBER = '';
+  var EMAIL = '';
+  var MATCHED_DIRECTORY_NAME = '';   // optional, for the audit trail
+  var NOTES = '';                    // REQUIRED if EMAIL is blank
+  // -----------------------------------------------------------------------
+
+  if (!POSITION_NUMBER) {
+    console.log('Edit POSITION_NUMBER and EMAIL at the top of ' +
+                'runSaveEmailOverride, then Run again.');
+    console.log('Run runEmailResolutionQueue() to see who needs an address ' +
+                'and what the directory offers.');
+    return;
+  }
+
+  console.log(JSON.stringify(saveEmailOverride({
+    positionNumber: POSITION_NUMBER,
+    email: EMAIL,
+    matchedDirectoryName: MATCHED_DIRECTORY_NAME,
+    notes: NOTES
+  }), null, 2));
+}
+
+/**
  * Print the current budget dashboard payload.
  *
  * Useful for checking the FY27 figures without loading the page: the DAC

@@ -49,6 +49,26 @@ const SHEET_NAMES = {
   HC_POSITIONS:       'HC_Positions',
   HC_ORGS:            'HC_Orgs',
 
+  // Admin-resolved email addresses, SURVIVING the daily roster import.
+  //
+  // @clolry: "we need a way to save these so they aren't replaced when we
+  // pull the daily feed - once we make the match we need to keep it."
+  //
+  // This tab exists because importRoster REPLACES every row in HC_Positions.
+  // An address typed into the roster editor would be destroyed by the next
+  // import, silently — the person would simply stop being able to sign in,
+  // days after the correction, with nothing connecting cause to effect.
+  //
+  // So a resolved address is NOT stored only in HC_Positions. It is stored
+  // here, keyed on Position_Number, and re-applied on every import. The
+  // roster is the feed's to overwrite; this tab is the organisation's.
+  //
+  // WHY NOT A COLUMN ON HC_Positions. Because the import clears the sheet.
+  // Any "do not overwrite this column" rule would have to be enforced inside
+  // the write path, which is exactly where a future refactor would not look.
+  // A separate tab cannot be clobbered by a sheet-clearing import at all.
+  HC_EMAIL_OVERRIDES: 'HC_Email_Overrides',
+
   // Government contract airfares, synced daily from the GSA City Pair
   // Program CSV. See 91_setup/CityPairSync.js.
   CITY_PAIRS:         'City_Pairs',
@@ -587,6 +607,50 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Division',
     'Status',                      // Active | Decommissioned | Not In Use
     'Former_Org_Codes',            // comma-separated
+    'Is_Active',
+    'Created_By',
+    'Created_At',
+    'Updated_By',
+    'Updated_At'
+  ],
+
+  // ==========================================================================
+  // ADMIN-RESOLVED EMAIL ADDRESSES — survives the daily roster import
+  // ==========================================================================
+  //
+  // @clolry: "I know that Angela K Kittrell goes by Kim and her email is
+  // Kim." The FAS feed has no email column, the directory lookup refuses a
+  // nickname by design, and a human knows the answer. That answer has to
+  // outlive the next import.
+  //
+  // THE BUG THIS PREVENTS. importRoster clears HC_Positions and rewrites it
+  // from the feed, so an address typed into the roster editor is destroyed by
+  // the next daily run. The person stops being able to sign in days after the
+  // correction, with nothing linking cause to effect — and the obvious
+  // response is to type it in again.
+  //
+  // Keyed on Position_Number, which is the feed's own stable key. NOT on
+  // name: a nickname correction is precisely a case where the name is
+  // unreliable, and 'Kittrell,Angela K' may become 'Kittrell,Kim' in HR at
+  // any point without ceasing to be the same position.
+  HC_Email_Overrides: [
+    'Position_Number',             // PK, and the join key into HC_Positions
+    // Carried for human readability ONLY. Never matched on — see above. It is
+    // the name AS THE FEED HAD IT when the override was made, so a later
+    // feed change is visible as a difference rather than silently applied.
+    'Employee_Name_At_Resolution',
+    'Email_Address',
+    // How this address was arrived at:
+    //   ADMIN_MANUAL      typed by an administrator
+    //   ADMIN_CONFIRMED   a directory candidate the admin confirmed
+    //   DIRECTORY_AUTO    resolved automatically, recorded for audit
+    // Stored because 'someone decided this' and 'a machine matched this' need
+    // different levels of trust when the two disagree.
+    'Resolution_Method',
+    // The directory candidate accepted, when there was one. Lets an audit see
+    // that an admin picked 'Kittrell,Kim' rather than inventing an address.
+    'Matched_Directory_Name',
+    'Notes',
     'Is_Active',
     'Created_By',
     'Created_At',

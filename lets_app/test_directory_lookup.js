@@ -855,5 +855,149 @@ console.log('\n13. the deployed build can be identified from its behaviour');
      !/setValue|appendRow|clearContent|setProperty/.test(diag));
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n14. a suffix on the CANDIDATE is stripped too');
+{
+  // @clolry's live sweep: 'Kirkland III,Ozel' resolved, 'Tekus Jr,John J' did
+  // not. Both suffixed. parseName strips the suffix from the ROSTER name, so
+  // both compared as 'Kirkland' and 'Tekus' — but the CANDIDATE was not
+  // getting the same treatment. GSA returns familyName 'Tekus Jr - FC', which
+  // strips to 'Tekus Jr' and fails against 'Tekus'.
+  //
+  // Kirkland resolved only because his directory entry happens to omit the
+  // III. So the outcome depended on whether the directory carried the suffix,
+  // which is a coin toss across an unknown share of 1,046 positions rather
+  // than a rule.
+  ok('a surname-only suffix is stripped',
+     D.stripNameSuffix('Tekus Jr') === 'Tekus', D.stripNameSuffix('Tekus Jr'));
+  ok('and III too', D.stripNameSuffix('Kirkland III') === 'Kirkland');
+
+  // NOT via parseName. parseName('Tekus Jr') returns surname 'Jr', forename
+  // 'Tekus' — the forename-first branch takes the last token as the surname,
+  // and a bare family-name field has no forename. My first version of this
+  // fix reused parseName and therefore did nothing at all.
+  ok('parseName alone would get this WRONG',
+     D.parseName('Tekus Jr').last === 'Jr',
+     'which is why stripNameSuffix exists separately');
+
+  // A multi-word surname must survive.
+  ok('a multi-word surname is untouched',
+     D.stripNameSuffix('Van Der Berg') === 'Van Der Berg');
+  ok('and a hyphenated one', D.stripNameSuffix('Mbeki-Lawson') === 'Mbeki-Lawson');
+
+  // A SURNAME THAT IS ONLY A SUFFIX is somebody's actual name. Returning ''
+  // would match everyone.
+  ok('a surname that is only "Jr" is not stripped to nothing',
+     D.stripNameSuffix('Jr') === 'Jr');
+
+  const tekus = { givenName: 'John', familyName: 'Tekus Jr - FC',
+                  displayName: 'John Tekus Jr - FC',
+                  email: 'john.tekus@gsa.gov' };
+  ok('the live Tekus candidate now resolves',
+     D.pickMatch(D.parseName('Tekus Jr,John J'), [tekus]).email ===
+       'john.tekus@gsa.gov');
+  // Symmetry in both directions: roster plain, directory suffixed.
+  ok('a plain roster name matches a suffixed directory entry',
+     D.pickMatch(D.parseName('Tekus,John'), [tekus]).email ===
+       'john.tekus@gsa.gov');
+  ok('and Kirkland still resolves',
+     D.pickMatch(D.parseName('Kirkland III,Ozel'),
+                 [{ givenName: 'Ozel', familyName: 'Kirkland - FC',
+                    email: 'o@gsa.gov' }]).email === 'o@gsa.gov');
+
+  // Strictness intact: the suffix strip must not make different surnames
+  // equal.
+  ok('a different surname with the same suffix is STILL refused',
+     D.pickMatch(D.parseName('Tekus Jr,John J'),
+                 [{ givenName: 'John', familyName: 'Tekusson Jr - FC',
+                    email: 'x@gsa.gov' }]).email === '');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n15. suggestions are for a human, and only for a human');
+{
+  // @clolry: "Kittrell,Angela K should have Kittrell,Kim offered as a
+  // potential match" — and he knows Angela goes by Kim. The automatic matcher
+  // must never make that leap; a human reading two names can.
+  // THE REAL SHAPE. @clolry's sweep returned notFound for Angela Kittrell —
+  // zero candidates — because the directory holds only 'Kim Kittrell'. My
+  // first fixture invented an 'Angela Kittrell' in FD, which the automatic
+  // matcher then resolved exactly and correctly, and the assertion below
+  // failed. The fixture was wrong, not the code: an exact forename match
+  // SHOULD resolve automatically.
+  //
+  // So the surname-only search is what finds Kim at all, and this fixture is
+  // its result.
+  const parsed = D.parseName('Kittrell,Angela K');
+  const cands = [
+    { givenName: 'Kim', familyName: 'Kittrell - FC',
+      displayName: 'Kim Kittrell - FC', email: 'kim.kittrell@gsa.gov' },
+    { givenName: 'Robert', familyName: 'Kitterell - FD',
+      email: 'robert.kitterell@gsa.gov' }
+  ];
+  const sug = D.suggestCandidates(parsed, cands, 'FCA0C');
+
+  // THE SURNAME IS THE ANCHOR. 'Kitterell' is a different family, and
+  // offering it invites a mis-click on a name that looks nearly right.
+  ok('a different surname is NOT offered',
+     !sug.some(s => /Kitterell/.test(s.directoryName)),
+     sug.map(s => s.directoryName));
+  ok('the nickname IS offered',
+     sug.some(s => s.email === 'kim.kittrell@gsa.gov'), sug);
+  ok('and it is the top suggestion',
+     sug[0].email === 'kim.kittrell@gsa.gov', sug);
+  ok('on an email hint plus org agreement, not a name resemblance',
+     sug[0].reason === 'email-hint' && sug[0].orgAgrees === true, sug[0]);
+
+  // EVERY SUGGESTION CARRIES ITS REASON, because that is what an admin
+  // judges. 'Kim' is offered on an email hint; 'Angela' on the forename.
+  ok('each suggestion says why it is being offered',
+     sug.every(s => !!s.reason), sug);
+  ok('and whether the org code agrees',
+     sug.some(s => s.orgAgrees === true), sug);
+
+  // WHEN AN EXACT FORENAME DOES EXIST it outranks a nickname, because a
+  // person named Angela Kittrell is a better candidate for 'Kittrell,Angela
+  // K' than one named Kim. Asserted with a separate fixture so the ordering
+  // rule is pinned without claiming such a person exists in @clolry's
+  // directory — she does not.
+  const withNamesake = D.suggestCandidates(parsed, cands.concat([
+    { givenName: 'Angela', familyName: 'Kittrell - FD',
+      email: 'angela.kittrell@gsa.gov' }
+  ]), 'FCA0C');
+  ok('an exact forename outranks a nickname when both exist',
+     withNamesake[0].email === 'angela.kittrell@gsa.gov', withNamesake);
+
+  // THE SUGGESTER MUST NOT LEAK INTO THE AUTOMATIC PATH. Its rules are looser
+  // by design, and pickMatch's only acceptable outputs are one certain match
+  // or nothing.
+  const src = fs.readFileSync('lets_app/server/30_services/DirectoryLookup.js', 'utf8');
+  const pick = src.slice(src.indexOf('function pickMatch'),
+                         src.indexOf('function resolveOne'));
+  ok('pickMatch does not call suggestCandidates',
+     pick.indexOf('suggestCandidates') === -1,
+     'the loose rules must never decide an automatic write');
+  const auto = D.pickMatch(parsed, cands, 'FCA0C');
+  ok('and the automatic matcher refuses the nickname',
+     auto.email === '', auto);
+  // The counterpart: when an exact forename IS present, the automatic path
+  // resolves it and the queue should never see it. That is correct, and it is
+  // why the manual queue skips anything pickMatch would resolve.
+  const autoExact = D.pickMatch(parsed, cands.concat([
+    { givenName: 'Angela', familyName: 'Kittrell - FD',
+      email: 'angela.kittrell@gsa.gov' }
+  ]), 'FCA0C');
+  ok('an exact forename resolves automatically and stays out of the queue',
+     autoExact.email === 'angela.kittrell@gsa.gov', autoExact);
+
+  // Nothing to offer is a valid, useful answer.
+  ok('no surname match yields no suggestions',
+     D.suggestCandidates(D.parseName('Nobody,Here'), cands, 'FC').length === 0);
+  ok('and a candidate with no email is never offered',
+     D.suggestCandidates(parsed, [{ givenName: 'Kim', familyName: 'Kittrell',
+                                    email: '' }], 'FC').length === 0,
+     'an address is the entire point of the exercise');
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);

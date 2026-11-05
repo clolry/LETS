@@ -76,7 +76,7 @@ var DirectoryLookup = (function () {
     var out = { last: '', first: '', middle: '', suffix: '', usable: false };
     if (!s) return out;
 
-    var SUFFIXES = ['JR', 'SR', 'II', 'III', 'IV', 'V', 'JR.', 'SR.'];
+    var SUFFIXES = NAME_SUFFIXES;
 
     var last = '';
     var rest = '';
@@ -141,6 +141,38 @@ var DirectoryLookup = (function () {
     out.middle = restToks.slice(1).join(' ');
     out.usable = !!(out.last && out.first);
     return out;
+  }
+
+  /**
+   * Generational suffixes, recognised on either side of a comparison.
+   *
+   * Module scope rather than a local in parseName, because candidateMatches
+   * needs the same list and two copies would drift.
+   */
+  var NAME_SUFFIXES = ['JR', 'SR', 'II', 'III', 'IV', 'V'];
+
+  /**
+   * Removes a trailing generational suffix from a SURNAME-ONLY string.
+   *
+   * 'Tekus Jr' -> 'Tekus'. 'Van Der Berg' -> unchanged.
+   *
+   * Distinct from parseName, which expects a full name and would read
+   * 'Tekus Jr' as forename Tekus, surname Jr. A bare family-name field has no
+   * forename, so it needs its own rule — and conflating the two is how the
+   * first version of this fix came to do nothing at all.
+   *
+   * REQUIRES SOMETHING BEFORE THE SUFFIX. A surname that is only 'Jr' is not
+   * a suffix to strip; it is somebody's actual name, and returning '' would
+   * match everyone.
+   */
+  function stripNameSuffix(v) {
+    var s = _str_(v);
+    if (!s) return '';
+    var toks = s.split(/\s+/).filter(Boolean);
+    if (toks.length < 2) return s;
+    var tail = toks[toks.length - 1].toUpperCase().replace(/\./g, '');
+    if (NAME_SUFFIXES.indexOf(tail) === -1) return s;
+    return toks.slice(0, -1).join(' ');
   }
 
   /** A comparison key: uppercased, punctuation and spacing removed. */
@@ -308,6 +340,30 @@ var DirectoryLookup = (function () {
     var familySplit = splitDirectorySuffix(family);
     family = familySplit.name;
     given = splitDirectorySuffix(given).name;
+
+    // STRIP A GENERATIONAL SUFFIX FROM THE CANDIDATE TOO.
+    //
+    // The roster's suffix is already removed by parseName, so 'Tekus Jr,John J'
+    // compares as surname 'Tekus'. The CANDIDATE was not getting the same
+    // treatment: GSA returns familyName 'Tekus Jr - FC', which strips to
+    // 'Tekus Jr' and then fails against 'Tekus'.
+    //
+    // @clolry's live sweep showed the asymmetry directly: 'Kirkland III,Ozel'
+    // resolved and 'Tekus Jr,John J' did not. Both are suffixed; the
+    // difference is that Kirkland's directory entry omits the III and
+    // Tekus's includes the Jr. So the behaviour depended on whether the
+    // directory happened to carry the suffix, which is not a rule — it is a
+    // coin toss across an unknown share of 1,046 positions.
+    //
+    // Applying the same split to both sides makes the comparison symmetric,
+    // which is the only form in which it can be reasoned about.
+    //
+    // NOT via parseName. My first attempt reused it, and parseName('Tekus Jr')
+    // returns surname 'Jr', forename 'Tekus' — because a bare family-name
+    // field has no forename and the forename-first branch takes the last
+    // token as the surname. Comparing against 'Jr' fails just as badly as
+    // comparing against 'Tekus Jr', so the fix silently did nothing.
+    family = stripNameSuffix(family);
     // Surfaced so pickMatch can use the org as a tie-break between
     // same-named candidates.
     var candidateOrg = familySplit.org ||
@@ -680,9 +736,133 @@ var DirectoryLookup = (function () {
     };
   }
 
+  /**
+   * Candidates to OFFER an administrator when nothing matched automatically.
+   *
+   * @clolry: "can we get a user interface where it prompts the admin to
+   * resolve the names and provides potential matches? For instance
+   * Kittrell,Angela K should have Kittrell,Kim offered as a potential match."
+   *
+   * WHY THIS IS A SEPARATE FUNCTION FROM pickMatch
+   * ----------------------------------------------
+   * pickMatch answers "may this be written automatically", and its only
+   * acceptable outputs are one certain match or nothing. This answers "what
+   * should a human look at", which is a different question with a different
+   * risk profile: a wrong SUGGESTION costs a moment's reading, where a wrong
+   * AUTO-MATCH grants someone else's access.
+   *
+   * So the rules here are deliberately looser than pickMatch's, and they must
+   * never be reused by it. Nothing in this function writes anything or is
+   * reachable from the automatic path — test_directory_lookup.js asserts that
+   * pickMatch does not call it.
+   *
+   * WHAT COUNTS AS WORTH OFFERING
+   * -----------------------------
+   * The surname must match exactly, after suffix and org-suffix stripping.
+   * That is the anchor: 'Kittrell,Angela K' against a directory 'Kittrell,
+   * Kim' is a plausible nickname; 'Kittrell' against 'Kitterell' is a
+   * different family and offering it invites a mis-click.
+   *
+   * Forenames are then ranked by how they differ, because WHY they differ is
+   * what an admin needs to judge:
+   *
+   *   initial       roster forename starts with the candidate's, or vice
+   *                 versa — 'Angela' / 'A', or a middle name used as a first
+   *   contains      one contains the other — 'Kim' inside 'Kimberly'
+   *   email-hint    the local part of the address contains the roster
+   *                 surname, so the mailbox is at least the right family
+   *   same-surname  nothing else in common
+   *
+   * NOT ranked by edit distance. 'Jon'/'John' and 'Ron'/'John' are one
+   * character apart each, and presenting them as equally likely is worse than
+   * presenting neither — it implies a confidence the measure does not have.
+   *
+   * @param {Object} parsed from parseName
+   * @param {Array} candidates
+   * @param {string} [rosterOrgCode]
+   * @returns {Array} ranked suggestions, best first
+   */
+  function suggestCandidates(parsed, candidates, rosterOrgCode) {
+    if (!parsed || !parsed.last) return [];
+
+    var rosterLast = nameKey(stripNameSuffix(parsed.last));
+    var rosterFirst = nameKey(parsed.first);
+    var out = [];
+
+    (candidates || []).forEach(function (c) {
+      var email = _str_(c.email).toLowerCase();
+      if (!email) return;
+
+      var given = _str_(c.givenName);
+      var family = _str_(c.familyName);
+      if (!given || !family) {
+        var fromDisplay = parseName(splitDirectorySuffix(c.displayName).name);
+        if (!given) given = fromDisplay.first;
+        if (!family) family = fromDisplay.last;
+      }
+      var fsplit = splitDirectorySuffix(family);
+      family = stripNameSuffix(fsplit.name);
+      given = splitDirectorySuffix(given).name;
+
+      var candLast = nameKey(family);
+      var candFirst = nameKey(given);
+      if (!candLast || candLast !== rosterLast) return;   // surname is the anchor
+
+      var reason = 'same-surname';
+      var rank = 3;
+
+      if (rosterFirst && candFirst) {
+        if (rosterFirst.charAt(0) === candFirst.charAt(0)) {
+          reason = 'initial';
+          rank = 0;
+        }
+        if (rosterFirst.indexOf(candFirst) === 0 ||
+            candFirst.indexOf(rosterFirst) === 0) {
+          reason = 'contains';
+          rank = 0;
+        }
+      }
+      // The mailbox naming the right family is weak evidence on its own and
+      // useful alongside a surname match. It must not DEMOTE a stronger
+      // reason — my first version assigned rank 2 unconditionally when the
+      // hint fired, which pushed a 'contains' match from rank 0 to 2 and
+      // ranked 'Kim Kittrell' BELOW an out-of-org 'Angela Kittrell'. The
+      // better evidence has to win.
+      if (rank > 2 && email.split('@')[0].toUpperCase()
+                           .replace(/[^A-Z]/g, '').indexOf(rosterLast) > -1) {
+        reason = 'email-hint';
+        rank = 2;
+      }
+
+      out.push({
+        email: email,
+        directoryName: (given + ' ' + family).trim(),
+        displayName: _str_(c.displayName),
+        directoryOrg: fsplit.org || splitDirectorySuffix(c.displayName).org,
+        orgAgrees: candidateOrgMatches(rosterOrgCode, fsplit.org ||
+                                       splitDirectorySuffix(c.displayName).org),
+        reason: reason,
+        rank: rank
+      });
+    });
+
+    // An org-code agreement promotes a suggestion, because it is the one
+    // signal here that comes from a shared identifier rather than a
+    // resemblance.
+    out.forEach(function (o) { if (o.orgAgrees) o.rank -= 1; });
+
+    out.sort(function (a, b) {
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      return a.email < b.email ? -1 : 1;
+    });
+    return out;
+  }
+
   return {
     parseName: parseName,
+    suggestCandidates: suggestCandidates,
     nameKey: nameKey,
+    stripNameSuffix: stripNameSuffix,
     splitDirectorySuffix: splitDirectorySuffix,
     candidateOrgMatches: candidateOrgMatches,
     candidateMatches: candidateMatches,
