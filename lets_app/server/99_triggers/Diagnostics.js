@@ -1457,13 +1457,52 @@ function runDirectoryPreview() {
  */
 function runDirectoryResolve() {
   var r = resolveDirectoryEmails({});
-  console.log(JSON.stringify(r, null, 2));
-  if (r && r.success && r.data && !r.data.complete) {
+  if (!r || r.success !== true) {
+    console.log(JSON.stringify(r, null, 2));
+    return;
+  }
+
+  var d = r.data;
+  console.log('=== resolveDirectoryEmails ===');
+  console.log('wrote ' + d.written + ' address(es)');
+  console.log(JSON.stringify(d.summary, null, 2));
+
+  // COLLISIONS FIRST, because they are the only outcome here that leaves two
+  // people sharing an identity. Two resolutions can each be certain and still
+  // collide, and neither lookup can see the other.
+  if ((d.collisions || []).length) {
+    console.log('');
+    console.log('!! ' + d.collisions.length + ' RESOLUTION(S) REFUSED — ' +
+                'address already held by another position:');
+    d.collisions.forEach(function (c) {
+      console.log('   ' + c.employeeName + ' (' + c.positionNumber + ')  ->  ' +
+                  c.email);
+      console.log('      already held by ' + c.alreadyHeldByName +
+                  ' (' + c.alreadyHeldBy + ')');
+    });
+    console.log('   Two positions sharing an address makes the access gate ' +
+                'match whichever it finds first. Resolve by hand.');
+  }
+
+  if ((d.refused || []).length) {
+    console.log('');
+    console.log('--- refused (first 10) ---');
+    d.refused.slice(0, 10).forEach(function (x) {
+      console.log('   ' + x.employeeName + '  [' + x.method + ', ' +
+                  x.candidateCount + ' candidate(s)]');
+    });
+  }
+
+  if (!d.complete) {
     console.log('');
     console.log('NOT COMPLETE — run this again to continue from position ' +
-                r.data.nextIndex + '. Or install the hourly trigger: ' +
+                d.nextIndex + '. Or install the hourly trigger: ' +
                 'installDirectoryLookupTrigger() in ' +
                 '40_domain/DirectoryResolve.js.');
+  } else {
+    console.log('');
+    console.log('SWEEP COMPLETE. Run runEmailResolutionQueue() in this file ' +
+                'for the positions that still need a human decision.');
   }
 }
 

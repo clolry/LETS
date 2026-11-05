@@ -585,7 +585,49 @@ function resolveDirectoryEmails(opts) {
       var actor = _hcAdminActor_();
       var now = new Date();
 
+      // ONE ADDRESS, ONE PERSON — checked across the whole batch before any
+      // write.
+      //
+      // Each resolution is individually certain; a COLLISION between two of
+      // them is not visible to either. Access.js:435 matches the signed-in
+      // user against Email_Address and takes the first hit, so two positions
+      // sharing an address makes authorisation depend on row order.
+      //
+      // Reachable on this data: the directory holds eight Halls, and
+      // 'Hall,Adam C' resolved to adam.hall@gsa.gov. If another Hall resolved
+      // to the same mailbox the two would silently share an identity. The
+      // existing roster is checked too, not just the batch, because a prior
+      // sweep or an admin override may already hold the address.
+      var takenBy = {};
+      bundle.data.forEach(function (p) {
+        if (p && p.emailAddress) {
+          takenBy[String(p.emailAddress).toLowerCase()] = p;
+        }
+      });
+
+      var collisions = [];
+      var toWrite = [];
       batch.resolved.forEach(function (r) {
+        var holder = takenBy[r.email];
+        if (holder && String(holder.positionNumber) !== String(r.positionNumber)) {
+          collisions.push({
+            positionNumber: r.positionNumber,
+            employeeName: r.employeeName,
+            email: r.email,
+            method: r.method,
+            alreadyHeldBy: holder.positionNumber,
+            alreadyHeldByName: holder.employeeName
+          });
+          return;
+        }
+        takenBy[r.email] = {
+          positionNumber: r.positionNumber,
+          employeeName: r.employeeName
+        };
+        toWrite.push(r);
+      });
+
+      toWrite.forEach(function (r) {
         var rowNum = rowByPn[r.positionNumber];
         if (!rowNum) return;           // row vanished since the bundle was read
         sheet.getRange(rowNum, emailCol).setValue(r.email);
@@ -598,6 +640,18 @@ function resolveDirectoryEmails(opts) {
         if (updatedAtCol > 0) sheet.getRange(rowNum, updatedAtCol).setValue(now);
         written++;
       });
+
+      if (collisions.length) {
+        console.warn('resolveDirectoryEmails: ' + collisions.length +
+                     ' resolution(s) REFUSED because the address is already ' +
+                     'held by another position:');
+        collisions.forEach(function (c) {
+          console.warn('  ' + c.employeeName + ' (' + c.positionNumber +
+                       ') -> ' + c.email + ' is held by ' +
+                       c.alreadyHeldByName + ' (' + c.alreadyHeldBy + ')');
+        });
+        batch.collisions = collisions;
+      }
 
       try { new TravelDB().invalidate(SHEET_NAMES.HC_POSITIONS); } catch (e) { /* non-fatal */ }
       try { HC.hcCacheInvalidateAll(); } catch (e) { /* non-fatal */ }
@@ -621,6 +675,11 @@ function resolveDirectoryEmails(opts) {
     return successResponse({
       summary: summary,
       written: written,
+      // Resolutions that were individually certain and collided with each
+      // other or with the existing roster. Zero is the expected value; a
+      // non-zero one is two people being handed one identity and needs a
+      // human.
+      collisions: batch.collisions || [],
       nextIndex: batch.complete ? 0 : batch.nextIndex,
       complete: batch.complete,
       stoppedBecause: batch.stoppedBecause,

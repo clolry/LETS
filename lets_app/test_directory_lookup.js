@@ -1382,5 +1382,60 @@ console.log('\n20. the verifier compares the name on the address');
      'through it');
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n21. two certain resolutions must not collide');
+{
+  // EACH RESOLUTION IS INDIVIDUALLY CERTAIN AND A COLLISION IS INVISIBLE TO
+  // BOTH. Access.js:435 matches the signed-in user against Email_Address and
+  // takes the first hit, so two positions sharing an address makes
+  // authorisation depend on row order.
+  //
+  // Reachable on @clolry's data: the directory holds eight Halls and
+  // 'Hall,Adam C' resolved to adam.hall@gsa.gov. Another Hall resolving to
+  // the same mailbox would silently share an identity, and nothing in either
+  // lookup could detect it.
+  const resolve = fs.readFileSync('lets_app/server/40_domain/DirectoryResolve.js', 'utf8');
+  const fn = resolve.slice(resolve.indexOf('function resolveDirectoryEmails'),
+                           resolve.indexOf('/** A position other than'));
+
+  ok('the write path checks for address collisions',
+     /var takenBy = \{\}/.test(fn) && /collisions\.push/.test(fn), fn.length);
+
+  // CHECKED BEFORE ANY WRITE, not as it goes. A per-row check would write the
+  // first of a colliding pair and refuse the second, leaving the outcome
+  // dependent on batch order.
+  const takenAt = fn.indexOf('var takenBy');
+  const writeAt = fn.indexOf('toWrite.forEach');
+  ok('the whole batch is checked before writing',
+     takenAt > -1 && writeAt > takenAt,
+     'a per-row check makes the winner depend on batch order');
+
+  // THE EXISTING ROSTER COUNTS TOO. A prior sweep or an admin override may
+  // already hold the address.
+  ok('existing roster addresses are included in the check',
+     /bundle\.data\.forEach/.test(fn) && /p\.emailAddress/.test(fn),
+     'a previous sweep may already have written it');
+
+  // A position keeping its OWN address is not a collision.
+  ok('a position re-resolving to its own address is allowed',
+     /String\(holder\.positionNumber\) !== String\(r\.positionNumber\)/.test(fn));
+
+  // Reported, not silently dropped — a refused resolution leaves someone
+  // unable to sign in, which needs to be visible.
+  ok('collisions are logged and returned',
+     /console\.warn\('resolveDirectoryEmails: /.test(fn) &&
+     /collisions: batch\.collisions/.test(resolve));
+
+  const diag = fs.readFileSync('lets_app/server/99_triggers/Diagnostics.js', 'utf8');
+  const wrapper = diag.slice(diag.indexOf('function runDirectoryResolve'),
+                             diag.indexOf('function runEmailResolutionQueue'));
+  ok('the wrapper reports collisions before refusals',
+     wrapper.indexOf('RESOLUTION(S) REFUSED') > -1 &&
+     wrapper.indexOf('RESOLUTION(S) REFUSED') < wrapper.indexOf('refused (first 10)'),
+     'a collision is the only outcome that leaves two people one identity');
+  ok('and names both positions involved',
+     /alreadyHeldByName/.test(wrapper), wrapper.slice(0, 200));
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);
