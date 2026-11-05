@@ -1122,6 +1122,7 @@ jobs:
           # trusted to a .gitignore nobody re-reads.
           BAD=0
           for PAT in '*Expense Report Calculations*' '*Staffing Plan*' \
+                     '*Travel_Liability Log*' '*Travel_Liability_Log*' \
                      'reference_excel_files/report_*' \
                      'reference_excel_files/Expense Report*' \
                      'reference_excel_files/Travel requests*'; do
@@ -1150,8 +1151,18 @@ jobs:
           # this asks `git check-ignore` whether a representative filename
           # would actually be ignored. That cannot be satisfied by a comment
           # or by a near-miss rule.
+          # THE ROOT-LEVEL CASE IS TESTED EXPLICITLY. On 2026-11-05 the
+          # liability log arrived as 'Copy of Updated ASD FY27
+          # Travel_Liability Log.xlsx' at the repository ROOT, where the
+          # directory-anchored ignore rule did not reach it — git listed it as
+          # an untracked file carrying 30 real travelers' names and costs. The
+          # rule for the reconciliation workbook had already been widened for
+          # this exact reason; the liability rule had not. So both the
+          # anchored and the unanchored placement are asserted here.
           for NAME in \
             '_Expense Report Calculations File for LETS.xlsx' \
+            'Copy of Updated ASD FY27 Travel_Liability Log.xlsx' \
+            'reference_excel_files/ASD FY27 Travel_Liability Log.xlsx' \
             'reference_excel_files/ASD Staffing Plan.xlsx' \
             'reference_excel_files/report_1234.xls'; do
             if ! git check-ignore -q "$NAME" 2>/dev/null; then
