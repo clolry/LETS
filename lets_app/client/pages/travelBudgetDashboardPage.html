@@ -33,6 +33,27 @@
   <?!= include('client/shared/escapeHtml'); ?>
   <?!= include('client/shared/serverCall'); ?>
 
+  <!--
+    SheetJS, for parsing the reconciliation workbook IN THE BROWSER.
+
+    WHY CLIENT-SIDE PARSING. Three reasons, in order of how badly each would
+    bite:
+
+      1  Apps Script's google.script.run payload limit makes posting a ~400KB
+         xlsx unreliable, and the failure mode is an opaque transport error.
+      2  An unparseable or wrong file then fails HERE, where the user can see
+         which file they picked, rather than inside a server call.
+      3  The server never receives the file at all — only the mapped rows for
+         the tabs being imported. The workbook holds ~1,900 names and 823
+         email addresses across its lookup tabs; not sending them is
+         strictly better than sending and discarding them.
+
+    PINNED VERSION, not a floating tag. A CDN script that silently changes
+    version under a parser is how a date column starts arriving in a different
+    type. 0.20.2 is what the importer was measured against.
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js"></script>
+
   <style>
     /*
       THE PAGE SCROLLER.
@@ -250,6 +271,23 @@
         </button>
         <button class="btn btn-sm btn-primary d-none" id="btnImportTravel">
           <i class="fas fa-file-import me-1"></i> Import Existing Travel
+        </button>
+        <!--
+          THE FILE IMPORTER, separate from the manual one above.
+
+          Two buttons, deliberately, because they are two different jobs:
+
+            Import Existing Travel   type in a handful of trips by hand
+            Import From Workbook     load Chiquita's reconciliation file,
+                                     repeatably, with a preview and rollback
+
+          Merging them would mean one screen that either hides most of its
+          controls or asks the user to choose a mode before it can show them
+          anything. The manual path is also the fallback when the workbook is
+          unavailable, so it has to keep working on its own.
+        -->
+        <button class="btn btn-sm btn-primary d-none" id="btnImportWorkbook">
+          <i class="fas fa-file-excel me-1"></i> Import From Workbook
         </button>
         <!--
           The "Log Budget Adjustment" button that was here opened
@@ -629,6 +667,151 @@
           <span class="text-muted small me-auto" id="importHint"></span>
           <button type="button" class="btn btn-sm btn-outline-secondary" id="importCancel">Close</button>
           <button type="button" class="btn btn-sm btn-primary" id="importSave">Import travel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================================================================
+         WORKBOOK IMPORT — upload, map, preview, commit, roll back
+         ==================================================================
+         FOUR STEPS, SHOWN ONE AT A TIME, because they are four decisions
+         and conflating them is how a bad import gets committed:
+
+           1  pick the file and confirm the scope
+           2  confirm the column mapping (the proposal is a GUESS)
+           3  read the preview — new / changed / conflicts / skipped
+           4  commit, or roll a previous batch back
+
+         The file is parsed IN THE BROWSER. It never reaches the server as a
+         file: only the mapped rows do. That keeps a ~400KB workbook out of
+         Apps Script's payload limits and means an unparseable file fails
+         here, where the user can see it, rather than inside a server call.
+    -->
+    <div class="oc-modal d-none" id="wbModal">
+      <div class="oc-modal__panel oc-modal__panel--wide">
+        <div class="oc-modal__head">
+          <h3 class="h6 fw-bold mb-0">Import From Workbook</h3>
+          <button type="button" class="btn-close-x" id="wbClose" aria-label="Close">&times;</button>
+        </div>
+
+        <div class="oc-modal__body">
+          <!-- Step indicator -->
+          <div class="d-flex gap-2 mb-3 small" id="wbSteps">
+            <span class="badge text-bg-primary" data-wb-step="1">1 &middot; File</span>
+            <span class="badge text-bg-light text-muted" data-wb-step="2">2 &middot; Columns</span>
+            <span class="badge text-bg-light text-muted" data-wb-step="3">3 &middot; Preview</span>
+            <span class="badge text-bg-light text-muted" data-wb-step="4">4 &middot; History</span>
+          </div>
+
+          <!-- ---------- STEP 1: FILE + SCOPE ---------- -->
+          <div data-wb-pane="1">
+            <div class="alert alert-secondary py-2 px-3 small">
+              <i class="fas fa-circle-info me-1"></i>
+              Select the reconciliation workbook (<code>.xlsx</code>). Imported
+              records are <strong>not routed for approval and no emails are
+              sent</strong>. Nothing is written until you commit the preview.
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label small mb-1 fw-semibold">Workbook file</label>
+              <input type="file" class="form-control form-control-sm" id="wbFile"
+                     accept=".xlsx,.xls">
+              <div class="form-text" id="wbFileInfo"></div>
+            </div>
+
+            <div class="row g-2">
+              <div class="col-sm-4">
+                <label class="form-label small mb-1 fw-semibold">Fiscal year</label>
+                <select class="form-select form-select-sm" id="wbFy">
+                  <option value="FY2027" selected>FY2027</option>
+                  <option value="FY2026">FY2026</option>
+                </select>
+              </div>
+              <div class="col-sm-4">
+                <label class="form-label small mb-1 fw-semibold">Employees</label>
+                <select class="form-select form-select-sm" id="wbOrg">
+                  <option value="ASD" selected>ASD only</option>
+                  <option value="ALL">All (including non-ASD)</option>
+                </select>
+              </div>
+              <div class="col-sm-4">
+                <label class="form-label small mb-1 fw-semibold">Mapping profile</label>
+                <input type="text" class="form-control form-control-sm" id="wbProfile"
+                       value="DEFAULT">
+              </div>
+            </div>
+
+            <div class="alert alert-warning py-2 px-3 small mt-3">
+              <strong>LETS will not match the workbook's variance column.</strong>
+              LETS reconciles against <em>Amount Approved</em> — what GSA paid.
+              The workbook computes its variance from <em>Report Total</em> —
+              what the traveller claimed. The difference is the disallowed
+              amount.
+            </div>
+          </div>
+
+          <!-- ---------- STEP 2: COLUMN MAPPING ---------- -->
+          <div data-wb-pane="2" class="d-none">
+            <div class="alert alert-secondary py-2 px-3 small">
+              <i class="fas fa-circle-info me-1"></i>
+              These are <strong>guesses</strong> from the column headings.
+              Check them — mapping the wrong money column would overstate
+              spend on every row and still look plausible.
+            </div>
+            <div id="wbMapping"></div>
+            <div class="alert alert-danger py-2 px-3 small mt-2 d-none" id="wbMapProblems"></div>
+          </div>
+
+          <!-- ---------- STEP 3: PREVIEW ---------- -->
+          <div data-wb-pane="3" class="d-none">
+            <div id="wbSummary"></div>
+            <div class="alert alert-danger py-2 px-3 small d-none" id="wbConflicts"></div>
+            <div class="table-responsive mt-2" style="max-height: 24rem; overflow-y: auto;">
+              <table class="table table-sm align-middle" style="font-size:0.78rem;">
+                <thead class="table-light position-sticky top-0">
+                  <tr>
+                    <th>Row</th><th>Kind</th><th>Traveller</th><th>Trip / report</th>
+                    <th class="text-end">Amount</th><th>Match</th><th>Change</th>
+                  </tr>
+                </thead>
+                <tbody id="wbRows"></tbody>
+              </table>
+            </div>
+            <details class="mt-2">
+              <summary class="small text-muted">Excluded rows and errors</summary>
+              <div id="wbExcluded" class="small mt-2"></div>
+            </details>
+          </div>
+
+          <!-- ---------- STEP 4: HISTORY + ROLLBACK ---------- -->
+          <div data-wb-pane="4" class="d-none">
+            <div class="table-responsive">
+              <table class="table table-sm align-middle" style="font-size:0.78rem;">
+                <thead class="table-light">
+                  <tr>
+                    <th>Batch</th><th>Source</th><th>Scope</th><th>Status</th>
+                    <th class="text-end">In scope</th><th class="text-end">Amount</th>
+                    <th>Run by</th><th></th>
+                  </tr>
+                </thead>
+                <tbody id="wbBatches"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="alert alert-danger py-2 px-3 small mt-3 d-none" id="wbProblems"></div>
+          <div class="alert alert-success py-2 px-3 small mt-3 d-none" id="wbResult"></div>
+        </div>
+
+        <div class="oc-modal__foot">
+          <span class="text-muted small me-auto" id="wbHint"></span>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="wbHistoryBtn">
+            History
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="wbBack">
+            Back
+          </button>
+          <button type="button" class="btn btn-sm btn-primary" id="wbNext">Next</button>
         </div>
       </div>
     </div>
@@ -1138,6 +1321,7 @@
             if (allocState.canEdit) {
               document.getElementById('btnSetBudget').classList.remove('d-none');
               document.getElementById('btnImportTravel').classList.remove('d-none');
+              document.getElementById('btnImportWorkbook').classList.remove('d-none');
             }
           })
           .catch(function () { /* the dashboard still renders without this */ });
@@ -1412,6 +1596,474 @@
       });
       document.getElementById('importSave').addEventListener('click', function () {
         runImport(false);
+      });
+
+      // ====================================================================
+      // ADMIN: IMPORT FROM WORKBOOK
+      // ====================================================================
+      //
+      // Four steps, one at a time. See the markup comment on #wbModal for why
+      // they are not one screen.
+
+      var wb = {
+        step: 1,
+        fileName: '',
+        sheets: {},        // tab name -> {headers, rows}
+        mapping: null,     // {request: {...}, expense: {...}}
+        batchId: '',
+        preview: null,
+        overrides: {}      // importId -> reason, for verified-actual conflicts
+      };
+
+      // The tab names the importer reads. Named here rather than guessed from
+      // position: a workbook with its tabs reordered must still import, and a
+      // workbook missing one must say which.
+      var WB_TABS = {
+        request: 'TravelRequest',
+        expense: 'Expense',
+        roster: 'OfficeSymbol',
+        override: 'OffSymbolOverride'
+      };
+
+      function wbShow(step) {
+        wb.step = step;
+        [1, 2, 3, 4].forEach(function (n) {
+          var pane = document.querySelector('[data-wb-pane="' + n + '"]');
+          if (pane) { pane.classList.toggle('d-none', n !== step); }
+          var badge = document.querySelector('[data-wb-step="' + n + '"]');
+          if (badge) {
+            badge.className = (n === step)
+              ? 'badge text-bg-primary'
+              : 'badge text-bg-light text-muted';
+          }
+        });
+        document.getElementById('wbBack').classList.toggle('d-none', step === 1);
+        var next = document.getElementById('wbNext');
+        next.classList.toggle('d-none', step === 4);
+        next.textContent = (step === 1) ? 'Read columns'
+                         : (step === 2) ? 'Build preview'
+                         : 'Commit import';
+        // The commit button is the one that writes, so it looks different.
+        next.className = (step === 3)
+          ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-primary';
+      }
+
+      function wbProblem(list) {
+        var el = document.getElementById('wbProblems');
+        if (!list || !list.length) { el.classList.add('d-none'); return; }
+        el.innerHTML = '<ul class="mb-0">' + list.map(function (p) {
+          return '<li>' + escapeHtml(p) + '</li>';
+        }).join('') + '</ul>';
+        el.classList.remove('d-none');
+      }
+
+      /** Reads the picked workbook into wb.sheets. */
+      function wbReadFile(file) {
+        return new Promise(function (resolve, reject) {
+          if (typeof XLSX === 'undefined') {
+            // The CDN failed. Said plainly rather than letting the next step
+            // throw something unreadable.
+            reject(new Error('The spreadsheet parser did not load. Check the ' +
+                             'network connection and reload the page.'));
+            return;
+          }
+          var reader = new FileReader();
+          reader.onerror = function () { reject(new Error('The file could not be read.')); };
+          reader.onload = function (e) {
+            try {
+              var book = XLSX.read(e.target.result, { type: 'array' });
+              var out = {};
+              book.SheetNames.forEach(function (name) {
+                // raw:true keeps dates as Excel SERIALS rather than letting
+                // SheetJS format them. The server's parser handles serials
+                // (including the string form) and a formatted date would
+                // arrive in whatever locale the browser chose.
+                var rows = XLSX.utils.sheet_to_json(book.Sheets[name],
+                                                    { defval: '', raw: true });
+                out[name] = {
+                  headers: rows.length ? Object.keys(rows[0]) : [],
+                  rows: rows
+                };
+              });
+              resolve(out);
+            } catch (err) {
+              reject(new Error('That file could not be parsed as a workbook: ' +
+                               err.message));
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        });
+      }
+
+      function wbStep1() {
+        var input = document.getElementById('wbFile');
+        if (!input.files || !input.files.length) {
+          wbProblem(['Choose a workbook file first.']);
+          return;
+        }
+        wbProblem([]);
+        var file = input.files[0];
+        document.getElementById('wbHint').textContent = 'Reading ' + file.name + '\u2026';
+
+        wbReadFile(file).then(function (sheets) {
+          wb.sheets = sheets;
+          wb.fileName = file.name.replace(/\.[^.]+$/, '');
+
+          var missing = [];
+          Object.keys(WB_TABS).forEach(function (k) {
+            if (!sheets[WB_TABS[k]]) { missing.push(WB_TABS[k]); }
+          });
+          if (missing.length) {
+            document.getElementById('wbHint').textContent = '';
+            wbProblem(['This workbook has no ' + missing.join(', ') + ' tab. ' +
+                       'Found: ' + Object.keys(sheets).join(', ') + '.']);
+            return;
+          }
+
+          document.getElementById('wbFileInfo').textContent =
+            Object.keys(sheets).map(function (n) {
+              return n + ' (' + sheets[n].rows.length + ')';
+            }).join(' \u00b7 ');
+
+          // Ask the SERVER to propose the mapping, so the defaults live in one
+          // place and the browser cannot drift from them.
+          return Promise.all([
+            serverCall('proposeTravelImportMapping',
+                       sheets[WB_TABS.request].headers, 'request'),
+            serverCall('proposeTravelImportMapping',
+                       sheets[WB_TABS.expense].headers, 'expense')
+          ]).then(function (res) {
+            document.getElementById('wbHint').textContent = '';
+            if (!res[0] || !res[0].success || !res[1] || !res[1].success) {
+              wbProblem([(res[0] && res[0].error) || (res[1] && res[1].error) ||
+                         'Could not read the columns.']);
+              return;
+            }
+            wb.mapping = { request: res[0].data, expense: res[1].data };
+            wbRenderMapping();
+            wbShow(2);
+          });
+        }).catch(function (err) {
+          document.getElementById('wbHint').textContent = '';
+          wbProblem([err.message || 'The file could not be read.']);
+        });
+      }
+
+      function wbRenderMapping() {
+        function block(label, kind, proposal, headers) {
+          var fields = Object.keys(proposal.mapping);
+          // Required fields that found nothing are listed first and in red:
+          // they are what stops the import.
+          var missingHtml = proposal.missing.length
+            ? '<div class="alert alert-danger py-1 px-2 small mt-1 mb-2">' +
+              '<strong>Unmapped required columns:</strong> ' +
+              proposal.missing.map(escapeHtml).join(', ') +
+              '. Pick them below or the import cannot run.</div>'
+            : '';
+          var rows = fields.concat(proposal.missing).map(function (f) {
+            var cur = proposal.mapping[f] || '';
+            return '<tr>' +
+              '<td class="text-muted" style="width:14rem;">' + escapeHtml(f) +
+                (proposal.missing.indexOf(f) > -1
+                  ? ' <span class="text-danger">*</span>' : '') + '</td>' +
+              '<td><select class="form-select form-select-sm" ' +
+                  'data-wb-map="' + kind + '" data-wb-field="' + escapeHtml(f) + '">' +
+                '<option value="">\u2014 not mapped \u2014</option>' +
+                headers.map(function (h) {
+                  return '<option value="' + escapeHtml(h) + '"' +
+                         (h === cur ? ' selected' : '') + '>' + escapeHtml(h) + '</option>';
+                }).join('') +
+              '</select></td></tr>';
+          }).join('');
+          return '<h4 class="h6 fw-bold mt-3">' + escapeHtml(label) + '</h4>' +
+                 missingHtml +
+                 '<table class="table table-sm align-middle" style="font-size:0.78rem;">' +
+                 '<tbody>' + rows + '</tbody></table>';
+        }
+
+        document.getElementById('wbMapping').innerHTML =
+          block('Travel requests \u2014 commitments', 'request',
+                wb.mapping.request, wb.sheets[WB_TABS.request].headers) +
+          block('Expense reports \u2014 actuals', 'expense',
+                wb.mapping.expense, wb.sheets[WB_TABS.expense].headers);
+      }
+
+      function wbCollectMapping(kind) {
+        var out = {};
+        document.querySelectorAll('[data-wb-map="' + kind + '"]').forEach(function (sel) {
+          if (sel.value) { out[sel.getAttribute('data-wb-field')] = sel.value; }
+        });
+        return out;
+      }
+
+      function wbStep2() {
+        wbProblem([]);
+        var reqMap = wbCollectMapping('request');
+        var expMap = wbCollectMapping('expense');
+
+        var profile = document.getElementById('wbProfile').value.trim() || 'DEFAULT';
+        document.getElementById('wbHint').textContent = 'Building preview\u2026';
+
+        // The mapping is SAVED before the preview runs, so a corrected mapping
+        // survives even if the preview then fails.
+        serverCall('saveTravelImportMapping', profile,
+                   { requestMapping: reqMap, expenseMapping: expMap })
+          .then(function () {
+            return serverCall('previewTravelImport', {
+              sourceLabel: wb.fileName,
+              fiscalYear: document.getElementById('wbFy').value,
+              orgFilter: document.getElementById('wbOrg').value,
+              mappingProfile: profile,
+              requestMapping: reqMap,
+              expenseMapping: expMap,
+              requestRows: wb.sheets[WB_TABS.request].rows,
+              expenseRows: wb.sheets[WB_TABS.expense].rows,
+              rosterRows: wb.sheets[WB_TABS.roster].rows,
+              overrideRows: wb.sheets[WB_TABS.override].rows
+            });
+          })
+          .then(function (res) {
+            document.getElementById('wbHint').textContent = '';
+            if (!res || !res.success) {
+              wbProblem(res && res.problems ? res.problems
+                : [(res && res.error) || 'The preview failed.']);
+              return;
+            }
+            wb.batchId = res.data.batchId;
+            wb.preview = res.data;
+            wb.overrides = {};
+            wbRenderPreview();
+            wbShow(3);
+          })
+          .catch(function (err) {
+            document.getElementById('wbHint').textContent = '';
+            wbProblem([(err && err.message) || 'The server call failed.']);
+          });
+      }
+
+      function wbRenderPreview() {
+        var s = wb.preview.summary;
+        var sc = s.scopeCounts || {};
+
+        document.getElementById('wbSummary').innerHTML =
+          '<div class="d-flex flex-wrap gap-3 small">' +
+            '<span><strong>' + s.inScope + '</strong> in scope</span>' +
+            '<span class="text-success"><strong>' + s.newCount + '</strong> new</span>' +
+            '<span class="text-primary"><strong>' + s.changedCount + '</strong> changed</span>' +
+            '<span class="text-muted"><strong>' + s.unchangedCount + '</strong> unchanged</span>' +
+            '<span class="text-danger"><strong>' + s.conflictCount + '</strong> conflict</span>' +
+            '<span class="text-warning"><strong>' + s.errorCount + '</strong> error</span>' +
+            '<span><strong>' + money(s.amountInScope) + '</strong> total</span>' +
+          '</div>' +
+          // The variance basis, stated on every preview. LETS will not agree
+          // with the workbook and somebody will ask why.
+          '<div class="alert alert-secondary py-2 px-3 small mt-2 mb-0">' +
+            escapeHtml(s.varianceBasisNote) + '</div>';
+
+        // CONFLICTS GET THEIR OWN BLOCK, with a reason box each. These are the
+        // rows that would overwrite a verified financial figure, and the
+        // server refuses them without an explicit reason.
+        var conflicts = (wb.preview.records || []).filter(function (r) {
+          return r.diffStatus === 'CONFLICT';
+        });
+        var cEl = document.getElementById('wbConflicts');
+        if (conflicts.length) {
+          cEl.innerHTML = '<strong>' + conflicts.length +
+            ' row(s) would overwrite a VERIFIED actual.</strong> ' +
+            'A verified figure is one a person entered or confirmed. Give a ' +
+            'reason to override, or leave it blank to keep the existing figure.' +
+            conflicts.map(function (r) {
+              var d = r.conflicts && r.conflicts[0];
+              return '<div class="mt-2 pt-2 border-top">' +
+                '<div>' + escapeHtml(r.employeeName) + ' \u2014 ' +
+                  escapeHtml(r.tripName) + '</div>' +
+                '<div class="small">existing <strong>' + money(d ? d.from : 0) +
+                  '</strong> \u2192 incoming <strong>' + money(d ? d.to : 0) +
+                  '</strong></div>' +
+                '<input type="text" class="form-control form-control-sm mt-1" ' +
+                  'data-wb-override="' + escapeHtml(r.importId || '') + '" ' +
+                  'placeholder="Reason to override (leave blank to keep the existing figure)">' +
+              '</div>';
+            }).join('');
+          cEl.classList.remove('d-none');
+        } else {
+          cEl.classList.add('d-none');
+        }
+
+        var badge = {
+          NEW: 'text-bg-success', CHANGED: 'text-bg-primary',
+          UNCHANGED: 'text-bg-light text-muted', CONFLICT: 'text-bg-danger',
+          ERROR: 'text-bg-warning'
+        };
+        document.getElementById('wbRows').innerHTML =
+          (wb.preview.records || []).map(function (r) {
+            var amt = (r.sourceSheet === 'Expense') ? r.approvedAmount : r.estimateAmount;
+            var change = Object.keys(r.diffDetail || {}).map(function (k) {
+              var d = r.diffDetail[k];
+              return escapeHtml(d.label) + ': ' + money(d.from) + ' \u2192 ' + money(d.to);
+            }).join('<br>');
+            return '<tr>' +
+              '<td class="text-muted">' + escapeHtml(r.sourceSheet.slice(0, 3)) +
+                ' ' + r.sourceRow + '</td>' +
+              '<td><span class="badge ' + (badge[r.diffStatus] || 'text-bg-light') +
+                '">' + escapeHtml(r.diffStatus) + '</span><br>' +
+                '<span class="text-muted" style="font-size:0.7rem;">' +
+                escapeHtml(r.recordKind) + '</span></td>' +
+              '<td>' + escapeHtml(r.employeeName) + '<br>' +
+                '<span class="text-muted" style="font-size:0.7rem;">' +
+                escapeHtml(r.officeCode) + '</span></td>' +
+              '<td>' + escapeHtml(r.tripName) + '</td>' +
+              '<td class="text-end">' + money(amt) + '</td>' +
+              '<td style="font-size:0.72rem;">' + escapeHtml(r.matchStatus || '') +
+                (r.matchMethod ? '<br><span class="text-muted">' +
+                  escapeHtml(r.matchMethod) + '</span>' : '') + '</td>' +
+              '<td style="font-size:0.72rem;">' +
+                (r.errorMessage ? '<span class="text-danger">' +
+                  escapeHtml(r.errorMessage) + '</span>' : change) + '</td>' +
+            '</tr>';
+          }).join('') ||
+          '<tr><td colspan="7" class="text-muted py-3">Nothing in scope.</td></tr>';
+
+        // THE EXCLUSIONS. @clolry's scope discards ~97% of the file, and an
+        // importer that silently drops that much is indistinguishable from a
+        // broken one. The counts are shown with their reasons.
+        document.getElementById('wbExcluded').innerHTML =
+          '<ul class="mb-0">' +
+          Object.keys(sc).filter(function (k) { return k !== 'IN_SCOPE'; })
+            .map(function (k) {
+              return '<li><strong>' + sc[k] + '</strong> ' +
+                escapeHtml(k.replace('OUT_OF_SCOPE_', '').toLowerCase()
+                            .replace('non_travel', 'not travel')
+                            .replace('fy', 'wrong fiscal year')
+                            .replace('org', 'not an ASD employee')) + '</li>';
+            }).join('') + '</ul>';
+      }
+
+      function wbStep3() {
+        wbProblem([]);
+        // Collect the override reasons the user typed, if any.
+        wb.overrides = {};
+        document.querySelectorAll('[data-wb-override]').forEach(function (inp) {
+          var reason = inp.value.trim();
+          if (reason) { wb.overrides[inp.getAttribute('data-wb-override')] = reason; }
+        });
+
+        var btn = document.getElementById('wbNext');
+        btn.disabled = true;
+        btn.textContent = 'Committing\u2026';
+
+        serverCall('commitTravelImport', wb.batchId, { overrides: wb.overrides })
+          .then(function (res) {
+            btn.disabled = false;
+            btn.textContent = 'Commit import';
+            if (res && res.needsConfirmation) {
+              wbProblem([res.error]);
+              return;
+            }
+            if (!res || !res.success) {
+              wbProblem([(res && res.error) || 'The commit failed.']);
+              return;
+            }
+            var out = document.getElementById('wbResult');
+            out.innerHTML = '<strong>' + res.data.requestsCreated +
+              ' created, ' + res.data.requestsUpdated + ' updated.</strong> ' +
+              'No approval routing, no emails sent. Batch ' +
+              escapeHtml(res.data.batchId) + '.';
+            out.classList.remove('d-none');
+            loadBudget();
+            load();
+            wbLoadBatches();
+            wbShow(4);
+          })
+          .catch(function (err) {
+            btn.disabled = false;
+            btn.textContent = 'Commit import';
+            wbProblem([(err && err.message) || 'The server call failed.']);
+          });
+      }
+
+      function wbLoadBatches() {
+        serverCall('listTravelImportBatches', 25).then(function (res) {
+          if (!res || !res.success) { return; }
+          document.getElementById('wbBatches').innerHTML =
+            (res.data.batches || []).map(function (b) {
+              var canRoll = b.Status === 'COMMITTED';
+              return '<tr>' +
+                '<td style="font-size:0.7rem;">' + escapeHtml(b.Batch_ID || '') + '</td>' +
+                '<td>' + escapeHtml(b.Source_Label || '') + '</td>' +
+                '<td>' + escapeHtml((b.Scope_Fiscal_Year || '') + ' ' +
+                                    (b.Scope_Org_Filter || '')) + '</td>' +
+                '<td><span class="badge ' +
+                  (b.Status === 'COMMITTED' ? 'text-bg-success'
+                   : b.Status === 'ROLLED_BACK' ? 'text-bg-secondary'
+                   : b.Status === 'FAILED' ? 'text-bg-danger' : 'text-bg-light text-muted') +
+                  '">' + escapeHtml(b.Status || '') + '</span></td>' +
+                '<td class="text-end">' + escapeHtml(String(b.Row_Count_In_Scope || 0)) + '</td>' +
+                '<td class="text-end">' + money(b.Amount_Total_In_Scope || 0) + '</td>' +
+                '<td style="font-size:0.72rem;">' + escapeHtml(b.Created_By || '') + '</td>' +
+                '<td>' + (canRoll
+                  ? '<button type="button" class="btn btn-sm btn-outline-danger py-0" ' +
+                    'data-wb-rollback="' + escapeHtml(b.Batch_ID) + '">Roll back</button>'
+                  : '') + '</td>' +
+              '</tr>';
+            }).join('') ||
+            '<tr><td colspan="8" class="text-muted py-3">No imports yet.</td></tr>';
+        });
+      }
+
+      document.getElementById('btnImportWorkbook').addEventListener('click', function () {
+        wb = { step: 1, fileName: '', sheets: {}, mapping: null, batchId: '',
+               preview: null, overrides: {} };
+        document.getElementById('wbResult').classList.add('d-none');
+        document.getElementById('wbProblems').classList.add('d-none');
+        wbShow(1);
+        openModal('wbModal');
+      });
+      document.getElementById('wbClose').addEventListener('click', function () {
+        closeModal('wbModal');
+      });
+      document.getElementById('wbBack').addEventListener('click', function () {
+        wbShow(Math.max(1, wb.step - 1));
+      });
+      document.getElementById('wbHistoryBtn').addEventListener('click', function () {
+        wbLoadBatches();
+        wbShow(4);
+      });
+      document.getElementById('wbNext').addEventListener('click', function () {
+        if (wb.step === 1) { wbStep1(); }
+        else if (wb.step === 2) { wbStep2(); }
+        else if (wb.step === 3) { wbStep3(); }
+      });
+      document.getElementById('wbBatches').addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-wb-rollback]');
+        if (!btn) { return; }
+        // A REASON IS REQUIRED, and the server enforces it too. Rollback
+        // deletes financial records.
+        var reason = window.prompt(
+          'Roll back this import?\n\nEvery request it created will be deleted ' +
+          'and every row it changed will be restored.\n\nReason (required):');
+        if (!reason || !reason.trim()) { return; }
+        serverCall('rollbackTravelImport', btn.getAttribute('data-wb-rollback'),
+                   reason.trim())
+          .then(function (res) {
+            if (!res || !res.success) {
+              wbProblem([(res && res.error) || 'The rollback failed.']);
+              return;
+            }
+            var out = document.getElementById('wbResult');
+            out.innerHTML = '<strong>' + res.data.deleted + ' deleted, ' +
+              res.data.restored + ' restored.</strong>' +
+              (res.data.keptForReview && res.data.keptForReview.length
+                ? ' <br>Left for manual review (edited since import): ' +
+                  res.data.keptForReview.map(function (k) {
+                    return escapeHtml(k.requestId);
+                  }).join(', ')
+                : '');
+            out.classList.remove('d-none');
+            wbLoadBatches();
+            loadBudget();
+            load();
+          });
       });
 
       loadBudget();

@@ -223,6 +223,22 @@ jobs:
         # recording is evidence instead of an artefact of the harness.
         run: node lets_app/test_budget_backfill.js
 
+      - name: Existing-travel import tests
+        # The repeatable workbook importer: preview, upsert by source ID,
+        # reconciliation guard, rollback.
+        #
+        # §21 is the measured section and SKIPS on CI, because the source
+        # workbook carries ~1,900 real traveller names and 823 real email
+        # addresses and is gitignored for the same reason the Go.gov exports
+        # are (finding G-056). §22's six negative controls DO run, so the
+        # guards are still proven able to fail on every push.
+        #
+        # §18 is worth knowing about: it asserts rollback deletes rows from
+        # the BOTTOM UP, because ascending deletion removes the wrong rows
+        # after the first — and here the wrong row is somebody's travel
+        # request.
+        run: node lets_app/test_travel_import.js
+
       - name: Budget dashboard tests
         # §1 records why BudgetEngine.js could not simply be wired up: its
         # status vocabulary has an EMPTY intersection with what the Requests
@@ -823,7 +839,14 @@ jobs:
           for SPEC in \
             "saveBudgetAllocations:lets_app/server/40_domain/BudgetAdmin.js" \
             "importExistingTravel:lets_app/server/40_domain/BudgetBackfill.js" \
-            "validateExistingTravel:lets_app/server/40_domain/BudgetBackfill.js"; do
+            "validateExistingTravel:lets_app/server/40_domain/BudgetBackfill.js" \
+            "previewTravelImport:lets_app/server/40_domain/TravelImportAdmin.js" \
+            "commitTravelImport:lets_app/server/40_domain/TravelImportAdmin.js" \
+            "rollbackTravelImport:lets_app/server/40_domain/TravelImportAdmin.js" \
+            "saveTravelImportMapping:lets_app/server/40_domain/TravelImportAdmin.js" \
+            "listTravelImportBatches:lets_app/server/40_domain/TravelImportAdmin.js" \
+            "getTravelImportBatchRows:lets_app/server/40_domain/TravelImportAdmin.js" \
+            "proposeTravelImportMapping:lets_app/server/40_domain/TravelImportAdmin.js"; do
             FN="${SPEC%%:*}"
             FILE="${SPEC##*:}"
             BODY=$(awk "/^function ${FN}\(/,/^}/" "$FILE")
@@ -831,11 +854,25 @@ jobs:
               echo "::error file=$FILE::${FN} is missing."
               exit 1
             fi
-            if ! echo "$BODY" | grep -aq 'isTravelAdmin'; then
-              echo "::error file=$FILE::${FN} writes budget data but does not check isTravelAdmin(). Every top-level function is browser-callable, so hiding the button is not a control."
+            # The workbook importer routes its gate through a shared helper,
+            # so accept either the direct call or the helper that makes it.
+            if ! echo "$BODY" | grep -aqE 'isTravelAdmin|_requireTravelAdmin_'; then
+              echo "::error file=$FILE::${FN} writes or reads restricted budget data but does not check isTravelAdmin(). Every top-level function is browser-callable, so hiding the button is not a control."
               exit 1
             fi
           done
+          # The shared helper must itself do the check, or every function
+          # above passes this guard while being wide open.
+          HELPER=$(awk '/^function _requireTravelAdmin_\(/,/^}/' \
+                     lets_app/server/40_domain/TravelImportAdmin.js)
+          if [ -z "$HELPER" ]; then
+            echo "::error file=lets_app/server/40_domain/TravelImportAdmin.js::_requireTravelAdmin_ is missing but is accepted as a guard above."
+            exit 1
+          fi
+          if ! echo "$HELPER" | grep -aq 'isTravelAdmin'; then
+            echo "::error file=lets_app/server/40_domain/TravelImportAdmin.js::_requireTravelAdmin_ does not call isTravelAdmin(), so every entrypoint accepting it as a guard is unprotected."
+            exit 1
+          fi
           # And the converse: reading must NOT be gated. @clolry wants budget
           # figures visible to everyone for transparency, so a guard creeping
           # into the read path is also a defect.
@@ -853,7 +890,223 @@ jobs:
             echo "::error file=lets_app/server/40_domain/BudgetBackfill.js::The backfill importer must not send notifications or route for approval. These records are entered retroactively as completed or committed travel."
             exit 1
           fi
+          # Same rule for the workbook importer, for the same reason.
+          if grep -aqE 'GmailApp|MailApp|sendSubmissionNotification|determineInitialRouting' \
+               lets_app/server/40_domain/TravelImportAdmin.js; then
+            echo "::error file=lets_app/server/40_domain/TravelImportAdmin.js::The workbook importer must not send notifications or route for approval."
+            exit 1
+          fi
           echo "PASS - budget writes are admin-guarded, reads are open, the importer is silent."
+
+      - name: Guard - the importer reconciles against Amount Approved, not Report Total
+        run: |
+          echo "Checking the reconciliation money column..."
+          # @clolry, twice: "we need to use Amount Approved rather than Report
+          # Total."
+          #
+          # MEASURED on the real workbook: the two differ on 51 of 274 rows by
+          # $6,009.34. Report Total is what the traveller CLAIMED; Amount
+          # Approved is what GSA PAID. Reconciling against the claim
+          # overstates spend on a fifth of all rows and looks entirely
+          # plausible.
+          #
+          # Chiquita's own workbook computes its variance from Report Total,
+          # so LETS deliberately disagrees with it — and the divergence must
+          # stay visible rather than being "fixed" by matching her column.
+          SRC=lets_app/server/30_services/TravelImport.js
+          if ! grep -aq "approvedAmount:  *\['Amount Approved'" "$SRC"; then
+            echo "::error file=$SRC::approvedAmount must map to 'Amount Approved' FIRST. Report Total is the claimed figure, not the paid one."
+            exit 1
+          fi
+          if grep -aq "approvedAmount:  *\['Report Total'" "$SRC"; then
+            echo "::error file=$SRC::approvedAmount must never map to Report Total. Measured: that overstates spend on 51 of 274 rows by \$6,009.34."
+            exit 1
+          fi
+          # Every batch must record which basis it used, or the divergence
+          # from the source workbook becomes an unanswerable question later.
+          if ! grep -aq "'Variance_Basis'" lets_app/server/40_domain/TravelImportAdmin.js; then
+            echo "::error file=lets_app/server/40_domain/TravelImportAdmin.js::Every batch must record Variance_Basis. LETS does not agree with the source workbook's variance column and somebody will ask why."
+            exit 1
+          fi
+          echo "PASS - the importer reconciles against what GSA paid, and says so."
+
+      - name: Guard - imported records must preserve their source identity
+        run: |
+          echo "Checking duplicate prevention..."
+          # @clolry asked for "duplicate prevention via source IDs". The
+          # promise breaks in one specific, measured place:
+          #
+          # 7 of the 1,024 Request IDs in the real workbook are all digits
+          # ('4946') and the spreadsheet stores them as NUMBERS, so a read
+          # yields '4946.0'. A raw string compare misses all seven and
+          # re-imports them as new requests on EVERY run, consuming a DAC's
+          # budget again each time.
+          SRC=lets_app/server/30_services/TravelImport.js
+          if ! grep -aq 'function normalizeSourceId' "$SRC"; then
+            echo "::error file=$SRC::normalizeSourceId is missing. Without it the 7 all-digit source IDs duplicate on every run."
+            exit 1
+          fi
+          # Checked BEHAVIOURALLY, not by grepping for a variable name. The
+          # first version of this guard looked for the string 'floaty' and
+          # passed when a negative control renamed it to 'notfloaty' —
+          # a guard a rename can satisfy is not a guard.
+          if ! node -e "
+            const fs=require('fs'),vm=require('vm');
+            const c=vm.createContext({console:{log(){},warn(){},error(){}},JSON,Date,Object,String,Number,Boolean,Array,Math,RegExp,Error,parseInt,parseFloat,isNaN,isFinite});
+            vm.runInContext(fs.readFileSync('lets_app/server/30_services/GogovSync.js','utf8'),c);
+            vm.runInContext(fs.readFileSync('lets_app/server/30_services/TravelImport.js','utf8'),c);
+            const T=vm.runInContext('TravelImport',c);
+            if (T.normalizeSourceId('4946.0')!=='4946') process.exit(1);
+            if (T.normalizeSourceId(4946)!=='4946') process.exit(1);
+            if (T.normalizeSourceId('4946.0')!==T.normalizeSourceId(4946)) process.exit(1);
+          "; then
+            echo "::error file=$SRC::normalizeSourceId must resolve a numeric source ID and its '4946.0' float form to the SAME value. Measured: 7 of 1,024 real IDs are stored as numbers, and without this they re-import as new requests on every run."
+            exit 1
+          fi
+          # The ID has to reach the Requests row, or the next run cannot tell
+          # where the row came from.
+          if ! grep -aq "'Gogov_Request_ID': r.sourceRecordId" \
+               lets_app/server/40_domain/TravelImportAdmin.js; then
+            echo "::error file=lets_app/server/40_domain/TravelImportAdmin.js::The commit must write the source ID onto the request, or the next incremental run duplicates it."
+            exit 1
+          fi
+          echo "PASS - source identity is normalised and preserved."
+
+      - name: Guard - a verified financial record is never silently overwritten
+        run: |
+          echo "Checking the reconciliation rule..."
+          # @clolry: "Never overwrite verified financial records without an
+          # explicit reconciliation rule."
+          #
+          # A verified actual is one a HUMAN entered or confirmed. An actual
+          # written by a previous import is not verified and may be
+          # superseded freely — that is what makes incremental runs useful.
+          SRC=lets_app/server/30_services/TravelImport.js
+          if ! grep -aq 'function isVerifiedActual' "$SRC"; then
+            echo "::error file=$SRC::isVerifiedActual is missing. It IS the reconciliation rule."
+            exit 1
+          fi
+          BODY=$(awk '/function isVerifiedActual/,/^  }/' "$SRC")
+          if ! echo "$BODY" | grep -aq "actualSource"; then
+            echo "::error file=$SRC::isVerifiedActual must treat a manually-entered actual as verified."
+            exit 1
+          fi
+          if ! echo "$BODY" | grep -aq "matchConfirmedBy"; then
+            echo "::error file=$SRC::isVerifiedActual must treat a human-confirmed match as verified. That judgement is the most expensive data in the system."
+            exit 1
+          fi
+          # And the commit must REFUSE, not merely warn.
+          ADMIN=lets_app/server/40_domain/TravelImportAdmin.js
+          if ! grep -aq 'needsConfirmation: true' "$ADMIN"; then
+            echo "::error file=$ADMIN::The commit must refuse a conflicting write and ask for an explicit override, not merely report it."
+            exit 1
+          fi
+          if ! grep -aq "'Overwrote_Verified'" "$ADMIN"; then
+            echo "::error file=$ADMIN::An override of a verified figure must be recorded in the ledger with its reason and actor."
+            exit 1
+          fi
+          echo "PASS - verified financial records are protected, and overrides are audited."
+
+      - name: Guard - rollback must delete from the bottom up
+        run: |
+          echo "Checking rollback deletion order..."
+          # Deleting sheet row 10 shifts row 11 into position 10, so ascending
+          # deletion removes the WRONG rows after the first — and here the
+          # wrong row is somebody's travel request.
+          #
+          # test_travel_import.js §18 proves this behaviourally with a
+          # pre-existing row interleaved among imported ones. This guard
+          # protects the mechanism, so a refactor cannot quietly drop the sort
+          # while the behavioural test still happens to pass on ordered data.
+          SRC=lets_app/server/40_domain/TravelImportAdmin.js
+          if ! grep -aq 'toDelete.sort(function (a, b) { return b - a; })' "$SRC"; then
+            echo "::error file=$SRC::Rollback must sort rows DESCENDING before deleting. Ascending deletion destroys the wrong requests."
+            exit 1
+          fi
+          # A rollback that silently deletes an administrator's later edit is
+          # worse than one that stops and reports it.
+          if ! grep -aq 'keptForReview' "$SRC"; then
+            echo "::error file=$SRC::Rollback must report requests it declined to delete because they were edited after import."
+            exit 1
+          fi
+          echo "PASS - rollback deletes descending and protects later edits."
+
+      - name: Guard - the import engine must stay free of spreadsheet calls
+        run: |
+          echo "Checking the import engine's layering..."
+          # 30_services/TravelImport.js is pure functions over data passed in.
+          # That is what lets the whole importer be tested without a
+          # spreadsheet — 224 assertions, including six negative controls.
+          #
+          # The moment it reaches for SpreadsheetApp, every one of those
+          # becomes untestable and the only way to verify an import is to run
+          # it against production data.
+          SRC=lets_app/server/30_services/TravelImport.js
+          for G in SpreadsheetApp PropertiesService LockService Session MailApp GmailApp; do
+            if grep -aq "$G" "$SRC"; then
+              echo "::error file=$SRC::The import engine must not call $G. Keep writes in 40_domain/TravelImportAdmin.js so the engine stays testable without a spreadsheet."
+              exit 1
+            fi
+          done
+          echo "PASS - the engine is pure; the writes live in the admin layer."
+
+      - name: Guard - no real personal data enters the repository
+        run: |
+          echo "Checking that the reference workbooks stay out of git..."
+          # Finding G-056 flags six real employees' addresses sitting in test
+          # fixtures as a problem. The source files for the importers are a
+          # far larger instance of the same thing:
+          #
+          #   Chiquita's reconciliation workbook  ~1,900 traveller names,
+          #                                       823 GSA email addresses,
+          #                                       823 supervisor names,
+          #                                       274 employee IDs
+          #   the Go.gov exports                  ~400 names, 391 employee IDs
+          #   the ASD staffing plan               806 named staff
+          #
+          # Git history cannot be taken back, so this is checked rather than
+          # trusted to a .gitignore nobody re-reads.
+          BAD=0
+          for PAT in '*Expense Report Calculations*' '*Staffing Plan*' \
+                     'reference_excel_files/report_*' \
+                     'reference_excel_files/Expense Report*' \
+                     'reference_excel_files/Travel requests*'; do
+            MATCHES=$(git ls-files -- "$PAT" 2>/dev/null || true)
+            if [ -n "$MATCHES" ]; then
+              echo "$MATCHES" | while IFS= read -r F; do
+                echo "::error file=$F::Tracked file containing real personal data. ~1,900 names and 823 email addresses in the reconciliation workbook alone; see .gitignore and finding G-056."
+              done
+              BAD=1
+            fi
+          done
+          # And the ignore rules must actually WORK, which is tested by
+          # asking git rather than by grepping .gitignore for text.
+          #
+          # TWO EARLIER VERSIONS OF THIS CHECK WERE BOTH WRONG, and the way
+          # they were wrong is the point:
+          #
+          #   v1 grepped the whole file  — passed on a tree where the rule had
+          #                                been deleted, because .gitignore's
+          #                                own comment mentions the filename
+          #   v2 stripped comments first — still passed, because deleting the
+          #                                .xlsx rule left the .xls rule,
+          #                                whose TEXT also matched the needle
+          #
+          # Both tested the file's contents. What matters is the BEHAVIOUR, so
+          # this asks `git check-ignore` whether a representative filename
+          # would actually be ignored. That cannot be satisfied by a comment
+          # or by a near-miss rule.
+          for NAME in \
+            '_Expense Report Calculations File for LETS.xlsx' \
+            'reference_excel_files/ASD Staffing Plan.xlsx' \
+            'reference_excel_files/report_1234.xls'; do
+            if ! git check-ignore -q "$NAME" 2>/dev/null; then
+              echo "::error file=.gitignore::'$NAME' would NOT be ignored by git. These source files carry real traveller names, email addresses and employee IDs — see finding G-056."
+              BAD=1
+            fi
+          done
+          if [ "$BAD" -ne 0 ]; then exit 1; fi
+          echo "PASS - no reference workbook is tracked, and the ignore rules are intact."
 
       - name: Guard - the budget dashboard must not hardcode dollar figures
         run: |

@@ -4,7 +4,7 @@ description: "Where to find the answer to your question about the Logistics, Eve
 status: canonical
 tier: 1
 audience: "anyone opening this folder for the first time"
-last_updated: "2026-10-29"
+last_updated: "2026-11-04"
 ---
 
 # LETS Documentation
@@ -73,6 +73,9 @@ This file is an **index**, not a summary. For the current state of the system in
 | What must I never do? | **`ENHANCEMENT_PLAYBOOK.md`** §7.2 — five things, all of which fail silently |
 | How do I fix the worst finding? | `ENHANCEMENT_PLAYBOOK.md` §7.3 |
 | How do I add a field? | `ENHANCEMENT_PLAYBOOK.md` §7.10 |
+| **How do I import FY27 travel from Chiquita's workbook?** | **[`DEPLOYMENT_TRAVEL_IMPORT.md`](./DEPLOYMENT_TRAVEL_IMPORT.md)** §3 |
+| Why don't the LETS totals match her spreadsheet? | **`DEPLOYMENT_TRAVEL_IMPORT.md`** §0 — deliberate, and the gap is exactly the disallowed amount |
+| How do I undo a bad import? | `DEPLOYMENT_TRAVEL_IMPORT.md` §5 |
 
 ### About the findings
 

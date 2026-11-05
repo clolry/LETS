@@ -32,6 +32,7 @@ test_delegation.js
 test_events_ui.js
 test_coordinator_role.js
 test_markup_integrity.js
+test_travel_import.js
 preview.html
 node_modules/**
 .git/**
