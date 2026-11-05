@@ -85,14 +85,14 @@ The Apps Script Run button passes no arguments, so these wrap the functions that
 
 | Function | File | Line | What it does |
 |---|---|---:|---|
-| `runRosterPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1604 | Preview the HR roster import, and print the result. |
-| `runRosterImport()` | `lets_app/server/99_triggers/Diagnostics.js` | 1677 | Apply the HR roster import. DESTRUCTIVE — replaces every row in |
-| `runClearHCPositions()` | `lets_app/server/99_triggers/Diagnostics.js` | 1764 | Empty HC_Positions. DESTRUCTIVE. |
-| `runDirectoryPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1788 | Preview the directory email lookup, and print the result. |
-| `runDirectoryResolve()` | `lets_app/server/99_triggers/Diagnostics.js` | 1838 | Resolve directory email addresses and WRITE them to HC_Positions. |
-| `runEmailResolutionQueue()` | `lets_app/server/99_triggers/Diagnostics.js` | 1926 | Show the email-resolution queue: who needs an address, and what to offer. |
-| `runSaveEmailOverride()` | `lets_app/server/99_triggers/Diagnostics.js` | 2007 | Record one admin email decision. |
-| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 2040 | Print the current budget dashboard payload. |
+| `runRosterPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1648 | Preview the HR roster import, and print the result. |
+| `runRosterImport()` | `lets_app/server/99_triggers/Diagnostics.js` | 1721 | Apply the HR roster import. DESTRUCTIVE — replaces every row in |
+| `runClearHCPositions()` | `lets_app/server/99_triggers/Diagnostics.js` | 1808 | Empty HC_Positions. DESTRUCTIVE. |
+| `runDirectoryPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1832 | Preview the directory email lookup, and print the result. |
+| `runDirectoryResolve()` | `lets_app/server/99_triggers/Diagnostics.js` | 1882 | Resolve directory email addresses and WRITE them to HC_Positions. |
+| `runEmailResolutionQueue()` | `lets_app/server/99_triggers/Diagnostics.js` | 1970 | Show the email-resolution queue: who needs an address, and what to offer. |
+| `runSaveEmailOverride()` | `lets_app/server/99_triggers/Diagnostics.js` | 2051 | Record one admin email decision. |
+| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 2084 | Print the current budget dashboard payload. |
 
 ## Diagnostics — safe to run any time, write nothing
 

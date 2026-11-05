@@ -1364,7 +1364,16 @@ function diagServiceCenterDirectors() {
           String(p.emailAddress || '').toLowerCase() ===
             String(resolved.email).toLowerCase());
         var gradeNote = isPick ? '   <-- SELECTED' : '';
-        if (!p.emailAddress) noEmail.push(code + ' ' + (p.employeeName || '(vacant seat)'));
+        // A NAMED PERSON WITH NO ADDRESS IS MARKED, because it is the only
+        // entry on this list that is actionable. An unnamed row is a vacancy —
+        // a staffing fact — and the two reading identically is what made the
+        // old 'NO EMAIL (5)' block look like five data problems when it was
+        // five empty seats.
+        if (!p.emailAddress) {
+          noEmail.push(code + ' ' + (p.employeeName
+            ? (p.employeeName + '   *** NAMED, BUT NO ADDRESS — fix this ***')
+            : '(vacant seat — expected)'));
+        }
         titles[String(p.officeTitle || '(blank)')] =
           (titles[String(p.officeTitle || '(blank)')] || 0) + 1;
 
@@ -1379,8 +1388,43 @@ function diagServiceCenterDirectors() {
     console.log('');
     console.log('centers with exactly one supervisory person: ' + counts.one);
     console.log('centers with more than one:                  ' + counts.many +
-                (counts.many ? '   <- these need a tie-break rule' : ''));
+                (counts.many ? '   <- resolved by grade; see SELECTED above' : ''));
     console.log('centers with none at their own code:         ' + counts.none);
+
+    // THE NUMBER THAT MATTERS: how many centers have a real approver.
+    //
+    // The candidate counts above are evidence, not an answer. A center can
+    // show [1] and still route nowhere — FCB0B does, because its one
+    // supervisory seat is vacant — so reporting only the candidate counts
+    // invites exactly the misreading that put a grade-14 Lead in front of me
+    // as FCC0C's director.
+    console.log('');
+    console.log('CENTERS THAT ROUTE TO A REAL PERSON:          ' +
+                (scCodes.length - unresolved.length) + ' of ' + scCodes.length);
+    if (unresolved.length) {
+      console.log('centers that cascade to the DAC instead:');
+      unresolved.forEach(function (u) { console.log('  ' + u); });
+    }
+
+    // DIRECTORS SERVING FROM AN OBLIGATED SEAT.
+    //
+    // @clolry: "Scott Eberle is acting as the supervisor for FCC0C."
+    //
+    // An OBLIGATED row is a real person acting in a role while their
+    // permanent seat is held. I excluded them from both the SCD lookup and
+    // the access gate, reasoning the occupant must be working elsewhere —
+    // true of the eleven who also hold a TEMP PROMOTION row, false of the
+    // eight or so who do not.
+    //
+    // Called out because this is the one case where the roster's own
+    // vocabulary reads like an absence and is not one.
+    if (obligatedDirectors.length) {
+      console.log('');
+      console.log('DIRECTORS SERVING FROM AN OBLIGATED SEAT (' +
+                  obligatedDirectors.length + ') — real people acting in the ' +
+                  'role while their permanent seat is held:');
+      obligatedDirectors.forEach(function (o) { console.log('  ' + o); });
+    }
 
     // THE TITLE EVIDENCE. Printed because the whole defect is that five call
     // sites match a title string, and the honest way to retire that approach

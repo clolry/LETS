@@ -277,5 +277,91 @@ console.log('5. property values are not dumped into the log');
   ok('db id truncated', src.indexOf('dbId.substring(0, 12)')>-1);
 }
 
+// ---------------------------------------------------------------------------
+// diagServiceCenterDirectors must PRINT everything it computes
+// ---------------------------------------------------------------------------
+{
+  console.log('\nservice-center director report');
+
+  // WHY THIS SECTION EXISTS.
+  //
+  // The report computed `unresolved` and `obligatedDirectors`, pushed to both,
+  // and printed NEITHER. @clolry ran it and the two new sections simply were
+  // not in the output.
+  //
+  // The cause was a scripted edit of mine: a multi-part patch applied its
+  // first replacement, then raised on a later anchor, so the file was never
+  // written. Nothing caught it — an unused variable is not a JavaScript error,
+  // and no test looked at this function's output.
+  //
+  // The consequence was not cosmetic. 'CENTERS THAT ROUTE TO A REAL PERSON'
+  // is the only line that distinguishes a center showing [1] candidate from
+  // one that actually has an approver: FCB0B shows [1] and routes nowhere,
+  // because its single supervisory seat is vacant. Omitting that line invites
+  // precisely the misreading that put a grade-14 Lead in front of me as
+  // FCC0C's director.
+  //
+  // ASSERTED AS "computed implies printed", rather than as a list of expected
+  // strings. A test that only checked for fixed text would pass while a
+  // future variable went unprinted the same way.
+  const src = fs.readFileSync(SRC, 'utf8');
+  const body = src.slice(src.indexOf('function diagServiceCenterDirectors'),
+                         src.indexOf('function runHcPrivacyProbe') > -1
+                           ? src.indexOf('function runHcPrivacyProbe')
+                           : src.length);
+  ok('the report function exists', body.length > 500);
+
+  // Every array the function accumulates into must be ENUMERATED, not merely
+  // length-checked.
+  //
+  // My first version of this accepted `.length` as a read, and a control
+  // proved it toothless: deleting the `unresolved.forEach` that prints the
+  // list still passed, because the `if (unresolved.length)` guard above it
+  // counted. A guard that tests whether there is anything to print is not
+  // evidence that it was printed — which is the precise shape of the bug.
+  //
+  // So the read must be an enumeration: forEach, join or map.
+  ['unresolved', 'obligatedDirectors', 'noEmail'].forEach(name => {
+    const writes = (body.match(new RegExp('\\b' + name + '\\.push\\(', 'g')) || []).length;
+    const printed = (body.match(new RegExp('\\b' + name + '\\.(forEach|join|map)\\(', 'g')) || []).length;
+    ok(name + ' is accumulated AND enumerated for output',
+       writes > 0 && printed > 0, { writes, printed });
+  });
+  // titles is an object, so its enumeration is over the key list.
+  ok('titles is accumulated AND enumerated for output',
+     /titles\[/.test(body) && /titleKeys\.forEach\(/.test(body));
+
+  // The two lines whose absence @clolry noticed.
+  ok('it prints how many centers route to a real person',
+     /CENTERS THAT ROUTE TO A REAL PERSON/.test(body),
+     'candidate counts alone cannot distinguish [1]-but-vacant from [1]-staffed');
+  ok('and lists the centers that cascade instead',
+     /cascade to the DAC instead/.test(body));
+  ok('and names directors serving from an OBLIGATED seat',
+     /DIRECTORS SERVING FROM AN OBLIGATED SEAT/.test(body),
+     'the one case where the roster vocabulary reads like an absence');
+
+  // THE REPORT MUST ASK THE SAME FUNCTION ROUTING ASKS. Re-deriving the
+  // director here is how the report could disagree with the approver a request
+  // is sent to, which is the disagreement that hid the FCC0C defect.
+  ok('it asks getSectorDirector rather than re-deriving',
+     /getSectorDirector\(code\)/.test(body),
+     'a second implementation would drift from the one that routes');
+  ok('and marks which candidate row was SELECTED',
+     /<-- SELECTED/.test(body),
+     'so the chosen row is visible among the evidence');
+
+  // A named person with no address is actionable; an unnamed row is a
+  // vacancy. The two reading identically made five empty seats look like five
+  // data problems.
+  ok('a named row with no address is distinguished from a vacancy',
+     /NAMED, BUT NO ADDRESS/.test(body) && /vacant seat — expected/.test(body));
+
+  // Still read-only.
+  ok('the report writes nothing',
+     !/appendRow|setValue|deleteRow|\.put\(/.test(body),
+     'it is a diagnostic; it must stay safe to run at any time');
+}
+
 console.log(fails?('\n'+fails+' FAILURE(S)'):'\nALL ASSERTIONS PASSED!');
 process.exit(fails?1:0);
