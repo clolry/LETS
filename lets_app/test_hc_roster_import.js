@@ -1937,5 +1937,114 @@ console.log('\n25. the preview reports ONE denominator, and names the fields it 
      'two copies of a match list is how one goes stale');
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n26. the diff reads BOTH shapes, so a change can actually resolve');
+{
+  // THE TWO SIDES OF diffRoster HAVE DIFFERENT SHAPES.
+  //
+  //   incoming  parsed feed rows from interpretRow — FLAT:
+  //               r.dutyStationCity, r.dutyStationState
+  //   existing  HC bundle records from HCData._normalizePosition_ — NESTED:
+  //               p.location.city, p.location.state
+  //
+  // The comparison read `prior.dutyStationCity`, which is undefined on every
+  // existing row, so the feed's 'WASHINGTON' differed from '' forever.
+  //
+  // @clolry's preview reported 1,045 duty-state and 1,039 duty-city changes.
+  // He applied the import. The next preview reported THE SAME COUNTS — the
+  // data had been written correctly all along and the diff was reading the
+  // wrong property. Seven of the ten fields went away; these three did not.
+  //
+  // A field whose change never resolves is worse than one that is not
+  // compared at all: it trains the reader to ignore the change list, which is
+  // the one place a genuinely bad import would announce itself.
+
+  // A feed row, flat.
+  const incoming = [{
+    positionNumber: 'P1', employeeId: '1', employeeName: 'Doe,Jane',
+    emailAddress: 'jane@gsa.gov', orgCode: 'FCA0B', officeTitle: 'Analyst',
+    grade: '15', supervisoryStatus: '2', occupancyStatus: 'FILLED',
+    lcat: '0343', locationCode: '0000000172',
+    reportsToPositionNumber: 'P0',
+    dutyStationCity: 'WASHINGTON', dutyStationState: 'DC'
+  }];
+  // The SAME person as the HC bundle yields them — city and state nested,
+  // location code unpadded because Location_Code is not pinned to text.
+  const existing = [{
+    positionNumber: 'P1', employeeId: '1', employeeName: 'Doe,Jane',
+    emailAddress: 'jane@gsa.gov', orgCode: 'FCA0B', officeTitle: 'Analyst',
+    grade: '15', supervisoryStatus: '2', occupancyStatus: 'FILLED',
+    lcat: '0343', locationCode: '172',
+    reportsToPositionNumber: 'P0',
+    location: { address1: '', city: 'WASHINGTON', state: 'DC' }
+  }];
+
+  const d = R.diffRoster(incoming, existing);
+  ok('an unchanged person reports NO changes',
+     d.changes.length === 0 && d.unchanged.length === 1,
+     d.changes.length ? d.changes[0].fields : d);
+
+  // A REAL CHANGE MUST STILL REPORT. The fix is reading the right property,
+  // not ignoring the field — and ignoring it would have been the easy wrong
+  // answer, since duty city drives airfare pricing.
+  const moved = JSON.parse(JSON.stringify(existing));
+  moved[0].location.city = 'PHILADELPHIA';
+  const dm = R.diffRoster(incoming, moved);
+  ok('a genuine duty-city change still reports',
+     dm.changes.length === 1 &&
+     dm.changes[0].fields[0].field === 'dutyStationCity', dm.changes);
+  ok('and carries the old value, not a blank',
+     dm.changes[0].fields[0].from === 'PHILADELPHIA',
+     'reading the wrong property reported every old value as blank');
+
+  const stateMoved = JSON.parse(JSON.stringify(existing));
+  stateMoved[0].location.state = 'PA';
+  ok('a genuine duty-state change still reports',
+     R.diffRoster(incoming, stateMoved).changes.length === 1);
+
+  // LOCATION CODE: '0000000172' vs 172 is the same code. The feed pads it and
+  // the sheet stores a number, because Location_Code is not pinned to text —
+  // so a string compare reported 763 changes no import could settle. The
+  // padding carries no meaning; nothing joins on this column.
+  ok('a zero-padded location code equals its unpadded form',
+     d.changes.length === 0, 'the sheet stores 172, the feed sends 0000000172');
+
+  // BUT ONLY WHEN BOTH SIDES ARE NUMERIC. 'DC-CENTRAL' to '172' is a real
+  // change and must not be normalized away — HCSeed uses codes like that.
+  const codeMoved = JSON.parse(JSON.stringify(existing));
+  codeMoved[0].locationCode = 'DC-CENTRAL';
+  const dc = R.diffRoster(incoming, codeMoved);
+  ok('a non-numeric location code change still reports',
+     dc.changes.length === 1 &&
+     dc.changes[0].fields[0].field === 'locationCode', dc.changes);
+
+  // The pre-existing normalizations must survive the rewrite.
+  const cased = JSON.parse(JSON.stringify(existing));
+  cased[0].emailAddress = 'JANE@GSA.GOV';
+  cased[0].orgCode = 'fca0b';
+  ok('email and org code are still compared case-insensitively',
+     R.diffRoster(incoming, cased).changes.length === 0,
+     'a case-only difference is not a change');
+
+  // THE SPEC LIST MUST COVER EVERY FIELD THE WRITE EMITS, or a field nobody
+  // compares can drift silently. Checked against the write in HCRosterSync
+  // rather than against a hand-kept list.
+  const sync = fs.readFileSync('lets_app/server/40_domain/HCRosterSync.js', 'utf8');
+  const src = fs.readFileSync('lets_app/server/30_services/HCRosterImport.js', 'utf8');
+  const compared = [...src.matchAll(/\{ field: '(\w+)'/g)].map(m => m[1]);
+  ['emailAddress', 'orgCode', 'officeTitle', 'grade', 'supervisoryStatus',
+   'occupancyStatus', 'lcat', 'locationCode', 'dutyStationCity',
+   'dutyStationState', 'employeeId', 'employeeName',
+   'reportsToPositionNumber'].forEach(f => {
+    ok('the diff compares ' + f, compared.indexOf(f) > -1);
+  });
+  ok('and the nested ones carry a reader for the bundle shape',
+     /from: function \(p\) \{ return \(p\.location \|\| \{\}\)\.city/.test(src) &&
+     /from: function \(p\) \{ return \(p\.location \|\| \{\}\)\.state/.test(src),
+     'without it the comparison reads undefined on every existing row');
+  ok('Duty_Station_City is written, so comparing it is not pointless',
+     /'Duty_Station_City': r\.dutyStationCity/.test(sync));
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);

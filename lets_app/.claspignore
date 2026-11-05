@@ -35,6 +35,7 @@ test_markup_integrity.js
 test_travel_import.js
 test_service_center_director.js
 test_supervisor_stage.js
+test_liability_log_admin.js
 test_hc_roster_import.js
 test_hc_chunked_cache.js
 preview.html

@@ -909,10 +909,47 @@ var HCRosterImport = (function () {
     // Fields whose change is worth reporting. Created_At and the audit columns
     // are excluded: they change on every import by definition and would make
     // every row look modified.
-    var COMPARED = ['reportsToPositionNumber', 'employeeId', 'employeeName',
-                    'emailAddress', 'orgCode', 'officeTitle', 'grade',
-                    'supervisoryStatus', 'occupancyStatus', 'lcat',
-                    'locationCode', 'dutyStationCity', 'dutyStationState'];
+    //
+    // THE TWO SIDES OF THIS DIFF HAVE DIFFERENT SHAPES, which is a trap worth
+    // naming because it already cost @clolry two imports.
+    //
+    //   incoming  parsed feed rows from interpretRow — FLAT:
+    //               r.dutyStationCity, r.dutyStationState
+    //   existing  HC bundle records from HCData._normalizePosition_ — NESTED:
+    //               p.location.city, p.location.state
+    //
+    // Comparing `prior.dutyStationCity` reads undefined on EVERY existing
+    // row, so the feed's 'WASHINGTON' differed from '' forever. The preview
+    // reported 1,045 duty-state and 1,039 duty-city changes, @clolry applied
+    // the import, and the next preview reported exactly the same counts —
+    // because the data had been written correctly all along and the DIFF was
+    // reading the wrong property.
+    //
+    // A field whose change never resolves is worse than one that is not
+    // compared: it trains the reader to ignore the change list, which is the
+    // one place a bad import would announce itself.
+    //
+    // So each entry carries how to read it off BOTH shapes.
+    var COMPARED = [
+      { field: 'reportsToPositionNumber' },
+      { field: 'employeeId' },
+      { field: 'employeeName' },
+      { field: 'emailAddress', normalize: 'lower' },
+      { field: 'orgCode', normalize: 'upper' },
+      { field: 'officeTitle' },
+      { field: 'grade' },
+      { field: 'supervisoryStatus' },
+      { field: 'occupancyStatus' },
+      { field: 'lcat' },
+      // LOCATION_CODE IS COMPARED NUMERICALLY WHEN BOTH SIDES LOOK NUMERIC.
+      // The feed carries '0000000172' and the sheet stores 172, because
+      // Location_Code is not pinned to text — so a string compare reported
+      // 763 changes that no import could ever settle. The padding carries no
+      // meaning: nothing joins on this column, it is only ever displayed.
+      { field: 'locationCode', normalize: 'numeric' },
+      { field: 'dutyStationCity',  from: function (p) { return (p.location || {}).city; } },
+      { field: 'dutyStationState', from: function (p) { return (p.location || {}).state; } }
+    ];
 
     (incoming || []).forEach(function (row) {
       if (!row.positionNumber) return;
@@ -922,15 +959,31 @@ var HCRosterImport = (function () {
       if (!prior) { adds.push(row); return; }
 
       var fields = [];
-      COMPARED.forEach(function (f) {
-        var now = _str_(row[f]);
-        var before = _str_(prior[f]);
-        // Email and org are case-normalized on both sides, so a case-only
-        // difference is not a change.
-        if (f === 'emailAddress') { now = now.toLowerCase(); before = before.toLowerCase(); }
-        if (f === 'orgCode') { now = now.toUpperCase(); before = before.toUpperCase(); }
+      COMPARED.forEach(function (spec) {
+        var name = spec.field;
+        var now = _str_(row[name]);
+        // READ THE EXISTING SIDE THROUGH ITS OWN SHAPE. `spec.from` exists
+        // only for the fields the bundle nests; everything else is flat on
+        // both sides.
+        var before = _str_(spec.from ? spec.from(prior) : prior[name]);
+
+        if (spec.normalize === 'lower') {
+          now = now.toLowerCase(); before = before.toLowerCase();
+        } else if (spec.normalize === 'upper') {
+          now = now.toUpperCase(); before = before.toUpperCase();
+        } else if (spec.normalize === 'numeric') {
+          // Only when BOTH look numeric. '0000000172' vs 172 is the same
+          // code; 'DC-CENTRAL' vs '172' is a real change and must still
+          // report.
+          var nNum = now.replace(/^0+(?=\d)/, '');
+          var bNum = before.replace(/^0+(?=\d)/, '');
+          if (/^\d+$/.test(nNum) && /^\d+$/.test(bNum)) {
+            now = nNum; before = bNum;
+          }
+        }
+
         if (now !== before) {
-          fields.push({ field: f, from: before, to: now });
+          fields.push({ field: name, from: before, to: now });
         }
       });
 

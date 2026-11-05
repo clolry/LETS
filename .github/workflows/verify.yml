@@ -372,6 +372,33 @@ jobs:
         # the service-center review silently vanishing.
         run: node lets_app/test_supervisor_stage.js
 
+      - name: FY27 travel log importer tests
+        # @clolry: "I'm getting an error when I try to import existing
+        # travel... gotta use column M as estimate, r as actual cost, s as
+        # approved date, officesymbol is column c."
+        #
+        # The error was correct, from the WRONG importer: TravelImportAdmin
+        # reads a two-tab Go.gov export and his workbook is one row per trip
+        # carrying both an estimate and an actual. LiabilityLogSync already
+        # parsed that shape and had NO CALLER — nothing read the sheet or
+        # wrote the result.
+        #
+        # §1 is the section that earns the rest: it asserts the four columns
+        # he named resolve to the fields he meant, by LETTER. Everything else
+        # is plumbing; if those four are wrong the import writes plausible,
+        # wrong money. It also pins that column L is mapped to NOTHING —
+        # @clolry directed column M and the two disagree across the sheet.
+        #
+        # §2 pins the fiscal year to column S. Calhoun submitted 2026-09-30
+        # and was approved 2026-10-01: under any other date he is FY26, drops
+        # out of the FY27 dashboard, and takes $1,563.83 with him.
+        #
+        # §7 pins the WRITE ORDER. Requests rows land before the key
+        # write-back, because a failed key means a visible duplicate the next
+        # run, while a key written against rows that failed to land means the
+        # sheet claims everything imported when nothing did.
+        run: node lets_app/test_liability_log_admin.js
+
       - name: Org chart tests
         # Includes the cross-project agreement check: orgchart_app/HCRead.js is
         # a deliberate SECOND implementation of lets_app HCData.js, so both are
