@@ -100,7 +100,7 @@ improvising.** Its own key facts:
 
 | | |
 |---|---|
-| **Merging to `main` IS deploying** | There is no separate button. `DEPLOYMENT_AND_ENVIRONMENTS.md` §5.2.1 — and whether a merge reaches *users* is still **VT-01**, unanswered |
+| **Merging to `main` is NOT deploying** | A merge pushes code; it does **not** publish. **The deployment is version-pinned** `[OBSERVED 2026-11-05]`, so users keep seeing the published version until someone does Deploy → Manage deployments → New version. Use the **`/dev`** URL to see your own push. `DEPLOYMENT_AND_ENVIRONMENTS.md` §5.2.1 |
 | **`clearGSACitiesCache()` is MANDATORY after deploy** | The cached payload changed shape. **It is in `PerDiemGSA.gs`, not `CacheWarming.gs`** — the Apps Script Run dropdown only lists functions from the open file. If skipped: no rate hints for 24 h, **no error anywhere**. `DATA_DICTIONARY.md` §3.10.1 |
 | **Set `GSA_PERDIEM_API_KEY` by hand first** | Project Settings → Script Properties. **Do not run `_setupGSAPerDiemProperties` expecting it to set the key** — it never writes the key, by design, since the G-076 fix |
 | **Step 2 warns before Step 3 sets the key** | Deliberate ordering: the dangerous version of `_setupGSAPerDiemProperties` is live until this change deploys |
@@ -431,7 +431,7 @@ items in the Pass 6 brief were executed.
 | 4 | Single severity ranking with a stated rubric | **Done.** Consequence × reachability matrix (§6.4): 6 Critical, 17 High, 33 Medium, 9 Low, 1 Informational, 2 Constructive. **The register now reads 6 / 19 / 33 / 13 / 1 / 2** after six appended findings and one re-rating |
 | 5 | Inherited-from-TRIP column on every finding | **Done, mechanically.** 39 TRIP / 24 LETS / 5 Shared at the time; **the register now reads 44 / 25 / 5** after six additions. Four of Pass 5's own labels corrected (Pass 6 §6.6.3) |
 | 6 | Consolidate V-1…V-43 | **Done.** 43 → 29 tasks + 6 owner decisions; 12 merged away (§6.7) |
-| 7 | Rank verification tasks by unblocking power | **Done.** Top five named (§6.7.3). **VT-01 leads and takes two minutes** |
+| 7 | Rank verification tasks by unblocking power | **Done.** Top five named (§6.7.3). **VT-01 led, took two minutes, and was closed 2026-11-05** — `USER_ACCESSING` / `DOMAIN` / version-pinned. **VT-02 now leads** |
 | 8 | Business-owner decisions | **Done.** BD-1…BD-6, four of which block Critical or High findings (§6.8) |
 
 ### 3.1 Five published figures were withdrawn — do not cite them again
@@ -714,14 +714,19 @@ and the correction is now made in every document that repeated them.
 
 | Rank | Task | Unblocks | Cost |
 |---|---|---|---|
-| **1** | **VT-01** — the deployment's "Execute as" and "Who has access" settings | All 6 Criticals + the severity amplifier on G-003, G-005, G-012, G-027, G-044 | **2 min** |
+| ~~**1**~~ | ~~**VT-01** — the deployment's "Execute as" and "Who has access" settings~~ | **DONE 2026-11-05.** `USER_ACCESSING` / `DOMAIN` / version-pinned. **The amplifier does not apply** — G-003, G-005, G-012, G-027, G-044 stand as rated | **done** |
 | **2** | **VT-07** — list every tab in the live database | G-016, G-040, G-041, G-043, G-055, G-057 | **5 min** |
 | **3** | **VT-05 + VT-11** — export the role tables; run `verifyPhase7Routing()` | G-007, G-009, G-010, G-029, G-031, G-032 | **15 min** |
 | **4** | **VT-03** — is an HC library attached, and **what exact values does it emit**? | G-008, **G-074**, and the site gate itself | **20 min** |
 | **5** | **VT-06 + VT-08** — row 1 of the seven core tabs | G-013, G-014, G-044 — the only test for silent ongoing data corruption | **12 min** |
 
-**VT-01 is two minutes and gates the severity of every Critical finding.** If only one
-thing gets done, it is that.
+~~**VT-01 is two minutes and gates the severity of every Critical finding.**~~ **Done
+2026-11-05** `[OBSERVED]`: Execute as **`USER_ACCESSING`**, Who has access
+**`DOMAIN`** ("Anyone within GSA.gov"), Version **pinned** (6 → 7). The manifest was
+right and the eight source comments were wrong, so **no Critical was re-rated**. Two
+things came out of it: G-001's real exposure is "any GSA.gov account with the URL,"
+and **a push does not reach users** until someone publishes. **VT-02 is now the
+highest-value open task** (15 min). See `DEPLOYMENT_AND_ENVIRONMENTS.md` §5.-1.
 
 ### 6.2 One hard sequencing constraint
 

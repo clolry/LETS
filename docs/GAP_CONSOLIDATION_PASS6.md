@@ -345,7 +345,11 @@ Three deliberate consequences of this matrix, each of which changes at least one
 
 ### 6.4.4 Two modifiers, applied explicitly
 
-**The `USER_DEPLOYING` amplifier.** Pass 5 §5.1.1 found the manifest declares `executeAs: USER_ACCESSING` while six source comments assert `USER_DEPLOYING` `[VERIFIED]`. If production is deployed as `USER_DEPLOYING`, every unguarded function runs with the **deployer's** authority rather than the caller's — so Drive and sheet writes execute as a privileged identity regardless of who calls them. That converts several C3s to C4s. The findings whose rating moves are **G-003, G-005, G-012, G-027** and **G-044** — every one of them an unguarded write to a sheet or to Drive. None is rated below High already, so the amplifier changes no finding's *block*; it changes how the Critical block is justified, from "any user can corrupt data" to "any user can corrupt data using a privileged identity". **VT-01 resolves this and must run before the register is published.**
+**The `USER_DEPLOYING` amplifier — DOES NOT APPLY.** Pass 5 §5.1.1 found the manifest declares `executeAs: USER_ACCESSING` while six source comments assert `USER_DEPLOYING` `[VERIFIED]`. Had production been deployed as `USER_DEPLOYING`, every unguarded function would run with the **deployer's** authority rather than the caller's, converting several C3s to C4s for **G-003, G-005, G-012, G-027** and **G-044**.
+
+> **VT-01 was read live on 2026-11-05: the deployment is `USER_ACCESSING`** `[OBSERVED]`. **The amplifier is void.** Those five findings stand exactly as rated, and the Critical block keeps its original justification — "any user can corrupt data," not "using a privileged identity." **The manifest was right; the six comments are wrong** (`DEPLOYMENT_AND_ENVIRONMENTS.md` §5.2.2a).
+
+The register did not need to wait for this, and the ratings were deliberately set on the manifest's declared value so that they would not.
 
 **The latency discount is refused.** A defect that has probably never been exercised is rated on consequence, not on luck. G-002 (`bootstrapTravelAdmin`) is Critical whether or not anyone has called it. VT-04 exists to determine whether it *has* been, and that is an incident-response question, not a severity question.
 
@@ -553,7 +557,7 @@ Ordered by unblocking power, then by cost — §6.7.3 explains the ranking. This
 
 | ID | Task | Absorbs | Unblocks | Where | Cost |
 |---|---|---|---|---|---|
-| **VT-01** | **Record the active deployment's "Execute as" and "Who has access" settings**, and the deployed web-app URL | V-1, V-30 | G-001–G-006 severity basis; the whole §6.4.4 amplifier; `DEPLOYMENT_AND_ENVIRONMENTS.md` | Apps Script editor → Deploy → Manage deployments | 2 min |
+| ~~**VT-01**~~ **DONE 2026-11-05** | ~~Record the active deployment's "Execute as" and "Who has access"~~ → **`USER_ACCESSING` · `DOMAIN` · version-pinned** `[OBSERVED]`. **1 min left:** confirm the deployment ID matches `GAS_PRODUCTION_DEPLOYMENT_ID`, and whether other deployments exist | V-1, V-30 | **§6.4.4's amplifier is void**; G-001–G-006 stand as rated | Apps Script editor → Deploy → Manage deployments | **done** |
 | **VT-02** | **Record who holds Apps Script project editor access, spreadsheet edit access, and the GitHub `CLASPRC_JSON` secret** | V-3, V-7, V-8, V-43 | G-009, G-021; `ADMINISTRATOR_GUIDE.md` §1.5 — these are privileges 1–3, all above the app's own `admin` role | Project share dialog; Drive share dialog; GitHub → Settings → Secrets | 15 min |
 | **VT-03** | **Confirm whether an HC library is attached**, to production and to sandbox — and if so run `_probeHcForUser('<surname>')` and record the distinct `supervisoryStatus` / `occupancyStatus` values **verbatim, with padding intact** | V-2, V-38 | G-008, G-074. ~~The site gate compares `supervisoryStatus === '2'` as a **string**; if HC emits a number, two of three allow-paths are already dead~~ **— withdrawn, see §6.7.4.** The gate coerces with `String()`, so a numeric `2` passes; what fails is `'02'`, `' 2'`, `'2.0'` | Editor → Libraries; then Run the probe → read Logs | 20 min |
 | **VT-04** | **Determine whether `bootstrapTravelAdmin` has ever been called by anyone other than the project owner.** Search Cloud Logging for the function name; check `Travel_User_Roles` for rows with `Granted_By: 'bootstrap'` | V-41 | G-002 incident response. **Do this before remediating** — remediation destroys the evidence | GCP → Logs Explorer, filtered to the script project; plus the role tab | 30 min |
@@ -628,7 +632,7 @@ Six items in the V-series were not verification tasks at all. Nobody can resolve
 
 | ID | Decision | From | Blocks | Why only the owner can answer |
 |---|---|---|---|---|
-| **BD-1** | **Is the deployment supposed to run as `USER_ACCESSING` or `USER_DEPLOYING`?** | — (Pass 6 addition) | G-001–G-006 | VT-01 reports what it *is*. Only the owner can say what it should be. The answer changes whether every unguarded write executes with the caller's authority or a privileged one — and six source comments contradict the manifest, so one of the two is a latent misunderstanding in the codebase either way |
+| **BD-1** | **Is the deployment supposed to run as `USER_ACCESSING` or `USER_DEPLOYING`?** | — (Pass 6 addition) | G-001–G-006 | **Fact settled 2026-11-05: it runs as `USER_ACCESSING`** `[OBSERVED]`, so every unguarded write executes with the **caller's** authority and no rating moves. Only intent remains, and the expected answer is "as declared." **The latent misunderstanding is located: the six source comments, not the manifest** (§5.2.2a) |
 | **BD-2** | **Should `aas_fo_reviewer` see every request in the organization?** | V-36 | G-031 | The role carries `scope: 'all'` today — admin-equivalent data visibility under a name that does not advertise it. This is a policy question, not a defect, until the owner answers it |
 | **BD-3** | **In a `NEEDS_INFO_*` state, should the assigned reviewer retain edit access?** | V-37 | G-003, G-067 | Gates adoption of `requireRequestEditor`, which would remove that access. The cheapest fix for a Critical finding is blocked on this one answer |
 | **BD-4** | **Which cost figure is authoritative for budget purposes — System A's `Grand_Total`, or a user-entered estimate?** | V-28 | G-035, G-036, G-040 | The largest unresolved design question in the system. Every budget-integration decision depends on it, and the two layers currently assume different answers |
@@ -637,7 +641,7 @@ Six items in the V-series were not verification tasks at all. Nobody can resolve
 
 **Why these are separated, and what the separation costs.** Four of the six (BD-3, BD-4, BD-5, BD-6) block remediation of findings rated Critical or High. Separating them makes the verification checklist completable in an afternoon, but it also means **four findings cannot be closed by engineering effort alone**. `GAP_REGISTER.md` must mark them `BLOCKED ON BD-n` rather than leaving them to look like open engineering work, and `ENHANCEMENT_PLAYBOOK.md` must sequence them after the decision rather than estimating them as if the decision were made.
 
-BD-1 is both: VT-01 answers what the setting *is*, BD-1 answers what it *should be*. Those are different questions and the first does not imply the second.
+BD-1 is both: VT-01 answers what the setting *is* — **answered 2026-11-05, `USER_ACCESSING`** — and BD-1 answers what it *should be*. Those are different questions and the first does not imply the second, but with the fact in hand the second is now a short conversation rather than a decision under uncertainty.
 
 ---
 

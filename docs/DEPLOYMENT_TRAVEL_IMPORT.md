@@ -4,8 +4,8 @@ description: "How to deploy, configure and run the FY27 workbook importer, and h
 status: canonical
 tier: 2
 audience: "system owner, administrator running the import"
-last_updated: "2026-11-04"
-evidence_base: "lets_app/test_travel_import.js — 245 assertions, 23 sections, 6 negative controls"
+last_updated: "2026-11-05"
+evidence_base: "lets_app/test_travel_import.js — 247 assertions, 23 sections, 6 negative controls"
 ---
 
 # Existing-Travel Import — Deployment Guide
@@ -41,7 +41,7 @@ The $1,164.39 is money GSA did **not** pay, counted in her sheet as though it ha
 | `server/40_domain/TravelImportAdmin.js` | **New.** Writes + 7 admin-guarded entrypoints | +950 |
 | `server/40_domain/BudgetDashboard.js` | Prefers a reconciled `Actual_Total` over the estimate; reports the split | +80 |
 | `client/pages/travelBudgetDashboardPage.html` | 4-step import wizard, batch history, rollback | +480 |
-| `test_travel_import.js` | **New.** 245 assertions | +950 |
+| `test_travel_import.js` | **New.** 247 assertions | +950 |
 | `test_budget_dashboard.js` | §6b — reconciled vs estimated actuals | +65 |
 | `.github/workflows/verify.yml` | 1 test step + 5 guards | +180 |
 
@@ -179,12 +179,34 @@ Three things about that script are deliberate:
 | Symptom | Cause | Fix |
 |---|---|---|
 | *"Travel_Imports tab not found"* | setup not run | `setupTravelDatabase()` |
-| *"The spreadsheet parser did not load"* | the SheetJS CDN was unreachable | reload; check egress to `cdn.jsdelivr.net` |
+| *"The spreadsheet parser did not load"* | SheetJS did not reach the browser. **The message blames the network, but the first occurrence was a dead URL** — see §7.1 | check the Network tab before suspecting egress: 404 is the URL, blocked/timeout is egress to `cdn.sheetjs.com` |
 | *"This workbook has no TravelRequest tab"* | wrong file, or a tab was renamed | the message lists the tabs it did find |
 | Every row is `OUT_OF_SCOPE_ORG` | the `OfficeSymbol` tab is empty or unmapped | check the roster tab has `Full Name` and `Current.Department.ID` |
 | A traveler is missing who should be in scope | not in `OfficeSymbol` | add them to `OffSymbolOverride` — those 2 rows are the only reason Cheryl Cameron's travel resolves at all |
 | Totals differ from the workbook | §0 — Amount Approved vs Report Total | expected; the gap is the disallowed amount |
 | 7 requests duplicate on a re-run | `normalizeSourceId` is broken | a CI guard checks this behaviorally; see §8 |
+
+### §7.1 The parser URL, and why the error message misleads
+
+The wizard checks `typeof XLSX === 'undefined'` and says *"check the network connection"*. On the first live import that message was **wrong**: the tag read
+
+```
+https://cdn.jsdelivr.net/npm/xlsx@0.20.2/...     404 — "Couldn't find the requested release version 0.20.2"
+```
+
+jsdelivr's `/npm/` path mirrors the npm registry, and **SheetJS stopped publishing `xlsx` to npm after 0.18.5** — it self-hosts now. The pinned version was correct; the host could not serve it. That fails identically on every network, so the message sent the first reader looking at egress and firewall rules for a problem that was one line of HTML.
+
+Now:
+
+```
+https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js
+```
+
+**Do not repoint this at jsdelivr.** The version available there is 0.18.5, which is behind two fixes: CVE-2023-30533 (prototype pollution) and CVE-2024-22363 (ReDoS).
+
+**Egress to `cdn.sheetjs.com` is now a deployment prerequisite.** It is a host the rest of the app does not use — everything else comes from `cdn.jsdelivr.net`, `cdnjs.cloudflare.com` and `fonts.googleapis.com` — so a network allowlist built from the other pages will not include it.
+
+`test_travel_import.js` §23 pins the host and rejects the npm path, both negative-controlled. It **cannot** prove the URL resolves — that needs egress, which a unit test must not have. Reachability is checked by loading the page, not by CI.
 
 ---
 
@@ -205,8 +227,9 @@ Each of these exists because of something **measured in the real file**, not ant
 
 ## §9 Known gaps
 
-1. **Not verified in a browser.** Every assertion passes and the wizard is wired, but no live import has been run. First run should be a preview on a copy of the Travel DB.
+1. **Browser verification is PARTIAL.** `setupTravelDatabase()` ran and created both tabs (2026-11-05). The wizard then failed at step 1 on the parser URL (§7.1), which is fixed but **not yet re-run**. Nothing past "pick a file" has executed in a browser: no mapping, no preview, no commit, no rollback. First successful run should still be a preview on a copy of the Travel DB.
 2. **`GogovSync.toDateString` still mis-parses a string serial** — `'46356'` → `'46356-01-01'`. `TravelImport.toDateString` resolves it before delegating, so this importer is safe, but the monthly reconciliation path shares that function. Tracked separately; widening it touches behavior pinned by `test_gogov_sync.js` §3.
 3. **One traveler needs manual matching each run** (Patnaik). Correct behavior, not a defect — but it will recur until a LETS ID appears in the trip name.
 4. **`docs/evidence/verify_city_dropdown_fix.js` fails** at `e60ac64`, before this work. Not in CI. Unrelated, and worth a look.
-5. **The `.claspignore` glob still fails an existing CI guard.** `test_*.js` is not a filename; one line to delete.
+5. ~~**The `.claspignore` glob still fails an existing CI guard.**~~ Fixed upstream at `21b9e4c` — the guard now skips wildcard entries rather than the catch-all being deleted.
+6. **No CI guard checks that a CDN URL resolves.** §7.1 got through 244 passing assertions because the test asserted the version *string*, not the URL. The host is now pinned and negative-controlled, but the class of defect — a remote dependency that 404s — is still only caught by loading the page. Every external `<script>`/`<link>` in `client/` shares the exposure: 23 from `cdn.jsdelivr.net`, 12 from `cdnjs.cloudflare.com`, 13 from `fonts.googleapis.com`.

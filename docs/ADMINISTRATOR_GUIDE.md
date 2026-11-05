@@ -4,7 +4,7 @@ description: "How to obtain, hold, and account for administrative and security c
 status: canonical
 tier: 1
 audience: "project manager, system owner, ISSO"
-last_updated: "2026-10-29"
+last_updated: "2026-11-05"
 evidence_base: "docs/GAP_CONSOLIDATION_PASS6.md and docs/evidence/*.js"
 ---
 
@@ -35,7 +35,7 @@ Findings are cited as **`G-NNN`**, verification tasks as **`VT-NN`**, and decisi
 
 1. **The system is live and in use.** This is not a design review of something unbuilt. People are submitting travel requests through it today.
 2. **The most serious findings are inherited, not introduced.** 84% of the application code is byte-identical to the GSA/AAS TRIP application that LETS was directed to adopt as its foundation `[VERIFIED]`. All six Critical findings live in that inherited code. §1.8.4 treats this honestly in both directions.
-3. **One two-minute task gates almost everything in §1.5 and §1.8.** It is **VT-01**. If you do nothing else after reading this, do that.
+3. ~~**One two-minute task gates almost everything in §1.5 and §1.8.**~~ **Done.** **VT-01** was read live on 2026-11-05: the deployment runs as `USER_ACCESSING`, access is `DOMAIN` ("Anyone within GSA.gov"), and the version is **pinned** — so a `clasp push` does **not** reach users until someone publishes. §1.3.4 has the consequences; the short version is that the reassuring answer won and no Critical rating moved.
 
 ---
 
@@ -51,7 +51,7 @@ If you read only this page, read this table.
 | **How do I grant and revoke access?** | Through the admin console at `?mode=admin`. **Not** by editing the spreadsheet — §1.6.2 explains why that can silently fail to revoke anything |
 | **Is it secure?** | It has real strengths — no credential handling, no back doors, every role check fails closed. It also has six Critical findings, all inherited from TRIP, centered on one defect: **the server does not check who is calling it** (§1.4.5) |
 | **Can I see who did what?** | For travel decisions, yes — the audit trail is good. For **changes to who holds access**, largely no (§1.8) |
-| **What is the single biggest unknown?** | Whether the deployment runs as `USER_ACCESSING` or `USER_DEPLOYING`. The manifest says one thing and eight source comments say the other. It changes whose credentials every file and database operation uses (§1.3.4, **VT-01**) |
+| **What is the single biggest unknown?** | **No longer this one.** Whether the deployment runs as `USER_ACCESSING` or `USER_DEPLOYING` was the biggest unknown; it is **answered** — `USER_ACCESSING`, read live 2026-11-05 (§1.3.4). The manifest was right, the eight source comments wrong, and **no finding needed re-rating**. The largest remaining unknown is **who holds Apps Script project editor** (§1.5, **VT-02**, 15 min) |
 
 ### The one-paragraph version
 
@@ -250,7 +250,7 @@ All four are inherited from TRIP — the same four names are broken in the refer
 
 **Paths 1 and 2 are different, and the difference is the central security fact of this system.** Path 1 is what you administer. Path 2 is what the system actually permits. §1.4.5 explains it.
 
-**The web app URL is not recorded anywhere in this repository** `[UNKNOWN]`. Obtain it via **VT-01**.
+**The web app URL is not recorded anywhere in this repository** `[UNKNOWN]`. It is derivable from the `GAS_PRODUCTION_DEPLOYMENT_ID` repository variable: `https://script.google.com/macros/s/<id>/exec`. **Note the two URL forms** — a `/exec` URL serves the *published* version, a `/dev` URL always serves the latest pushed code. Because this deployment is **version-pinned** (§1.3.4), those two differ whenever someone has pushed without publishing.
 
 ### 1.3.2 There is no spreadsheet menu
 
@@ -275,35 +275,39 @@ These run on Google's schedule with no human present `[VERIFIED]`.
 1. **Triggers belong to the person who installed them, and are invisible to everyone else.** If the person who installed these leaves GSA and their account is disabled, the triggers stop and **no error is reported to anyone**. Per-diem rates would quietly go stale. No single account can see the full list — this is why **VT-18** asks each project editor to run the health check separately.
 2. **Google references these five handlers by their function name as text.** `ScriptApp.newTrigger('warmTravelDBCache')` `[VERIFIED]`. Renaming any of them in the code silently breaks the installed trigger — the schedule survives, pointing at a function that no longer exists. This is a real hazard for the remediation described in §1.4.5, which involves renaming functions, and the exclusion is already built into the evidence script.
 
-### 1.3.4 The deployment question that gates everything else
+### 1.3.4 The deployment question that gated everything else — ANSWERED
 
-**This is the single most consequential unknown in the entire assessment.**
+**`[OBSERVED 2026-11-05]`. @clolry read the active deployment: Execute as "User accessing the web app" (`USER_ACCESSING`), Who has access "Anyone within GSA.gov" (`DOMAIN`), Version pinned (was 6, now 7).**
 
-Every Apps Script web app runs in one of two modes, chosen when the deployment is created:
+**This was the single most consequential unknown in the assessment. It is closed, and the reassuring answer won.**
 
-| Mode | What it means |
-|---|---|
-| **`USER_ACCESSING`** | Server code runs with **the visiting user's** Google permissions. A user can only read the database if they personally have access to that spreadsheet |
-| **`USER_DEPLOYING`** | Server code runs with **the deploying owner's** permissions. Every user's every action is performed with the owner's full credentials |
+| Mode | What it means | Live? |
+|---|---|---|
+| **`USER_ACCESSING`** | Server code runs with **the visiting user's** Google permissions. A user can only read the database if they personally have access to that spreadsheet | **YES** `[OBSERVED]` |
+| **`USER_DEPLOYING`** | Server code runs with **the deploying owner's** permissions. Every user's every action is performed with the owner's full credentials | no |
 
-**The evidence conflicts:**
+**The severity amplifier below does NOT apply.** Every unguarded function in §1.4.5 runs with the **caller's** authority, not a privileged one. **G-003, G-005, G-012, G-027 and G-044 stand at their documented ratings** and need no re-rating. Nothing in this guide's Critical ratings rested on the inference, by design.
+
+**The manifest was right and the eight source comments were wrong.** `DEPLOYMENT_AND_ENVIRONMENTS.md` §5.2.2 predicted `USER_DEPLOYING` from those comments, reasoning that *"a developer does not write three bug comments about a mode the system is not in."* They did. §5.2.2a records the correction and why the wrong prediction is left standing.
+
+> **One real consequence remains, from the second value.** `DOMAIN` means **any GSA.gov account** can reach the web app — not just the ASD travel population. **G-001** counts 412 browser-reachable functions, 51 writing with no authorization check. The exposure is "any GSA employee with the URL," which is far better than the internet and far worse than "travel administrators." **This is the version of G-001 to take to an ISSO.**
+
+**What is still open, and it is small:** nobody compared the live deployment ID against the `GAS_PRODUCTION_DEPLOYMENT_ID` repository variable, or checked whether other deployments exist. About one minute, tracked as the remainder of **VT-01**.
+
+#### The original analysis, left standing
+
+The evidence conflicted as follows, and the resolution above is what it resolved to:
 
 | Source | Says | Status |
 |---|---|---|
-| `lets_app/appsscript.json:20` | `"executeAs": "USER_ACCESSING"` | `[VERIFIED]` in the file |
-| **Eight comments across six source files** | `USER_DEPLOYING` — including `Attachments.js:5` *"Architecture (USER_DEPLOYING mode)"* and `Reporting.js:310` *"The web app runs as the deploying owner (USER_DEPLOYING)"* | `[VERIFIED]` as comments |
+| `lets_app/appsscript.json:20` | `"executeAs": "USER_ACCESSING"` | `[VERIFIED]` in the file — **and correct** |
+| **Eight comments across six source files** | `USER_DEPLOYING` — including `Attachments.js:5` *"Architecture (USER_DEPLOYING mode)"* and `Reporting.js:310` *"The web app runs as the deploying owner (USER_DEPLOYING)"* | `[VERIFIED]` as comments — **and wrong** |
 
-**And the manifest is not authoritative.** The "Execute as" setting is stored on the *deployment*, not in the pushed manifest file. A deployment created with one setting keeps it regardless of what the manifest says afterward. `clasp push` cannot change it, and reading the file cannot tell you what it is `[VERIFIED]`.
+**The manifest is still not authoritative in general.** The "Execute as" setting is stored on the *deployment*, not in the pushed manifest file. A deployment created with one setting keeps it regardless of what the manifest says afterward. `clasp push` cannot change it, and reading the file cannot tell you what it is `[VERIFIED]`. **That it happened to match here is a fact about this deployment, not a reason to trust the file next time.**
 
-**Why you cannot defer this.** Under `USER_DEPLOYING`, every unguarded server function in §1.4.5 executes with the owner's full Drive and Sheets credentials — so a user who should have no access to a file can cause the system to act on it anyway. Five findings move from "any user can corrupt data" to "any user can corrupt data **using a privileged identity**": **G-003, G-005, G-012, G-027, G-044**.
+**The code still behaves as though `USER_DEPLOYING` is true, and that is now a puzzle rather than evidence.** `Attachments.js:5-11` explains that uploads work *because* of it. `HCStaffing.js:6` says the cache-miss path relies on it. Three comments in `Feedback.js` describe bugs that only occur under it. **Those features do work — so the stated mechanism is wrong and the real one is undocumented.** Correcting these is not a text edit; see `DEPLOYMENT_AND_ENVIRONMENTS.md` §5.2.2a.
 
-**The code behaves as though `USER_DEPLOYING` is true.** `Attachments.js:5-11` explicitly explains that uploads work *because* of it. `HCStaffing.js:6` says the cache-miss path relies on it. Three comments in `Feedback.js` describe known bugs that only occur under it `[VERIFIED]`. That is eight independent places where a developer wrote code assuming the opposite of what the manifest declares.
-
-> **Two things follow, and both are actions.**
->
-> **VT-01 — two minutes.** Open the Apps Script editor → Deploy → Manage deployments, and read the active deployment's "Execute as" and "Who has access" values. Record them.
->
-> **BD-1 — your decision.** VT-01 tells you what the setting *is*. Only you can say what it *should be*. Those are different questions, and whichever way it resolves, one of the two bodies of evidence in this codebase is wrong and should be corrected so the next reader is not misled.
+> **BD-1 is now a short conversation, not a decision under uncertainty.** VT-01 says the setting *is* `USER_ACCESSING`. Given the manifest has declared it all along and the app works, the expected answer is "that is what we want, and the eight comments need correcting."
 
 ### 1.3.5 How code reaches production
 
@@ -333,7 +337,9 @@ Whoever wrote this understood the platform's hazards and wrote down why. **This 
 
 Whoever holds the `CLASPRC_JSON` GitHub secret can push code directly to production, bypassing the pipeline entirely `[VERIFIED]`. There is **no branch protection** on `main` `[VERIFIED]`, so a single person with write access can merge their own change and have it deployed automatically.
 
-**Push is not the same as deploy.** The workflow runs `clasp push --force`, which replaces the project's *code*. It does **not** run `clasp deploy` `[VERIFIED]`, so whether a code push reaches users immediately depends on how the deployment is configured — another thing **VT-01** should capture.
+**Push is not the same as deploy, and for this deployment that matters.** The workflow runs `clasp push --force`, which replaces the project's *code*. It does **not** run `clasp deploy` `[VERIFIED]`. **The active deployment is version-pinned** `[OBSERVED 2026-11-05]`, so **a push does not reach users** until someone publishes a new version manually.
+
+> **The failure mode is silence.** On 2026-11-05 a one-line fix was pushed successfully — `clasp push` listed the file, a second push reported *"already up to date"* — and users kept seeing the old code through repeated hard reloads. No error appeared, because nothing had gone wrong: a push is not a deploy. **To verify your own change, use the `/dev` URL (Deploy → Test deployments). To ship it, Deploy → Manage deployments → Version: New version.**
 
 **G-048 — an undocumented third Apps Script project is wired to the repository root.**
 
@@ -778,7 +784,7 @@ Eleven cases. The code wins in every one; the document is named so it can be fix
 | `Review_Update.js:1366` | `requireRequestEditor` is for *"the standard `update*ForReview` family"* | That family does not call it; five of seven check nothing |
 | `Validation.js:9-12` | *"Adoption is rolling"* | Adoption is **zero** outside its own self-test (**G-033**) |
 | `RequestService.js:147` | *"Advances Kanban stage with role and permission checks"* | No checks of any kind (**G-038**) |
-| Six comments in four files | The app runs as `USER_DEPLOYING` | `appsscript.json:20` declares `USER_ACCESSING` (§1.3.4) |
+| Six comments in four files | The app runs as `USER_DEPLOYING` | **Resolved 2026-11-05: the comments are wrong.** The live deployment is `USER_ACCESSING`, as `appsscript.json:20` declares (§1.3.4) |
 | `Attachments.js:467` | `accessLevel` is *"`'reader'` or `'writer'`"* | Its only caller passes `'viewer'`, which is not a valid Drive role (**G-028**) |
 | `PROJECT_PLAN.md:93-99` | Four team access levels | No mapping to the six implemented roles (§1.5.3) |
 | `PROJECT_PLAN.md:116` | *"minimal-scope credentials for each service"* | **No `oauthScopes` declared at all** (**G-006**) |
@@ -806,7 +812,7 @@ That is accurate, it does not overstate the risk, it does not hide it, and it do
 
 | Order | Action | Effort | Why first |
 |---|---|---|---|
-| **1** | **VT-01** — read the deployment's "Execute as" and "Who has access" | **2 min** | Gates the severity of all six Criticals. Nothing else should be reported to an ISSO until this is known |
+| ~~**1**~~ | ~~**VT-01** — read the deployment's "Execute as" and "Who has access"~~ | **done** | **Closed 2026-11-05: `USER_ACCESSING` / `DOMAIN`, version pinned.** No Critical was re-rated. Report G-001 to an ISSO as "reachable by any GSA.gov account" (§1.3.4) |
 | **2** | **VT-04** — check whether `bootstrapTravelAdmin` has ever been called by anyone unexpected | 30 min | **Must happen before G-002 is fixed** — remediation destroys the evidence |
 | **3** | **VT-02** — enumerate privileges 1–3 | 15 min | You do not know who controls this system until this is done (§1.5.2) |
 | **4** | **VT-05 + VT-11** — export the role tables; run the routing check | 15 min | Establishes who holds access today, and creates the first historical record (§1.8.2) |

@@ -4,7 +4,7 @@ description: "An honest current-state summary of the Logistics, Events, and Trav
 status: canonical
 tier: 1
 audience: "system owner, Deputy Administrator, ISSO, incoming project manager"
-last_updated: "2026-10-29"
+last_updated: "2026-11-05"
 evidence_base: "Deliverables 1-7 and the sixteen measurement scripts in docs/evidence/"
 ---
 
@@ -50,7 +50,7 @@ Someone wrote the right fix and never switched it on. **Switching it on requires
 
 | | Action | Cost |
 |---|---|---|
-| 1 | **Read the deployment's "Execute as" setting** (VT-01). It conditions the severity of every Critical finding | **2 minutes** |
+| ~~1~~ | ~~**Read the deployment's "Execute as" setting** (VT-01)~~ | **Done 2026-11-05** — `USER_ACCESSING`, `DOMAIN`, version pinned. No Critical re-rated |
 | 2 | **Check whether anyone has used the self-grant function** (VT-04). Must happen *before* it is fixed — remediation destroys the evidence | 30 min |
 | 3 | **Answer one question:** in a "needs more information" state, should the assigned reviewer keep edit access? (BD-3) | A conversation |
 | 4 | **Correct the false FAS-sync notice** (G-022) | A wording change |
@@ -246,7 +246,7 @@ Seventy business rules were inventoried and typed by whether the code enforces t
 | **BD-6** | G-018, G-055 | Is Front-Office self-approval intended? Should cost thresholds be computed rather than self-declared? |
 | **BD-2** | G-031 | Should the AAS Front Office reviewer role see every request in the organization? |
 | **BD-4** | *(blocks no single finding)* | **Which cost figure is authoritative** — the system's computed grand total, or a user-entered estimate? |
-| **BD-1** | *(conditions all six Criticals)* | Is the deployment meant to run as the visiting user, or as the deploying owner? |
+| **BD-1** | *(no longer conditions any rating)* | **It runs as the visiting user** `[OBSERVED 2026-11-05]`. Remaining question is intent, not fact |
 
 ### 8.5.1 BD-3 is the one to prioritize
 
@@ -264,11 +264,11 @@ No finding is tagged as blocked on it, because it does not block a specific defe
 
 ## §8.6 What is not known, and what it costs to find out
 
-**Twelve facts about the live deployment cannot be determined from the repository** `[VERIFIED]`. This is not a gap in the assessment — deployment state genuinely lives outside version control.
+**Twelve facts about the live deployment cannot be determined from the repository** `[VERIFIED]`. This is not a gap in the assessment — deployment state genuinely lives outside version control. **Two of the twelve were read live on 2026-11-05** (`USER_ACCESSING` / `DOMAIN`, and version-pinned so a merge does not reach users), leaving ten.
 
 | Unknown | Task | Cost |
 |---|---|---|
-| The "Execute as" and "Who has access" settings, **whether a merge reaches users**, and the web-app URL | **VT-01** | **2 min** |
+| ~~The "Execute as" and "Who has access" settings, **whether a merge reaches users**~~ | **VT-01** | **Done 2026-11-05.** `USER_ACCESSING` · `DOMAIN` ("Anyone within GSA.gov") · **version-pinned, so a merge does NOT reach users.** Still open: does the live deployment ID match `GAS_PRODUCTION_DEPLOYMENT_ID`, and are there other deployments — 1 min |
 | Who holds project editor, spreadsheet editor, and the CI secret | VT-02 | 15 min |
 | Every configuration value (API key, mileage rates, folder IDs, sender address) | VT-09 | 10 min |
 | Whether the HR data library is attached, and **the exact values it emits** — `'2'` and `'02'` behave oppositely and look identical in a summary | VT-03 | 20 min |

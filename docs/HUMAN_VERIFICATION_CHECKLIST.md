@@ -4,7 +4,7 @@ description: "The 29 facts about the live system that cannot be determined from 
 status: canonical
 tier: 1
 audience: "whoever has live access — administrator, project manager, or developer. Assumes you have read nothing else."
-last_updated: "2026-10-29"
+last_updated: "2026-11-05"
 evidence_base: "docs/evidence/pass6_checklist_check.js validates this document, including its own effort arithmetic"
 ---
 
@@ -22,7 +22,7 @@ evidence_base: "docs/evidence/pass6_checklist_check.js validates this document, 
 
 | | |
 |---|---|
-| **If you have two minutes** | Do **VT-01**. It conditions the severity of all six Critical findings and nothing else should be reported to a security officer until it is known |
+| **If you have two minutes** | ~~Do **VT-01**~~ — **done 2026-11-05: `USER_ACCESSING` / `DOMAIN` / version-pinned.** Do **VT-20** instead (2 min), or start **VT-02** (15 min), now the highest-value open task |
 | **If you have an afternoon** | Do §10.2's five, then Group B. That is the whole of the access and data picture |
 | **If you are handing this to someone** | Groups A–D are location-ordered, so each group is one sitting in one place. Group E is independent of the others |
 
@@ -58,7 +58,7 @@ evidence_base: "docs/evidence/pass6_checklist_check.js validates this document, 
 
 | Order | Task | What it unblocks | Cost |
 |---|---|---|---|
-| 1 | **VT-01** — the deployment's "Execute as" and "Who has access" | All six Critical findings' severity basis, plus the amplifier on G-003, G-005, G-012, G-027, G-044 | **2 min** |
+| ~~1~~ | ~~**VT-01** — the deployment's "Execute as" and "Who has access"~~ | **DONE 2026-11-05.** `USER_ACCESSING` + `DOMAIN`. **The amplifier does not apply**; G-003, G-005, G-012, G-027, G-044 stand as rated | **done** |
 | 2 | **VT-07** — list every tab in the live database | Six findings at once: G-016, G-040, G-041, G-043, G-055, G-057 | **5 min** |
 | 3 | **VT-05** and **VT-11** — export the role tables, run the routing check | G-007, G-009, G-010, G-029, G-031, G-032 — and it creates the first historical record of who holds access | **15 min** |
 | 4 | **VT-03** — the HR library, and the exact values it emits | G-008, G-074, and whether two of the three ways into the system work at all | **20 min** |
@@ -66,7 +66,16 @@ evidence_base: "docs/evidence/pass6_checklist_check.js validates this document, 
 
 **Those five cost 54 minutes together and settle twenty-one findings.**
 
-**Why VT-01 leads.** It is two minutes and it changes the meaning of everything else. The project's manifest declares that the app runs as the *person using it*; eight lines of source code across six files assert the opposite — that it runs as the *person who deployed it* `[VERIFIED]`. If the second is true, then every unguarded function runs with the deployer's authority rather than the caller's, and five findings become materially worse. **One screen answers it.**
+**Why VT-01 led, and what it returned.** It was two minutes and it changed the meaning of everything else. The project's manifest declares that the app runs as the *person using it*; eight lines of source code across six files asserted the opposite `[VERIFIED]`. If the second had been true, every unguarded function would run with the deployer's authority and five findings would become materially worse.
+
+> **ANSWERED 2026-11-05 `[OBSERVED]`: Execute as `USER_ACCESSING`, Who has access `DOMAIN` ("Anyone within GSA.gov"), Version pinned (6 → 7).**
+>
+> **The manifest was right; the eight comments are wrong.** No finding carries the amplifier. Two things did come out of it:
+>
+> 1. **`DOMAIN` means any GSA.gov account**, not the ASD travel population — so G-001's 51 unguarded write functions are reachable by any GSA employee holding the URL. That is the form to take to an ISSO.
+> 2. **The deployment is version-pinned, so a `clasp push` does not reach users.** This had already cost time silently: a verified fix was pushed, reported as pushed, and did not appear to users until a version was published.
+>
+> **About one minute of VT-01 is left:** nobody compared the live deployment ID against `GAS_PRODUCTION_DEPLOYMENT_ID`, or checked whether other deployments exist.
 
 ---
 
@@ -78,7 +87,7 @@ evidence_base: "docs/evidence/pass6_checklist_check.js validates this document, 
 
 | ID | Do this, and write down the answer | Where exactly | Why it matters | Cost |
 |---|---|---|---|---|
-| **VT-01** | Record **"Execute as"**, **"Who has access"**, and the **version number** of the active deployment — and **confirm the deployment ID matches** the `GAS_PRODUCTION_DEPLOYMENT_ID` repository variable. If there is more than one deployment, record all of them and which is active | Editor → **Deploy → Manage deployments**; the variable is at GitHub → Settings → Secrets and variables → Actions → Variables | Decides whether unguarded functions run with the caller's authority or the deployer's. **Conditions the severity of all six Criticals.** **The URL is no longer unknown** — see the note below | **2 min** |
+| ~~**VT-01**~~ **MOSTLY DONE** | ~~Record "Execute as", "Who has access", and the version number~~ — **done 2026-11-05: `USER_ACCESSING` · `DOMAIN` · pinned (6→7)**. **Still to do: confirm the deployment ID matches `GAS_PRODUCTION_DEPLOYMENT_ID`, and record whether other deployments exist** | Editor → **Deploy → Manage deployments**; the variable is at GitHub → Settings → Secrets and variables → Actions → Variables | ~~Decides whether unguarded functions run with the caller's authority or the deployer's~~ — **answered: the caller's. No Critical re-rated** | **1 min left** |
 | **VT-02** | Record **who holds Apps Script project editor access**, **who holds edit access to the database spreadsheet**, and **who can read the GitHub `CLASPRC_JSON` secret** | Editor → **Share**; the Sheet → **Share**; GitHub → Settings → Secrets and variables → Actions | **These are the three privileges above the application's own `admin` role.** Anyone on any of these lists can bypass every control in the app — the spreadsheet list by typing in a cell. G-009, G-021 | **15 min** |
 | **VT-09** | Record **every Script Property and its value**, in **both** the production and sandbox projects. Note which keys are absent | Editor → **Project Settings** (gear) → Script Properties | This is the system's entire configuration — API key, mileage rates, folder IDs, sender address. **Four of the seven keys the code reads may never have been set** (G-020), and **no record of these values exists anywhere else** (§10.9) | **10 min** |
 | **VT-10** | Record **the actual list of OAuth scopes** users consent to | Linked GCP project → **APIs & Services → OAuth consent screen**; or revoke your own grant and re-authorize, reading the consent dialog | The manifest declares **no scopes at all**, so the real permission set is inferred from API calls and **includes full Drive access and all spreadsheets**. Nobody chose it; it widens silently as code is added (G-006) | **10 min** |
@@ -96,11 +105,13 @@ evidence_base: "docs/evidence/pass6_checklist_check.js validates this document, 
 > |---|---|
 > | **VT-01 is now a confirmation, not a discovery** | The deployed URL is `https://script.google.com/macros/s/<production-id>/exec`. **Confirm the ID in Manage deployments matches the variable** — a mismatch means the variable points at a stale or wrong deployment, which is worth catching now rather than after someone automates against it |
 > | **VT-21 gained a sub-question** | The sandbox has its **own published web app**, so it is reachable by URL, not merely a code-push target. Record **who can reach it** as well as which database it uses |
-> | **Nothing is automated yet** | No workflow reads either variable and there is still no `clasp deploy` step `[VERIFIED]`. **So VT-01's "does a merge reach users?" question is unchanged** — the IDs are known and unused |
+> | **Nothing is automated yet** | No workflow reads either variable and there is still no `clasp deploy` step `[VERIFIED]`. **VT-01 has since answered "does a merge reach users?" — NO**, because the deployment is version-pinned `[OBSERVED 2026-11-05]`. The IDs remain known and unused |
 >
-> **One caveat that depends on VT-01's answer.** Repository variables are **not** secrets — anyone with repository access can read them. That is normally fine for a deployment ID, since it already appears in the URL every user visits. **But if "Who has access" turns out to be *Anyone*,** that URL is the only thing between the public and 412 browser-reachable functions, 51 of which write with no authorization check (**G-001**). In that case the ID is closer to a key than to configuration. **Flag it if you see *Anyone*.**
+> ~~**One caveat that depends on VT-01's answer.**~~ **The caveat did not fire.** It was conditional on *"Who has access: **Anyone**"*; the live value is **`DOMAIN` — "Anyone within GSA.gov"** `[OBSERVED 2026-11-05]`. **The deployment IDs may stay as plaintext repository variables.**
+>
+> **But read `DOMAIN` precisely:** any GSA.gov account can reach the app, not merely ASD travel users. G-001's 51 unguarded write functions are exposed to any GSA employee with the URL — much better than the internet, much worse than "travel administrators."
 
-**If VT-01 shows "Execute as: me (the deployer)"** — stop and tell whoever owns this system before continuing. It does not need to be fixed today, but five findings are worse than this documentation says, and that is worth knowing within the hour rather than at the end of the afternoon.
+~~**If VT-01 shows "Execute as: me (the deployer)"**~~ — **it does not.** Read live on 2026-11-05 as `USER_ACCESSING`. No escalation needed on this point; the five findings are not worse than documented.
 
 ---
 
@@ -207,7 +218,7 @@ They are listed here because **four of the six block findings rated Critical or 
 
 | ID | The question | What it blocks | Why only the owner can answer it |
 |---|---|---|---|
-| **BD-1** | **Is this system supposed to run as the person using it, or as the person who deployed it?** | G-001–G-006 | **VT-01 tells you what it currently is. This asks what it should be** — a different question, and the first does not imply the second. The manifest says one thing and eight lines of source say the other, so **one of the two is a misunderstanding sitting in the codebase either way** |
+| **BD-1** | **Is this system supposed to run as the person using it, or as the person who deployed it?** | G-001–G-006 | **Fact settled: it runs as the person using it** (`USER_ACCESSING`) `[OBSERVED 2026-11-05]`. **This now asks only whether that is intended** — expected answer yes. **The eight source comments asserting `USER_DEPLOYING` are the misunderstanding**, and three of them describe "known bugs" that cannot be occurring; see `DEPLOYMENT_AND_ENVIRONMENTS.md` §5.2.2a |
 | **BD-2** | **Should the AAS Front Office reviewer role see every request in the organization?** | G-031 | It does today — the role carries organization-wide visibility, identical to `admin` for every filter. **The role's name does not advertise that.** Whether that is correct is policy, not a defect |
 | **BD-3** | **When a request is sent back for more information, should the assigned reviewer keep the ability to edit it?** | G-003, **G-067** | **This is the most expensive unanswered question in the system.** Two complete, correct authorization guards already exist in the codebase and are called from nowhere. Adopting them closes two Critical findings at roughly one line per call site — **but adoption would remove that edit access.** So the cheapest fix for the worst findings waits on this one answer |
 | **BD-4** | **Which cost figure is authoritative for budget purposes — the system's calculated total, or a user-entered estimate?** | G-035, G-036, G-040 | The largest open design question here. **The two halves of the system currently assume different answers**, and every budget-integration decision depends on which is right |
@@ -246,7 +257,10 @@ They are listed here because **four of the six block findings rated Critical or 
 LETS verification — completed by ______________________  date __________
 
 GROUP A — Apps Script editor and GitHub
- [ ] VT-01  Execute as: ______________  Who has access: ______________
+ [x] VT-01  Execute as: USER_ACCESSING  Who has access: DOMAIN (Anyone within GSA.gov)
+            Version: PINNED (was 6, published 7 on 2026-11-05)  [OBSERVED by @clolry]
+ [ ] VT-01b Does the live deployment ID match GAS_PRODUCTION_DEPLOYMENT_ID? ______
+            Any other deployments besides the active one? ______
             Deployment ID matches the repo variable?   Y / N
             Deployment URL: ______________________________  version: ____
  [ ] VT-02  Project editors: _________________________________________
@@ -311,13 +325,13 @@ _____________________________________________________________________
 
 | If you found | Do this |
 |---|---|
-| **"Execute as" is the deployer** (VT-01) | Tell the system owner and the security officer **today**. Five findings are worse than documented. It does not need fixing today; it needs to be known today |
+| ~~**"Execute as" is the deployer** (VT-01)~~ | **Did not occur.** `USER_ACCESSING` `[OBSERVED 2026-11-05]`. No escalation needed |
 | **Rows marked `Granted_By: 'bootstrap'` that you cannot account for** (VT-04) | **Treat as a potential incident, not a defect.** Preserve the evidence, escalate, and do not remediate G-002 until someone has looked |
 | **Any column drift in row 1** (VT-08) | **Stop and escalate.** Data is being written to the wrong fields now. This is the one finding on the list that gets worse every hour |
 | **Duplicate IDs or orphan rows** (VT-16, VT-17) | Both confirm a known race (G-012) has already fired. Also check whether the affected requests skipped their compliance review (G-069) |
 | **The sandbox shares the production database** (VT-21) | Stop testing in the sandbox until it is repointed. Sandbox activity is writing live travel data — **and the sandbox has its own published web app**, so it is reachable, not merely pushable |
 | **The deployment ID does not match the repository variable** (VT-01) | The variable points at a stale or wrong deployment. Fix it **before** anyone adds a `clasp deploy` step that trusts it |
-| **"Who has access: Anyone"** (VT-01) | The deployment URL is the only barrier to 412 browser-reachable functions. **The deployment ID stored in a plaintext repository variable is then closer to a key than to configuration** — raise it with the system owner |
+| ~~**"Who has access: Anyone"**~~ (VT-01) | **Did not occur** — the value is `DOMAIN`, "Anyone within GSA.gov" `[OBSERVED 2026-11-05]`. Plaintext repository variables are fine. **Still raise G-001 with the system owner as "reachable by any GSA.gov account."** |
 | **`supervisoryStatus` is anything other than `2` or `'2'`** (VT-03) | Every supervisor is being denied access right now, and the system shows them a normal "no access" page. One-line fix, but **record the value first** |
 | **Blank or unfamiliar `occupancyStatus` values** (VT-03) | The opposite problem — people may be getting in who should not (G-074). The fix needs the full value list, which is why this task collects it |
 | **`Is_Active` values other than `TRUE`/`FALSE`** (VT-27) | Someone's revocation **did not revoke**. Check whether that person should still have access |

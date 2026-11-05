@@ -1403,10 +1403,29 @@ console.log('\n23. the page is actually wired to it');
     ok('step ' + n + ' has a pane', new RegExp('data-wb-pane="' + n + '"').test(page));
   });
 
-  // The parser is pinned. A CDN script changing version under a date parser
-  // is how a column starts arriving as a different type.
+  // THE PARSER URL MUST RESOLVE, AND BE PINNED. Both halves matter, and the
+  // first one is here because asserting only the version string is what let a
+  // dead URL through 244 passing assertions into the first live import.
+  //
+  // WHAT HAPPENED: the tag read cdn.jsdelivr.net/npm/xlsx@0.20.2 and 404'd —
+  // "Couldn't find the requested release version 0.20.2". jsdelivr's /npm/
+  // path mirrors npm, and SheetJS stopped publishing `xlsx` there after
+  // 0.18.5; it self-hosts now. The version was right, the host was wrong, and
+  // the page reported it as a network problem on every network.
+  //
+  // A string match cannot prove a URL resolves — that needs egress, which a
+  // unit test must not have. So this pins the two things that ARE checkable:
+  // the host that actually serves 0.20.2, and the absence of the npm path
+  // that cannot. Reachability is a deploy-time check, noted in the guide.
+  const parserTag = /<script src="([^"]*xlsx[^"]*)"/.exec(page);
+  ok('the spreadsheet parser is loaded from a script tag', !!parserTag, page.slice(0, 200));
+  const parserUrl = parserTag ? parserTag[1] : '';
   ok('the spreadsheet parser is version-pinned',
-     /xlsx@0\.20\.2/.test(page), 'a floating tag can change the date encoding');
+     /0\.20\.2/.test(parserUrl), parserUrl);
+  ok('and served from the host that actually publishes 0.20.2',
+     /^https:\/\/cdn\.sheetjs\.com\//.test(parserUrl), parserUrl);
+  ok('NOT from jsdelivr/npm, which stopped carrying xlsx after 0.18.5',
+     parserUrl.indexOf('jsdelivr.net/npm/xlsx') === -1, parserUrl);
   ok('and a failed parser load is reported, not left to throw',
      /The spreadsheet parser did not load/.test(page));
 

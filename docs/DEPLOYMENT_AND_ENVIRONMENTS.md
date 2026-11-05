@@ -4,13 +4,47 @@ description: "The Apps Script projects, the deployment pipeline, the configurati
 status: canonical
 tier: 1
 audience: "project manager, system owner, ISSO, developer deploying a change"
-last_updated: "2026-10-29"
-evidence_base: "docs/evidence/pass6_deployment_census.js"
+last_updated: "2026-11-05"
+evidence_base: "docs/evidence/pass6_deployment_census.js; VT-01 read live from Deploy → Manage deployments on 2026-11-05"
 ---
 
 # LETS Deployment and Environments
 
 **Deliverable 5 of 10.** Companion to [`ADMINISTRATOR_GUIDE.md`](./ADMINISTRATOR_GUIDE.md), [`SYSTEM_COMPONENT_MAP.md`](./SYSTEM_COMPONENT_MAP.md), [`DATA_DICTIONARY.md`](./DATA_DICTIONARY.md) and [`WORKFLOW_AND_BUSINESS_RULES.md`](./WORKFLOW_AND_BUSINESS_RULES.md).
+
+---
+
+## §5.-1 VT-01 IS ANSWERED — read this before the rest of the document
+
+**2026-11-05.** @clolry opened Deploy → Manage deployments and read the active deployment. The three values that conditioned most of this document are now known `[OBSERVED]`:
+
+| Setting | Value | Was |
+|---|---|---|
+| **Execute as** | **`USER_ACCESSING`** — "User accessing the web app" | `[UNKNOWN]`, with an `[INFERRED]` prediction of `USER_DEPLOYING` (§5.2.2) |
+| **Who has access** | **`DOMAIN`** — "Anyone within GSA.gov" | `[UNKNOWN]` |
+| **Version** | **Pinned to a number, not Head.** Was 6; @clolry published **7** to ship the parser fix | `[UNKNOWN]` (§5.2.1) |
+
+**Both access settings match `lets_app/appsscript.json` exactly.** The manifest was telling the truth.
+
+### Three consequences, in order of how much they change
+
+**1. The `[INFERRED]` prediction in §5.2.2 was WRONG, and that resolves BD-1.** This document predicted `USER_DEPLOYING` from eight source comments, arguing *"a developer does not write three bug comments about a mode the system is not in."* They did. The manifest wins; **the eight comments are the body of evidence that is wrong** (§5.2.2a). The severity amplifier those comments implied — five findings running with the deploying owner's credentials — **does not apply**. G-001 through G-006 stand at their manifest-declared ratings.
+
+**2. A merge to `main` does NOT reach users.** The deployment is version-pinned and no `clasp deploy` step exists `[VERIFIED]`. So `clasp push` replaces the project's code while every user continues to see the pinned version until someone publishes manually. **This system is not continuously deployed.** §5.2.1's `???` is now a manual step.
+
+> **This was observed the hard way.** The 2026-11-05 parser fix (`DEPLOYMENT_TRAVEL_IMPORT.md` §7.1) was pushed successfully — `clasp push` listed the file, a second push reported "already up to date" — and the browser kept serving the old code through repeated hard reloads. Publishing version 7 fixed it. **A push that appears to succeed and changes nothing for users is this configuration working as designed.**
+
+**3. The security conditional at §5.2.1 does NOT fire.** It was written to trigger on *"Who has access: **Anyone**"*. The answer is **"Anyone within GSA.gov"**, which is materially different: the deployment IDs may remain plaintext repository variables.
+
+> **Not nothing, though.** `DOMAIN` means **any GSA.gov account** can reach the web app — not merely ASD travel users. **G-001** records 412 browser-reachable functions, 51 of which write with no authorization check. The blast radius is "any GSA employee," not "the internet." Better than the worst case; still worth an ISSO conversation.
+
+### What VT-01 did not answer
+
+- **Whether the deployment ID matches `GAS_PRODUCTION_DEPLOYMENT_ID`.** Not compared. Still open.
+- **Whether more than one deployment exists**, and which is active. Only the active one was read.
+- **BD-1 as a question of intent.** VT-01 says what the setting *is*. Whether `USER_ACCESSING` is what the owner *wants* is still a decision, and the answer now looks like "yes, and the code comments need correcting."
+
+---
 
 ---
 
@@ -26,6 +60,7 @@ What *is* in the repository is **the configuration that would be applied** — t
 |---|---|
 | `[VERIFIED]` | Read from a file in the repository, or measured by `pass6_deployment_census.js` |
 | `[CONFIGURED]` | **New in this deliverable.** The repository specifies this; whether the live project matches is a separate question |
+| `[OBSERVED]` | **New 2026-11-05.** Read from the live Apps Script project by a human with access. Stronger than `[VERIFIED]` for deployment facts, because the repository cannot hold them at all |
 | `[INFERRED]` | A reasoned conclusion, labeled so you can disagree |
 | `[UNKNOWN]` | Held outside the repository. Requires someone with live access |
 
@@ -39,7 +74,7 @@ Every count is produced by [`evidence/pass6_deployment_census.js`](./evidence/pa
 |---|---|
 | **How many Apps Script projects?** | **Four are configured.** LETS production, a LETS sandbox, the org chart (§5.1.2a), and **one undocumented project wired to the repository root** (§5.1.3) |
 | **How does code reach production?** | A merge to `main` triggers `clasp push --force`. **No `clasp deploy` step runs** (§5.2.1) |
-| **So does a merge reach users?** | `[UNKNOWN]`. It depends on how the active deployment is configured, which nobody has recorded (**VT-01**) |
+| **So does a merge reach users?** | **No** `[OBSERVED 2026-11-05]`. The deployment is **version-pinned**, so a push changes the project's code while users keep seeing the published version until someone deploys manually (§5.-1, §5.2.1) |
 | **Who can deploy?** | Whoever holds the `CLASPRC_JSON` secret, or anyone who can merge to `main`. **There is no branch protection** `[VERIFIED]` |
 | **Is the pipeline well built?** | **Yes — unusually so.** Four deliberate controls, each documenting its own reasoning (§5.3) |
 | **Do those controls work?** | Three of four bite exactly as intended. **One has a real coverage gap** (§5.3.3) |
@@ -181,11 +216,20 @@ developer → pull request
 | If the deployment… | Then a merge… |
 |---|---|
 | Tracks the head/latest version | **reaches users immediately** |
-| Is pinned to a numbered version | **does not reach users at all** until someone deploys manually |
+| **Is pinned to a numbered version** | **does not reach users at all** until someone deploys manually |
 
-**Which it is, is `[UNKNOWN]`.** This is not a minor detail: it is the difference between continuous delivery and a pipeline whose output never ships. **VT-01 captures it** along with the execute-as setting, in the same two-minute visit to Deploy → Manage deployments.
+**It is the second** `[OBSERVED 2026-11-05]`. The active deployment is pinned to a numbered version — it was on 6, and @clolry published 7 to ship the parser fix. **So the pipeline's output does not ship on merge.** See §5.-1.
 
-> **Do not describe this system as continuously deployed until VT-01 answers that.** It may be; the repository cannot say.
+> **This system is NOT continuously deployed.** The sentence that previously stood here — *"do not describe this system as continuously deployed until VT-01 answers that"* — is now answered in the negative.
+
+**The failure mode is silence, and it has already cost time.** On 2026-11-05 a one-line fix to `travelBudgetDashboardPage.html` was pushed: `clasp push` listed the file, a second push said *"Script is already up to date,"* and the browser served the **old** code through repeated hard reloads. Nothing reported an error, because nothing was wrong — a push is not a deploy. Two ways to avoid losing that time again:
+
+| Want | Use |
+|---|---|
+| To verify a change you just pushed | The **`/dev`** URL (Deploy → Test deployments). Always serves the latest pushed code; no publish needed |
+| To ship a change to users | Deploy → Manage deployments → edit → **Version: New version** → Deploy |
+
+> **A `/exec` URL will not show your push.** If the code in View Source does not match the file on disk, check whether you published before suspecting the push.
 
 #### Both deployment IDs are now known — and nothing reads them
 
@@ -212,7 +256,11 @@ developer → pull request
 2. **The sandbox has its own deployment**, not merely a push target. That makes it a **second live, reachable front door** onto whatever database it is configured against — **which sharpens VT-21 from a housekeeping question into an access-surface question.**
 3. **A `clasp deploy` step is now possible to write, and should not land alone.** Today `push ≠ deploy` is an *accidental* safety buffer: a merge replaces the code but may not publish it. **Adding a deploy step removes that buffer**, which is the right direction — a pipeline whose output never ships is worse — but it makes **G-021** (no branch protection, and whoever holds `CLASPRC_JSON` has standing production deploy authority) immediately load-bearing. **Sequence it after branch protection, not before.**
 
-> **One security note, and it is conditional on VT-01.** Repository *variables* are not secrets: anyone with repository access can read them and they are safe to print in logs. That is normally correct for a deployment ID, since it already appears in the URL every user visits. **But if VT-01 reports "Who has access: Anyone,"** then that URL is the only thing between the public and 412 browser-reachable functions, 51 of which write with no authorization check (**G-001**). In that case the ID is closer to a capability than to configuration, and a plaintext variable is the wrong home for it. **This makes VT-01 more urgent, not less.**
+> **One security note, and it was conditional on VT-01 — the condition did NOT fire.** Repository *variables* are not secrets: anyone with repository access can read them and they are safe to print in logs. That is normally correct for a deployment ID, since it already appears in the URL every user visits. The condition written here was **"if VT-01 reports *Who has access: Anyone*"** — in which case the URL would be the only thing between the public and 412 browser-reachable functions, 51 of which write with no authorization check (**G-001**), making the ID closer to a capability than to configuration.
+>
+> **VT-01 reported `DOMAIN` — "Anyone within GSA.gov," not "Anyone"** `[OBSERVED 2026-11-05]`. **The deployment IDs may stay as plaintext repository variables.** No action needed.
+>
+> **But read `DOMAIN` precisely: it is every GSA.gov account, not the ASD travel population.** The 51 unguarded write functions are reachable by any GSA employee who has the URL. That is a far smaller exposure than the internet and a far larger one than "travel administrators." **G-001 is still worth an ISSO conversation on those terms.**
 
 **The CI guard did not cover this identifier shape, and now does.** See §5.3.3 — deployment IDs begin with `A`, so the hardcoded-ID guard's `1`-anchored pattern missed them entirely regardless of length.
 
@@ -243,6 +291,26 @@ The eight, located `[VERIFIED]`:
 > **`[INFERRED]`, and stated as inference: the live deployment is probably `USER_DEPLOYING`.** The reasoning is that five of eight comments describe observed behavior rather than intent. **This is not a substitute for VT-01** — it is a prediction, and `ADMINISTRATOR_GUIDE.md` §1.3.4 rates the Critical findings on the manifest's declared value precisely so the ratings do not rest on this inference.
 
 **Whichever way it resolves, one body of evidence in this codebase is wrong** and should be corrected so the next reader is not misled. That is **BD-1**.
+
+### 5.2.2a The inference above was WRONG — the manifest was right
+
+**`[OBSERVED 2026-11-05]`. The live deployment is `USER_ACCESSING`.** @clolry read it from Deploy → Manage deployments: *"User accessing the web app."*
+
+**§5.2.2 is left standing above, unedited, on purpose.** Deleting a wrong prediction hides how confident it was and what reasoning produced it. The argument was *"a developer does not write three bug comments about a mode the system is not in."* **They did.** Five pieces of apparently behavioral evidence lost to one live reading, which is worth remembering the next time code comments are weighed against a manifest.
+
+**So the eight comments are the wrong body of evidence**, and that answers BD-1's factual half:
+
+| The eight comments | Status now |
+|---|---|
+| `Feedback.js:77`, `:118`, `:229` — three "KNOWN BUG under USER_DEPLOYING" | **Describe bugs that cannot be occurring.** Either the bug is real and has another cause, or it was never real. Do not "fix" these by changing the mode |
+| `Attachments.js:5`, `HCStaffing.js:6` — a feature *works because of* the mode | **The explanation is wrong, so the mechanism is unexplained.** Attachments and the HC cache-miss fallback do work; nobody now knows why |
+| `Props.js:18`, `Reporting.js:310`, `CacheWarming.js:28` — assertions of fact | **Simply false.** Cheap to correct |
+
+> **The two in the middle row are the interesting ones.** A comment saying *"this works because X"* where X is false means the real reason is undocumented. That is a gap in understanding, not just stale text, and it should not be closed by editing the comment to say something else plausible.
+
+**The severity amplifier does not apply.** `ADMINISTRATOR_GUIDE.md` §1.3.4 warned that under `USER_DEPLOYING`, G-003, G-005, G-012, G-027 and G-044 would move from "any user can corrupt data" to "any user can corrupt data **using a privileged identity**." Under `USER_ACCESSING` each unguarded function runs with the **caller's** authority. Those five findings stand at their documented ratings and need no re-rating.
+
+> **BD-1's other half is still open, and is now easy.** VT-01 says the setting *is* `USER_ACCESSING`. Whether that is what the owner *wants* remains a decision — but given the manifest has declared it all along and the app behaves correctly, the expected answer is "yes, and the eight comments need correcting." **Correcting them is tracked separately; it is not a documentation edit but a question of what those three bug comments were actually about.**
 
 ### 5.2.3 Who can deploy
 
@@ -617,9 +685,10 @@ It matters only because an administrator familiar with other Apps Script tools w
 
 | # | Unknown | Why it matters | Resolves with |
 |---|---|---|---|
-| 1 | **The active deployment's "Execute as" and "Who has access"** | Gates the severity of all six Critical findings, and §5.2.2's contradiction | **VT-01** — 2 min |
-| 2 | **Whether a merge reaches users** | No `clasp deploy` step exists. The pipeline may or may not ship (§5.2.1) | **VT-01** — same visit |
-| 3 | **The deployed web-app URL** | Recorded nowhere in the repository — but **now derivable** from the `GAS_PRODUCTION_DEPLOYMENT_ID` repository variable (§5.2.1) | **VT-01** — same visit, to confirm |
+| ~~1~~ | ~~**The active deployment's "Execute as" and "Who has access"**~~ | **ANSWERED 2026-11-05** — `USER_ACCESSING` / `DOMAIN` (§5.-1). The manifest was right; §5.2.2's inference was wrong (§5.2.2a) | **VT-01 — done** |
+| ~~2~~ | ~~**Whether a merge reaches users**~~ | **ANSWERED 2026-11-05** — **no.** Version-pinned, no `clasp deploy` step. Not continuously deployed (§5.2.1) | **VT-01 — done** |
+| 3 | **Whether the live deployment ID matches `GAS_PRODUCTION_DEPLOYMENT_ID`** | A mismatch means the variable points at a stale deployment — worth catching before anyone automates against it. **Not compared during the 2026-11-05 reading** | **VT-01** — 1 min, still open |
+| 3b | **Whether more than one deployment exists, and which is active** | Only the active one was read on 2026-11-05 | **VT-01** — same visit |
 | 4 | **Who holds project editor, sheet editor, and `CLASPRC_JSON`** | Three privileges above the app's own `admin` (§5.2.3) | **VT-02** — 15 min |
 | 5 | **Every Script Property value** | All configuration. Also the core of a recovery runbook (§5.7.3) | **VT-09** — 10 min |
 | 6 | **Whether an HC library is attached, to which projects, and the exact values it emits** | Declared in no manifest; its absence is silent (§5.7.2). The emitted values decide whether the supervisor allow-path works at all (**G-074**) | **VT-03** — 20 min |
@@ -628,9 +697,9 @@ It matters only because an administrator familiar with other Apps Script tools w
 | 9 | **Which triggers are installed, and under whose account** | A deprovisioned owner stops them silently (§5.5.2) | **VT-18** — 15 min, per editor |
 | 10 | **The actual OAuth consent scope list** | No `oauthScopes` declared; the grant is inferred | **VT-10** — 10 min |
 | 11 | **The live sender address, and whether a send-as alias exists** | Two initializers disagree (§5.4.4) | **VT-19** — 10 min |
-| 12 | **Whether the manifest in the live project matches this repository's** | `clasp push --force` overwrites it, but deployment settings survive | **VT-01** / **VT-21** |
+| 12 | **Whether the manifest in the live project matches this repository's** | `clasp push --force` overwrites it, but deployment settings survive. **Partially answered** — the two access settings match the manifest exactly (§5.-1) | **VT-21** |
 
-**Items 1, 2 and 3 are one two-minute task.** Items 7 and 8 are one twenty-minute task. **The whole table is 102 minutes** — eight distinct visits closing twelve unknowns — and items 5 and 4 together produce most of a disaster-recovery runbook that does not currently exist.
+**Items 1 and 2 are closed** `[OBSERVED 2026-11-05]`, and the two minutes they cost also revealed that pushes do not reach users — which had been costing time silently. **Items 3 and 3b are what remains of VT-01**, about one minute, and were simply not looked at during the same visit. Items 7 and 8 are one twenty-minute task. **The remaining table is about 92 minutes**, and items 5 and 4 together produce most of a disaster-recovery runbook that does not currently exist.
 
 ### 5.8.1 Two findings in this deliverable are new
 

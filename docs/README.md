@@ -4,7 +4,7 @@ description: "Where to find the answer to your question about the Logistics, Eve
 status: canonical
 tier: 1
 audience: "anyone opening this folder for the first time"
-last_updated: "2026-11-04"
+last_updated: "2026-11-05"
 ---
 
 # LETS Documentation
@@ -66,7 +66,7 @@ This file is an **index**, not a summary. For the current state of the system in
 | Question | Go to |
 |---|---|
 | How does code get to production? | [`DEPLOYMENT_AND_ENVIRONMENTS.md`](./DEPLOYMENT_AND_ENVIRONMENTS.md) §5.2 |
-| Does my merge reach users? | **`DEPLOYMENT_AND_ENVIRONMENTS.md`** §5.2.1 — unknown, and VT-01 answers it |
+| Does my merge reach users? | **No** — **`DEPLOYMENT_AND_ENVIRONMENTS.md`** §5.2.1. The deployment is version-pinned and nothing runs `clasp deploy`, so someone must publish manually. Use the `/dev` URL to see your own push |
 | What configuration exists, and where? | `DEPLOYMENT_AND_ENVIRONMENTS.md` §5.4 |
 | What would we lose if the project were deleted? | **`DEPLOYMENT_AND_ENVIRONMENTS.md`** §5.7 |
 | **How do I make a change without breaking something?** | **[`ENHANCEMENT_PLAYBOOK.md`](./ENHANCEMENT_PLAYBOOK.md)** |
@@ -118,7 +118,7 @@ This file is an **index**, not a summary. For the current state of the system in
 | 3 | [`GAP_REGISTER.md`](./GAP_REGISTER.md) | §6.8 — the seven findings **you** have to unblock, not engineering |
 | 4 | [`HUMAN_VERIFICATION_CHECKLIST.md`](./HUMAN_VERIFICATION_CHECKLIST.md) | **5 h 1 m with the system open** (plus a 2 h code review) and it closes most of the unknowns |
 
-**The one thing to do first:** `ADMINISTRATOR_GUIDE.md` §1.3.4 — **VT-01**, two minutes, and it conditions the severity of every Critical finding.
+~~**The one thing to do first:** `ADMINISTRATOR_GUIDE.md` §1.3.4 — **VT-01**~~ — **done 2026-11-05.** The deployment runs as `USER_ACCESSING` with `DOMAIN` access; **no Critical finding was re-rated**, and the manifest turned out to be right where eight code comments were wrong. **The next cheapest high-value task is VT-02** — who holds Apps Script project editor, 15 minutes (`ADMINISTRATOR_GUIDE.md` §1.5).
 
 ### If you are a developer about to change something
 
@@ -261,7 +261,7 @@ Four were found wrong during consolidation; the fifth was found while writing De
 
 ### What no document here can tell you
 
-**Twelve facts about the live deployment are not in version control** — which project is live, how it executes, who holds the privileged accounts, what every configuration value is. That is not a gap in the work; deployment state genuinely lives outside the repository.
+**Twelve facts about the live deployment are not in version control** — which project is live, how it executes, who holds the privileged accounts, what every configuration value is. That is not a gap in the work; deployment state genuinely lives outside the repository. **Two are now recorded** from a live reading on 2026-11-05: it executes as `USER_ACCESSING` with `DOMAIN` access, and the deployment is **version-pinned**, so a merge does **not** reach users (`DEPLOYMENT_AND_ENVIRONMENTS.md` §5.-1).
 
 [`DEPLOYMENT_AND_ENVIRONMENTS.md`](./DEPLOYMENT_AND_ENVIRONMENTS.md) §5.8 lists all twelve with the task and cost that closes each. **The whole table is 102 minutes.**
 

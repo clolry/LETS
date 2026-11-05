@@ -51,8 +51,20 @@
     PINNED VERSION, not a floating tag. A CDN script that silently changes
     version under a parser is how a date column starts arriving in a different
     type. 0.20.2 is what the importer was measured against.
+
+    SERVED FROM SHEETJS, NOT jsdelivr/npm. This URL was
+    cdn.jsdelivr.net/npm/xlsx@0.20.2 and it 404'd on the first live import:
+    "Couldn't find the requested release version 0.20.2."
+
+    jsdelivr's /npm/ path mirrors the npm registry, and SheetJS stopped
+    publishing `xlsx` to npm after 0.18.5 — it self-hosts now. So the pinned
+    version was right and the HOST was wrong, which fails identically on every
+    network and is not a connectivity problem. Do not "fix" a future load
+    failure by reaching for cdn.jsdelivr.net again; the version that works
+    there is 0.18.5, which is two CVE fixes behind (CVE-2023-30533 prototype
+    pollution, CVE-2024-22363 ReDoS).
   -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 
   <style>
     /*

@@ -4,7 +4,7 @@ description: "How to change this system without breaking it — recipes, prohibi
 status: canonical
 tier: 1
 audience: "developer making a change, whether or not they have read the other nine documents"
-last_updated: "2026-10-29"
+last_updated: "2026-11-05"
 evidence_base: "docs/evidence/pass6_change_impact.js"
 ---
 
@@ -67,7 +67,14 @@ Merge to `main`. The pipeline runs `clasp push --force` and four regression guar
 
 The pipeline replaces the project's **code**. It never runs `clasp deploy` `[VERIFIED]`.
 
-**Whether your merge reaches users is `[UNKNOWN]`** — it depends on whether the active deployment tracks the head version or a pinned one, which nobody has recorded. **VT-01** settles it in two minutes. Until then, do not assume your change is live because CI went green.
+**Your merge does NOT reach users** `[OBSERVED 2026-11-05]`. The active deployment is **pinned to a numbered version**, and no workflow runs `clasp deploy`. So a green CI run and a successful `clasp push` both leave users on the previously published version.
+
+| To | Do |
+|---|---|
+| **See your own change** | Open the **`/dev`** URL (Apps Script → Deploy → Test deployments). Always serves the latest pushed code |
+| **Ship it to users** | Apps Script → Deploy → **Manage deployments** → edit the active one → **Version: New version** → Deploy |
+
+> **This bites silently.** On 2026-11-05 a one-line fix was pushed, `clasp push` confirmed it, a second push said *"already up to date"* — and the browser served the old code through repeated hard reloads, because the published version had not changed. **If View Source does not match your file on disk, check whether you published before suspecting the push.**
 
 ### Rule 3 — Any new top-level function is a public API
 

@@ -4,7 +4,7 @@ description: "Every finding, severity-ranked with a stated rubric, with ownershi
 status: canonical
 tier: 1
 audience: "project manager, system owner, ISSO, remediation planner"
-last_updated: "2026-10-29"
+last_updated: "2026-11-05"
 evidence_base: "docs/evidence/pass6_register_check.js, pass6_hc_gate_predicate.js, and the fourteen other measurement scripts"
 ---
 
@@ -120,7 +120,7 @@ Severity is **consequence × reachability**. Both axes are needed: a catastrophi
 
 **Five findings would move**: G-003, G-005, G-012, G-027, G-044. None is rated below High already, so **no finding changes block** — but the justification for the Critical block changes from *"any user can corrupt data"* to *"any user can corrupt data using a privileged identity."*
 
-**Every rating in this register is on the manifest's declared value.** **VT-01** resolves it in two minutes and must run before the register is treated as final.
+**Every rating in this register is on the manifest's declared value — and that value is now confirmed correct.** **VT-01** was read live on 2026-11-05: the deployment runs as `USER_ACCESSING`, exactly as `appsscript.json` declares `[OBSERVED]`. **So no rating in this register carries the `USER_DEPLOYING` amplifier, and none needs revision.** The eight source comments asserting otherwise are the wrong body of evidence — see `DEPLOYMENT_AND_ENVIRONMENTS.md` §5.2.2a.
 
 **The latency discount is refused.** A defect that has probably never been exercised is rated on consequence, not on luck. G-002 is Critical whether or not anyone has called it; **VT-04** determines whether anyone has, and that is an incident-response question rather than a severity one.
 
@@ -612,7 +612,7 @@ All four LETS-original modules expose **zero** top-level functions and have **ze
 
 | Decision | Blocks no single finding, but |
 |---|---|
-| **BD-1** — is the deployment meant to run as `USER_ACCESSING` or `USER_DEPLOYING`? | **It conditions the severity of all six Criticals** (§6.1.4). Every rating in this register is on the manifest's declared value, so BD-1 plus **VT-01** decide whether five findings carry the amplifier |
+| **BD-1** — is the deployment meant to run as `USER_ACCESSING` or `USER_DEPLOYING`? | **Factually resolved 2026-11-05: it runs as `USER_ACCESSING`** `[OBSERVED]`. **No finding carries the amplifier**; every rating here stands. What remains of BD-1 is intent — whether `USER_ACCESSING` is what the owner wants — and the expected answer is yes, with the eight contradicting code comments needing correction (§5.2.2a) |
 | **BD-4** — which cost figure is authoritative, System A's `Grand_Total` or a user-entered estimate? | **It is the precondition for the whole budget-integration effort.** It does not block a specific finding because it blocks the *design* that G-035, G-036 and G-040 all assume. Fixing them without answering it would hard-code one of two incompatible answers |
 
 **BD-4 is the one most likely to be skipped**, because no row in the register says `BLOCKED ON BD-4`. It is the largest unresolved design question in the system.
@@ -642,7 +642,7 @@ All four LETS-original modules expose **zero** top-level functions and have **ze
 
 | Order | Action | Why first |
 |---|---|---|
-| 1 | **VT-01** — the deployment's "Execute as" | Conditions the severity of all six Criticals (§6.1.4). Two minutes |
+| ~~1~~ | ~~**VT-01** — the deployment's "Execute as"~~ | **Done 2026-11-05: `USER_ACCESSING` / `DOMAIN`, version pinned.** No Critical re-rated. G-001's real exposure is "any GSA.gov account with the URL" |
 | 2 | **VT-04** — has `bootstrapTravelAdmin` been called? | **Must precede any fix to G-002** — remediation destroys the evidence |
 | 3 | **Answer BD-3** | Unblocks G-067, the cheapest fix for two Criticals (§6.8.1) |
 | 4 | **VT-07** — the live tab list | Confirms or refutes the latency of seventeen findings (§6.7.1) |

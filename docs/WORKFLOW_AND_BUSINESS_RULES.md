@@ -4,7 +4,7 @@ description: "Every rule the system enforces, every rule it claims and does not 
 status: canonical
 tier: 1
 audience: "project manager, system owner, reviewer, developer changing workflow behavior"
-last_updated: "2026-10-28"
+last_updated: "2026-11-05"
 evidence_base: "docs/evidence/pass6_rule_census.js"
 ---
 
@@ -657,7 +657,7 @@ Worth stating because it tells you which comments to trust:
 
 ### 4.9.1 One decision that is also a question of fact
 
-**BD-1** — is the deployment meant to run as `USER_ACCESSING` or `USER_DEPLOYING`? — is both. **VT-01** reports what it *is*; only the owner can say what it *should be*. Whichever way it resolves, one of the two bodies of evidence in this codebase is wrong (the manifest, or eight source comments) and should be corrected.
+**BD-1** — is the deployment meant to run as `USER_ACCESSING` or `USER_DEPLOYING`? — is both. **VT-01 has now reported what it *is*: `USER_ACCESSING`** `[OBSERVED 2026-11-05]`. Only the owner can say what it *should be*, and the expected answer is "that is what we want." **The question of which body of evidence is wrong is settled: the eight source comments are** — not the manifest. Three of them describe "known bugs under `USER_DEPLOYING`" that cannot be occurring, and two explain that a feature works *because of* a mode the system is not in, which means those mechanisms are now unexplained. See `DEPLOYMENT_AND_ENVIRONMENTS.md` §5.2.2a.
 
 ---
 
