@@ -149,6 +149,95 @@ var DirectoryLookup = (function () {
   }
 
   /**
+   * Splits a GSA directory name from its trailing org suffix.
+   *
+   * THE REASON NOTHING MATCHED. @clolry's diagnostic showed:
+   *
+   *   givenName="Lawrence" familyName="Hale - FC" displayName="Lawrence Hale - FC"
+   *
+   * GSA's Workspace directory appends ' - <ORG>' to the family name and the
+   * display name. So the roster's surname 'Hale' was being compared against
+   * 'Hale - FC' and failing, on every single entry. 46 of 50 refusals were
+   * this, which is why the count was suspiciously uniform.
+   *
+   * WHY ` - ` AND NOT A BARE HYPHEN
+   * ------------------------------
+   * The delimiter is space-hyphen-space. A bare hyphen is part of real
+   * surnames — 'Mbeki-Lawson', 'Fitzgerald-Moreau', 'Aubert-Bell' all appear
+   * in this roster — and stripping on it would truncate them to 'Mbeki' and
+   * then match the wrong person, or nobody. nameKey() strips punctuation
+   * before comparing, so a hyphenated surname needs no special handling here;
+   * only the spaced suffix does.
+   *
+   * ANCHORED AT THE END, and only the LAST such group is removed. A surname
+   * containing ' - ' in the middle keeps its first part.
+   *
+   * THE ORG TOKEN IS RETURNED, NOT DISCARDED. It is in the same vocabulary as
+   * the roster's Dept ID (Org) — see candidateOrgMatches — which makes it a
+   * genuine second identifying field rather than a decoration.
+   *
+   * @param {string} v
+   * @returns {{name: string, org: string}}
+   */
+  function splitDirectorySuffix(v) {
+    var raw = _str_(v);
+    if (!raw) return { name: '', org: '' };
+
+    // Last ' - ' in the string. Everything after it is the org token, which
+    // for GSA is short and alphanumeric.
+    var at = raw.lastIndexOf(' - ');
+    if (at === -1) return { name: raw, org: '' };
+
+    var tail = raw.slice(at + 3).trim();
+    // Only treat it as an org suffix if the tail LOOKS like an org code:
+    // short, no spaces, letters and digits. 'Smith - Jones' is not a
+    // suffixed surname, and 'Hale - Office of Acquisition' is a description
+    // rather than a code — neither should be stripped as if it were FC.
+    // UPPERCASE OR DIGITS ONLY. GSA org codes are 'FC', 'FCA0B', 'FAS' —
+    // always upper. Requiring that rejects 'Smith - Jones', which my first
+    // version split into surname 'Smith' and org 'JONES', inventing an org
+    // out of somebody's double-barrelled name and discarding half of it.
+    if (!tail || tail.length > 8 || !/^[A-Z0-9]+$/.test(tail)) {
+      return { name: raw, org: '' };
+    }
+    return { name: raw.slice(0, at).trim(), org: tail.toUpperCase() };
+  }
+
+  /**
+   * Does a candidate's directory org agree with the roster's org code?
+   *
+   * I PREVIOUSLY ARGUED AGAINST USING THIS AS A TIE-BREAK, on the grounds
+   * that "the feed's org code and the directory's department string are
+   * different vocabularies, and a plausible-looking correlation would be the
+   * most dangerous rule in the file."
+   *
+   * @clolry's diagnostic falsified that. The directory suffix is 'FC' — the
+   * same code space as Dept ID (Org), where the roster's 'FCA0B' is FC's
+   * descendant. They are the SAME vocabulary, so this is a real second
+   * identifying field, not a correlation.
+   *
+   * Used ONLY to separate two candidates that already match exactly on
+   * surname and forename, and only when the comparison is decisive. A
+   * candidate with no org suffix never wins or loses on this basis — absence
+   * is not disagreement.
+   *
+   * PREFIX IN EITHER DIRECTION. The directory may carry the DAC ('FC') where
+   * the roster carries a service centre ('FCA0B'), or the reverse if the
+   * directory is more specific. Both are agreement; the shorter being a
+   * prefix of the longer is what makes them the same branch.
+   *
+   * @param {string} rosterOrg the position's Dept ID (Org)
+   * @param {string} directoryOrg from splitDirectorySuffix
+   * @returns {boolean} true only when both are present and one contains the other
+   */
+  function candidateOrgMatches(rosterOrg, directoryOrg) {
+    var a = _str_(rosterOrg).toUpperCase();
+    var b = _str_(directoryOrg).toUpperCase();
+    if (!a || !b) return false;
+    return a.indexOf(b) === 0 || b.indexOf(a) === 0;
+  }
+
+  /**
    * Does a directory candidate match the roster name?
    *
    * EXACT ON SURNAME AND FORENAME, after normalising case, punctuation and
@@ -200,12 +289,29 @@ var DirectoryLookup = (function () {
     var given = _str_(c.givenName);
     var family = _str_(c.familyName);
     if (!given || !family) {
-      var fromDisplay = parseName(_str_(c.displayName));
+      var fromDisplay = parseName(splitDirectorySuffix(c.displayName).name);
       // Only fill what is missing. A candidate with a familyName and no
       // givenName should keep its real familyName.
       if (!given) given = fromDisplay.first;
       if (!family) family = fromDisplay.last;
     }
+
+    // STRIP THE ORG SUFFIX GSA APPENDS TO THE FAMILY NAME.
+    //
+    // @clolry's diagnostic:
+    //   givenName="Lawrence" familyName="Hale - FC" displayName="Lawrence Hale - FC"
+    //
+    // The roster's 'Hale' was compared against 'Hale - FC' and failed, on
+    // every entry. That is 46 of 50 refusals, which is why the count was so
+    // uniform. The given name is stripped too, in case the convention ever
+    // appears there.
+    var familySplit = splitDirectorySuffix(family);
+    family = familySplit.name;
+    given = splitDirectorySuffix(given).name;
+    // Surfaced so pickMatch can use the org as a tie-break between
+    // same-named candidates.
+    var candidateOrg = familySplit.org ||
+                       splitDirectorySuffix(c.displayName).org;
 
     var lastOk = nameKey(parsed.last) &&
                  nameKey(parsed.last) === nameKey(family);
@@ -229,7 +335,11 @@ var DirectoryLookup = (function () {
                      (cm.length === 1 && pm.charAt(0) === cm);
     }
 
-    return { matches: !!(lastOk && firstOk), middleAgrees: middleAgrees };
+    return {
+      matches: !!(lastOk && firstOk),
+      middleAgrees: middleAgrees,
+      directoryOrg: candidateOrg
+    };
   }
 
   /**
@@ -256,9 +366,23 @@ var DirectoryLookup = (function () {
    * @returns {{email: string, method: string, confidence: string,
    *            candidateCount: number, reason: string}}
    */
-  function pickMatch(parsed, candidates) {
+  function pickMatch(parsed, candidates, rosterOrgCode) {
+    // TWO COUNTS, BECAUSE THEY ANSWER DIFFERENT QUESTIONS.
+    //
+    // `candidateCount` was reused for both "how many did the directory
+    // return" and "how many matched", and the second assignment won. So a
+    // no-match refusal reported 0 candidates while its own reason text said
+    // "1 directory entr(ies) were returned" — the sample line read as "nobody
+    // came back" when somebody had.
+    //
+    // That cost a diagnostic round trip: the summary said noMatch and the
+    // per-row line said no candidates, and those are different bugs.
     var none = {
       email: '', method: 'none', confidence: 'none',
+      returnedCount: 0, matchedCount: 0,
+      // Kept as an alias for returnedCount so existing callers keep working,
+      // and because "how many did the directory offer" is the more useful of
+      // the two at a glance.
       candidateCount: 0, reason: ''
     };
 
@@ -271,6 +395,7 @@ var DirectoryLookup = (function () {
     var list = (candidates || []).filter(function (c) {
       return c && _str_(c.email);
     });
+    none.returnedCount = list.length;
     none.candidateCount = list.length;
 
     if (!list.length) {
@@ -282,17 +407,44 @@ var DirectoryLookup = (function () {
     var matched = [];
     list.forEach(function (c) {
       var m = candidateMatches(parsed, c);
-      if (m.matches) matched.push({ candidate: c, middleAgrees: m.middleAgrees });
+      if (m.matches) {
+        matched.push({
+          candidate: c,
+          middleAgrees: m.middleAgrees,
+          orgAgrees: candidateOrgMatches(rosterOrgCode, m.directoryOrg)
+        });
+      }
     });
 
-    none.candidateCount = matched.length;
+    none.matchedCount = matched.length;
 
     if (!matched.length) {
-      none.reason = list.length + ' directory entr(ies) were returned for "' +
-                    parsed.first + ' ' + parsed.last + '" but none matched ' +
-                    'exactly on both surname and forename. Nicknames and ' +
-                    'spelling variants are NOT matched, because a near-match ' +
-                    'would grant LETS access to the wrong person.';
+      // WHAT THE DIRECTORY ACTUALLY SENT, in the refusal itself.
+      //
+      // The previous message said only that N entries were returned and none
+      // matched, which is true of a nickname, a namesake, and a candidate
+      // carrying no name fields at all — three different problems with
+      // different fixes. Naming the candidates makes the systematic case
+      // obvious from the summary instead of needing a second run.
+      var shown = list.slice(0, 3).map(function (c) {
+        var bits = [];
+        if (_str_(c.givenName) || _str_(c.familyName)) {
+          bits.push('given=' + JSON.stringify(_str_(c.givenName)) +
+                    ' family=' + JSON.stringify(_str_(c.familyName)));
+        }
+        if (_str_(c.displayName)) {
+          bits.push('display=' + JSON.stringify(_str_(c.displayName)));
+        }
+        if (!bits.length) bits.push('NO NAME FIELDS AT ALL');
+        return bits.join(' ') + ' <' + c.email + '>';
+      }).join(' | ');
+
+      none.reason = list.length + ' directory entr(ies) returned for "' +
+                    parsed.first + ' ' + parsed.last + '", none matching on ' +
+                    'both surname and forename. Returned: ' + shown +
+                    '. Nicknames and spelling variants are NOT matched, ' +
+                    'because a near-match would grant LETS access to the ' +
+                    'wrong person.';
       return none;
     }
 
@@ -301,19 +453,51 @@ var DirectoryLookup = (function () {
         email: _str_(matched[0].candidate.email).toLowerCase(),
         method: 'unique-name',
         confidence: 'exact',
-        candidateCount: 1,
+        returnedCount: list.length,
+        matchedCount: 1,
+        candidateCount: list.length,
         reason: ''
       };
     }
 
-    // Several people share the name. The middle name is the only tie-break.
+    // Several people share the name. Two tie-breaks, middle name first.
     var byMiddle = matched.filter(function (m) { return m.middleAgrees; });
     if (byMiddle.length === 1) {
       return {
         email: _str_(byMiddle[0].candidate.email).toLowerCase(),
         method: 'middle-name',
         confidence: 'exact',
-        candidateCount: matched.length,
+        returnedCount: list.length,
+        matchedCount: matched.length,
+        candidateCount: list.length,
+        reason: ''
+      };
+    }
+
+    // ORG CODE, which I previously argued against and was wrong about.
+    //
+    // I wrote: "the feed's org code and the directory's department string are
+    // different vocabularies, and a plausible-looking correlation would be the
+    // most dangerous rule in the file."
+    //
+    // @clolry's diagnostic falsified that. GSA's directory appends the ORG
+    // CODE — 'Hale - FC' — which is the same code space as the roster's Dept
+    // ID (Org), where 'FCA0B' is a descendant of 'FC'. Not a correlation: the
+    // same identifier.
+    //
+    // Still narrow. It only separates candidates that ALREADY match exactly
+    // on surname and forename, it requires both orgs to be present, and it
+    // must leave exactly one survivor. A candidate with no org suffix cannot
+    // win or lose on this basis, because absence is not disagreement.
+    var byOrg = matched.filter(function (m) { return m.orgAgrees; });
+    if (byOrg.length === 1) {
+      return {
+        email: _str_(byOrg[0].candidate.email).toLowerCase(),
+        method: 'org-code',
+        confidence: 'exact',
+        returnedCount: list.length,
+        matchedCount: matched.length,
+        candidateCount: list.length,
         reason: ''
       };
     }
@@ -325,11 +509,15 @@ var DirectoryLookup = (function () {
                   (parsed.middle ? ' and the middle name did not separate them'
                                  : ' and the roster has no middle name to ' +
                                    'separate them') +
+                  (byOrg.length > 1
+                    ? ', and ' + byOrg.length + ' of them share this org code'
+                    : '') +
                   '. Refusing to choose: a wrong address would grant LETS ' +
                   'access to the wrong person. Set this one by hand in the ' +
                   'roster editor.';
     none.email = '';
     none.method = 'ambiguous';
+    none.matchedCount = matched.length;
     return none;
   }
 
@@ -364,7 +552,7 @@ var DirectoryLookup = (function () {
       };
     }
 
-    var picked = pickMatch(parsed, candidates);
+    var picked = pickMatch(parsed, candidates, position && position.orgCode);
     return {
       positionNumber: _str_(position.positionNumber),
       employeeName: _str_(position.employeeName),
@@ -495,6 +683,8 @@ var DirectoryLookup = (function () {
   return {
     parseName: parseName,
     nameKey: nameKey,
+    splitDirectorySuffix: splitDirectorySuffix,
+    candidateOrgMatches: candidateOrgMatches,
     candidateMatches: candidateMatches,
     pickMatch: pickMatch,
     resolveOne: resolveOne,

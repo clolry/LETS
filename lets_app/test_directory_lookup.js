@@ -330,14 +330,19 @@ console.log('\n6. negative controls (each turns a refusal into a guess)');
 
   // 6a — take the FIRST of several matches instead of refusing. This is the
   // single most tempting change in the file and the most dangerous.
+  // THE ANCHOR MOVED when the org tie-break was added — the comment now reads
+  // "Two tie-breaks, middle name first". The old anchor silently stopped
+  // matching, which is the second time a negative control in this file has
+  // quietly tested nothing. Anchored on the `byMiddle` declaration, which is
+  // code rather than prose and so cannot drift on a comment edit.
   const takeFirst = src.replace(
-    `    // Several people share the name. The middle name is the only tie-break.`,
+    `    var byMiddle = matched.filter(function (m) { return m.middleAgrees; });`,
     `    if (matched.length > 1) {
       return { email: String(matched[0].candidate.email).toLowerCase(),
                method: 'first-match', confidence: 'exact',
                candidateCount: matched.length, reason: '' };
     }
-    // Several people share the name. The middle name is the only tie-break.`);
+    var byMiddle = matched.filter(function (m) { return m.middleAgrees; });`);
   ok('negative control patched the ambiguity refusal', takeFirst !== src);
   {
     const M = build(takeFirst);
@@ -618,6 +623,182 @@ console.log('\n9. a systematic mismatch is diagnosable without guessing');
      /slice\(0, 10\)/.test(fn));
   ok('and points at the per-name diagnostic',
      /diagnoseDirectoryMatch\(\)/.test(fn));
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n10. GSA appends the org code to the family name');
+{
+  // THE ACTUAL CAUSE of 46 of 50 refusals. @clolry's diagnostic:
+  //
+  //   givenName="Lawrence" familyName="Hale - FC" displayName="Lawrence Hale - FC"
+  //
+  // The roster's surname 'Hale' was compared against 'Hale - FC' and failed,
+  // on every entry. The uniformity of the count was the clue; the content was
+  // invisible until the diagnostic printed the fields quoted.
+  ok('the org suffix is split off a family name',
+     D.splitDirectorySuffix('Hale - FC').name === 'Hale' &&
+     D.splitDirectorySuffix('Hale - FC').org === 'FC',
+     D.splitDirectorySuffix('Hale - FC'));
+  ok('and off a display name',
+     D.splitDirectorySuffix('Lawrence Hale - FC').name === 'Lawrence Hale',
+     D.splitDirectorySuffix('Lawrence Hale - FC'));
+
+  // A HYPHENATED SURNAME MUST SURVIVE. 'Mbeki-Lawson',
+  // 'Fitzgerald-Moreau' and 'Aubert-Bell' are all in this roster; splitting
+  // on a bare hyphen would truncate them to 'Mbeki' and match the wrong
+  // person or nobody.
+  ok('a hyphenated surname is untouched',
+     D.splitDirectorySuffix('Mbeki-Lawson').name === 'Mbeki-Lawson' &&
+     D.splitDirectorySuffix('Mbeki-Lawson').org === '',
+     'the delimiter is space-hyphen-space, not a bare hyphen');
+  ok('and a hyphenated surname WITH a suffix splits correctly',
+     D.splitDirectorySuffix('Mbeki-Lawson - FC').name === 'Mbeki-Lawson',
+     D.splitDirectorySuffix('Mbeki-Lawson - FC'));
+
+  // NOT EVERY ' - ' IS AN ORG SUFFIX. My first version split 'Smith - Jones'
+  // into surname 'Smith' and org 'JONES' — inventing an org from somebody's
+  // double-barrelled name and discarding half of it. GSA org codes are
+  // uppercase and short.
+  ok('a non-org tail is NOT stripped',
+     D.splitDirectorySuffix('Smith - Jones').name === 'Smith - Jones',
+     'requiring uppercase rejects a name mistaken for a code');
+  ok('nor is a long descriptive tail',
+     D.splitDirectorySuffix('Hale - Office of Acquisition').org === '',
+     'an 8-character cap keeps a description from reading as a code');
+  ok('a name with no suffix is unchanged',
+     D.splitDirectorySuffix('Hale').name === 'Hale');
+
+  // END TO END: the exact candidate from the live diagnostic.
+  const live = {
+    givenName: 'Lawrence', familyName: 'Hale - FC', middleName: '',
+    displayName: 'Lawrence Hale - FC', email: 'lawrence.hale@gsa.gov'
+  };
+  const m = D.candidateMatches(D.parseName('Hale,Lawrence C'), live);
+  ok('the live candidate now matches', m.matches === true, m);
+  ok('and its org is extracted for the tie-break', m.directoryOrg === 'FC', m);
+  ok('pickMatch resolves it',
+     D.pickMatch(D.parseName('Hale,Lawrence C'), [live]).email ===
+       'lawrence.hale@gsa.gov');
+
+  // STRICTNESS IS UNCHANGED. The suffix strip must not become a fuzzy match.
+  ok('a nickname with an org suffix is STILL refused',
+     D.pickMatch(D.parseName('Smith,Michael'),
+                 [{ givenName: 'Mike', familyName: 'Smith - FC',
+                    email: 'm@gsa.gov' }]).email === '');
+  ok('a different surname with the same org is STILL refused',
+     D.pickMatch(D.parseName('Smith,Michael'),
+                 [{ givenName: 'Michael', familyName: 'Smithson - FC',
+                    email: 'm@gsa.gov' }]).email === '');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n11. the org code is a legitimate tie-break, narrowly used');
+{
+  // I ARGUED AGAINST THIS AND WAS WRONG. I wrote that "the feed's org code
+  // and the directory's department string are different vocabularies, and a
+  // plausible-looking correlation would be the most dangerous rule in the
+  // file."
+  //
+  // The diagnostic falsified it: the directory suffix is 'FC', which is the
+  // same code space as the roster's Dept ID (Org) — 'FCA0B' is FC's
+  // descendant. Not a correlation; the same identifier.
+  ok('a roster service centre agrees with its DAC suffix',
+     D.candidateOrgMatches('FCA0B', 'FC') === true);
+  ok('and the reverse direction agrees too',
+     D.candidateOrgMatches('FC', 'FCA0B') === true,
+     'the directory may be more specific than the roster, or less');
+  ok('a different portfolio does not agree',
+     D.candidateOrgMatches('FCA0B', 'FD') === false);
+
+  // ABSENCE IS NOT DISAGREEMENT. A candidate with no org suffix must neither
+  // win nor lose on this basis.
+  ok('a missing directory org never agrees',
+     D.candidateOrgMatches('FCA0B', '') === false);
+  ok('and a missing roster org never agrees',
+     D.candidateOrgMatches('', 'FC') === false);
+
+  const two = [
+    { givenName: 'Michael', familyName: 'Smith - FCA0B', email: 'right@gsa.gov' },
+    { givenName: 'Michael', familyName: 'Smith - FD', email: 'wrong@gsa.gov' }
+  ];
+  const picked = D.pickMatch(D.parseName('Smith,Michael'), two, 'FCA0B');
+  ok('two namesakes in different orgs are separated by org code',
+     picked.email === 'right@gsa.gov' && picked.method === 'org-code', picked);
+
+  // WITHOUT A ROSTER ORG IT MUST STILL REFUSE. The tie-break requires both
+  // sides.
+  ok('no roster org leaves the pair ambiguous',
+     D.pickMatch(D.parseName('Smith,Michael'), two, '').method === 'ambiguous');
+
+  // TWO IN THE SAME ORG IS STILL AMBIGUOUS. The tie-break must leave exactly
+  // one survivor, not pick the first of several.
+  const same = [
+    { givenName: 'Michael', familyName: 'Smith - FC', email: 'a@gsa.gov' },
+    { givenName: 'Michael', familyName: 'Smith - FC', email: 'b@gsa.gov' }
+  ];
+  const amb = D.pickMatch(D.parseName('Smith,Michael'), same, 'FCA0B');
+  ok('two namesakes in the SAME org remain ambiguous',
+     amb.method === 'ambiguous' && amb.email === '', amb);
+  ok('and the refusal says so',
+     /share this org code/.test(amb.reason), amb.reason);
+
+  // MIDDLE NAME STILL WINS FIRST, because it identifies the person rather
+  // than their location.
+  const middleFirst = [
+    { givenName: 'Michael', familyName: 'Smith - FD', middleName: 'James',
+      email: 'bymiddle@gsa.gov' },
+    { givenName: 'Michael', familyName: 'Smith - FCA0B', middleName: 'Robert',
+      email: 'byorg@gsa.gov' }
+  ];
+  const mw = D.pickMatch(D.parseName('Smith,Michael J'), middleFirst, 'FCA0B');
+  ok('the middle name outranks the org code',
+     mw.email === 'bymiddle@gsa.gov' && mw.method === 'middle-name', mw);
+
+  // resolveOne must pass the position's org through, or the tie-break never
+  // fires in production.
+  const r = D.resolveOne(
+    { positionNumber: '1', employeeName: 'Smith,Michael', orgCode: 'FCA0B' },
+    () => two);
+  ok('resolveOne supplies the roster org code',
+     r.email === 'right@gsa.gov' && r.method === 'org-code', r);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n12. the refusal reports what the directory actually returned');
+{
+  // candidateCount was reused for "how many returned" and "how many matched",
+  // and the second assignment won — so a no-match refusal reported
+  // 0 candidates while its own text said "1 directory entr(ies) were
+  // returned". The sample line read as "nobody came back" when somebody had,
+  // and those are different bugs.
+  const nomatch = D.pickMatch(D.parseName('Smith,Michael'),
+                              [{ givenName: 'Mike', familyName: 'Smith',
+                                 email: 'm@gsa.gov' }]);
+  ok('a no-match refusal reports the RETURNED count',
+     nomatch.returnedCount === 1, nomatch);
+  ok('and separately reports zero matched',
+     nomatch.matchedCount === 0, nomatch);
+  ok('candidateCount no longer contradicts the reason text',
+     nomatch.candidateCount === 1, nomatch);
+
+  // THE REASON MUST NAME THE CANDIDATES. "N returned, none matched" is true
+  // of a nickname, a namesake and a candidate with no name fields — three
+  // problems with three different fixes.
+  ok('the reason shows the returned names',
+     /given="Mike"/.test(nomatch.reason) || /display=/.test(nomatch.reason),
+     nomatch.reason);
+
+  const nameless = D.pickMatch(D.parseName('Hale,Lawrence C'),
+                               [{ givenName: '', familyName: '',
+                                  displayName: '', email: 'l@gsa.gov' }]);
+  ok('a candidate with no name fields says so explicitly',
+     /NO NAME FIELDS AT ALL/.test(nameless.reason), nameless.reason);
+
+  // A genuine not-found must stay distinguishable from a no-match.
+  const notFound = D.pickMatch(D.parseName('Nobody,Here'), []);
+  ok('an empty result still reports zero returned',
+     notFound.returnedCount === 0 &&
+     /No directory entry found/.test(notFound.reason), notFound);
 }
 
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
