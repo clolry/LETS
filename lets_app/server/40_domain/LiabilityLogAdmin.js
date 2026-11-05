@@ -241,7 +241,11 @@ var LiabilityLogAdmin = (function () {
       return out;
     }
 
-    out.plan = LiabilityLogSync.planChanges(inYear, existing);
+    // out.trips, not a filtered copy. The filter that produced `inYear` is
+    // gone and this line still referenced it — a ReferenceError thrown at the
+    // very end of buildPlan, after every sheet read, so the whole preview
+    // failed on something that had nothing to do with the data.
+    out.plan = LiabilityLogSync.planChanges(out.trips, existing);
     out.ok = true;
     return out;
   }
@@ -263,10 +267,13 @@ var LiabilityLogAdmin = (function () {
 
     var plan = p.plan;
     L.push('FISCAL YEAR ' + (p.fiscalYear || '(not configured)'));
-    L.push('  The year comes from column S, Voucher Approved — @clolry: "the');
-    L.push('  date that their expense report is approved". A row with no');
-    L.push('  approved voucher is imported with a PROVISIONAL year taken from');
-    L.push('  the travel end date, and corrects itself on a later run.');
+    L.push('  EVERY ROW IS IMPORTED — @clolry: "Everything in that sheet is');
+    L.push('  FY27, no need to filter." The sheet is the authority on its own');
+    L.push('  year.');
+    L.push('  The year below is still COMPUTED per row, from column S');
+    L.push('  (Voucher Approved) where there is one and from this sheet\'s own');
+    L.push('  year where there is not. It is recorded on each imported row and');
+    L.push('  reported here, but it no longer decides what gets imported.');
     L.push('');
 
     L.push('COUNTS');

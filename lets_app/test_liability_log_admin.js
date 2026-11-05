@@ -517,6 +517,165 @@ console.log('\n8. there is NO fiscal-year filter, and the year is still reported
 }
 
 // ---------------------------------------------------------------------------
+console.log('\n8b. buildPlan and report RUN, not just read');
+{
+  // THE SECTION THAT WOULD HAVE CAUGHT THE LAST FAILURE.
+  //
+  // Removing the fiscal-year filter left one line still referencing the
+  // variable it had produced:
+  //
+  //   ReferenceError: inYear is not defined
+  //     buildPlan @ LiabilityLogAdmin.gs:244
+  //
+  // Forty-one suites passed. Every assertion in this file read SOURCE TEXT —
+  // it grepped for `out.trips = parsed.trips` and for the absence of
+  // `outOfFiscalYear`, both of which were true — and nothing executed the
+  // function. A source-grep suite cannot catch a ReferenceError, and the
+  // error landed at the END of buildPlan, after every sheet read, so the whole
+  // preview failed on something with no relation to the data.
+  //
+  // So this section RUNS it, with the Apps Script globals stubbed. Slower to
+  // write than a grep, and the only thing that would have failed.
+  const S = SERVER;
+  const ROWS = [
+    // FY27 by its approval date.
+    ['Calhoun', 'Jeffrey', 'FCBAA', 'TW', 'TDY', 'MAS mtg', 'Philadelphia',
+     'Atlanta', '9/21/2026', '9/24/2026', '9/16/2026', 1604.25, 1581.81,
+     '9/16/2026', 0, 1, '9/30/2026', 1563.83, '10/1/2026', 2, '', ''],
+    // FY26 by its approval date — the kind the filter used to drop. Must
+    // import, and must be REPORTED.
+    ['Zhao', 'Han-Qing', 'FCA0B', 'TW', 'TDY', 'Site visit', 'DC', 'Boston',
+     '9/08/2026', '9/10/2026', '9/01/2026', 900, 850.00, '9/01/2026', 0, 1,
+     '9/12/2026', 800.00, '9/15/2026', 3, '', ''],
+    // No approved voucher: takes the sheet's year.
+    ['Han', 'Peter', 'FCC0A', 'TW', 'TDY', 'Conference', 'DC', 'Denver',
+     '9/05/2026', '9/08/2026', '9/01/2026', 700, 650.00, '9/01/2026', 0, 1,
+     '', '', '', '', '', '']
+  ];
+
+  function build(rows) {
+    const sb = {
+      console: { log() {}, warn() {}, error() {} },
+      JSON, Date, Object, String, Number, Array, Math, isNaN, parseInt,
+      parseFloat, RegExp, Error, Boolean,
+      Utilities: { formatDate: () => '2026-11-05' },
+      Session: { getActiveUser: () => ({ getEmail: () => 'a@gsa.gov' }),
+                 getScriptTimeZone: () => 'UTC' },
+      SpreadsheetApp: {
+        openById: () => ({
+          getName: () => 'log', getUrl: () => 'u',
+          getSheets: () => [{ getName: () => 'Travel FY27' }],
+          getSheetByName: (n) => n === 'Travel FY27' ? {
+            getLastRow: () => 1 + rows.length,
+            getLastColumn: () => HEADERS.length,
+            getRange: () => ({ getValues: () => [HEADERS].concat(rows) })
+          } : null
+        }),
+        flush() {}
+      },
+      PropertiesService: { getScriptProperties: () => ({
+        getProperty: () => null, setProperty() {}, deleteProperty() {} }) },
+      CacheService: { getScriptCache: () => ({
+        get: () => null, put() {}, remove() {}, removeAll() {} }) }
+    };
+    const ctx = vm.createContext(sb);
+    vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID='x';", ctx);
+    ['01_constants/Sheets.js', '01_constants/Status.js',
+     '00_config/BudgetConfig.js', '40_domain/BudgetBackfill.js',
+     '30_services/LiabilityLogSync.js'].forEach(f => {
+      vm.runInContext(fs.readFileSync(S + f, 'utf8'), ctx, { filename: f });
+    });
+    vm.runInContext([
+      "function getLiabilityLogSource(){return {ok:true,spreadsheetId:'SID'," +
+        "tabName:'Travel FY27',error:''};}",
+      'var HC={hcGetBundle:function(){return {success:true,data:[]};}};',
+      'function TravelDB(){}',
+      'TravelDB.prototype.readSheet=function(){return {headers:[],rows:[],' +
+        'headerIndex:{}};};',
+      'function successResponse(d,m){return {success:true,data:d,message:m};}',
+      'function errorResponse(e){return {success:false,error:e};}',
+      'function isTravelAdmin(){return true;}'
+    ].join('\n'), ctx);
+    vm.runInContext(fs.readFileSync(S + '40_domain/LiabilityLogAdmin.js', 'utf8'),
+                    ctx, { filename: 'LiabilityLogAdmin.js' });
+    return {
+      plan: vm.runInContext('LiabilityLogAdmin.buildPlan()', ctx),
+      lines: vm.runInContext(
+        'LiabilityLogAdmin.report(LiabilityLogAdmin.buildPlan())', ctx)
+    };
+  }
+
+  // CAUGHT, NOT ALLOWED TO CRASH THE SUITE.
+  //
+  // An uncaught throw exits the process with a stack trace and prints no FAIL
+  // line — so a runner that greps stdout for 'FAIL' reports the suite as
+  // passing. I verified the control that way and briefly concluded this
+  // section did not catch the bug it was written for. It did; my check was
+  // wrong. A throw must become a named failure, so it is visible however the
+  // suite is run.
+  let r = null;
+  let threw = '';
+  try { r = build(ROWS); } catch (e) { threw = e.message; }
+  ok('buildPlan completes without throwing', !threw, threw);
+  if (threw) {
+    console.log('  (skipping the rest of 8b — buildPlan did not return)');
+  } else {
+
+  ok('buildPlan reports ok', r.plan && r.plan.ok === true,
+     r.plan && r.plan.problems);
+  ok('and report() renders', Array.isArray(r.lines) && r.lines.length > 10);
+
+  // EVERY ROW IMPORTS, including the FY26-approved one.
+  ok('all three rows are in the plan', r.plan.trips.length === 3,
+     r.plan.trips.length);
+  ok('and all three are inserts', r.plan.plan.inserts.length === 3,
+     r.plan.plan.inserts.length);
+
+  const byName = {};
+  r.plan.trips.forEach(t => byName[t.travelerName] = t);
+  ok('the FY27 approval reads FY27',
+     byName['Jeffrey Calhoun'].fiscalYear === 'FY27');
+  ok('the SEPTEMBER approval still reads FY26 — and still imports',
+     byName['Han-Qing Zhao'].fiscalYear === 'FY26' &&
+     byName['Han-Qing Zhao'].fiscalYearBasis === 'VOUCHER_APPROVED',
+     'the year is recorded, not used to exclude');
+  ok("the unapproved row takes the sheet's year",
+     byName['Peter Han'].fiscalYear === 'FY27' &&
+     byName['Peter Han'].fiscalYearBasis === 'PROVISIONAL_NOT_YET_APPROVED');
+
+  // THE REPORT MUST SAY SO, in the output a human reads before applying.
+  const text = r.lines.join('\n');
+  ok('the report states every row is imported',
+     /EVERY ROW IS IMPORTED/.test(text), text.slice(0, 400));
+  ok('and prints the basis spread',
+     /FY26  by VOUCHER_APPROVED/.test(text) &&
+     /FY27  by VOUCHER_APPROVED/.test(text) &&
+     /PROVISIONAL_NOT_YET_APPROVED/.test(text), text);
+  ok('and names the off-year row with its amount',
+     /Han-Qing Zhao/.test(text) && /\$800\.00/.test(text),
+     'a count alone is what cost two round trips');
+  ok('and the stale note about the travel end date is gone',
+     text.indexOf('the travel end date') === -1,
+     'the fallback is the sheet year now, and a wrong explanation is worse ' +
+     'than none');
+
+  // THE MONEY TOTAL, which is the number @clolry reconciles against.
+  ok('actuals total both vouchers',
+     /\$2363\.83/.test(text), '1563.83 + 800.00');
+  ok('and the per-office split lands in IDV and OMD',
+     /IDV/.test(text) && /OMD/.test(text), text);
+
+  // AN EMPTY SHEET MUST NOT THROW either — the other end of the same risk.
+  const empty = build([]);
+  ok('an empty sheet reports a problem rather than throwing',
+     empty.plan.ok === false && empty.plan.problems.length > 0,
+     empty.plan.problems);
+  ok('and says the tab has no data rows',
+     /no data rows/.test(empty.plan.problems.join(' ')), empty.plan.problems);
+  }
+}
+
+// ---------------------------------------------------------------------------
 console.log('\n9. the editor can actually run it');
 {
   // @clolry: "how do I run the importLiabilityLog with the token argument"
