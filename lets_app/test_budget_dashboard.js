@@ -973,5 +973,174 @@ console.log('\n10. the service center table is RENDERED, not just computed');
      'a zero balance is a claim; an unknown balance is not');
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n11. per-center spend prefers the reconciled actual');
+{
+  // @clolry: "I'm showing actual approved expenses of $30,245.55 and the
+  // budget sheet is showing 22650. Also, none of the planned or actual costs
+  // are being applied to the service center allocations and spend table."
+  //
+  // TWO INDEPENDENT CAUSES.
+  //
+  // The table was EMPTY because spendByServiceCenter reads Request_Travelers
+  // and ONLY that sheet — and neither importer wrote traveler rows. That is
+  // not a display bug; there was nothing to read. Fixed in both importers.
+  //
+  // The figure was WRONG because this function summed Subtotal for both
+  // buckets and never looked at Actual_Total. spendByOffice has preferred the
+  // reconciled figure since the importer landed; this function was written
+  // before that and never got the same treatment. So two tables on one page
+  // disagreed, each claiming to show actual spend.
+  //
+  // SCALED, NOT SUBSTITUTED. The reconciled figure is a REQUEST total and
+  // this loop attributes per TRAVELER, so applying it whole to each traveler
+  // would multiply a shared trip by its headcount.
+  const S = __dirname + '/server/';
+
+  const seed = vm.createContext({
+    console: { log() {}, warn() {}, error() {} },
+    JSON, Date, Object, String, Number, Array, Math, isNaN, parseInt,
+    parseFloat, RegExp, Error, Boolean
+  });
+  vm.runInContext('var TRAVEL_DB_SPREADSHEET_ID=null;var SHEET_NAMES={};' +
+                  'var TRAVEL_SHEET_SCHEMAS={};', seed);
+  vm.runInContext(fs.readFileSync(S + '91_setup/HCSeed.js', 'utf8'), seed);
+  const ORGS = vm.runInContext('hcRealOrgRecords()', seed);
+
+  function run(trips) {
+    const sb = {
+      console: { log() {}, warn() {}, error() {} },
+      JSON, Date, Object, String, Number, Array, Math, isNaN, parseInt,
+      parseFloat, RegExp, Error, Boolean
+    };
+    const ctx = vm.createContext(sb);
+    vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID='x';", ctx);
+    ['01_constants/Sheets.js', '01_constants/Status.js',
+     '01_constants/HCRules.js', '00_config/BudgetConfig.js',
+     '20_data/HCData.js'].forEach(f => {
+      vm.runInContext(fs.readFileSync(S + f, 'utf8'), ctx, { filename: f });
+    });
+    const REQ_H = vm.runInContext("TRAVEL_SHEET_SCHEMAS['Requests']", ctx);
+    const TRV_H = vm.runInContext("TRAVEL_SHEET_SCHEMAS['Request_Travelers']", ctx);
+
+    const reqRows = trips.map(t => {
+      const rec = {
+        'Request_ID': t.id, 'Status': t.status, 'Grand_Total': t.est,
+        'Owning_Org_Code': t.org, 'Owning_Office': '',
+        'Actual_Total': t.act === null ? '' : t.act
+      };
+      return REQ_H.map(h => h in rec ? rec[h] : '');
+    });
+    // One traveler row per trip unless the fixture says otherwise.
+    const trvRows = [];
+    trips.forEach(t => {
+      (t.travelers || [{ org: t.org, sub: t.est }]).forEach((tr, n) => {
+        const rec = {
+          'Request_ID': t.id, 'Traveler_ID': t.id + '-T' + (n + 1),
+          'Org_Code': tr.org, 'Subtotal': tr.sub
+        };
+        trvRows.push(TRV_H.map(h => h in rec ? rec[h] : ''));
+      });
+    });
+    const mk = (h, r) => {
+      const ix = {}; h.forEach((c, i) => ix[c] = i);
+      return { headers: h, rows: r, headerIndex: ix };
+    };
+    vm.runInContext(
+      'var __orgs=' + JSON.stringify(ORGS) + ';' +
+      'HC.hcGetOrgHierarchy=function(){return __orgs;};' +
+      'HC.hcGetBundle=function(){return {success:true,data:[]};};' +
+      'var __sheets={Requests:' + JSON.stringify(mk(REQ_H, reqRows)) + ',' +
+      'Request_Travelers:' + JSON.stringify(mk(TRV_H, trvRows)) + '};' +
+      'function TravelDB(){}' +
+      'TravelDB.prototype.readSheet=function(n){return __sheets[n]||' +
+      '{headers:[],rows:[],headerIndex:{}};};' +
+      'function BudgetAdmin(){}', ctx);
+    vm.runInContext(fs.readFileSync(S + '40_domain/BudgetDashboard.js', 'utf8'),
+                    ctx, { filename: 'BudgetDashboard.js' });
+    return JSON.parse(vm.runInContext(
+      'JSON.stringify(BudgetDashboard.spendByServiceCenter(new TravelDB()))', ctx));
+  }
+
+  // @clolry's real shape: estimate and actual differ, in both directions.
+  const out = run([
+    { id: 'R1', org: 'FCBAA', est: 1581.81, act: 1563.83, status: 'COMPLETED' },
+    { id: 'R2', org: 'FCA0B', est: 9000.00, act: 11200.00, status: 'COMPLETED' },
+    { id: 'R3', org: 'FCC0C', est: 4500.00, act: null, status: 'APPROVED_GOGOV' }
+  ]);
+  ok('all three traveler rows are read', out.travelersRead === 3, out.travelersRead);
+  ok('the split is available', out.available === true, out.note);
+
+  // THE ACTUAL IS THE VOUCHER, NOT THE ESTIMATE.
+  ok('an under-spend reports the voucher, not the estimate',
+     out.byOrgCode['FCB|FCBAA'].actual === 1563.83,
+     out.byOrgCode['FCB|FCBAA']);
+  ok('and an OVER-spend does too',
+     out.byOrgCode['FCA|FCA0B'].actual === 11200,
+     'reporting 9000 would understate it by 2200');
+
+  // A COMMITTED TRIP KEEPS ITS ESTIMATE. It has not happened, so there is no
+  // actual to prefer — and an actual on a committed row would be a
+  // contradiction.
+  ok('a committed trip counts at its estimate',
+     out.byOrgCode['FCC|FCC0C'].committed === 4500 &&
+     out.byOrgCode['FCC|FCC0C'].actual === 0, out.byOrgCode['FCC|FCC0C']);
+
+  // THE TOTALS MUST EQUAL WHAT GSA PAID. This is the number @clolry
+  // reconciles against.
+  const totalActual = Object.keys(out.byOrgCode)
+    .reduce((s, k) => s + out.byOrgCode[k].actual, 0);
+  ok('per-center actuals total the vouchers exactly',
+     Math.round(totalActual * 100) / 100 === 12763.83, totalActual);
+
+  // BLANK IS NOT ZERO. A completed trip with no voucher yet must keep its
+  // estimate, or a DAC's spend reads far lower than it is.
+  const noVoucher = run([
+    { id: 'R9', org: 'FCBAA', est: 2000, act: null, status: 'COMPLETED' }
+  ]);
+  ok('a completed trip with no actual keeps its estimate',
+     noVoucher.byOrgCode['FCB|FCBAA'].actual === 2000,
+     'treating blank as zero would wipe the estimate off every ' +
+     'unreconciled completed trip');
+
+  // SCALED ACROSS A SHARED TRIP. @clolry's log is one traveler per trip, but
+  // a Go.gov consolidated conference request has several and this function
+  // reads both sources. Applying the request actual whole to each traveler
+  // would multiply it by the headcount.
+  const shared = run([{
+    id: 'R5', org: 'FCA0B', est: 10000, act: 8000, status: 'COMPLETED',
+    travelers: [{ org: 'FCA0B', sub: 6000 }, { org: 'FCC0C', sub: 4000 }]
+  }]);
+  const sharedTotal = Object.keys(shared.byOrgCode)
+    .reduce((s, k) => s + shared.byOrgCode[k].actual, 0);
+  ok('a two-traveler trip totals the request actual, not twice it',
+     Math.round(sharedTotal * 100) / 100 === 8000, sharedTotal);
+  ok('and each traveler keeps their SHARE of it',
+     shared.byOrgCode['FCA|FCA0B'].actual === 4800 &&
+     shared.byOrgCode['FCC|FCC0C'].actual === 3200,
+     '60/40 of 8000, matching their 6000/4000 estimates');
+
+  // BOTH IMPORTERS MUST WRITE TRAVELER ROWS, or this function has nothing to
+  // read and the table is empty however correct the arithmetic is.
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '')
+                        .replace(/^\s*\/\/.*$/gm, '');
+  [['40_domain/LiabilityLogAdmin.js', 'the FY27 travel log importer'],
+   ['40_domain/TravelImportAdmin.js', 'the Go.gov importer']
+  ].forEach(([file, what]) => {
+    const code = strip(fs.readFileSync(S + file, 'utf8'));
+    ok(what + ' writes Request_Travelers rows',
+       /SHEET_NAMES\.REQUEST_TRAVELERS/.test(code) &&
+       /travRows/.test(code),
+       'without a traveler row a trip is invisible to the per-center table');
+    ok(what + ' refuses when that tab is missing',
+       /REQUEST_TRAVELERS \+ ' tab not found/.test(code),
+       'writing Requests rows with no traveler rows is the silent version ' +
+       'of this bug');
+    ok(what + ' invalidates the traveler cache',
+       /REQUEST_TRAVELERS/.test(code.slice(code.indexOf('invalidate') - 400)),
+       'a stale cache looks exactly like the import having failed');
+  });
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);

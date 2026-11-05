@@ -374,6 +374,26 @@ var LiabilityLogAdmin = (function () {
     }
     var headers = TRAVEL_SHEET_SCHEMAS[SHEET_NAMES.REQUESTS];
 
+    // THE TRAVELER ROW IS NOT OPTIONAL. @clolry: "none of the planned or
+    // actual costs are being applied to the service center allocations and
+    // spend table."
+    //
+    // BudgetDashboard.spendByServiceCenter reads Request_Travelers and ONLY
+    // that sheet — a request carries one Owning_Office, but a consolidated
+    // conference request holds travelers from several DACs, so per-center
+    // spend has to come from the traveler rows. Writing a Requests row and no
+    // traveler row makes a trip invisible to the per-center table by
+    // construction: not a display bug, nothing to read.
+    //
+    // BudgetBackfill.js:451 already does this. Neither importer did.
+    var travSheet = db.sheet(SHEET_NAMES.REQUEST_TRAVELERS);
+    var travHeaders = TRAVEL_SHEET_SCHEMAS[SHEET_NAMES.REQUEST_TRAVELERS];
+    if (!travSheet) {
+      return errorResponse(SHEET_NAMES.REQUEST_TRAVELERS + ' tab not found. ' +
+        'Run setupTravelDatabase() first — without it the import would write ' +
+        'trips that never appear in the per-service-center table.');
+    }
+
     // The source sheet, for the key write-back.
     var source = getLiabilityLogSource();
     var ss = SpreadsheetApp.openById(source.spreadsheetId);
@@ -404,9 +424,40 @@ var LiabilityLogAdmin = (function () {
     var nextSeq = _nextLogSeq_(db, now);
     var seqUsed = 0;
     var newRows = [];
+    var travRows = [];
     var keyWrites = [];     // { row, key }
     var updates = [];       // { sheetRow, changes }
     var created = [];
+
+    /**
+     * The one traveler row for a trip.
+     *
+     * ONE TRAVELER PER TRIP. @clolry: "The trips are one traveler each." So
+     * the subtotal is the whole trip estimate and there is no split to make —
+     * BudgetBackfill divides evenly across names because its source carries
+     * several, and this source does not.
+     *
+     * THE SUBTOTAL IS THE ESTIMATE, not the actual. spendByServiceCenter
+     * scales it by the request's Actual_Total/Grand_Total ratio for completed
+     * trips, so putting the actual here would double-apply the
+     * reconciliation. The estimate is also what a committed trip should show.
+     */
+    function travelerRecord(t, requestId, office) {
+      var rec = {
+        'Request_ID': requestId,
+        'Traveler_ID': requestId + '-T1',
+        'Employee_Name': t.travelerName,
+        'Org_Code': t.orgCode,
+        'Subtotal': t.estimatedCost === null ? 0 : t.estimatedCost,
+        'Budget_Org_Code': t.orgCode,
+        'Budget_Office_Code': office,
+        'Duty_Location': [t.fromCity, t.toCity].filter(Boolean).join(' to '),
+        'Role_Justification': 'Imported from the FY27 travel log, row ' +
+          t.sheetRow + '. One traveler per trip, so the subtotal is the whole ' +
+          'trip estimate rather than a split.'
+      };
+      return travHeaders.map(function (h) { return h in rec ? rec[h] : ''; });
+    }
 
     function tripRecord(t, requestId, key) {
       var estimate = t.estimatedCost === null ? 0 : t.estimatedCost;
@@ -499,6 +550,7 @@ var LiabilityLogAdmin = (function () {
       var key = 'LLOG-' + t.sheetRow + '-' + now.getTime() + '-' + seqUsed;
       var rec = tripRecord(t, requestId, key);
       newRows.push(headers.map(function (h) { return h in rec ? rec[h] : ''; }));
+      travRows.push(travelerRecord(t, requestId, rec['Owning_Office']));
       keyWrites.push({ row: t.sheetRow, key: key });
       created.push({
         requestId: requestId, row: t.sheetRow, traveler: t.travelerName,
@@ -548,6 +600,15 @@ var LiabilityLogAdmin = (function () {
       reqSheet.getRange(reqSheet.getLastRow() + 1, 1, newRows.length,
                         headers.length).setValues(newRows);
     }
+    // THE TRAVELER ROWS, in the same execution. A Requests row without its
+    // traveler row is a trip the per-service-center table cannot see, so a
+    // failure between the two writes is worse than a failure before either.
+    // One setValues, not appendRow in a loop — appendRow is slow and reads
+    // getLastRow every call.
+    if (travRows.length) {
+      travSheet.getRange(travSheet.getLastRow() + 1, 1, travRows.length,
+                         travHeaders.length).setValues(travRows);
+    }
 
     var keysWritten = 0;
     var keyFailures = [];
@@ -569,10 +630,16 @@ var LiabilityLogAdmin = (function () {
       }
     });
 
-    try { db.invalidate(SHEET_NAMES.REQUESTS); } catch (e) { /* cache only */ }
+    // BOTH sheets. The per-center table reads Request_Travelers, so leaving
+    // its cache stale would show the old figures for up to ten minutes and
+    // look exactly like the import having failed.
+    [SHEET_NAMES.REQUESTS, SHEET_NAMES.REQUEST_TRAVELERS].forEach(function (n) {
+      try { db.invalidate(n); } catch (e) { /* cache only */ }
+    });
 
     return successResponse({
       created: created.length,
+      travelerRows: travRows.length,
       updated: updates.length,
       unchanged: p.plan.unchanged.length,
       blocked: p.plan.blocked.length,

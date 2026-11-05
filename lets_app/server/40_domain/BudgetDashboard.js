@@ -730,6 +730,33 @@ var BudgetDashboard = (function () {
       return out;
     }
     var statusOf = {};
+    // A RECONCILED ACTUAL BEATS THE SUM OF THE ESTIMATES.
+    //
+    // @clolry: "I'm showing actual approved expenses of $30,245.55 and the
+    // budget sheet is showing 22650."
+    //
+    // This function summed Request_Travelers.Subtotal for both buckets and
+    // never looked at Actual_Total — so the "actual" column reported the
+    // ESTIMATE while the DAC table above it reported the voucher figure. Two
+    // tables on one page, disagreeing, each claiming to show actual spend.
+    //
+    // spendByOffice has preferred Actual_Total since the importer landed
+    // (:877). This function was written before that and never got the same
+    // treatment.
+    //
+    // SCALED, NOT SUBSTITUTED. The reconciled figure is a REQUEST total and
+    // this loop attributes per TRAVELER, so applying it whole to each
+    // traveler would multiply a shared trip by its headcount. The ratio
+    // preserves each traveler's share of the trip while making the total
+    // match what GSA paid.
+    //
+    // @clolry's log is one traveler per trip, so the ratio is 1 for every row
+    // it imports — but a Go.gov consolidated conference request has several,
+    // and this function reads both sources.
+    var actualRatio = {};
+    var cRActual = ('Actual_Total' in ri) ? ri['Actual_Total'] : -1;
+    var cRTotal = ('Grand_Total' in ri) ? ri['Grand_Total'] : -1;
+
     reqData.rows.forEach(function (row) {
       var id = String(row[ri['Request_ID']] || '').trim();
       if (!id) return;
@@ -738,6 +765,30 @@ var BudgetDashboard = (function () {
       else if (groups.actual.indexOf(status) > -1) statusOf[id] = 'actual';
       // Denied, cancelled and draft are absent, so their travelers are
       // skipped below rather than counted as unattributed.
+
+      // Only for ACTUAL rows. A committed trip has not happened, so an actual
+      // on it would be a contradiction — and the commitment still counts at
+      // its estimate.
+      if (statusOf[id] !== 'actual' || cRActual === -1 || cRTotal === -1) return;
+
+      var raw = row[cRActual];
+      // BLANK IS NOT ZERO. A blank Actual_Total means "not reconciled yet",
+      // and parseFloat('') is NaN while Number('') is 0 — so emptiness is
+      // tested BEFORE coercing. Treating blank as zero would wipe the
+      // estimate off every unreconciled trip.
+      if (raw === '' || raw === null || raw === undefined) return;
+      var act = parseFloat(raw);
+      if (isNaN(act)) return;
+
+      var est = parseFloat(row[cRTotal]);
+      if (isNaN(est) || est === 0) {
+        // No estimate to scale against. The traveler subtotals cannot be
+        // proportioned, so the actual is recorded for the whole request and
+        // applied to its first traveler below.
+        actualRatio[id] = { ratio: null, actual: round2(act), used: false };
+        return;
+      }
+      actualRatio[id] = { ratio: act / est, actual: round2(act), used: false };
     });
 
     var ti = travData.headerIndex;
@@ -766,6 +817,23 @@ var BudgetDashboard = (function () {
 
       var amount = parseFloat(row[ti['Subtotal']]);
       if (isNaN(amount)) amount = 0;
+
+      // Scale an actual row's subtotal so the trip totals what GSA paid.
+      var r = actualRatio[reqId];
+      if (bucket === 'actual' && r) {
+        if (r.ratio !== null) {
+          amount = round2(amount * r.ratio);
+        } else if (!r.used) {
+          // No estimate to proportion against: give the whole actual to the
+          // first traveler rather than discarding it. Lands in the right
+          // service center for a single-traveler trip, which is every row
+          // the travel log imports.
+          amount = r.actual;
+          r.used = true;
+        } else {
+          amount = 0;
+        }
+      }
 
       var orgCode = String(row[ti['Org_Code']] || '').trim().toUpperCase();
       var dac = HC.orgAncestorAtLevel(orgCode, byCode, 'DAC') ||
