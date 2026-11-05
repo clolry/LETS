@@ -38,10 +38,10 @@ The roster drives approval routing, supervisor-based site access and every per-c
 
 | Function | File | Line | What it does |
 |---|---|---:|---|
-| `diagnoseHrFeedSource()` | `lets_app/server/40_domain/HCRosterSync.js` | 101 | Reports which HR feed source this DEPLOYMENT is actually reading. |
-| `previewRosterImport(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 197 | Dry run: what importing the feed would change. |
-| `showServiceCentreHeadcount()` | `lets_app/server/40_domain/HCRosterSync.js` | 553 | The per-service-centre headcount, as a readable table. |
-| `importRoster(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 735 | Applies the import. Destructive: replaces every row in HC_Positions. |
+| `diagnoseHrFeedSource()` | `lets_app/server/40_domain/HCRosterSync.js` | 128 | Reports which HR feed source this DEPLOYMENT is actually reading, and how |
+| `previewRosterImport(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 379 | Dry run: what importing the feed would change. |
+| `showServiceCentreHeadcount()` | `lets_app/server/40_domain/HCRosterSync.js` | 734 | The per-service-centre headcount, as a readable table. |
+| `importRoster(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 916 | Applies the import. Destructive: replaces every row in HC_Positions. |
 | `seedHCTestData(…)` | `lets_app/server/91_setup/HCSeed.js` | 708 | Seeds both HC tabs with FICTIONAL test data. |
 | `validateHCData()` | `lets_app/server/91_setup/HCSeed.js` | 916 | Read-only sanity check on whatever is currently in the HC tabs. |
 | `clearHCPositions(…)` | `lets_app/server/91_setup/HCSeed.js` | 1103 | Empties HC_Positions. Keeps HC_Orgs. |
@@ -167,8 +167,8 @@ Simulations do not submit anything. The FAS tracker test functions DO write a ro
 
 | Function | File | Line | What it does |
 |---|---|---:|---|
-| `initEmailConfigDefaults()` | `lets_app/server/00_config/Props.js` | 746 | Report the effective email sender configuration. Read-only. |
-| `_verifyAllPropsKeys()` | `lets_app/server/00_config/Props.js` | 764 | Verify every key in PROPS_KEYS resolves either to a set property OR a |
+| `initEmailConfigDefaults()` | `lets_app/server/00_config/Props.js` | 792 | Report the effective email sender configuration. Read-only. |
+| `_verifyAllPropsKeys()` | `lets_app/server/00_config/Props.js` | 810 | Verify every key in PROPS_KEYS resolves either to a set property OR a |
 | `initTravelEmailConfig()` | `lets_app/server/30_services/Email.js` | 113 | Initialize travel email configuration. Delegates to Props.js |
 | `debugReviewerPerf(…)` | `lets_app/server/40_domain/Admin_Dashboard.js` | 143 | Diagnostic: per-action breakdown for a single reviewer email. |
 

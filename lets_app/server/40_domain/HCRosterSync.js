@@ -32,18 +32,18 @@
 /**
  * Finds a tab by name, tolerating the ways a sheet name goes wrong.
  *
- * getSheetByName is EXACT. Three things defeat it in practice, and the FAS
- * workbook demonstrates one of them: its tab list includes
+ * getSheetByName is EXACT. Three things defeat it in practice, and the old
+ * HRLinks workbook demonstrated one of them: its tab list included
  * 'NEW - NTE REPORT ' with a trailing space. A name typed into a Script
  * Property without noticing that space fails, and the error reads as "the tab
  * does not exist" when it plainly does.
  *
  * So: exact first, then trimmed, then case-insensitive on the trimmed form.
  *
- * WHY NOT FUZZY. There is no partial or prefix matching. 'FAS' must not
- * resolve to 'FAS Recruit Data from STAR' — that tab exists in the same
- * workbook, has different columns, and importing it would produce a roster of
- * the wrong people. A near-miss here is a silently wrong roster, which is the
+ * WHY NOT FUZZY. There is no partial or prefix matching. In that workbook
+ * 'FAS' must not have resolved to 'FAS Recruit Data from STAR' — a different
+ * tab, different columns, and importing it would have produced a roster of the
+ * wrong people. A near-miss here is a silently wrong roster, which is the
  * failure this whole module is shaped against, so the tolerance stops at
  * whitespace and case.
  *
@@ -76,16 +76,16 @@ function _findFeedTab_(ss, wanted) {
 }
 
 /**
- * Reports which HR feed source this DEPLOYMENT is actually reading.
+ * Reports which HR feed source this DEPLOYMENT is actually reading, and how
+ * its columns would map.
  *
  * WHY THIS EXISTS
  * ---------------
- * previewRosterImport failed twice with the same message — Tab
+ * previewRosterImport once failed twice with the same message — Tab
  * "FAS_HRLinks_Feed" was not found — the second time AFTER the default had
- * been changed to 'FAS' and the fix was on the sandbox branch. The code
- * running in Apps Script was an older deploy, which is invisible from inside
- * the editor: the log looks identical whether the default is wrong or the
- * deployment is stale.
+ * been fixed on the sandbox branch. The code running in Apps Script was an
+ * older deploy, which is invisible from inside the editor: the log looks
+ * identical whether the default is wrong or the deployment is stale.
  *
  * Diagnosing that cost a round trip. This function makes the question
  * answerable in one run: it prints the resolved source, the property values,
@@ -93,7 +93,34 @@ function _findFeedTab_(ss, wanted) {
  * this revision. If the marker is absent from the output, the deployment is
  * behind the repository and nothing else in the output can be trusted.
  *
- * Reads nothing and writes nothing. Safe to run at any time.
+ * WHY IT ALSO PRINTS THE MAPPING AND SAMPLE VALUES
+ * ------------------------------------------------
+ * The source changed. @clolry replaced the FAS HRLinks feed with an FC-only
+ * workforce report that carries an email column, and its headers are
+ * different — 'Employee Position Number' rather than 'Position#', 'Supv Lvl'
+ * rather than 'Supv Status', and a plain 'Grade' rather than the composite
+ * 'PP-Series-Grd'.
+ *
+ * Two of those decide things that fail SILENTLY if guessed wrong:
+ *
+ *   Supv Lvl             Access.js:435 admits anyone whose Supervisory_Status
+ *                        is '2'. The old feed's 'Supv Status' held HR's
+ *                        numeric codes. A column named 'Supv Lvl' sitting
+ *                        beside 'Supervisor Level Desc.' may hold the same
+ *                        codes or may hold something else entirely, and
+ *                        mapping it wrong either admits the wrong people or
+ *                        locks out every supervisor.
+ *   Position Status Type The per-capita denominator. 'OBLIGATED' in this
+ *                        vocabulary is a person's permanent seat held open
+ *                        during a temp promotion, so counting it as filled
+ *                        double-counts six people.
+ *
+ * So this prints the DISTINCT VALUES of each, with counts, from the real
+ * sheet. That is the evidence needed to map them — and it is the pattern that
+ * has caught more in this project than any test: @clolry's live output found
+ * the eight Halls, the org suffix on surnames, and what OBLIGATED means.
+ *
+ * Reads nothing from LETS and writes nothing. Safe to run at any time.
  *
  * @returns {Object}
  * @editor
@@ -101,13 +128,13 @@ function _findFeedTab_(ss, wanted) {
 function diagnoseHrFeedSource() {
   // Bumped whenever the resolution logic changes. Its only job is to prove
   // which revision is deployed.
-  var MARKER = 'hr-feed-diag-v2-tab-default-FAS';
+  var MARKER = 'hr-feed-diag-v3-fc-workforce-report';
 
   var out = {
     marker: MARKER,
     propertyKeys: {
-      id: PROPS_KEYS.FAS_HR_FEED,
-      tab: PROPS_KEYS.FAS_HR_FEED_TAB
+      id: PROPS_KEYS.FC_WF_FEED,
+      tab: PROPS_KEYS.FC_WF_FEED_TAB
     },
     propertyValues: {},
     resolved: null,
@@ -118,20 +145,31 @@ function diagnoseHrFeedSource() {
 
   try {
     var props = PropertiesService.getScriptProperties();
-    var rawId = props.getProperty(PROPS_KEYS.FAS_HR_FEED);
-    var rawTab = props.getProperty(PROPS_KEYS.FAS_HR_FEED_TAB);
-    out.propertyValues[PROPS_KEYS.FAS_HR_FEED] =
+    var rawId = props.getProperty(PROPS_KEYS.FC_WF_FEED);
+    var rawTab = props.getProperty(PROPS_KEYS.FC_WF_FEED_TAB);
+    out.propertyValues[PROPS_KEYS.FC_WF_FEED] =
       rawId ? ('set, ' + String(rawId).length + ' chars') : 'NOT SET';
     // The tab name is shown verbatim and quoted, because a trailing space is
-    // invisible otherwise and that is exactly what 'NEW - NTE REPORT ' has.
-    out.propertyValues[PROPS_KEYS.FAS_HR_FEED_TAB] =
-      rawTab === null ? 'NOT SET (falling back to the built-in default)'
+    // invisible otherwise and a real workbook had exactly that.
+    out.propertyValues[PROPS_KEYS.FC_WF_FEED_TAB] =
+      rawTab === null ? 'NOT SET (there is no default — see the error below)'
                       : JSON.stringify(rawTab);
+
+    // THE OLD KEYS MUST BE GONE. Leaving them set is harmless to the code,
+    // which no longer reads them, and misleading to a human reading Project
+    // Settings — two HR feed properties with no way to tell which is live.
+    ['FAS_HRLinks_Feed', 'FAS_HRLinks_Feed_Tab'].forEach(function (dead) {
+      if (props.getProperty(dead) !== null) {
+        out.notes.push('Script Property "' + dead + '" is still set and is no ' +
+                       'longer read by anything. Delete it, so Project ' +
+                       'Settings does not show two HR sources.');
+      }
+    });
   } catch (e) {
     out.notes.push('Could not read Script Properties: ' + e.message);
   }
 
-  var source = getFasHrFeedSource();
+  var source = getFcWorkforceFeedSource();
   out.resolved = {
     ok: source.ok,
     spreadsheetId: source.spreadsheetId,
@@ -139,11 +177,15 @@ function diagnoseHrFeedSource() {
     error: source.error
   };
 
-  if (!source.ok) {
+  // A MISSING TAB STILL LISTS THE WORKBOOK'S TABS. That is the one piece of
+  // information needed to fix a missing tab name, and refusing to open the
+  // workbook because the tab is unset would withhold it.
+  if (!source.ok && !source.spreadsheetId) {
     out.notes.push(source.error);
     console.log(JSON.stringify(out, null, 2));
     return out;
   }
+  if (!source.ok) out.notes.push(source.error);
 
   try {
     var ss = SpreadsheetApp.openById(source.spreadsheetId);
@@ -157,25 +199,165 @@ function diagnoseHrFeedSource() {
         columns: s.getLastColumn()
       };
     });
-    var found = _findFeedTab_(ss, source.tabName);
+
+    var found = source.tabName ? _findFeedTab_(ss, source.tabName) : null;
     out.tabResolves = !!found;
-    if (found) {
-      out.notes.push('Tab resolved to "' + found.getName() + '" with ' +
-                     found.getLastRow() + ' rows and ' +
-                     found.getLastColumn() + ' columns.');
-      // The header row, so a mapping problem can be diagnosed without a
-      // second run.
-      if (found.getLastColumn() > 0) {
-        out.headerRow = found.getRange(1, 1, 1, found.getLastColumn())
-          .getValues()[0].map(function (h) { return String(h); });
+
+    if (!found) {
+      out.notes.push(source.tabName
+        ? ('Tab "' + source.tabName + '" does not resolve. Set ' +
+           PROPS_KEYS.FC_WF_FEED_TAB + ' to one of the names above, copied ' +
+           'exactly.')
+        : ('Set ' + PROPS_KEYS.FC_WF_FEED_TAB + ' to whichever tab above ' +
+           'holds the roster, then re-run this.'));
+      console.log(JSON.stringify(out, null, 2));
+      return out;
+    }
+
+    out.notes.push('Tab resolved to "' + found.getName() + '" with ' +
+                   found.getLastRow() + ' rows and ' +
+                   found.getLastColumn() + ' columns.');
+
+    if (found.getLastColumn() < 1 || found.getLastRow() < 2) {
+      out.notes.push('That tab has no data rows, so there is nothing to map.');
+      console.log(JSON.stringify(out, null, 2));
+      return out;
+    }
+
+    // Header row, quoted. A header that wraps in the sheet arrives with an
+    // embedded newline — 'Employee\nID' — and unquoted that is invisible and
+    // reads as a mapping bug.
+    var headers = found.getRange(1, 1, 1, found.getLastColumn())
+      .getValues()[0].map(function (h) { return String(h); });
+    out.headerRow = headers;
+    out.headerCount = headers.length;
+
+    // WHAT WOULD MAP, AND WHAT WOULD NOT.
+    var mapped = HCRosterImport.proposeMapping(headers);
+    out.mapping = mapped.mapping;
+    out.unmappedHeaders = mapped.unmapped;
+    out.missingRequired = mapped.missing;
+    if (mapped.missing.length) {
+      out.notes.push('REQUIRED field(s) unmapped: ' + mapped.missing.join(', ') +
+                     '. The import refuses in this state, which is correct — ' +
+                     'add the real header spelling to FIELD_HINTS in ' +
+                     '30_services/HCRosterImport.js.');
+    }
+
+    // DISTINCT VALUES for the two columns that fail silently. Sampled over up
+    // to 2,000 rows, which covers this roster.
+    //
+    // Reported for the field whether or not it mapped: when it did not map,
+    // the values are how to decide what it is. A column read as a name is
+    // useless; a column shown to hold {2, 4, 5, 8} is a supervisory code.
+    var lastRow = Math.min(found.getLastRow(), 2001);
+    var body = found.getRange(2, 1, lastRow - 1, headers.length).getValues();
+    out.rowsSampled = body.length;
+
+    function _distinct_(headerName, cap) {
+      var col = -1;
+      for (var h = 0; h < headers.length; h++) {
+        if (headers[h] === headerName) { col = h; break; }
       }
-    } else {
-      out.notes.push('Tab "' + source.tabName + '" does not resolve. Set ' +
-                     PROPS_KEYS.FAS_HR_FEED_TAB + ' to one of the names above, ' +
-                     'copied exactly.');
+      if (col === -1) return null;
+      var counts = {};
+      for (var r = 0; r < body.length; r++) {
+        var v = body[r][col];
+        var key = (v === null || v === undefined || v === '')
+          ? '(blank)' : String(v).trim();
+        if (key === '') key = '(blank)';
+        counts[key] = (counts[key] || 0) + 1;
+      }
+      var keys = Object.keys(counts).sort(function (a, b) {
+        return counts[b] - counts[a];
+      });
+      var outv = {};
+      keys.slice(0, cap || 25).forEach(function (k) { outv[k] = counts[k]; });
+      if (keys.length > (cap || 25)) {
+        outv['… and ' + (keys.length - (cap || 25)) + ' more'] = 0;
+      }
+      return { column: headerName, distinctCount: keys.length, values: outv };
+    }
+
+    // The vocabularies that decide site access and the budget denominator.
+    out.distinctValues = {};
+    ['Supv Lvl', 'Supervisor\nLevel Desc.', 'Position Status Type',
+     'PP', 'Grade', 'Type Appt Desc', 'Work\nSchedule'
+    ].forEach(function (h) {
+      var d = _distinct_(h, 25);
+      if (d) out.distinctValues[h] = d;
+    });
+
+    // EMAIL COVERAGE, straight off the column, because the whole reason this
+    // source replaced the last one is that it has addresses. If coverage is
+    // not ~100% the directory removal needs reconsidering, and that is better
+    // known now than after 5,100 lines are deleted.
+    var emailCol = -1;
+    var nameCol = -1;
+    for (var hh = 0; hh < headers.length; hh++) {
+      if (headers[hh] === 'Employee Email') emailCol = hh;
+      if (headers[hh] === 'Name') nameCol = hh;
+    }
+    if (emailCol > -1) {
+      var withEmail = 0, named = 0, blankEmail = 0, notAnAddress = 0;
+      for (var br = 0; br < body.length; br++) {
+        var nm = nameCol > -1 ? String(body[br][nameCol] || '').trim() : '';
+        if (nameCol > -1 && !nm) continue;        // unoccupied/spacer row
+        named++;
+        var em = String(body[br][emailCol] || '').trim();
+        if (!em) blankEmail++;
+        else if (em.indexOf('@') === -1) notAnAddress++;
+        else withEmail++;
+      }
+      out.emailCoverage = {
+        namedRows: named,
+        withEmail: withEmail,
+        blank: blankEmail,
+        notAnAddress: notAnAddress,
+        verdict: (blankEmail + notAnAddress) === 0
+          ? 'Every named row has an address. The directory lookup is ' +
+            'genuinely unnecessary.'
+          : ((blankEmail + notAnAddress) + ' named row(s) have no usable ' +
+             'address. Worth seeing before the directory lookup is deleted.')
+      };
+    }
+
+    // DUPLICATE POSITION NUMBERS would BLOCK rows at import. This source has
+    // a 'Record Date' column, which suggests it may be a dated snapshot — and
+    // if it ever carries more than one snapshot, every position appears twice
+    // and validateRow blocks the lot. Counted here rather than discovered
+    // during an import.
+    var pnCol = -1, recCol = -1;
+    for (var ph = 0; ph < headers.length; ph++) {
+      if (headers[ph] === 'Employee Position Number') pnCol = ph;
+      if (headers[ph] === 'Record Date') recCol = ph;
+    }
+    if (pnCol > -1) {
+      var seen = {}, dupes = 0, blankPn = 0;
+      for (var pr = 0; pr < body.length; pr++) {
+        var pv = String(body[pr][pnCol] || '').trim();
+        if (!pv) { blankPn++; continue; }
+        if (seen[pv]) dupes++;
+        else seen[pv] = true;
+      }
+      out.positionNumbers = {
+        distinct: Object.keys(seen).length,
+        duplicateRows: dupes,
+        blank: blankPn,
+        verdict: dupes === 0
+          ? 'No duplicate position numbers.'
+          : (dupes + ' row(s) repeat a position number. validateRow BLOCKS a ' +
+             'duplicate, because the later row wins every lookup and makes ' +
+             'the earlier person invisible. If this sheet holds more than one ' +
+             'Record Date, the import needs to filter to the latest.')
+      };
+    }
+    if (recCol > -1) {
+      var d2 = _distinct_('Record Date', 10);
+      if (d2) out.recordDates = d2;
     }
   } catch (e) {
-    out.notes.push('Could not open the spreadsheet: ' + e.message +
+    out.notes.push('Could not read the spreadsheet: ' + e.message +
                    ' — check the ID and that this account has read access.');
   }
 
@@ -203,7 +385,7 @@ function previewRosterImport(opts) {
   var quiet = !!(opts && opts.quiet);
 
   try {
-    var source = getFasHrFeedSource();
+    var source = getFcWorkforceFeedSource();
     if (!source.ok) {
       // NO FALLBACK. See HCRosterImport.js's header: every available fallback
       // is a stale roster, and a stale roster produces allocations that look
@@ -222,20 +404,18 @@ function previewRosterImport(opts) {
           'Tabs present: ' + names.map(function (n) {
             return '"' + n + '"';
           }).join(', ') + '\n' +
-          'FIX: set the Script Property ' + PROPS_KEYS.FAS_HR_FEED_TAB +
-          ' to one of those names.\n' +
-          'NOTE: if the tab name above looks correct, this deployment is ' +
-          'running an older version of the code — the property is read first ' +
-          'and overrides the built-in default, so setting it works either way.');
+          'FIX: set the Script Property ' + PROPS_KEYS.FC_WF_FEED_TAB +
+          ' to one of those names, copied exactly.\n' +
+          'Run diagnoseHrFeedSource() for the row and column counts of each, ' +
+          'plus the header row of whichever one you pick.');
       }
 
       // READ ONLY THE MAPPED COLUMNS' WORTH OF WIDTH, not getDataRange().
       //
-      // The FAS workbook is a live HR feed with 33 columns and a row per
-      // position across all of FAS, not just ASD. getDataRange() on a sheet
-      // that wide and long is the likeliest way this hits the 6-minute
-      // execution limit or the 50MB payload cap — and it would do so AFTER
-      // reading everything, wasting the whole run.
+      // This is a live HR export — 46 columns and a row per position.
+      // getDataRange() on a sheet that wide and long is the likeliest way
+      // this hits the 6-minute execution limit or the 50MB payload cap — and
+      // it would do so AFTER reading everything, wasting the whole run.
       //
       // getLastRow()/getLastColumn() bound it explicitly so the failure, if
       // it comes, is a clear "too many rows" rather than a timeout.
@@ -307,12 +487,13 @@ function previewRosterImport(opts) {
         tabName: source.tabName,
         // Stated so a reader can confirm the roster did NOT come from the May
         // spreadsheet, which is the error this whole module exists to prevent.
-        propertyKey: PROPS_KEYS.FAS_HR_FEED
+        propertyKey: PROPS_KEYS.FC_WF_FEED
       },
       mapping: parsed.mapping,
       unmappedColumns: parsed.unmapped,
-      // WHICH ORG THIS IMPORT IS LIMITED TO. The feed is all of FAS; without
-      // this the import would admit other portfolios' supervisors to LETS.
+      // WHICH ORG THIS IMPORT IS LIMITED TO. The FC workforce report should
+      // already be FC-only, so outOfScope is expected to be 0 — and reporting
+      // it is how that expectation gets checked rather than assumed.
       orgScope: parsed.orgScope,
       scopeNote: parsed.scopeNote,
       outOfScopeByPrefix: parsed.outOfScopeByPrefix,
@@ -753,7 +934,7 @@ function importRoster(token) {
   }
 
   try {
-    var source = getFasHrFeedSource();
+    var source = getFcWorkforceFeedSource();
     if (!source.ok) return errorResponse(source.error);
 
     var ss = SpreadsheetApp.openById(source.spreadsheetId);

@@ -113,10 +113,140 @@ console.log('1. the column mapping is proposed, and refuses to guess');
 }
 
 // ---------------------------------------------------------------------------
-console.log('\n1b. the REAL FAS HRLinks headers, as supplied by @clolry');
+console.log('\n1b. the REAL FC workforce report headers, as supplied by @clolry');
 {
-  // All 33, verbatim. This is the mapping the import will actually use, so it
-  // is asserted column by column rather than counted.
+  // All 46, verbatim, INCLUDING THE EMBEDDED NEWLINES.
+  //
+  // The sheet wraps long headers inside the cell, so they arrive as
+  // 'Employee\nID' rather than 'Employee ID'. That is not cosmetic: four
+  // fields depend on _norm_ collapsing whitespace, and without it
+  // positionNumber's neighbours — employeeId, reportsTo, lcat — would
+  // silently fail to map. Written here exactly as the sheet delivers them, so
+  // the test exercises the real shape rather than a tidied one.
+  const FCWF = ['Record Date', 'SSO', 'Dept. ID\n2 Letter', 'Dept ID',
+    'Employee Position Number', 'Employee\nID', 'Name', 'Employee Email',
+    'Position Title', 'Position Status Type', 'PD\nNumber', 'PP',
+    'Occ\nSeries', 'Grade', 'Step', 'Target Grade', 'Grade Entry Date',
+    'WGI Due Dt', 'Eligible for Career Ladder Promotion?\nY/N',
+    'Type Appt Desc', 'EOD\nDate', 'Supv Lvl', 'Supervisor\nLevel Desc.',
+    'FLSA\nStatus', 'Reports to\nPosition\nNumber',
+    'Reports to Supervisor Name', 'Reports to Supervisor Email',
+    'Location Code', 'Location Code Description', 'Address Line 1',
+    'Location City', 'Location County', 'Location State', 'Obligated To',
+    'Obligated To\nEmployee', 'Accounting Code', 'Hire NTE Date',
+    'Temp\nPromotion\nExpire Date', 'Detail\nPosition',
+    'Detail\nExpire Date', 'Work\nSchedule', 'POID', 'SCD Leave',
+    'Base Pay', 'Local Adjust', 'Total Pay'];
+
+  const m = R.proposeMapping(FCWF);
+  ok('nothing required is missing', m.missing.length === 0, m.missing);
+
+  // WRAPPED HEADERS MUST MAP. Three of the four below arrive with a newline
+  // in the middle, and a hint list written with literal newlines would be
+  // unreadable and fragile — so the hints use single spaces and _norm_
+  // collapses.
+  ok('a header wrapped onto two lines still maps',
+     m.mapping.employeeId === 'Employee\nID', m.mapping.employeeId);
+  ok('and one wrapped onto three lines',
+     m.mapping.reportsTo === 'Reports to\nPosition\nNumber',
+     m.mapping.reportsTo);
+  ok('and the occupational series',
+     m.mapping.lcat === 'Occ\nSeries', m.mapping.lcat);
+
+  ok('the position key comes from Employee Position Number',
+     m.mapping.positionNumber === 'Employee Position Number',
+     m.mapping.positionNumber);
+
+  // 'Dept ID', NOT 'Dept. ID 2 Letter'. The two-letter column is a portfolio
+  // abbreviation; reading it as the org code would collapse the whole roster
+  // into one bucket and make all 22 per-capita service-centre shares
+  // identical — a figure that looks precise and means nothing.
+  ok('the org code comes from Dept ID',
+     m.mapping.orgCode === 'Dept ID', m.mapping.orgCode);
+  ok('and NOT from the 2-letter department column',
+     m.unmapped.indexOf('Dept. ID\n2 Letter') > -1,
+     'a 2-letter code would merge every service centre into one');
+
+  // THE COLUMN THAT MADE THIS SOURCE WORTH SWITCHING TO. The HRLinks feed had
+  // 33 columns and no address, which is why ~5,100 lines of directory name
+  // matching existed.
+  ok('there IS an email column, and it is the employee\'s own',
+     m.mapping.emailAddress === 'Employee Email', m.mapping.emailAddress);
+
+  // AND IT MUST NOT BE THE SUPERVISOR'S. 'Reports to Supervisor Email' is the
+  // boss's address sitting on the employee's row; mapping it to emailAddress
+  // would hand every person their supervisor's identity, and Access.js:435
+  // matches the signed-in user against exactly this field.
+  ok('the supervisor email column is NOT read',
+     m.unmapped.indexOf('Reports to Supervisor Email') > -1 &&
+     m.mapping.emailAddress !== 'Reports to Supervisor Email',
+     'it would give everyone their supervisor\'s access');
+
+  // The supervisor join must be on the position NUMBER, not the name or the
+  // address. Two people can share a name; and the thing being walked is a
+  // tree of POSITIONS, where a vacant supervisory seat has no occupant to
+  // have an address at all.
+  ok('and the supervisor NAME column is not read either',
+     m.unmapped.indexOf('Reports to Supervisor Name') > -1,
+     'a name is not a key — the chain joins on position numbers');
+
+  // 'Position Status Type' decides the per-capita denominator. OBLIGATED in
+  // this vocabulary is a permanent seat held during a temp promotion, so
+  // counting it as filled double-counts the person.
+  ok('occupancy comes from Position Status Type',
+     m.mapping.occupancyStatus === 'Position Status Type',
+     m.mapping.occupancyStatus);
+
+  // THIS SOURCE HAS NO SECOND STATUS COLUMN, so the cross-check has nothing
+  // to compare and reports zero. That is correct rather than a gap — there is
+  // no disagreement to find.
+  ok('there is no secondary status column to cross-check',
+     !('secondaryStatus' in m.mapping),
+     'the HRLinks feed had two status columns; this one has one');
+
+  // GRADE IS ITS OWN COLUMN HERE, not the 'GS-0343-15' composite.
+  ok('grade comes from the plain Grade column',
+     m.mapping.grade === 'Grade', m.mapping.grade);
+  ok('and the pay plan is read separately, for the SES case',
+     m.mapping.payPlanOnly === 'PP', m.mapping.payPlanOnly);
+
+  // THE FIELD THAT GRANTS SITE ACCESS. Access.js:435 admits anyone whose
+  // Supervisory_Status is '2'.
+  ok('supervisory status comes from Supv Lvl',
+     m.mapping.supervisoryStatus === 'Supv Lvl', m.mapping.supervisoryStatus);
+
+  // AND NOT FROM THE DESCRIPTION BESIDE IT. 'Supervisor Level Desc.' is free
+  // text; it would never equal '2', so every supervisor would silently lose
+  // their only automatic route into LETS — a failure with no symptom other
+  // than people being unable to sign in.
+  ok('and NOT from Supervisor Level Desc.',
+     m.unmapped.indexOf('Supervisor\nLevel Desc.') > -1,
+     'a description never equals "2"; every supervisor would be locked out');
+
+  // Pay columns must stay unmapped. Base Pay / Total Pay are salary, which a
+  // travel tool has no business storing — HCPrivacy already withholds grade
+  // below admin for the same reason.
+  ['Base Pay', 'Local Adjust', 'Total Pay', 'SCD Leave', 'Step'].forEach(h => {
+    ok('"' + h + '" is not mapped to anything',
+       m.unmapped.indexOf(h) > -1, 'salary and leave are not travel data');
+  });
+
+  ok('emailAddress is still not a REQUIRED field',
+     R.REQUIRED_FIELDS.indexOf('emailAddress') === -1,
+     'the source has one, but requiring it would block an import over a ' +
+     'single blank cell');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n1b-ii. the retired FAS HRLinks headers still map');
+{
+  // All 33, verbatim. KEPT DELIBERATELY after the source changed.
+  //
+  // The old spellings cost nothing — proposeMapping stops at the first match
+  // — and they are the record of what the code was reading when the live
+  // figures in SESSION_STATE.md were produced: 1,046 positions, 817 filled,
+  // $444,500 split 22 ways. A future reader comparing a new import against
+  // those numbers needs to know which column each came from.
   const FAS = ['Position Status', 'Status', '"Obligated To" Employee Name',
     'Employee ID', 'Employee Name', 'Position#', 'PAR#', 'Position Title',
     'PP-Series-Grd', 'FPL', 'PD #', 'Dept ID (Org)', 'POI',
@@ -131,10 +261,10 @@ console.log('\n1b. the REAL FAS HRLinks headers, as supplied by @clolry');
   const m = R.proposeMapping(FAS);
   ok('nothing required is missing', m.missing.length === 0, m.missing);
 
-  // 'Position#' has NO space before the hash. My original hints had 'Position
-  // Number', 'Position #' and 'PN' and missed it, so the import refused —
-  // which is how the gap became visible instead of silently importing a
-  // roster with no join key.
+  // 'Position#' has NO space before the hash. The original hints had
+  // 'Position Number', 'Position #' and 'PN' and missed it, so the import
+  // refused — which is how the gap became visible instead of silently
+  // importing a roster with no join key.
   ok('Position# maps despite having no space',
      m.mapping.positionNumber === 'Position#', m.mapping.positionNumber);
 
@@ -147,16 +277,14 @@ console.log('\n1b. the REAL FAS HRLinks headers, as supplied by @clolry');
      m.mapping.orgCode !== 'POI' && m.unmapped.indexOf('POI') > -1,
      'a POI is shared across orgs; it would merge service centres');
 
-  // The supervisor join must be on the position NUMBER, not the name. Two
-  // people can share a name, and hcWalkSupervisorChain follows numbers.
   ok('the supervisor join uses Reports To Position #',
      m.mapping.reportsTo === 'Reports To Position #', m.mapping.reportsTo);
   ok('and ignores Reports To Name',
      m.unmapped.indexOf('Reports To Name') > -1,
      'a name is not a key — the chain joins on position numbers');
 
-  // 'Position Status' over the bare 'Status'. The feed has both; the choice
-  // decides the per-capita denominator.
+  // 'Position Status' over the bare 'Status'. That feed had both; the choice
+  // decided the per-capita denominator.
   ok('occupancy comes from Position Status',
      m.mapping.occupancyStatus === 'Position Status', m.mapping.occupancyStatus);
   ok('and the bare Status column is read only for cross-checking',
@@ -167,13 +295,11 @@ console.log('\n1b. the REAL FAS HRLinks headers, as supplied by @clolry');
   ok('supervisory status comes from Supv Status',
      m.mapping.supervisoryStatus === 'Supv Status');
 
-  // THE GAP THAT MATTERS. 33 columns and not one email address.
-  ok('there is NO email column in the feed',
+  // THE GAP THAT MADE THIS SOURCE OBSOLETE. 33 columns, not one address —
+  // which is why the directory name-matching subsystem existed at all.
+  ok('there is NO email column in the old feed',
      !('emailAddress' in m.mapping),
-     'Access.js matches the signed-in user against Email_Address');
-  ok('and emailAddress is deliberately not a required field',
-     R.REQUIRED_FIELDS.indexOf('emailAddress') === -1,
-     'requiring it would block the import and leave LETS on fictional data');
+     'this absence is the whole reason the source was replaced');
 }
 
 // ---------------------------------------------------------------------------
@@ -222,6 +348,55 @@ console.log('\n1c. PP-Series-Grd is split, not stored whole');
      p.rows[0].lcat === '0343', p.rows[0]);
   ok('and the grade is the bare number',
      p.rows[0].grade === '15', p.rows[0].grade);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n1c-ii. a SPLIT grade column needs the same two protections');
+{
+  // The FC workforce report separates what HRLinks combined: PP, Occ Series
+  // and Grade are three columns. The composite-splitting branches are no
+  // longer exercised by the live source, so the two things they were doing
+  // have to be checked on the new shape — both fail silently if dropped.
+  const SPLIT = ['Employee Position Number', 'Name', 'Dept ID', 'PP',
+                 'Occ\nSeries', 'Grade'];
+
+  // 1. ZERO-PADDING. A sheet cell holding 07 arrives as the number 7, and
+  //    every grade comparison in LETS is a string comparison. This is the
+  //    VT-03 defect, and a "simple" column is exactly where it would be
+  //    assumed away.
+  const g7 = R.parseFeed([SPLIT,
+    ['90000001', 'Doe,Jane', 'FCA0B', 'GS', '1102', 7]], null);
+  ok('a numeric 7 from a plain Grade column becomes "07"',
+     g7.rows[0].grade === '07', g7.rows[0].grade);
+  const g15 = R.parseFeed([SPLIT,
+    ['90000002', 'Roe,John', 'FCA0B', 'GS', '0343', 15]], null);
+  ok('and 15 stays "15" for the Division Director lookup',
+     g15.rows[0].grade === '15', g15.rows[0].grade);
+
+  // 2. THE SES SUBSTITUTION. parsePayPlanGrade turns a composite
+  //    'ES-0340-00' into grade 'ES' because '00' is the absence of a grade
+  //    and sorts below every GS-01. On a split source that function only sees
+  //    '00' and has no pay plan to substitute — so interpretRow must do it,
+  //    using the separate PP column.
+  const ses = R.parseFeed([SPLIT,
+    ['90000003', 'Senior,Exec', 'FCA', 'ES', '0340', '00']], null);
+  ok('a split ES row with grade 00 yields "ES", not "00"',
+     ses.rows[0].grade === 'ES', ses.rows[0].grade);
+  ok('and the pay plan is carried',
+     ses.rows[0].payPlan === 'ES', ses.rows[0].payPlan);
+
+  // NEGATIVE CONTROL for that substitution: without a PP column there is no
+  // pay plan to use, and inventing one would be worse than passing the value
+  // through for validateRow to flag.
+  const noPp = R.parseFeed([
+    ['Employee Position Number', 'Name', 'Dept ID', 'Grade'],
+    ['90000004', 'Senior,Exec', 'FCA', '00']], null);
+  ok('with no PP column, 00 passes through rather than being invented',
+     noPp.rows[0].grade === '00', noPp.rows[0].grade);
+
+  // The series still reaches LCAT, now from its own column.
+  ok('the occupational series lands in LCAT from its own column',
+     g15.rows[0].lcat === '0343', g15.rows[0].lcat);
 }
 
 // ---------------------------------------------------------------------------
@@ -656,17 +831,29 @@ console.log('\n7. the May spreadsheet can never be read again');
 
   // And the roster has exactly one source, which must be the Script Property.
   const sync = fs.readFileSync('lets_app/server/40_domain/HCRosterSync.js', 'utf8');
-  ok('the importer reads the FAS HR feed property',
-     /getFasHrFeedSource\(\)/.test(sync));
+  ok('the importer reads the FC workforce feed property',
+     /getFcWorkforceFeedSource\(\)/.test(sync));
+  ok('and no longer reads the retired FAS HRLinks getter',
+     !/getFasHrFeedSource\(\)/.test(sync),
+     'two HR sources with no way to tell which is live is worse than one');
 
   const props = fs.readFileSync('lets_app/server/00_config/Props.js', 'utf8');
-  ok('and that property is FAS_HRLinks_Feed',
-     /FAS_HR_FEED:\s*'FAS_HRLinks_Feed'/.test(props));
+  ok('and that property is FC_WF_Data_Report',
+     /FC_WF_FEED:\s*'FC_WF_Data_Report'/.test(props));
+  ok('with its tab in FC_WF_Tab',
+     /FC_WF_FEED_TAB:\s*'FC_WF_Tab'/.test(props));
+
+  // THE OLD KEYS ARE GONE, not merely unread. @clolry deleted them from
+  // Script Properties; leaving them in PROPS_KEYS would make
+  // _verifyAllPropsKeys report two permanent MISSINGs on a correct install.
+  ok('the retired HRLinks keys are removed from PROPS_KEYS',
+     !/FAS_HR_FEED/.test(props),
+     'an unread key still shows up in the setup verifier');
 
   // NO DEFAULT. Every other getter in Props.js falls back to something
   // sensible; this one must not, because every available fallback is a stale
   // roster — which is the failure being prevented.
-  const getter = props.slice(props.indexOf('function getFasHrFeedSource'),
+  const getter = props.slice(props.indexOf('function getFcWorkforceFeedSource'),
                              props.indexOf('function getLiabilityLogSource'));
   ok('an unset HR feed property is an ERROR, not a default',
      /ok:\s*false/.test(getter) && /is not set/.test(getter),
@@ -674,12 +861,32 @@ console.log('\n7. the May spreadsheet can never be read again');
   ok('and the error explains why there is no fallback',
      /no other source|no fallback/i.test(getter), getter.slice(0, 200));
 
-  // The two spreadsheet IDs must not be in the OPTIONAL set, or setup can
+  // THE TAB HAS NO DEFAULT EITHER, which is a change from the HRLinks getter.
+  //
+  // That one defaulted to 'FAS' and the default was defensible: a wrong tab
+  // in the RIGHT workbook fails loudly, because the required columns are
+  // absent and parseFeed refuses. This workbook's layout is not known to the
+  // code, so a default would be a guess at which sheet holds the roster.
+  ok('an unset TAB is also an error, not a guess',
+     /PROPS_KEYS\.FC_WF_FEED_TAB \+ ' is not set/.test(getter),
+     'guessing a tab means guessing which sheet is the roster');
+  ok('and it points at the diagnostic that lists the real tabs',
+     /diagnoseHrFeedSource\(\)/.test(getter));
+  ok('there is no tab fallback expression at all',
+     !/tabName: tab \|\|/.test(getter), getter.slice(-400));
+
+  // The spreadsheet IDs must not be in the OPTIONAL set, or setup can
   // complete without them and the importer fails at the point of use.
   const optionalBlock = props.slice(props.indexOf('const OPTIONAL = new Set(['),
                                     props.indexOf(']);', props.indexOf('const OPTIONAL')));
-  ok('FAS_HR_FEED is NOT optional',
-     !/'FAS_HR_FEED'/.test(optionalBlock), optionalBlock.slice(0, 200));
+  ok('FC_WF_FEED is NOT optional',
+     !/'FC_WF_FEED'/.test(optionalBlock), optionalBlock.slice(0, 200));
+  // AND NEITHER IS THE TAB, unlike FAS_HR_FEED_TAB which was optional
+  // because it had a default. Removing the default without removing the
+  // exemption would let setup report complete while the import cannot run.
+  ok('FC_WF_FEED_TAB is NOT optional either',
+     !/'FC_WF_FEED_TAB'/.test(optionalBlock),
+     'it has no default, so an unset value must be reported MISSING');
   ok('LIABILITY_LOG_SHEET is NOT optional',
      !/'LIABILITY_LOG_SHEET'/.test(optionalBlock));
 }
@@ -869,17 +1076,12 @@ console.log('\n11. seedHCTestData cannot overwrite a real roster');
 // ---------------------------------------------------------------------------
 console.log('\n12. the tab is resolved tolerantly, but never fuzzily');
 {
-  // previewRosterImport failed twice with the same message — Tab
+  // previewRosterImport once failed twice with the same message — Tab
   // "FAS_HRLinks_Feed" was not found — the second time AFTER the default had
-  // been corrected to 'FAS' in the repository. The deployment was stale, and
-  // that is invisible from the editor: the log is identical whether the
-  // default is wrong or the code is old.
+  // been corrected in the repository. The deployment was stale, and that is
+  // invisible from the editor: the log is identical whether the default is
+  // wrong or the code is old.
   const sync = fs.readFileSync('lets_app/server/40_domain/HCRosterSync.js', 'utf8');
-
-  ok('the tab default is FAS, not the property name',
-     /tabName: tab \|\| 'FAS'/.test(
-       fs.readFileSync('lets_app/server/00_config/Props.js', 'utf8')),
-     'defaulting a value to the key that holds it was the original mistake');
 
   // THE REAL WORKBOOK HAS A TAB WITH A TRAILING SPACE: 'NEW - NTE REPORT '.
   // getSheetByName is exact, so a name typed without noticing that space
@@ -912,10 +1114,15 @@ console.log('\n12. the tab is resolved tolerantly, but never fuzzily');
      /'"' \+ n \+ '"'/.test(sync),
      'an unquoted list hides the trailing space in "NEW - NTE REPORT "');
   ok('and names the property to set',
-     /PROPS_KEYS\.FAS_HR_FEED_TAB/.test(sync));
-  ok('and warns that a stale deployment produces this same message',
-     /older version of the code/.test(sync),
-     'this exact confusion cost a diagnostic round trip');
+     /PROPS_KEYS\.FC_WF_FEED_TAB/.test(sync));
+  // The stale-deployment note is gone with the default it was about: there is
+  // no built-in tab name now, so "the property overrides the default" is no
+  // longer a thing to explain. What replaces it is the diagnostic, which
+  // lists the real tabs and carries a version marker — see §13.
+  ok('and points at the diagnostic instead of explaining a default',
+     /diagnoseHrFeedSource\(\)/.test(sync) &&
+     !/older version of the code/.test(sync),
+     'there is no tab default left to be stale about');
 }
 
 // ---------------------------------------------------------------------------

@@ -75,8 +75,8 @@ const PROPS_KEYS = {
   // That instruction came out of a real error. Melissa Mould was reported as
   // unattributed, and the reason was that the May staffing plan
   // (reference_excel_files/Copy of ASD Staffing Plan 5-12-26.xlsx) places her
-  // in FCBBB with supervisory status 8, while the FAS HR feed has her in
-  // FCBBBB as a status-2 supervisor. The May file is six months stale.
+  // in FCBBB with supervisory status 8, while the HR feed has her in FCBBBB
+  // as a status-2 supervisor. The May file is six months stale.
   //
   // The consequence was not one wrong row. Every per-capita service-centre
   // figure produced before this property existed was computed from that stale
@@ -88,19 +88,55 @@ const PROPS_KEYS = {
   // fallback to a bundled file, and no default — an unset property is an
   // error, because defaulting to a stale roster is the failure being
   // prevented.
-  FAS_HR_FEED:                  'FAS_HRLinks_Feed',
+  //
+  // THIS REPLACED THE FAS HRLINKS FEED, AND THE REPLACEMENT IS STRICTLY
+  // BETTER IN TWO WAYS.
+  //
+  // @clolry: "I was able to get access to a completely different data source.
+  // It's specific to FC only (and doesn't have the rest of FAS) and it
+  // includes all of the information we need - including an email address!"
+  //
+  //   1. IT CARRIES EMAIL ADDRESSES. The HRLinks feed had 33 columns and not
+  //      one was an address, which is why ~5,100 lines of directory name
+  //      matching existed at all. That whole subsystem is now deleted —
+  //      Email_Address comes from the feed's own column, which is
+  //      authoritative rather than inferred.
+  //   2. IT IS FC-ONLY. The HRLinks FAS tab was 4,274 rows across five
+  //      portfolios against ASD's ~1,046, so the scope filter was load-
+  //      bearing: without it the import admitted several hundred non-ASD
+  //      supervisors to LETS. HR_ORG_SCOPE still applies and still defaults
+  //      to FC, because a source being narrow today is not a reason to stop
+  //      checking.
+  //
+  // The old keys FAS_HRLinks_Feed and FAS_HRLinks_Feed_Tab have been removed
+  // from Script Properties. Nothing reads them.
+  FC_WF_FEED:                   'FC_WF_Data_Report',
   // Tab within that spreadsheet. Separate so the tab can be renamed without
   // re-pasting the ID, and because the feed workbook holds several sheets.
-  FAS_HR_FEED_TAB:              'FAS_HRLinks_Feed_Tab',
-
-  // WHICH ORG THIS DEPLOYMENT OWNS. The feed's FAS tab is 4,274 rows covering
-  // all five FAS portfolios; ASD is about 914 of them.
   //
-  // Without a scope filter the import writes every FAS employee into
-  // HC_Positions, and Access.js:435 grants LETS access to anyone there whose
-  // Supervisory_Status is '2' — several hundred supervisors from other
+  // NO DEFAULT, unlike the HRLinks tab which defaulted to 'FAS'. That default
+  // was defensible there because a wrong tab in the right workbook fails
+  // loudly — the required columns are absent and parseFeed refuses. It is not
+  // defensible here because this workbook's tab name is not yet known to the
+  // code, and guessing one means guessing which sheet holds the roster.
+  FC_WF_FEED_TAB:               'FC_WF_Tab',
+
+  // WHICH ORG THIS DEPLOYMENT OWNS. Historically load-bearing: the HRLinks
+  // FAS tab was 4,274 rows covering all five FAS portfolios against ASD's
+  // ~1,046. The FC workforce report is FC-only, so the filter should now be a
+  // no-op — and previewRosterImport reporting outOfScope: 0 is the evidence
+  // that the source really is scoped, rather than an assumption.
+  //
+  // Without a scope filter the import writes every non-ASD employee the
+  // source happens to carry into HC_Positions, and Access.js:435 grants LETS
+  // access to anyone there whose Supervisory_Status is '2' — which under the
+  // old FAS-wide feed meant several hundred supervisors from other
   // portfolios, admitted silently. It would also publish them to the org
-  // chart and inflate every per-capita denominator fourfold.
+  // chart and inflate every per-capita denominator.
+  //
+  // KEPT EVEN THOUGH THE NEW SOURCE IS FC-ONLY. A filter that is currently a
+  // no-op costs nothing; removing it would mean a future source change could
+  // widen the roster with no guard and no signal.
   //
   // A PROPERTY rather than a constant because @clolry: "eventually we need to
   // build this for use across all 5 FAS portfolios, but for now we're focused
@@ -276,7 +312,7 @@ function getSetAsideAmountOverride(key, defaultAmount) {
 // ============================================================================
 
 /**
- * The FAS HRLinks feed: the ONLY authoritative source for the HR roster.
+ * The FC workforce data report: the ONLY authoritative source for the roster.
  *
  * @clolry: "please make sure that when we seed the HR roster that we remove
  * ALL test records and are relying only on the sheet identified in the system
@@ -293,16 +329,27 @@ function getSetAsideAmountOverride(key, defaultAmount) {
  * property existed came from the May file, so all 22 shares are suspect until
  * recomputed from the feed.
  *
+ * REPLACED getFasHrFeedSource. The FAS HRLinks feed had no email column, which
+ * is why a 5,100-line directory name-matching subsystem existed; this source
+ * carries Employee Email, so that subsystem is deleted. It is also FC-only
+ * rather than all five FAS portfolios.
+ *
+ * THE TAB HAS NO DEFAULT HERE, unlike the HRLinks version which defaulted to
+ * 'FAS'. That default was defensible because a wrong tab in the right workbook
+ * fails loudly — the required columns are absent and parseFeed refuses. It is
+ * not defensible now, because this workbook's layout is not yet known to the
+ * code and guessing a tab means guessing which sheet holds the roster.
+ *
  * @returns {{ok: boolean, spreadsheetId: string, tabName: string,
  *            error: string}}
  * @server
  */
-function getFasHrFeedSource() {
+function getFcWorkforceFeedSource() {
   var id = '';
   var tab = '';
   try {
-    id = String(_props().getProperty(PROPS_KEYS.FAS_HR_FEED) || '').trim();
-    tab = String(_props().getProperty(PROPS_KEYS.FAS_HR_FEED_TAB) || '').trim();
+    id = String(_props().getProperty(PROPS_KEYS.FC_WF_FEED) || '').trim();
+    tab = String(_props().getProperty(PROPS_KEYS.FC_WF_FEED_TAB) || '').trim();
   } catch (e) {
     return {
       ok: false, spreadsheetId: '', tabName: '',
@@ -313,11 +360,23 @@ function getFasHrFeedSource() {
   if (!id) {
     return {
       ok: false, spreadsheetId: '', tabName: '',
-      error: 'Script Property ' + PROPS_KEYS.FAS_HR_FEED + ' is not set. The ' +
+      error: 'Script Property ' + PROPS_KEYS.FC_WF_FEED + ' is not set. The ' +
              'HR roster has no other source — there is deliberately no ' +
              'fallback, because defaulting to a stale roster silently ' +
              'misattributes every org\'s budget. Set it in Project Settings ' +
              'then re-run the import.'
+    };
+  }
+
+  if (!tab) {
+    return {
+      ok: false, spreadsheetId: id, tabName: '',
+      error: 'Script Property ' + PROPS_KEYS.FC_WF_FEED_TAB + ' is not set. ' +
+             'There is no default: this workbook may hold several sheets, and ' +
+             'guessing which one is the roster risks importing the wrong ' +
+             'people. Run diagnoseHrFeedSource() — it lists every tab in the ' +
+             'workbook with its row and column counts — then set this to the ' +
+             'right name, copied exactly.'
     };
   }
 
@@ -329,20 +388,7 @@ function getFasHrFeedSource() {
   return {
     ok: true,
     spreadsheetId: id,
-    // 'FAS' is the real tab. @clolry: "the data is in the 'FAS' tab."
-    //
-    // My original default was 'FAS_HRLinks_Feed' — the PROPERTY name, not the
-    // tab name — which is a mistake worth naming: I defaulted a value to the
-    // key that holds it. The workbook has six tabs (Date Last Updated, FAS,
-    // Location Codes, NEW - NTE REPORT, FAS Recruit Data from STAR, PARs), so
-    // the wrong guess failed loudly rather than reading the wrong data, which
-    // is the only reason it cost a minute instead of a roster.
-    //
-    // The tab default is safe in a way the ID default is not: a wrong tab in
-    // the RIGHT workbook produces a visible failure, because the required
-    // columns will not be found and parseFeed refuses. A wrong spreadsheet ID
-    // could silently parse a stale roster that looks correct.
-    tabName: tab || 'FAS',
+    tabName: tab,
     error: ''
   };
 }
@@ -781,9 +827,15 @@ function _verifyAllPropsKeys() {
     'APP_NAME', 'ORG_SHORT_NAME', 'ORG_LONG_NAME', 'ORG_SERVICE_NAME',
     'AGENCY_NAME', 'ORG_FO_LABEL', 'REVIEW_LABEL_SECTOR', 'REVIEW_LABEL_BU',
 
-    // The tab names default to the known tab in each workbook; the IDs do not
-    // and must not.
-    'FAS_HR_FEED_TAB',
+    // The liability log's tab defaults to the known tab in that workbook.
+    // The spreadsheet IDs do not and must not.
+    //
+    // FC_WF_FEED_TAB IS NOT LISTED HERE, deliberately, which is a change from
+    // the HRLinks feed it replaced. That one defaulted to 'FAS' — safe,
+    // because a wrong tab in the right workbook fails loudly when the
+    // required columns are absent. This workbook's layout is not known to the
+    // code, so there is no tab to default to and an unset value must be
+    // reported MISSING rather than guessed around.
     'LIABILITY_LOG_TAB',
 
     // Defaults to 'FC' (ASD), the NARROWEST scope. Safe to leave unset:
@@ -791,13 +843,14 @@ function _verifyAllPropsKeys() {
     // Defaulting wide would admit other portfolios' supervisors to LETS.
     'HR_ORG_SCOPE'
 
-    // DELIBERATELY NOT OPTIONAL: FAS_HR_FEED and LIABILITY_LOG_SHEET.
+    // DELIBERATELY NOT OPTIONAL: FC_WF_FEED, FC_WF_FEED_TAB and
+    // LIABILITY_LOG_SHEET.
     //
     // A missing spreadsheet ID has no safe default. Defaulting the HR feed to
     // a bundled file is the exact failure @clolry asked to prevent — the May
     // staffing plan put Melissa Mould in the wrong org and every per-capita
-    // figure derived from it was wrong while looking precise. These two must
-    // be reported MISSING so setup is incomplete until they are set.
+    // figure derived from it was wrong while looking precise. These must be
+    // reported MISSING so setup is incomplete until they are set.
   ]);
 
   var ok = 0, missing = 0, byKey = {};

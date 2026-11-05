@@ -68,107 +68,210 @@ var HCRosterImport = (function () {
   /**
    * Header spellings for each field we need, best guess first.
    *
-   * A feed from HRLinks will not use LETS's internal column names, and the
-   * same concept is spelled several ways across government HR exports. Matched
+   * An HR export will not use LETS's internal column names, and the same
+   * concept is spelled several ways across government HR exports. Matched
    * case-insensitively and whitespace-collapsed, because ' Authorization
    * Submitted' in the travel log proved that real headers carry stray spaces.
    *
-   * THE REAL FAS HRLINKS HEADERS ARE NOW KNOWN and are listed first in each
-   * array below. @clolry supplied all 33. Four of them needed thought:
+   * WHITESPACE COLLAPSING IS LOAD-BEARING HERE, NOT A NICETY. The FC
+   * workforce report wraps long headers inside the cell, so they arrive with
+   * EMBEDDED NEWLINES: 'Employee\nID', 'Reports to\nPosition\nNumber',
+   * 'Obligated To\nEmployee'. _norm_ turns any run of whitespace into one
+   * space, so the hints below are written with single spaces and match
+   * either form. Without that, four fields would silently fail to map.
    *
-   *   'Position#'       no space before the hash. My original hints had
-   *                     'Position Number', 'Position #' and 'PN' and missed
-   *                     this, so positionNumber came back unmapped and the
-   *                     import correctly refused. That refusal is why the gap
-   *                     was visible at all.
-   *   'Dept ID (Org)'   the org code. 'POI' is the other candidate and is NOT
-   *                     used — see the note on orgCode below.
-   *   'PP-Series-Grd'   a COMPOSITE, 'GS-0343-15'. Needs splitting, not
-   *                     reading. See parsePayPlanGrade.
-   *   'Position Status' chosen over the bare 'Status' column. See the note on
-   *                     occupancyStatus below.
+   * THE FC WORKFORCE REPORT'S HEADERS ARE LISTED FIRST in each array, with
+   * the FAS HRLinks feed's spellings kept after them.
    *
-   * THERE IS NO EMAIL COLUMN. All 33 headers, and not one carries an address.
-   * That is a blocking problem for site access rather than a missing nicety —
-   * see the emailAddress entry.
+   * WHY THE OLD SPELLINGS ARE KEPT. They cost nothing — proposeMapping stops
+   * at the first match — and they are the record of what this code was
+   * reading when the live numbers in SESSION_STATE.md were produced. A future
+   * reader comparing a 1,046-position figure against a new import needs to
+   * know the column it came from.
+   *
+   * THE FOUR THAT NEEDED THOUGHT ON THIS SOURCE:
+   *
+   *   'Employee Position Number'  the position key. The old feed's was
+   *                               'Position#' with no space. Both are
+   *                               present below.
+   *   'Dept ID'                   the org code. There is ALSO a 'Dept. ID
+   *                               2 Letter' column, which is a two-character
+   *                               portfolio abbreviation and must never be
+   *                               read as the org code — see orgCode below.
+   *   'Supv Lvl'                  decides site access. See supervisoryStatus.
+   *   'Position Status Type'      decides the budget denominator. See
+   *                               occupancyStatus.
+   *
+   * THIS SOURCE HAS AN EMAIL COLUMN, which the FAS HRLinks feed did not.
+   * 'Employee Email' is authoritative, so the directory name-matching
+   * subsystem that existed to infer addresses has been deleted.
    */
   var FIELD_HINTS = {
-    // 'Position#' (no space) is the real header. The spaced variants are kept
-    // because an export tool that pretty-prints headers would produce them.
-    positionNumber: ['Position#', 'Position #', 'Position Number',
-                     'Position # (PN)', 'Position #      (PN)', 'PN',
-                     'Position Nbr', 'Position_Number', 'Position ID'],
+    // 'Employee Position Number' is the FC report's header. 'Position#' (no
+    // space) was the HRLinks one; the spaced variants are kept because an
+    // export tool that pretty-prints headers would produce them.
+    positionNumber: ['Employee Position Number', 'Position#', 'Position #',
+                     'Position Number', 'Position # (PN)', 'Position #      (PN)',
+                     'PN', 'Position Nbr', 'Position_Number', 'Position ID'],
 
-    // 'Reports To Position #' is a position number, which is what the
-    // supervisor walk joins on. There is also a 'Reports To Name' column; it
-    // is deliberately NOT used, because a name is not a key — two people can
-    // share one, and HCData.hcWalkSupervisorChain follows position numbers.
-    reportsTo:      ['Reports To Position #', 'Reports To Position Number',
-                     'Supervisor Position Number', 'Reports To', 'Supervisor PN',
-                     'Reports To PN', 'Supervisor Position'],
+    // A position number, which is what the supervisor walk joins on. Both
+    // sources also carry a supervisor NAME column, and this source carries a
+    // supervisor EMAIL column too — neither is used.
+    //
+    // A NAME IS NOT A KEY: two people can share one. An EMAIL is nearly a key
+    // and still wrong for this purpose, because the thing being walked is a
+    // tree of POSITIONS — HCData.hcWalkSupervisorChain follows
+    // Position_Number -> Reports_To_Position_Number, and a vacant supervisory
+    // seat has no occupant to have an address.
+    reportsTo:      ['Reports to Position Number', 'Reports To Position #',
+                     'Reports To Position Number', 'Supervisor Position Number',
+                     'Reports To', 'Supervisor PN', 'Reports To PN',
+                     'Supervisor Position'],
 
     employeeId:     ['Employee ID', 'Employee Id', 'EMPLID', 'Emp ID',
                      'Employee Number'],
-    employeeName:   ['Employee Name', 'Full Name', 'Name', 'Employee'],
 
-    // NOT IN THE FEED. Every spelling below is a guess at a column that does
-    // not exist in the 33 headers @clolry supplied. Kept so that if HRLinks
-    // ever adds one it is picked up, and so the absence is explicit rather
-    // than an oversight. The import proceeds without it and reports the
-    // consequence — see REQUIRED_FIELDS and emailCoverage.
-    emailAddress:   ['Email Address', 'Email', 'Work Email', 'Email Addr',
-                     'EMail', 'Business Email', 'GSA Email'],
+    // 'Name' on this source, 'Employee Name' on the old one. Both kept.
+    employeeName:   ['Name', 'Employee Name', 'Full Name', 'Employee'],
 
-    // 'Dept ID (Org)' is the org code: FCBBBB and friends.
+    // THE COLUMN THAT MADE THIS SOURCE WORTH SWITCHING TO.
     //
-    // 'POI' — Point of Interest / Personnel Office Identifier — is NOT used.
-    // A POI is a payroll servicing code and several orgs share one, so keying
-    // budget attribution off it would merge unrelated service centres. The
-    // whole per-capita split depends on this column being the org code, so
-    // the wrong choice here misattributes every dollar.
-    orgCode:        ['Dept ID (Org)', 'Dept ID', 'Org Code', 'Office Symbol',
+    // The FAS HRLinks feed had 33 columns and not one was an address, which
+    // is why ~5,100 lines of directory name matching existed. Email_Address
+    // is how LETS decides who someone IS:
+    //
+    //   Access.js:435-441   the HC supervisor access rule matches the
+    //                       signed-in user against Email_Address
+    //   Access.js:982       the Division Director lookup matches on email
+    //   HCPrivacy.js:79     on the reviewer allow-list, so a reviewer can
+    //                       contact a traveller
+    //
+    // @clolry: "the email address provided in this data source is definitive
+    // and without question." So it is read straight through — no inference,
+    // no override tab, no name matching.
+    //
+    // 'Reports to Supervisor Email' is NOT a candidate here and must not
+    // become one: it is the SUPERVISOR's address on an employee's row, and
+    // mapping it to emailAddress would give every person their boss's
+    // identity.
+    emailAddress:   ['Employee Email', 'Email Address', 'Email', 'Work Email',
+                     'Email Addr', 'EMail', 'Business Email', 'GSA Email'],
+
+    // 'Dept ID' is the org code: FCBBBB and friends.
+    //
+    // 'Dept. ID 2 Letter' is NOT used and is listed nowhere below. It is a
+    // two-character portfolio abbreviation, so reading it as the org code
+    // would collapse the entire roster into one bucket and make every
+    // per-capita service-centre share identical — a figure that looks precise
+    // and is meaningless.
+    //
+    // 'POI' — the HRLinks equivalent — is also NOT used. A POI is a payroll
+    // servicing code and several orgs share one, so keying budget attribution
+    // off it would merge unrelated service centres.
+    orgCode:        ['Dept ID', 'Dept ID (Org)', 'Org Code', 'Office Symbol',
                      'Organization', 'Org Symbol', 'Organizational Code'],
 
     officeTitle:    ['Position Title', 'Office Title', 'Title', 'Job Title'],
 
-    // 'PP-Series-Grd' holds pay plan, occupational series and grade in one
-    // field. parsePayPlanGrade splits it; normalizeGrade is applied to the
-    // grade component only.
-    grade:          ['PP-Series-Grd', 'PP-Series-Grade', 'Grade', 'Pay Grade',
+    // A PLAIN GRADE COLUMN, which this source has and the old one did not.
+    //
+    // HRLinks carried 'PP-Series-Grd' — 'GS-0343-15' in one field — and
+    // parsePayPlanGrade split it, because three call sites compare grade to
+    // the string '15' to find a Division Director and 'GS-0343-15' is not
+    // '15'. This source separates PP, Occ Series and Grade into three
+    // columns, so the composite path is no longer exercised by it.
+    //
+    // parsePayPlanGrade IS STILL APPLIED. A bare '15' falls through its final
+    // branch to normalizeGrade, which is what zero-pads '7' to '07' — the
+    // VT-03 defect. Dropping it for this source would reintroduce that.
+    // 'PP-Series-Grd' stays in the hints below so a composite, if one ever
+    // arrives, is still split rather than stored whole.
+    grade:          ['Grade', 'PP-Series-Grd', 'PP-Series-Grade', 'Pay Grade',
                      'GS Grade', 'Grade Level'],
 
-    supervisoryStatus: ['Supv Status', 'Supervisory Status', 'Supv',
+    // THE PAY PLAN, as its own column.
+    //
+    // Only present when the source splits what HRLinks combined. It exists
+    // for one case: an SES row whose Grade cell is '00'. '00' is not a grade,
+    // it is the ABSENCE of one, and storing it would be worse than storing
+    // nothing because '00' sorts and compares as a real low grade — below
+    // every GS-01. parsePayPlanGrade substitutes the pay plan for a composite
+    // 'ES-0340-00', and interpretRow does the same for a split source using
+    // this column.
+    //
+    // Never required and never written on its own. If the source has no PP
+    // column, a '00' grade passes through as '00' and validateRow's grade
+    // warning is the signal.
+    payPlanOnly:    ['PP', 'Pay Plan'],
+
+    // THE FIELD THAT GRANTS SITE ACCESS, so the mapping is a judgement worth
+    // stating rather than a guess worth hiding.
+    //
+    // Access.js:435 admits anyone whose Supervisory_Status is '2'. The old
+    // feed's column was 'Supv Status' and held HR's numeric codes. This
+    // source has 'Supv Lvl' sitting beside 'Supervisor Level Desc.' — a code
+    // and its human-readable expansion, which is the usual shape.
+    //
+    // 'Supervisor Level Desc.' is deliberately NOT a candidate. A description
+    // is free text; normalizeSupervisoryStatus would pass 'Supervisor
+    // (CSRA)' through unchanged, it would never equal '2', and every
+    // supervisor would silently lose their only automatic route into LETS.
+    //
+    // diagnoseHrFeedSource prints the distinct values of BOTH columns with
+    // counts, so this can be confirmed against the real sheet before an
+    // import. validateRow also warns on any value outside {2,4,5,6,7,8}.
+    supervisoryStatus: ['Supv Lvl', 'Supv Status', 'Supervisory Status', 'Supv',
                         'Supervisor Status', 'Supervisory Code'],
 
-    // 'Position Status' over the bare 'Status'.
+    // 'Position Status Type' on this source; 'Position Status' on the old one.
     //
-    // The feed has BOTH, and they are not the same question. Alongside them
-    // sits '"Obligated To" Employee Name', which only makes sense if one of
-    // these columns can say OBLIGATED — that is a POSITION's state, not a
-    // person's. 'Status' with no qualifier is most likely the employee's
-    // personnel action status (Active/Separated), which would count a
-    // separated employee's seat as filled.
+    // THIS DECIDES THE PER-CAPITA DENOMINATOR. Both sources carry an
+    // 'Obligated To' column, which only makes sense if this column can say
+    // OBLIGATED — and in this vocabulary OBLIGATED is a person's PERMANENT
+    // seat held open while they serve a temporary promotion elsewhere. The
+    // same human also appears on the temp-promotion row, which is FILLED. See
+    // normalizeOccupancy: counting OBLIGATED as filled double-counts six
+    // people rather than finding six missing ones.
     //
-    // This is a JUDGEMENT, not a certainty, and it decides the per-capita
-    // denominator. previewRosterImport prints the mapping so it can be checked
-    // against real values before the import is confirmed, and
-    // occupancyDisagreement below reports when the two columns conflict.
-    occupancyStatus: ['Position Status', 'Occupancy Status', 'Work Status',
-                      'Filled/Vacant', 'Status'],
+    // The bare 'Status' is kept as a last resort for an unknown export, but
+    // it is the WRONG column when a qualified one exists: 'Status' with no
+    // qualifier is most likely the employee's personnel-action status
+    // (Active/Separated), which would count a separated employee's seat as
+    // filled.
+    occupancyStatus: ['Position Status Type', 'Position Status',
+                      'Occupancy Status', 'Work Status', 'Filled/Vacant',
+                      'Status'],
 
-    // The second status column, read only to detect disagreement with the
-    // first. Never used as the occupancy source.
+    // A SECOND status column, read ONLY to detect disagreement with the
+    // first, never as the occupancy source.
+    //
+    // The HRLinks feed had both 'Position Status' and a bare 'Status', and
+    // occupancyDisagreement reported when they conflicted — which is how the
+    // choice between them was checkable rather than asserted. The FC report
+    // has no second status column, so this will not map and the cross-check
+    // reports zero. That is correct and not a gap: there is nothing to
+    // disagree with.
     secondaryStatus: ['Status'],
 
-    // Who a position is obligated to. Its presence corroborates that
-    // 'Position Status' is the position-level column.
-    obligatedTo:     ['"Obligated To" Employee Name', 'Obligated To Employee Name',
-                      'Obligated To'],
+    // Who a position is obligated to. Its presence corroborates that the
+    // occupancy column above is the position-level one.
+    obligatedTo:     ['Obligated To', '"Obligated To" Employee Name',
+                      'Obligated To Employee Name', 'Obligated To Employee'],
 
-    lcat:           ['LCAT', 'Labor Category', 'Occupational Series', 'Series'],
+    // The occupational series. On this source it is its own column; on the
+    // old one it came out of the PP-Series-Grd composite and interpretRow
+    // fell back to it. Either way it lands in LCAT, where it is more useful
+    // than the free-text labour category LETS has never populated.
+    lcat:           ['Occ Series', 'LCAT', 'Labor Category',
+                     'Occupational Series', 'Series'],
+
     locationCode:   ['Location Code', 'Duty Station Code', 'Location'],
-    dutyAddress:    ['Location Address', 'Duty Station Address', 'Duty Address',
-                     'Address'],
+
+    // 'Address Line 1' on this source. Admin-only in HCPrivacy — a street
+    // address is never returned below admin, because city and state are
+    // enough for travel.
+    dutyAddress:    ['Address Line 1', 'Location Address',
+                     'Duty Station Address', 'Duty Address', 'Address'],
     dutyCity:       ['Location City', 'Duty Station City',
                      'Location City (Duty Station)', 'Duty City', 'City'],
     dutyState:      ['Location State', 'Duty Station State', 'State',
@@ -338,20 +441,32 @@ var HCRosterImport = (function () {
   /**
    * Splits the FAS feed's 'PP-Series-Grd' composite.
    *
-   * The feed does not carry a grade column. It carries 'GS-0343-15' — pay
-   * plan, occupational series, grade — in one field, and LETS needs the grade
-   * alone because three call sites compare it to the string '15' to find a
-   * Division Director for approval routing.
+   * THE OLD FEED HAD NO GRADE COLUMN. It carried 'GS-0343-15' — pay plan,
+   * occupational series, grade — in one field, and LETS needs the grade alone
+   * because three call sites compare it to the string '15' to find a Division
+   * Director for approval routing.
    *
    * Storing the composite in Grade would break all three silently: 'GS-0343-15'
    * is not '15', so every approval would route past its Division Director and
    * nothing would announce that it had happened.
+   *
+   * THE FC WORKFORCE REPORT SEPARATES THEM — PP, Occ Series and Grade are
+   * three columns — so a bare '15' arrives and falls through to the final
+   * branch. That branch is still doing necessary work: normalizeGrade is what
+   * zero-pads '7' to '07', and skipping it for a "simple" column would
+   * reintroduce the VT-03 defect. The composite branches are kept so a
+   * combined field, if one ever arrives again, is still split.
    *
    * SES AND ES HAVE NO NUMERIC GRADE. 'ES-0340-00' is a Senior Executive, and
    * '00' is not a grade — it is the absence of one. Returning '00' would be
    * worse than returning the pay plan, because '00' sorts and compares as a
    * real low grade. So a 00 grade yields the PAY PLAN as the grade, which is
    * what the HCSeed fixture already does for its SES rows.
+   *
+   * ON A SPLIT SOURCE THAT SUBSTITUTION CANNOT HAPPEN HERE, because this
+   * function only sees the grade cell and '00' alone carries no pay plan to
+   * fall back to. interpretRow does it instead, using the separate PP column —
+   * see payPlanOnly in FIELD_HINTS and the grade block in interpretRow.
    *
    * The series is kept and lands in LCAT, where it is more useful than the
    * free-text labour category LETS has never populated.
@@ -467,10 +582,28 @@ var HCRosterImport = (function () {
     // banner. The May export had 272 of them among 409 rows.
     if (!pn && !name) return null;
 
-    // The feed's composite pay-plan field. See parsePayPlanGrade: storing
-    // 'GS-0343-15' in Grade would break the three string comparisons that
-    // locate a Division Director for approval routing.
+    // Handles both shapes the grade can arrive in: HRLinks's composite
+    // 'GS-0343-15', and the FC report's bare '15'. Storing a composite in
+    // Grade would break the three string comparisons that locate a Division
+    // Director for approval routing; a bare value still needs zero-padding,
+    // which is the VT-03 defect.
     var pay = parsePayPlanGrade(get('grade'));
+
+    // A SPLIT SOURCE NEEDS THE PAY-PLAN SUBSTITUTION DONE HERE.
+    //
+    // parsePayPlanGrade turns a composite 'ES-0340-00' into grade 'ES',
+    // because '00' is the absence of a grade rather than a grade and would
+    // otherwise sort below every GS-01. When the source splits PP and Grade
+    // into separate columns, that function only sees '00' and has no pay plan
+    // to substitute — so the SES rows would come through as '00'.
+    //
+    // Guarded on there being a pay plan to use. Without a PP column the value
+    // passes through unchanged and validateRow's grade warning is the signal,
+    // which is better than inventing one.
+    var payPlan = _str_(get('payPlanOnly')).toUpperCase() || pay.payPlan;
+    if ((pay.grade === '00' || pay.grade === '0') && payPlan) {
+      pay = { payPlan: payPlan, series: pay.series, grade: payPlan };
+    }
 
     var occupancy = normalizeOccupancy(get('occupancyStatus'), name);
     var secondary = _str_(get('secondaryStatus'));
@@ -485,7 +618,7 @@ var HCRosterImport = (function () {
       orgCode: org,
       officeTitle: _str_(get('officeTitle')),
       grade: pay.grade,
-      payPlan: pay.payPlan,
+      payPlan: payPlan,
       // The occupational series is more useful than the free-text labour
       // category LETS has never populated, so it lands in LCAT when the feed
       // has no LCAT column of its own.
