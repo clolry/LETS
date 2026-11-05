@@ -23,7 +23,7 @@
  *                      "every row is marked" discipline are reused here.
  *
  *   GogovSync.js       The parser and the 4-tier expense matcher, with the
- *                      traveller-verification rule that stops a cited ID
+ *                      traveler-verification rule that stops a cited ID
  *                      moving money between people. Fully tested and
  *                      COMPLETELY UNWIRED — zero callers before this module.
  *                      Reused, not duplicated: matchExpense, normalizeName,
@@ -127,7 +127,7 @@ var TravelImport = (function () {
    *
    * So numeric strings are resolved HERE, with the same serial bounds
    * GogovSync uses, before anything else sees them. GogovSync itself is left
-   * alone deliberately: its behaviour is pinned by test_gogov_sync.js §3 and
+   * alone deliberately: its behavior is pinned by test_gogov_sync.js §3 and
    * it is shared with the monthly reconciliation path, so widening it is a
    * change with blast radius beyond this feature. Filed as follow-up.
    *
@@ -342,7 +342,7 @@ var TravelImport = (function () {
    * HR office symbol -> LETS budget office, by LONGEST prefix.
    *
    * Longest-prefix and not first-match: 'FCBAEBE' starts with both 'FC' and
-   * 'FCB', and the answer is IDV, not FO. Getting this backwards would charge
+   * 'FCB', and the answer is IDV, not FO. Getting this backward would charge
    * every IDV, OMD and CM trip to the Front Office.
    *
    * Verified against all 28 FY27 ASD symbols in the workbook: FO 2, OMD 5,
@@ -380,7 +380,7 @@ var TravelImport = (function () {
    * THE OVERRIDES ARE LOAD-BEARING. OffSymbolOverride has only 2 rows, which
    * invites skipping it. Measured: those 2 rows are the only reason 6 request
    * rows resolve to an org at all — Cheryl Cameron (4 rows) and Jeremy
-   * Wustner-Brown. Without them those travellers fall out of ASD scope
+   * Wustner-Brown. Without them those travelers fall out of ASD scope
    * entirely and their travel silently vanishes from the import.
    *
    * Applied AFTER the base roster so an override wins, which is its purpose.
@@ -410,7 +410,7 @@ var TravelImport = (function () {
 
   var RECORD_KINDS = {
     REQUEST: 'REQUEST',       // submitted, not yet approved
-    COMMITMENT: 'COMMITMENT', // approved, not yet travelled — money promised
+    COMMITMENT: 'COMMITMENT', // approved, not yet traveled — money promised
     VOUCHER: 'VOUCHER',       // an expense report exists, not yet settled
     ACTUAL: 'ACTUAL'          // Amount Approved — what GSA paid
   };
@@ -656,7 +656,7 @@ var TravelImport = (function () {
       };
 
       // Disallowed is derived, never read from the file. The workbook has no
-      // such column, and this is the number nobody asks for until a traveller
+      // such column, and this is the number nobody asks for until a traveler
       // disputes a voucher.
       rec.disallowedAmount = round2(rec.claimedAmount - rec.approvedAmount);
 
@@ -705,7 +705,7 @@ var TravelImport = (function () {
    * travel and must not consume a travel allocation.
    *
    * A PATTERN LIST, NOT A GUESS AT INTENT. Only phrases measured in the real
-   * file are matched. An unrecognised non-travel charge is better left
+   * file are matched. An unrecognized non-travel charge is better left
    * visible as an odd-looking trip than silently filtered by a clever rule
    * nobody can audit — which is why this returns the matched reason rather
    * than a bare boolean.
@@ -828,7 +828,7 @@ var TravelImport = (function () {
     var isRequest = rec.sourceSheet === 'TravelRequest';
 
     if (!_str_(rec.employeeName)) {
-      problems.push('Traveller name is missing — the row cannot be attributed to a person.');
+      problems.push('Traveler name is missing — the row cannot be attributed to a person.');
     }
     if (!_str_(rec.tripName)) {
       problems.push('Trip or report name is missing — it is how this appears in reports.');
@@ -1011,7 +1011,7 @@ var TravelImport = (function () {
    *   Actual_Source is 'manual'  — somebody typed the figure in. A person
    *                                reading a voucher beats a file every time.
    *   Match_Confirmed_By is set  — somebody reviewed an ambiguous match and
-   *                                committed to it. That judgement is the
+   *                                committed to it. That judgment is the
    *                                most expensive data in the system.
    *
    * An actual written by a previous IMPORT is NOT verified. It is the same
@@ -1146,8 +1146,8 @@ var TravelImport = (function () {
 
       // Expense rows have to find their request before they can be diffed
       // against it. Reuses GogovSync's 4-tier matcher, including the rule
-      // that a cited ID whose traveller disagrees STOPS the match — the
-      // defect that put Brandon Maness's $1,922.96 on another traveller's
+      // that a cited ID whose traveler disagrees STOPS the match — the
+      // defect that put Brandon Maness's $1,922.96 on another traveler's
       // request when that matcher was first written.
       if (rec.sourceSheet === 'Expense') {
         if (g && g.matchExpense) {
@@ -1234,7 +1234,7 @@ var TravelImport = (function () {
         varianceBasis: 'amount-approved',
         varianceBasisNote: 'LETS reconciles against Amount Approved (what GSA paid). ' +
           'The source workbook computes its variance from Report Total (what the ' +
-          'traveller claimed), so the two will differ by the disallowed amount.'
+          'traveler claimed), so the two will differ by the disallowed amount.'
       }
     };
   }

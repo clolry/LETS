@@ -8,10 +8,10 @@ WHY THIS EXISTS
 §21 is the measured section: it runs the real workbook through the real import
 engine and asserts the figures — 28 in-scope requests at $46,196.19, 10 expense
 reports at $16,863.62, the $1,164.39 variance gap, and the Patnaik near-miss.
-A behaviour change shows up as one of those numbers moving.
+A behavior change shows up as one of those numbers moving.
 
 It cannot read the .xlsx directly, because the workbook is deliberately NOT in
-the repository: ~1,900 real traveller names, 823 real GSA email addresses and
+the repository: ~1,900 real traveler names, 823 real GSA email addresses and
 274 employee IDs across its tabs. Finding G-056 already flags six real
 employees' addresses in test fixtures as a problem; committing this would be a
 far larger instance, and git history cannot be taken back.
@@ -221,7 +221,7 @@ def main():
     print('Now run:  node lets_app/test_travel_import.js')
     print('§21 should report 28 in-scope requests and 10 expense reports.')
     print()
-    print('NOTE: the fixture holds real traveller names and email addresses.')
+    print('NOTE: the fixture holds real traveler names and email addresses.')
     print('It is written to /tmp deliberately. Do not copy it into the repo.')
     return 0
 

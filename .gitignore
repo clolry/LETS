@@ -32,7 +32,7 @@ scripts/environments-result.txt
 
 # Go.gov exports used as reference while building the reconciliation importer.
 #
-# NOT COMMITTED. @clolry's monthly exports carry ~400 real GSA traveller names
+# NOT COMMITTED. @clolry's monthly exports carry ~400 real GSA traveler names
 # and 391 real employee IDs each. Finding G-056 already flags six real
 # employees' addresses sitting in test fixtures as a problem; adding 800 more
 # names to git history would be a larger instance of the same thing, and
@@ -52,7 +52,7 @@ reference_excel_files/Travel requests*.xls
 # duty stations. Same reasoning as above, and more of it.
 reference_excel_files/*Staffing Plan*.xlsx
 
-# The ASD FY27 Travel/Liability Log: named travellers, routes, dates and
+# The ASD FY27 Travel/Liability Log: named travelers, routes, dates and
 # dollar amounts for 30 real trips. @clolry shares it locally so the importer
 # can be written against the real column shapes; it must not be committed.
 #
@@ -66,7 +66,7 @@ reference_excel_files/*Travel_Liability Log*.xlsx
 # importer.
 #
 # NOT COMMITTED, same reasoning as the Go.gov exports above and more of it.
-# This one carries MORE real personal data than either: ~1,900 traveller
+# This one carries MORE real personal data than either: ~1,900 traveler
 # names across its two source tabs, 823 real GSA email addresses and 823
 # supervisor names in FasData, and 274 employee IDs. Finding G-056 flags six
 # real employees' addresses in test fixtures as a problem; this would be a far

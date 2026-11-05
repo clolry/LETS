@@ -18,7 +18,7 @@ evidence_base: "lets_app/test_travel_import.js — 245 assertions, 23 sections, 
 
 **LETS will not agree with Chiquita's variance column, and that is deliberate.**
 
-Her workbook computes `Variance from Travel Request` from **Report Total** — what the traveller claimed. LETS reconciles against **Amount Approved** — what GSA actually paid. Measured across all 20 of her matched rows:
+Her workbook computes `Variance from Travel Request` from **Report Total** — what the traveler claimed. LETS reconciles against **Amount Approved** — what GSA actually paid. Measured across all 20 of her matched rows:
 
 | | |
 |---|---|
@@ -45,7 +45,7 @@ The $1,164.39 is money GSA did **not** pay, counted in her sheet as though it ha
 | `test_budget_dashboard.js` | §6b — reconciled vs estimated actuals | +65 |
 | `.github/workflows/verify.yml` | 1 test step + 5 guards | +180 |
 
-**No existing behaviour is replaced.** `BudgetBackfill.js` (manual entry) and `GogovSync.js` (the matcher) are both reused — `GogovSync` was fully tested and **completely unwired** before this; its `matchExpense` is now called for real.
+**No existing behavior is replaced.** `BudgetBackfill.js` (manual entry) and `GogovSync.js` (the matcher) are both reused — `GogovSync` was fully tested and **completely unwired** before this; its `matchExpense` is now called for real.
 
 ---
 
@@ -89,7 +89,7 @@ No Script Properties are required. The column mapping is stored under `TRAVEL_IM
 | **1 · File** | Pick the `.xlsx`. Parsed **in the browser** — the file never reaches the server, only the mapped rows for the two tabs being imported. Confirm FY and ASD/All. | nothing |
 | **2 · Columns** | The server proposes a mapping from the headers. **Check it** — the money columns are the ones that matter. | nothing |
 | **3 · Preview** | New / changed / unchanged / conflict / error counts, every in-scope row, and the excluded rows with reasons. | a `PREVIEW` batch + its ledger rows |
-| **4 · Commit** | Projects the ledger into `Requests`. | requests, traveller rows, approval log |
+| **4 · Commit** | Projects the ledger into `Requests`. | requests, traveler rows, approval log |
 
 **Nothing touches `Requests` until you press Commit.**
 
@@ -100,7 +100,7 @@ No Script Properties are required. The column mapping is stored under `TRAVEL_IM
 Excluded: 1,173 not an ASD employee · 82 wrong fiscal year · 5 not travel
 ```
 
-9 of the 10 expense reports auto-match. **One needs review** — Udaya Patnaik's, and it is correct that it does: three of his requests share the same traveller and trip name, so the matcher proposes all three rather than guessing. Pick `4GNF` (ends 2026-10-02, matching the report end date exactly).
+9 of the 10 expense reports auto-match. **One needs review** — Udaya Patnaik's, and it is correct that it does: three of his requests share the same traveler and trip name, so the matcher proposes all three rather than guessing. Pick `4GNF` (ends 2026-10-02, matching the report end date exactly).
 
 ### §3.2 Incremental runs
 
@@ -146,7 +146,7 @@ To correct rather than reverse: fix the workbook and re-run. The source-ID upser
 
 `test_travel_import.js` §21 asserts the real figures and **skips** when the workbook fixture is absent, so a fresh checkout passes.
 
-> **The workbook is deliberately not committed.** It carries ~1,900 real GSA traveller names, 823 real email addresses and 274 employee IDs across its lookup tabs. Finding **G-056** already flags six real employees' addresses in test fixtures as a problem; adding these would be a far larger instance, and git history cannot be taken back. A CI guard checks that neither the workbook nor the other reference files are tracked, and that the ignore rules still work — tested by asking `git check-ignore`, not by grepping `.gitignore`.
+> **The workbook is deliberately not committed.** It carries ~1,900 real GSA traveler names, 823 real email addresses and 274 employee IDs across its lookup tabs. Finding **G-056** already flags six real employees' addresses in test fixtures as a problem; adding these would be a far larger instance, and git history cannot be taken back. A CI guard checks that neither the workbook nor the other reference files are tracked, and that the ignore rules still work — tested by asking `git check-ignore`, not by grepping `.gitignore`.
 
 To enable §21, convert the workbook with the committed script:
 
@@ -182,9 +182,9 @@ Three things about that script are deliberate:
 | *"The spreadsheet parser did not load"* | the SheetJS CDN was unreachable | reload; check egress to `cdn.jsdelivr.net` |
 | *"This workbook has no TravelRequest tab"* | wrong file, or a tab was renamed | the message lists the tabs it did find |
 | Every row is `OUT_OF_SCOPE_ORG` | the `OfficeSymbol` tab is empty or unmapped | check the roster tab has `Full Name` and `Current.Department.ID` |
-| A traveller is missing who should be in scope | not in `OfficeSymbol` | add them to `OffSymbolOverride` — those 2 rows are the only reason Cheryl Cameron's travel resolves at all |
+| A traveler is missing who should be in scope | not in `OfficeSymbol` | add them to `OffSymbolOverride` — those 2 rows are the only reason Cheryl Cameron's travel resolves at all |
 | Totals differ from the workbook | §0 — Amount Approved vs Report Total | expected; the gap is the disallowed amount |
-| 7 requests duplicate on a re-run | `normalizeSourceId` is broken | a CI guard checks this behaviourally; see §8 |
+| 7 requests duplicate on a re-run | `normalizeSourceId` is broken | a CI guard checks this behaviorally; see §8 |
 
 ---
 
@@ -206,7 +206,7 @@ Each of these exists because of something **measured in the real file**, not ant
 ## §9 Known gaps
 
 1. **Not verified in a browser.** Every assertion passes and the wizard is wired, but no live import has been run. First run should be a preview on a copy of the Travel DB.
-2. **`GogovSync.toDateString` still mis-parses a string serial** — `'46356'` → `'46356-01-01'`. `TravelImport.toDateString` resolves it before delegating, so this importer is safe, but the monthly reconciliation path shares that function. Tracked separately; widening it touches behaviour pinned by `test_gogov_sync.js` §3.
-3. **One traveller needs manual matching each run** (Patnaik). Correct behaviour, not a defect — but it will recur until a LETS ID appears in the trip name.
+2. **`GogovSync.toDateString` still mis-parses a string serial** — `'46356'` → `'46356-01-01'`. `TravelImport.toDateString` resolves it before delegating, so this importer is safe, but the monthly reconciliation path shares that function. Tracked separately; widening it touches behavior pinned by `test_gogov_sync.js` §3.
+3. **One traveler needs manual matching each run** (Patnaik). Correct behavior, not a defect — but it will recur until a LETS ID appears in the trip name.
 4. **`docs/evidence/verify_city_dropdown_fix.js` fails** at `e60ac64`, before this work. Not in CI. Unrelated, and worth a look.
 5. **The `.claspignore` glob still fails an existing CI guard.** `test_*.js` is not a filename; one line to delete.

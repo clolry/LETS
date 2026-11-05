@@ -750,7 +750,7 @@ New, and distinct from §3.5.1b. That one is an administrator **typing** a handf
 | `TravelRequest` → commitments | 1,024 | **28** | **$46,196.19** |
 | `Expense` → actuals | 274 | **10** | **$16,863.62** |
 
-The other 1,260 rows are excluded: 1,173 non-ASD (246 expense rows are literally labelled `Not ASD Employee`), 82 the wrong fiscal year, 5 not travel at all.
+The other 1,260 rows are excluded: 1,173 non-ASD (246 expense rows are literally labeled `Not ASD Employee`), 82 the wrong fiscal year, 5 not travel at all.
 
 > **Every exclusion is stored with its reason, not filtered away.** An importer that silently discards 97% of its input cannot be distinguished from one that is broken, and the first time a trip is missing the question will be "did the importer lose it?". `Scope_Decision` and `Scope_Reason` answer it, and the preview reports the counts.
 
@@ -771,7 +771,7 @@ So every source row lands in `Travel_Imports` first, is diffed there, and is onl
 | Kind | Meaning | Budget effect |
 |---|---|---|
 | `REQUEST` | Submitted, not yet approved | committed |
-| `COMMITMENT` | Approved, not travelled | committed — draws down the DAC balance |
+| `COMMITMENT` | Approved, not traveled | committed — draws down the DAC balance |
 | `VOUCHER` | Expense report filed, not settled | — |
 | `ACTUAL` | `Amount Approved` — what GSA **paid** | actual spend |
 
@@ -779,7 +779,7 @@ So every source row lands in `Travel_Imports` first, is diffed there, and is onl
 
 #### The three measured hazards
 
-**1. Seven source IDs are stored as numbers.** `4946` reads back as `'4946.0'`, so a string compare misses and those seven re-import as *new* requests on every run, consuming budget again each time. `normalizeSourceId` resolves both forms to one identity; a CI guard proves it behaviourally.
+**1. Seven source IDs are stored as numbers.** `4946` reads back as `'4946.0'`, so a string compare misses and those seven re-import as *new* requests on every run, consuming budget again each time. `normalizeSourceId` resolves both forms to one identity; a CI guard proves it behaviorally.
 
 **2. The expense tab has no ID, and the obvious key collides.** `(employee, report name, report end date)` collides on 2 of 274 rows — Stacy Buechele filed two `Trip from WIL to WAS` reports ending the same day, $198.60 and $1,602.06, both real. Amount and submit date are therefore part of the composite key. A merged key would drop $198.60 and the totals would still look plausible.
 
@@ -802,7 +802,7 @@ A conflicting import **refuses to commit** — not a warning, a refusal — and 
 
 #### LETS will not agree with the source workbook, deliberately
 
-Chiquita's `Variance from Travel Request` column is computed from **Report Total** — what the traveller claimed. LETS reconciles against **Amount Approved** — what GSA paid. Tested against all 20 of her matched rows:
+Chiquita's `Variance from Travel Request` column is computed from **Report Total** — what the traveler claimed. LETS reconciles against **Amount Approved** — what GSA paid. Tested against all 20 of her matched rows:
 
 | | |
 |---|---|

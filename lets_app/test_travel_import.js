@@ -106,8 +106,8 @@ console.log('\n2. duplicate prevention survives the numeric-ID trap');
   // @clolry asked for "duplicate prevention via source IDs". This is the one
   // place that promise can break quietly: those seven rows would be
   // re-imported on EVERY run, as new requests, consuming budget each time.
-  ok('a numeric ID normalises to its digits', T.normalizeSourceId(4946) === '4946');
-  ok("the float round-trip '4946.0' normalises to the same thing",
+  ok('a numeric ID normalizes to its digits', T.normalizeSourceId(4946) === '4946');
+  ok("the float round-trip '4946.0' normalizes to the same thing",
      T.normalizeSourceId('4946.0') === '4946');
   ok('so a stored value and an incoming value MATCH',
      T.normalizeSourceId('4946.0') === T.normalizeSourceId(4946));
@@ -196,7 +196,7 @@ console.log('\n4. date serials arriving as STRINGS do not become the year 46356'
 console.log('\n5. the money columns are not interchangeable');
 {
   // @clolry, during the Go.gov work: "we need to use Amount Approved rather
-  // than Report Total." Report Total is what the traveller CLAIMED; Amount
+  // than Report Total." Report Total is what the traveler CLAIMED; Amount
   // Approved is what GSA PAID.
   //
   // MEASURED: they differ on 51 of 274 rows by $6,009.34 overall, and on 5 of
@@ -213,7 +213,7 @@ console.log('\n5. the money columns are not interchangeable');
   // costs the $6,009.34 above.
   const weird = T.proposeMapping(['Full Name', 'Report Name', 'Totals',
                                   'Approved Amt', 'Report End Date'], 'expense');
-  ok('an unrecognised money header is reported MISSING, not guessed at',
+  ok('an unrecognized money header is reported MISSING, not guessed at',
      weird.missing.indexOf('approvedAmount') > -1, weird);
 
   // A required field that cannot be mapped must stop the import rather than
@@ -323,7 +323,7 @@ console.log('\n7. a VERIFIED actual is never overwritten silently');
   const d2 = T.diffRecord(incoming, unverified);
   ok('replacing an import-written actual is a normal CHANGE', d2.status === 'CHANGED', d2);
 
-  // An unchanged re-run must be recognised, or every incremental run rewrites
+  // An unchanged re-run must be recognized, or every incremental run rewrites
   // every row and the diff becomes useless.
   const same = { requestId: 'L27-0003', actual: 1841.32, actualSource: 'import',
                  owningOffice: 'OMD' };
@@ -567,7 +567,7 @@ function loadAdmin(opts) {
           return {
             setValues: function (v) {
               // Append when the range starts past the last row; otherwise
-              // overwrite in place. Mirrors real Sheets behaviour closely
+              // overwrite in place. Mirrors real Sheets behavior closely
               // enough for the importer's two write shapes.
               v.forEach(function (row, i) {
                 var idx = (r - 2) + i;
@@ -689,7 +689,7 @@ const previewInput = (o) => Object.assign({
 // ===========================================================================
 console.log('\n11. admin only, on every entrypoint');
 {
-  // Every one of these either reads a named traveller's financial detail or
+  // Every one of these either reads a named traveler's financial detail or
   // writes a request that consumes a DAC's budget without review. Reading
   // budget TOTALS is deliberately open for transparency; this is not that.
   const user = loadAdmin({ isAdmin: false, email: 'reviewer@gsa.gov' });
@@ -797,7 +797,7 @@ console.log('\n13. commit, and the shape of what it writes');
   ok('and no review level is set', !req.Initial_Review_Level);
 
   // EVERY ROW IS MARKED. A figure that entered the budget without review must
-  // be identifiable afterwards.
+  // be identifiable afterward.
   ok('the row is marked as imported', /^IMPORT: /.test(req.Primary_Justification),
      req.Primary_Justification);
   ok('and names the batch, the source row and the source ID',
@@ -841,7 +841,7 @@ console.log('\n14. a batch commits ONCE, and re-running is an update');
   ok('and says the batch is already committed', /COMMITTED/.test(again.error), again.error);
   ok('no second request was written', t.requests().length === 1);
 
-  // INCREMENTAL RUN with the SAME data: recognised as unchanged.
+  // INCREMENTAL RUN with the SAME data: recognized as unchanged.
   const p2 = t.call('previewTravelImport', previewInput());
   ok('a re-preview of identical data reports it UNCHANGED',
      p2.data.summary.unchangedCount === 1 && p2.data.summary.newCount === 0,
@@ -873,7 +873,7 @@ console.log('\n15. THE NUMERIC-ID TRAP, end to end');
   // ID must not re-import as a new request on the second run.
   //
   // MEASURED: 7 of 1,024 real IDs are all-digit and the spreadsheet stores
-  // them as numbers. Without normalisation these seven duplicate on EVERY
+  // them as numbers. Without normalization these seven duplicate on EVERY
   // run, each time consuming a DAC's budget again.
   const t = loadAdmin();
   const numeric = previewInput({
@@ -883,14 +883,14 @@ console.log('\n15. THE NUMERIC-ID TRAP, end to end');
   ok('a numeric ID previews as NEW', p1.data.summary.newCount === 1);
   t.call('commitTravelImport', p1.data.batchId);
   ok('and commits one request', t.requests().length === 1);
-  ok('storing the normalised id', t.requests()[0].Gogov_Request_ID === '4946',
+  ok('storing the normalized id', t.requests()[0].Gogov_Request_ID === '4946',
      t.requests()[0].Gogov_Request_ID);
 
   // Run 2, the same row arriving as the float-stringified form.
   const p2 = t.call('previewTravelImport', previewInput({
     requestRows: [srcRequest({ 'Request ID': '4946.0' })]
   }));
-  ok("'4946.0' is recognised as the SAME record, not a new one",
+  ok("'4946.0' is recognized as the SAME record, not a new one",
      p2.data.summary.newCount === 0 && p2.data.summary.unchangedCount === 1,
      p2.data.summary);
   t.call('commitTravelImport', p2.data.batchId);
@@ -1038,7 +1038,7 @@ console.log('\n19. rollback does not destroy a human\'s later edit');
   t.call('commitTravelImport', p.data.batchId);
   ok('the request was created', t.requests().length === 1);
 
-  // Somebody edits it afterwards.
+  // Somebody edits it afterward.
   t.run(`(function () {
     var t = __S['Requests'];
     var hi = {}; t.headers.forEach(function (h, i) { hi[h] = i; });
@@ -1102,7 +1102,7 @@ console.log('\n21. measured against the REAL workbook');
 {
   // WHY THIS SECTION SKIPS RATHER THAN FAILS WHEN THE FILE IS ABSENT
   // ----------------------------------------------------------------
-  // The source workbook carries ~1,900 real GSA traveller names, 823 real
+  // The source workbook carries ~1,900 real GSA traveler names, 823 real
   // email addresses and 274 employee IDs. Finding G-056 already flags six
   // real employees' addresses in test fixtures as a problem; committing this
   // would be a much larger instance of the same thing, and git history is not
@@ -1155,7 +1155,7 @@ console.log('\n21. measured against the REAL workbook');
     });
     const s = preview.summary;
 
-    // ---- THE NUMBERS. A behaviour change shows up as one of these moving.
+    // ---- THE NUMBERS. A behavior change shows up as one of these moving.
     ok('28 FY27 ASD requests are in scope',
        preview.records.filter(r => r.scopeDecision === 'IN_SCOPE' &&
                               r.sourceSheet === 'TravelRequest').length === 28,
@@ -1280,7 +1280,7 @@ console.log('\n22. negative controls (the suite must be able to fail)');
     return vm.runInContext('TravelImport', c);
   }
 
-  // 22a — drop the numeric-ID normalisation. §2 and §15 must fail.
+  // 22a — drop the numeric-ID normalization. §2 and §15 must fail.
   {
     const g = patched(
       "    var floaty = /^(\\d+)\\.0+$/.exec(s);\n    if (floaty) return floaty[1];\n",

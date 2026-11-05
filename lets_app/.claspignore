@@ -33,6 +33,9 @@ test_events_ui.js
 test_coordinator_role.js
 test_markup_integrity.js
 test_travel_import.js
+test_hc_roster_import.js
+test_hc_chunked_cache.js
+test_directory_lookup.js
 preview.html
 node_modules/**
 .git/**

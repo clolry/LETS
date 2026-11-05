@@ -126,7 +126,7 @@ jobs:
           # FCB."
           #
           # The '0' in FCA0A is a FILLER, not a level, and FCA has no 4-char
-          # level at all while FCB and FCC do — so two service centres sit at
+          # level at all while FCB and FCC do — so two service centers sit at
           # different depths and length cannot stand in for level.
           H=lets_app/server/91_setup/HCSeed.js
           for FIELD in "p:" "v:"; do
@@ -156,21 +156,21 @@ jobs:
             echo "::error file=lets_app/server/20_data/HCData.js::_normalizeOrg_ must read Parent_Org_Code, or the stored hierarchy never reaches the org chart."
             exit 1
           fi
-          # 22 service centres, identified by LEVEL. A Service Center Director
+          # 22 service centers, identified by LEVEL. A Service Center Director
           # is the supervisory person whose own Dept ID is one of these, which
           # is how the routing reviewer should be found — the four existing
           # call sites match a 'sector director' title that does not exist in
-          # this organisation.
+          # this organization.
           SC=$(grep -ac "v: 'SERVICE_CENTER'," "$H" || true)
           if [ "$SC" -ne 22 ]; then
-            echo "::error file=$H::Expected 22 SERVICE_CENTER rows; found ${SC}. @clolry's org has 22 service centres."
+            echo "::error file=$H::Expected 22 SERVICE_CENTER rows; found ${SC}. @clolry's org has 22 service centers."
             exit 1
           fi
-          echo "PASS - the org hierarchy is stored explicitly: 22 service centres, parents pinned."
+          echo "PASS - the org hierarchy is stored explicitly: 22 service centers, parents pinned."
 
       - name: Coordinator role tests
         # §2 holds the boundary: a coordinator reassigns reviewers and manages
-        # the event catalogue, but cannot set budgets, reserve set-asides,
+        # the event catalog, but cannot set budgets, reserve set-asides,
         # import travel, edit the HR roster or grant roles. Money and
         # privilege stay admin-only.
         run: node lets_app/test_coordinator_role.js
@@ -205,7 +205,7 @@ jobs:
 
       - name: Go.gov sync tests
         # §5 asserts that an expense report is NEVER auto-matched to a request
-        # belonging to a different traveller. That assertion FAILED when first
+        # belonging to a different traveler. That assertion FAILED when first
         # written: a cited LETS ID was trusted on its own, and three real
         # expense reports were attached to other people's requests.
         run: node lets_app/test_gogov_sync.js
@@ -220,7 +220,7 @@ jobs:
       - name: Budget backfill tests
         # §2 proves the import sends nothing and routes nothing. The email and
         # routing mocks RECORD calls rather than absorbing them, so an empty
-        # recording is evidence instead of an artefact of the harness.
+        # recording is evidence instead of an artifact of the harness.
         run: node lets_app/test_budget_backfill.js
 
       - name: Existing-travel import tests
@@ -228,7 +228,7 @@ jobs:
         # reconciliation guard, rollback.
         #
         # §21 is the measured section and SKIPS on CI, because the source
-        # workbook carries ~1,900 real traveller names and 823 real email
+        # workbook carries ~1,900 real traveler names and 823 real email
         # addresses and is gitignored for the same reason the Go.gov exports
         # are (finding G-056). §22's six negative controls DO run, so the
         # guards are still proven able to fail on every push.
@@ -306,7 +306,7 @@ jobs:
         # from reference_excel_files/Copy of ASD Staffing Plan 5-12-26.xlsx,
         # which places Melissa Mould in FCBBB at supervisory status 8 where
         # the FAS HR feed has her in FCBBBB at status 2. The file is six
-        # months stale, so all 22 service-centre shares derived from it were
+        # months stale, so all 22 service-center shares derived from it were
         # wrong while looking precise. No server file may reference it, and
         # getFasHrFeedSource returns an ERROR rather than a default — every
         # available fallback is a stale roster.
@@ -335,7 +335,7 @@ jobs:
         #
         # §7 pins the integration choice. AdminDirectory.Users.list needs
         # admin.directory.user.readonly, which only a Workspace super admin
-        # can authorise — and this app runs as USER_ACCESSING, so it would
+        # can authorize — and this app runs as USER_ACCESSING, so it would
         # fail for every ordinary user. People.searchDirectoryPeople reads the
         # same directory under a scope any domain user can grant.
         #
@@ -438,7 +438,7 @@ jobs:
 
       - name: Guard - event wiring must not break the draw-down
         run: |
-          echo "Checking the event catalogue wiring..."
+          echo "Checking the event catalog wiring..."
           EVC=lets_app/client/controllers/admin/travelEventsController.html
           RCTL=lets_app/client/controllers/form/travelRequestController.html
           SUB=lets_app/server/40_domain/Submission.js
@@ -467,8 +467,8 @@ jobs:
             exit 1
           fi
 
-          # THE "OTHER" PROPOSAL MUST NOT BLOCK SUBMISSION. A traveller with a
-          # deadline losing their request because a catalogue write failed is
+          # THE "OTHER" PROPOSAL MUST NOT BLOCK SUBMISSION. A traveler with a
+          # deadline losing their request because a catalog write failed is
           # far worse than a coordinator matching it up by name.
           if ! grep -aq 'submitting anyway' "$RCTL"; then
             echo "::error file=$RCTL::A failed event proposal must not block the request submission."
@@ -497,11 +497,11 @@ jobs:
           # days of a five-day conference has different dates from the event,
           # and per-diem depends on theirs.
           if ! grep -aqF "if (node && !String(node.value || '').trim()) {" "$RCTL"; then
-            echo "::error file=$RCTL::Event pre-fill must only fill a BLANK field. Overwriting what the traveller typed loses their work silently."
+            echo "::error file=$RCTL::Event pre-fill must only fill a BLANK field. Overwriting what the traveler typed loses their work silently."
             exit 1
           fi
 
-          # A traveller must not be able to write the catalogue — only the
+          # A traveler must not be able to write the catalog — only the
           # proposals tab.
           EV=lets_app/server/40_domain/Events.js
           # TWO TIERS, and the difference is money.
@@ -513,7 +513,7 @@ jobs:
           for FN in saveTravelEvent resolveEventProposal; do
             BODY=$(awk "/^function ${FN}\(/,/^}/" "$EV")
             if ! echo "$BODY" | grep -aq 'isTravelCoordinator'; then
-              echo "::error file=$EV::${FN} must be gated on isTravelCoordinator (which admins also satisfy). A traveller writing the catalogue would put unvetted text in front of every other traveller."
+              echo "::error file=$EV::${FN} must be gated on isTravelCoordinator (which admins also satisfy). A traveler writing the catalog would put unvetted text in front of every other traveler."
               exit 1
             fi
           done
@@ -528,10 +528,10 @@ jobs:
           fi
           PROP=$(awk '/^function proposeTravelEvent\(/,/^}/' "$EV")
           if echo "$PROP" | grep -aq 'SHEET_NAMES.EVENTS'; then
-            echo "::error file=$EV::proposeTravelEvent must write only to EVENT_PROPOSALS, never to the catalogue."
+            echo "::error file=$EV::proposeTravelEvent must write only to EVENT_PROPOSALS, never to the catalog."
             exit 1
           fi
-          echo "PASS - event wiring links requests, never blocks submission, and keeps travellers out of the catalogue."
+          echo "PASS - event wiring links requests, never blocks submission, and keeps travelers out of the catalog."
 
       - name: Guard - delegation must not become a role grant
         run: |
@@ -603,7 +603,7 @@ jobs:
           # used it to pick which buttons to draw and nothing gated the
           # payload. Any signed-in user who knew a sequential request ID got
           # the submitter and all four reviewers by name and email, and per
-          # traveller: employee ID, security clearance, passport status,
+          # traveler: employee ID, security clearance, passport status,
           # telework status and home commute. Finding G-004, C4/R3.
           R=lets_app/server/40_domain/Review_Read.js
           A=lets_app/server/30_services/RequestAccess.js
@@ -619,7 +619,7 @@ jobs:
             exit 1
           fi
           if ! echo "$CACHED" | grep -aq 'sanitizeTravelersForCaller('; then
-            echo "::error file=$R::The cached envelope is the FULL record and must be re-sanitized per caller, or a scoped reviewer receives another traveller's clearance and commute."
+            echo "::error file=$R::The cached envelope is the FULL record and must be re-sanitized per caller, or a scoped reviewer receives another traveler's clearance and commute."
             exit 1
           fi
           UNCACHED=$(awk '/========== AUTHORIZATION ==========/,/const envelope = successResponse/' "$R")
@@ -728,12 +728,12 @@ jobs:
               exit 1
             fi
           done
-          # The traveller picker must not key on employeeId: the server
+          # The traveler picker must not key on employeeId: the server
           # withholds it from non-admins, so an option value of undefined
           # would select nobody and the form would silently fail.
           SVC=lets_app/client/shared/hcDataCenterService.html
           if grep -aq 'value: p.employeeId$' "$SVC"; then
-            echo "::error file=$SVC::The traveller picker must key on positionNumber. employeeId is withheld from non-admin callers, so an employeeId-keyed option resolves to nobody."
+            echo "::error file=$SVC::The traveler picker must key on positionNumber. employeeId is withheld from non-admin callers, so an employeeId-keyed option resolves to nobody."
             exit 1
           fi
           echo "PASS - HR PII is tier-restricted by allow-list at every entry point."
@@ -744,7 +744,7 @@ jobs:
           # Go.gov truncates a trip name at EXACTLY 40 characters — measured
           # across 565 real names: 79 are exactly 40 and none is longer.
           #
-          # Travellers put the LETS ID at the FRONT of that name so the monthly
+          # Travelers put the LETS ID at the FRONT of that name so the monthly
           # expense report can be matched back. Every character the ID takes is
           # one the trip name loses, which is why it is L27-0001 and not
           # REQ-2026-0123.
@@ -786,11 +786,11 @@ jobs:
           # be tied back to its request.
           GS=lets_app/server/30_services/GogovSync.js
           if ! grep -aq "return 'L' + cur\[1\]" "$GS"; then
-            echo "::error file=$GS::extractLetsId must recognise the current L27-0001 form."
+            echo "::error file=$GS::extractLetsId must recognize the current L27-0001 form."
             exit 1
           fi
           if ! grep -aq "return 'REQ-' + legacy\[1\]" "$GS"; then
-            echo "::error file=$GS::extractLetsId must still recognise the legacy REQ-YYYY-NNNN form."
+            echo "::error file=$GS::extractLetsId must still recognize the legacy REQ-YYYY-NNNN form."
             exit 1
           fi
           echo "PASS - the request ID is short, fiscal-year aligned, and both forms resolve."
@@ -800,7 +800,7 @@ jobs:
           echo "Checking the Go.gov reconciliation figure..."
           # Measured on @clolry's real export: Report Total and Amount Approved
           # differ on 37 of 182 rows, by $4,569.93. Report Total is what the
-          # traveller CLAIMED; Amount Approved is what GSA PAID.
+          # traveler CLAIMED; Amount Approved is what GSA PAID.
           #
           # @clolry: "we need to use Amount Approved rather than Report Total."
           #
@@ -811,11 +811,11 @@ jobs:
             echo "::error file=$SRC::The actual-cost field must map to 'Amount Approved' first. Report Total includes items GSA disallowed and never paid."
             exit 1
           fi
-          # The traveller check on an ID match. Without it, a mistyped digit
-          # moves money between travellers silently — it did, on three real
+          # The traveler check on an ID match. Without it, a mistyped digit
+          # moves money between travelers silently — it did, on three real
           # rows, before this guard existed.
           if ! grep -aq 'owner !== expense.employeeNameNormalized' "$SRC"; then
-            echo "::error file=$SRC::An ID-based match must still verify the traveller. A cited LETS ID belonging to someone else's request would otherwise auto-match and move money between travellers."
+            echo "::error file=$SRC::An ID-based match must still verify the traveler. A cited LETS ID belonging to someone else's request would otherwise auto-match and move money between travelers."
             exit 1
           fi
           # Fiscal-year bucketing per row. One monthly export spans two years.
@@ -823,7 +823,7 @@ jobs:
             echo "::error file=$SRC::Every imported row must carry its own fiscal year. @clolry: budgeting resets on 10/1, and a single monthly export spans two fiscal years."
             exit 1
           fi
-          echo "PASS - reconciliation uses the paid amount, verifies the traveller, and buckets by fiscal year."
+          echo "PASS - reconciliation uses the paid amount, verifies the traveler, and buckets by fiscal year."
 
       - name: Guard - budget writes must be admin-guarded
         run: |
@@ -905,7 +905,7 @@ jobs:
           # Total."
           #
           # MEASURED on the real workbook: the two differ on 51 of 274 rows by
-          # $6,009.34. Report Total is what the traveller CLAIMED; Amount
+          # $6,009.34. Report Total is what the traveler CLAIMED; Amount
           # Approved is what GSA PAID. Reconciling against the claim
           # overstates spend on a fifth of all rows and looks entirely
           # plausible.
@@ -946,7 +946,7 @@ jobs:
             echo "::error file=$SRC::normalizeSourceId is missing. Without it the 7 all-digit source IDs duplicate on every run."
             exit 1
           fi
-          # Checked BEHAVIOURALLY, not by grepping for a variable name. The
+          # Checked BEHAVIORALLY, not by grepping for a variable name. The
           # first version of this guard looked for the string 'floaty' and
           # passed when a negative control renamed it to 'notfloaty' —
           # a guard a rename can satisfy is not a guard.
@@ -970,7 +970,7 @@ jobs:
             echo "::error file=lets_app/server/40_domain/TravelImportAdmin.js::The commit must write the source ID onto the request, or the next incremental run duplicates it."
             exit 1
           fi
-          echo "PASS - source identity is normalised and preserved."
+          echo "PASS - source identity is normalized and preserved."
 
       - name: Guard - a verified financial record is never silently overwritten
         run: |
@@ -992,7 +992,7 @@ jobs:
             exit 1
           fi
           if ! echo "$BODY" | grep -aq "matchConfirmedBy"; then
-            echo "::error file=$SRC::isVerifiedActual must treat a human-confirmed match as verified. That judgement is the most expensive data in the system."
+            echo "::error file=$SRC::isVerifiedActual must treat a human-confirmed match as verified. That judgment is the most expensive data in the system."
             exit 1
           fi
           # And the commit must REFUSE, not merely warn.
@@ -1014,10 +1014,10 @@ jobs:
           # deletion removes the WRONG rows after the first — and here the
           # wrong row is somebody's travel request.
           #
-          # test_travel_import.js §18 proves this behaviourally with a
+          # test_travel_import.js §18 proves this behaviorally with a
           # pre-existing row interleaved among imported ones. This guard
           # protects the mechanism, so a refactor cannot quietly drop the sort
-          # while the behavioural test still happens to pass on ordered data.
+          # while the behavioral test still happens to pass on ordered data.
           SRC=lets_app/server/40_domain/TravelImportAdmin.js
           if ! grep -aq 'toDelete.sort(function (a, b) { return b - a; })' "$SRC"; then
             echo "::error file=$SRC::Rollback must sort rows DESCENDING before deleting. Ascending deletion destroys the wrong requests."
@@ -1057,7 +1057,7 @@ jobs:
           # fixtures as a problem. The source files for the importers are a
           # far larger instance of the same thing:
           #
-          #   Chiquita's reconciliation workbook  ~1,900 traveller names,
+          #   Chiquita's reconciliation workbook  ~1,900 traveler names,
           #                                       823 GSA email addresses,
           #                                       823 supervisor names,
           #                                       274 employee IDs
@@ -1092,7 +1092,7 @@ jobs:
           #                                .xlsx rule left the .xls rule,
           #                                whose TEXT also matched the needle
           #
-          # Both tested the file's contents. What matters is the BEHAVIOUR, so
+          # Both tested the file's contents. What matters is the BEHAVIOR, so
           # this asks `git check-ignore` whether a representative filename
           # would actually be ignored. That cannot be satisfied by a comment
           # or by a near-miss rule.
@@ -1101,7 +1101,7 @@ jobs:
             'reference_excel_files/ASD Staffing Plan.xlsx' \
             'reference_excel_files/report_1234.xls'; do
             if ! git check-ignore -q "$NAME" 2>/dev/null; then
-              echo "::error file=.gitignore::'$NAME' would NOT be ignored by git. These source files carry real traveller names, email addresses and employee IDs — see finding G-056."
+              echo "::error file=.gitignore::'$NAME' would NOT be ignored by git. These source files carry real traveler names, email addresses and employee IDs — see finding G-056."
               BAD=1
             fi
           done
@@ -1151,9 +1151,23 @@ jobs:
           fi
           # And the converse: a stale entry means a renamed suite is silently
           # no longer excluded.
+          #
+          # THE LITERAL GLOB LINE IS SKIPPED. lets_app/.claspignore ends with a
+          # catch-all `test_*.js`, which is a valid and useful entry -- it is
+          # what actually guarantees no suite is ever pushed, with the explicit
+          # list above it as belt-and-braces. But the STRING `test_*.js`
+          # matches the shell PATTERN `test_*.js`, so without this skip the
+          # check asks whether a file literally named `test_*.js` exists, which
+          # it never is, and reports the catch-all as stale on every run.
+          #
+          # Caught because this guard failed on the commit that introduced it.
           STALE=""
           for d in lets_app orgchart_app; do
             while IFS= read -r line; do
+              # Any entry containing a wildcard is a pattern, not a filename.
+              case "$line" in
+                *'*'*|*'?'*|*'['*) continue ;;
+              esac
               case "$line" in
                 test_*.js)
                   [ -f "$d/$line" ] || STALE="$STALE $d/$line" ;;
@@ -1405,7 +1419,7 @@ jobs:
                    | grep -avE "AAS_LOGO|_buildAASLogo|aas-brand-header|getAASOrgScope|--aas-" \
                    | grep -av '^lets_app/client/components/Loader\.html:' || true)
           if [ -n "$AASVIS" ]; then
-            echo "::error::The inherited organisation name appears as user-visible text. Route it through <?= foLabel ?> / <?= orgShort ?> / <?= appName ?> (set by _applyBranding) so another workgroup can rebrand without a code change:"
+            echo "::error::The inherited organization name appears as user-visible text. Route it through <?= foLabel ?> / <?= orgShort ?> / <?= appName ?> (set by _applyBranding) so another workgroup can rebrand without a code change:"
             echo "$AASVIS"
             exit 1
           fi
@@ -1482,7 +1496,7 @@ jobs:
           # The stage labels must resolve from configuration, not literals.
           for LIT in "label: 'SD'" "label: 'BU'" "label: 'AAS FO'"; do
             if grep -qF "$LIT" lets_app/server/30_services/Email.js; then
-              echo "::error file=lets_app/server/30_services/Email.js::Workflow stage label \"${LIT}\" is hardcoded. This organisation calls them SCD and DAC; use getReviewLabelSector() / getReviewLabelBU()."
+              echo "::error file=lets_app/server/30_services/Email.js::Workflow stage label \"${LIT}\" is hardcoded. This organization calls them SCD and DAC; use getReviewLabelSector() / getReviewLabelBU()."
               exit 1
             fi
           done
@@ -1609,7 +1623,7 @@ jobs:
         run: |
           echo "Checking Step 4 options against the FAS tracker..."
           # These values are written into a GOOGLE FORM. A value it does not
-          # recognise is rejected or lands as free text, so the strings cannot
+          # recognize is rejected or lands as free text, so the strings cannot
           # be tidied — including the tracker's own typo "Oversees Employee".
           #
           # The previous lists were the inherited TRIP taxonomy and the prose
@@ -1951,7 +1965,7 @@ jobs:
           # been cached EMPTY before the alias logic existed.
           #
           # This guard only checks the keys are BUILT through the versioned
-          # helpers. It cannot tell you a bump was NEEDED — that judgement
+          # helpers. It cannot tell you a bump was NEEDED — that judgment
           # belongs to whoever changes a cached result's shape.
           for CONST in CP_AIRPORTS_CACHE_VERSION CP_FARE_CACHE_VERSION; do
             if ! grep -q "var ${CONST} = 'v" lets_app/server/30_services/CityPairs.js; then
@@ -1975,7 +1989,7 @@ jobs:
           echo "Checking getAirportsForCity never returns an empty picker..."
           # getAirportsForCity matches the GSA award file's city name EXACTLY.
           # HR and GSA do not always agree: FORT WORTH, TX resolved to NOTHING
-          # because GSA files DFW and DAL under DALLAS, so a traveller based
+          # because GSA files DFW and DAL under DALLAS, so a traveler based
           # there got an empty airport picker — which blocks a submission.
           #
           # The state-level fallback is what guarantees an actionable result,
@@ -1986,7 +2000,7 @@ jobs:
             exit 1
           fi
           if ! grep -q "matchType = 'state'" lets_app/server/30_services/CityPairs.js; then
-            echo "::error file=lets_app/server/30_services/CityPairs.js::The state-level fallback in getAirportsForCity is gone. An unrecognised city name now yields an empty airport picker instead of a broad but usable list."
+            echo "::error file=lets_app/server/30_services/CityPairs.js::The state-level fallback in getAirportsForCity is gone. An unrecognized city name now yields an empty airport picker instead of a broad but usable list."
             exit 1
           fi
           echo "PASS - city resolution falls back to state level."
@@ -1999,7 +2013,7 @@ jobs:
           # so a plain route-count sort makes an unbookable aggregate the
           # default origin for Washington. Nothing in the CSV marks these, so
           # the IATA_METRO_CODES list and the sort that demotes them are the
-          # only defence.
+          # only defense.
           if ! grep -q "IATA_METRO_CODES" lets_app/server/30_services/CityPairs.js; then
             echo "::error file=lets_app/server/30_services/CityPairs.js::IATA_METRO_CODES is missing. Without it, metro aggregates like WAS outrank real airports on route count and become the default."
             exit 1

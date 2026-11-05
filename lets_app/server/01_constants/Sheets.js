@@ -1042,7 +1042,7 @@ const TRAVEL_SHEET_SCHEMAS = {
                               // ('4946') and the spreadsheet stores them as
                               // NUMBERS, so a raw read yields '4946.0'. A
                               // string compare then misses and re-imports them
-                              // as new rows on every single run. Normalised on
+                              // as new rows on every single run. Normalized on
                               // the way in — see TravelImport.normalizeSourceId.
                               //
                               // For expenses there is NO source ID at all, so
@@ -1068,7 +1068,7 @@ const TRAVEL_SHEET_SCHEMAS = {
                               // arithmetic depends on the difference:
                               //
                               //   REQUEST    submitted, not yet approved
-                              //   COMMITMENT approved, not yet travelled —
+                              //   COMMITMENT approved, not yet traveled —
                               //              money promised, draws down the
                               //              DAC balance
                               //   VOUCHER    an expense report exists; the
@@ -1108,7 +1108,7 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Scope_Reason',           // the specific test that excluded it
 
     // ----------------------------------------------------------------------
-    // THE SOURCE VALUES, as read (normalised types, original meaning)
+    // THE SOURCE VALUES, as read (normalized types, original meaning)
     // ----------------------------------------------------------------------
     'Employee_Name',          // verbatim from the file
     'Employee_Name_Normalized', // 'FIRST LAST' uppercase. MEASURED: the two
@@ -1127,7 +1127,7 @@ const TRAVEL_SHEET_SCHEMAS = {
     // MONEY — three columns, because they are three different numbers
     // ----------------------------------------------------------------------
     'Estimate_Amount',        // request 'Total Approved Amount'
-    'Claimed_Amount',         // expense 'Report Total' — what the traveller
+    'Claimed_Amount',         // expense 'Report Total' — what the traveler
                               // CLAIMED. Audit trail only. NEVER the figure
                               // reconciled against
     'Approved_Amount',        // expense 'Amount Approved' — what GSA PAID.
@@ -1141,7 +1141,7 @@ const TRAVEL_SHEET_SCHEMAS = {
                               // from Report Total, so LETS will not agree with
                               // her sheet — see the Variance_Basis note below.
     'Disallowed_Amount',      // Claimed - Approved. Stored because nobody asks
-                              // for it until a traveller disputes a voucher,
+                              // for it until a traveler disputes a voucher,
                               // and then it is the only number that matters
 
     // ----------------------------------------------------------------------

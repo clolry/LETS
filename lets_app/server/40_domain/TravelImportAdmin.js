@@ -15,7 +15,7 @@
  *
  * ADMIN ONLY, ALL OF IT
  * ---------------------
- * Every function here either reads one traveller's financial detail or writes
+ * Every function here either reads one traveler's financial detail or writes
  * a request that consumes a DAC's budget without anyone approving it. That is
  * the same boundary BudgetBackfill draws, and for the same reason: reading
  * budget totals is deliberately open (@clolry: "no secrets to hide there —
@@ -71,8 +71,8 @@ var TravelImportAdmin = (function () {
    * and already means exactly this. Adding a second identifier column would
    * leave two places to disagree about where a row came from.
    *
-   * NORMALISED ON READ as well as on write. The seven all-digit IDs can have
-   * been written by an older code path as '4946.0'; normalising both sides
+   * NORMALIZED ON READ as well as on write. The seven all-digit IDs can have
+   * been written by an older code path as '4946.0'; normalizing both sides
    * means a stored '4946.0' still matches an incoming 4946 instead of
    * producing the duplicate this map exists to prevent.
    *
@@ -637,7 +637,7 @@ var TravelImportAdmin = (function () {
           'Travel_Purpose_Label': r.purpose,
           'Is_Event_Plan_Item': false,
           // MARKED, like every backfilled row. A figure that entered the
-          // budget without review must be identifiable afterwards, or the
+          // budget without review must be identifiable afterward, or the
           // audit trail implies an approval that never happened.
           'Primary_Justification': 'IMPORT: ' + r.recordKind + ' imported from ' +
             batch.sourceLabel + ' (batch ' + id + ', source row ' + r.sourceRow +
@@ -1077,7 +1077,7 @@ var TravelImportAdmin = (function () {
 // BROWSER-CALLABLE ENTRYPOINTS — ALL ADMIN-GUARDED
 // ============================================================================
 //
-// Every one of these either reads a named traveller's financial detail or
+// Every one of these either reads a named traveler's financial detail or
 // writes a request that consumes a DAC's budget without review. Same boundary
 // BudgetBackfill draws: reading budget TOTALS is open for transparency,
 // writing money is not.
@@ -1203,7 +1203,7 @@ function rollbackTravelImport(batchId, reason) {
 /**
  * Import history, newest first.
  *
- * Admin-guarded: a batch row carries traveller counts and dollar totals per
+ * Admin-guarded: a batch row carries traveler counts and dollar totals per
  * office, and names the administrator who ran it.
  *
  * @param {number} [limit]

@@ -69,7 +69,7 @@ thing reboot costs is one command.
 ### §0.4 The one finding to carry into the next conversation
 
 **LETS will not match Chiquita's variance column, deliberately.** Hers is
-computed from Report Total (what the traveller claimed); LETS uses Amount
+computed from Report Total (what the traveler claimed); LETS uses Amount
 Approved (what GSA paid). Across her 20 matched rows: hers **−$326.93**, true
 **−$1,491.32**, gap **$1,164.39** — exactly the disallowed amount. You already
 ruled on this during the Go.gov work. **She should be told before the two
@@ -236,7 +236,7 @@ Gitignored, and verified absent from all history via
 | file | contents |
 |---|---|
 | `report_12947.xls` | 182 expense rows, first sample |
-| `Expense Report (Sept-Nov).xls` | 522 rows, 391 real traveller names + employee IDs |
+| `Expense Report (Sept-Nov).xls` | 522 rows, 391 real traveler names + employee IDs |
 | `Travel requests (Sept - Nov).xls` | 565 rows, 415 real names |
 | `Copy of ASD Staffing Plan 5-12-26.xlsx` | 806 named ASD staff, 132 org codes |
 
@@ -291,7 +291,7 @@ that can occur by accident, and a loose pattern matched `Order L270001-A`
 against 1,087 real titles. See DATA_DICTIONARY §3.2.4.
 
 **`Amount Approved`, never `Report Total`.** They differ on 37 of 182 rows by
-$4,569.93. Report Total is what the traveller claimed; Amount Approved is what
+$4,569.93. Report Total is what the traveler claimed; Amount Approved is what
 GSA paid.
 
 **One monthly export spans two fiscal years.** $537,451.15 FY2026 and
@@ -300,11 +300,11 @@ $269,890.88 FY2027 in the 522-row file. Every row is bucketed on its own date.
 **Two date encodings in one file set.** `Report End Date` is TEXT
 `YYYY-MM-DD`; `Submit Date` and the request dates are Excel serials.
 
-**An ID match must still verify the traveller.** The test asserting this FAILED
+**An ID match must still verify the traveler.** The test asserting this FAILED
 when first written: a cited LETS ID was trusted alone, and three real expense
 reports were auto-matched to other people's requests — Brandon Maness's
-$1,922.96 landed on another traveller's request. One mistyped digit moves money
-between travellers.
+$1,922.96 landed on another traveler's request. One mistyped digit moves money
+between travelers.
 
 **91 unmatched expense rows share a surname with someone on the roster**
 (`Miller, Aurelio H.` vs roster `Miller,Anthony C`). They are different people
@@ -373,10 +373,10 @@ came from parsing the real file, not from reasoning about it.
 
 | # | Item | Why deferred |
 |---|---|---|
-| 7 | **`GogovSync.toDateString` mis-parses a string serial** — `'46356'` → `'46356-01-01'` (the year 46356). `TravelImport.toDateString` resolves it before delegating, so the importer is safe, but the monthly reconciliation path shares that function and would silently drop a row out of scope. | Widening it touches behaviour pinned by `test_gogov_sync.js` §3 and shared with the reconciliation path — blast radius beyond this feature. |
+| 7 | **`GogovSync.toDateString` mis-parses a string serial** — `'46356'` → `'46356-01-01'` (the year 46356). `TravelImport.toDateString` resolves it before delegating, so the importer is safe, but the monthly reconciliation path shares that function and would silently drop a row out of scope. | Widening it touches behavior pinned by `test_gogov_sync.js` §3 and shared with the reconciliation path — blast radius beyond this feature. |
 | 8 | **`docs/evidence/verify_city_dropdown_fix.js` throws** (`Cannot read properties of undefined (reading 'mie')`). Verified failing at `e60ac64`, i.e. **before** this work. Not wired into CI, so nothing catches it. | Pre-existing and unrelated. Needs whoever wrote the per-diem fix. |
 | 9 | **The import is single-source.** `Source_System` is a column and the mapping is a profile, so a second source is a remap rather than a rewrite — but only `gogov-workbook` has been built and measured. | No second source exists yet (YAGNI). |
-| 10 | **One traveller needs manual matching every run** (Patnaik — three requests share his name and title). Correct behaviour, not a defect, but it recurs until a LETS ID appears in the trip name. | Needs the SOP convention to be adopted, which is a people problem rather than a code one. |
+| 10 | **One traveler needs manual matching every run** (Patnaik — three requests share his name and title). Correct behavior, not a defect, but it recurs until a LETS ID appears in the trip name. | Needs the SOP convention to be adopted, which is a people problem rather than a code one. |
 
 ## Still unanswered
 
@@ -402,12 +402,12 @@ transcript). **The items below were deliberately deferred and are NOT fixed.**
 `gh` could not file these as issues — `GITHUB_TOKEN` is invalid in this
 environment (`gh auth status` → "The token in GITHUB_TOKEN is invalid"). They
 are recorded here so they are not lost, but **this is a handoff note, not a
-tracker**. They should be moved to GitHub issues once `gh` is authorised.
+tracker**. They should be moved to GitHub issues once `gh` is authorized.
 
 | # | Deferred item | Why it was deferred |
 |---|---|---|
 | 1 | **`travelPortalStyles` sets `overflow: hidden` on BARE `html`/`body`** (lines 135, 140). This is the root cause of the budget page's scroll lock; the fix applied was a per-page scroller, not this. Any future page that includes this stylesheet hits the same trap — it has already caught one. Scope the rules to the portal shell. | Fixing it means touching the portal, which works. A narrow fix was the lower-risk call for a reported defect. |
-| 2 | **Collapse-by-`max-height` loses its expand animation.** The crop fixes set `max-height: none` on the open states of `.tc__stage`, `.action-detail`, `.review-traveler-row__body` and `.tc__reveal`. `max-height` cannot transition to `none`, so the *expand* slide is gone (opacity/transform still animate; collapse still slides). The fix that keeps both is `grid-template-rows: 0fr → 1fr`, which needs each panel wrapped in a grid container. | A real layout change inside the traveller cards, and not one to make without a browser to verify it in. |
+| 2 | **Collapse-by-`max-height` loses its expand animation.** The crop fixes set `max-height: none` on the open states of `.tc__stage`, `.action-detail`, `.review-traveler-row__body` and `.tc__reveal`. `max-height` cannot transition to `none`, so the *expand* slide is gone (opacity/transform still animate; collapse still slides). The fix that keeps both is `grid-template-rows: 0fr → 1fr`, which needs each panel wrapped in a grid container. | A real layout change inside the traveler cards, and not one to make without a browser to verify it in. |
 | 3 | **Fixed-bar offsets track the TOKEN, not the bar's rendered height.** `--travel-header-h` / `--review-infobar-h` in `tokens.html` removed the drift between a bar's declared height and the offset compensating for it. The bars now use `min-height`, so under text-only zoom or a raised default font size they can still outgrow the token and content slides under by the difference. The real fix is `position: sticky` instead of fixed-plus-offset. | Per-page layout change; needs browser verification. |
 | 4 | **`travelRequestController.html:1225` hardcodes `const fixedHeaderHeight = 52`** for its scroll-to-step offset. Same magic number as the CSS, now in JS where the token cannot reach it. Should read the rendered header height, or the custom property. | Out of scope of the reported defects; one-line change but needs a browser to confirm the scroll lands correctly. |
 | 5 | **The `.oc-modal` shell is defined twice** — `travelAdminStyles.html:5412` and inline in `travelBudgetDashboardPage.html:42`. The existing comment already flags this as deliberate-for-now. It is now also the thing whose duplicated prose caused the Admin parse failure. Worth consolidating. | Pre-existing, documented decision. Not a defect. |
