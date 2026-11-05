@@ -181,6 +181,60 @@ var DirectoryLookup = (function () {
   }
 
   /**
+   * The address GSA's convention would produce for a roster name.
+   *
+   * WHY THIS EXISTS, AND WHY IT IS NOT USED AS AN ANSWER
+   * ---------------------------------------------------
+   * @clolry typed the six unresolvable names into an email client and every
+   * one autocompleted immediately:
+   *
+   *   keonia.cobbins@gsa.gov    manuel.gotay@gsa.gov
+   *   megan.holycross-simmons@gsa.gov   dawn.mccleskey@gsa.gov
+   *   varuna.singh@gsa.gov
+   *
+   * All five are exactly forename.surname@gsa.gov. So the people exist, the
+   * addresses follow a rule, and People.searchDirectoryPeople returned
+   * nothing for them — Gmail's autocomplete reads a different index than the
+   * People API's name search does.
+   *
+   * CONSTRUCTING AN ADDRESS AND WRITING IT WOULD BE WRONG. The convention
+   * holds for these five and it is still a guess, and the failure mode is not
+   * symmetrical:
+   *
+   *   a non-existent mailbox  mail bounces, the person cannot sign in. Bad,
+   *                           visible, recoverable.
+   *   SOMEONE ELSE'S mailbox  that person gains another's LETS access. Bad,
+   *                           invisible, and the whole reason this module
+   *                           refuses near-matches.
+   *
+   * The second is reachable: GSA disambiguates collisions with a middle
+   * initial — 'brian.j.hall@gsa.gov' appeared in @clolry's own Hall list — so
+   * a second Keonia Cobbins would hold keonia.a.cobbins@gsa.gov and the plain
+   * form would belong to the first. Constructing it would hand one person the
+   * other's identity.
+   *
+   * So this produces a CANDIDATE ADDRESS to be verified against the
+   * directory, never an answer. verifyConstructedAddress does the verifying.
+   *
+   * @param {Object} parsed from parseName
+   * @returns {string} '' when the name cannot produce one
+   */
+  function conventionalAddress(parsed, domain) {
+    if (!parsed || !parsed.first || !parsed.last) return '';
+    var d = _str_(domain) || 'gsa.gov';
+    // Hyphens are KEPT: megan.holycross-simmons@gsa.gov is the real address.
+    // Everything else non-alphanumeric goes, including the apostrophe in
+    // O'Brien, which GSA strips.
+    function part(v) {
+      return _str_(v).toLowerCase().replace(/[^a-z0-9\-]/g, '');
+    }
+    var first = part(parsed.first);
+    var last = part(stripNameSuffix(parsed.last));
+    if (!first || !last) return '';
+    return first + '.' + last + '@' + d;
+  }
+
+  /**
    * The parts of a surname, for compound-surname comparison.
    *
    * 'Azarcon Heller' -> ['AZARCON', 'HELLER']
@@ -808,7 +862,7 @@ var DirectoryLookup = (function () {
    * @param {Function} searchFn       name -> Array of candidates
    * @returns {Object} the pickMatch result plus the parsed name
    */
-  function resolveOne(position, searchFn) {
+  function resolveOne(position, searchFn, verifyFn) {
     var parsed = parseName(position && position.employeeName);
     if (!parsed.usable) {
       return {
@@ -833,6 +887,45 @@ var DirectoryLookup = (function () {
     }
 
     var picked = pickMatch(parsed, candidates, position && position.orgCode);
+
+    // LAST RESORT: the name search found nobody, so try the conventional
+    // address and VERIFY it.
+    //
+    // @clolry's six unresolvable names all autocompleted in an email client
+    // as forename.surname@gsa.gov, so the people exist and the API's NAME
+    // search does not find them. An address lookup does.
+    //
+    // Only when the name search produced NOTHING. A refusal because two
+    // people matched, or because a nickname did not, is a real ambiguity and
+    // must not be overridden by a constructed guess.
+    if (!picked.email && verifyFn && picked.method === 'none' &&
+        !picked.returnedCount) {
+      var v;
+      try {
+        v = verifyFn(parsed);
+      } catch (e2) {
+        v = { verified: false, reason: 'verification failed: ' + e2.message };
+      }
+      if (v && v.verified) {
+        return {
+          positionNumber: _str_(position.positionNumber),
+          employeeName: _str_(position.employeeName),
+          email: _str_(v.email).toLowerCase(),
+          method: 'verified-convention',
+          // NOT 'exact'. The address was constructed from a naming rule and
+          // then confirmed to exist under a matching name — which is strong,
+          // and is not the same as the directory having volunteered it.
+          confidence: 'verified',
+          candidateCount: 0,
+          reason: ''
+        };
+      }
+      if (v && v.reason) {
+        picked.reason = picked.reason + ' Tried ' + (v.email || 'a constructed address') +
+                        ': ' + v.reason;
+      }
+    }
+
     return {
       positionNumber: _str_(position.positionNumber),
       employeeName: _str_(position.employeeName),
@@ -870,6 +963,9 @@ var DirectoryLookup = (function () {
    */
   function resolveBatch(positions, searchFn, opts) {
     var o = opts || {};
+    // Optional. When absent, resolveBatch behaves exactly as before — which
+    // is what keeps the pure tests pure.
+    var verifyFn = o.verifyFn || null;
     var start = parseInt(o.startIndex, 10) || 0;
     var began = (o.now instanceof Date) ? o.now.getTime() : Date.now();
     var deadline = began + (parseInt(o.deadlineMs, 10) || 240000);   // 4 min
@@ -909,7 +1005,7 @@ var DirectoryLookup = (function () {
         continue;
       }
 
-      var r = resolveOne(p, searchFn);
+      var r = resolveOne(p, searchFn, verifyFn);
       out.lookups++;
       if (r.email) out.resolved.push(r);
       else out.refused.push(r);
@@ -1151,6 +1247,7 @@ var DirectoryLookup = (function () {
     suggestCandidates: suggestCandidates,
     nameKey: nameKey,
     stripNameSuffix: stripNameSuffix,
+    conventionalAddress: conventionalAddress,
     surnameTokens: surnameTokens,
     surnameComponentMatches: surnameComponentMatches,
     emailTokens: emailTokens,

@@ -53,11 +53,11 @@ The HR feed carries no email column, and Email_Address is how LETS identifies a 
 | Function | File | Line | What it does |
 |---|---|---:|---|
 | `previewDirectoryEmails(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 133 | Dry run: what the directory would resolve, without writing anything. |
-| `diagnoseDirectoryBuild()` | `lets_app/server/40_domain/DirectoryResolve.js` | 203 | Reports which build of the directory matcher is deployed. |
-| `diagnoseDirectoryMatch(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 350 | Prints the RAW directory response for one name. |
-| `resolveDirectoryEmails(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 431 | Resolves and WRITES email addresses onto HC_Positions. |
-| `syncDirectoryEmails()` | `lets_app/server/40_domain/DirectoryResolve.js` | 581 | Trigger entry point: resumes the sweep where it stopped. |
-| `installDirectoryLookupTrigger()` | `lets_app/server/40_domain/DirectoryResolve.js` | 598 | Installs an hourly trigger until the sweep completes. |
+| `diagnoseDirectoryBuild()` | `lets_app/server/40_domain/DirectoryResolve.js` | 290 | Reports which build of the directory matcher is deployed. |
+| `diagnoseDirectoryMatch(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 437 | Prints the RAW directory response for one name. |
+| `resolveDirectoryEmails(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 518 | Resolves and WRITES email addresses onto HC_Positions. |
+| `syncDirectoryEmails()` | `lets_app/server/40_domain/DirectoryResolve.js` | 669 | Trigger entry point: resumes the sweep where it stopped. |
+| `installDirectoryLookupTrigger()` | `lets_app/server/40_domain/DirectoryResolve.js` | 686 | Installs an hourly trigger until the sweep completes. |
 
 ## Budget
 

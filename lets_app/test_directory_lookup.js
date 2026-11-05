@@ -410,8 +410,16 @@ console.log('\n7. the network layer is guarded and separated');
 
   // THE MATCHING LOGIC MUST NOT TOUCH THE NETWORK, or none of the above is
   // testable and the decisions become unobservable.
+  //
+  // COMMENTS STRIPPED. DirectoryLookup's own prose now names
+  // People.searchDirectoryPeople while explaining why the name search misses
+  // people that an address lookup finds — and the naive grep read that as an
+  // API call. Fourth occurrence of this trap in the project: an assertion on
+  // source text that the file's own explanation satisfies.
+  const pureCode = pure.replace(/\/\*[\s\S]*?\*\//g, '')
+                       .replace(/^\s*\/\/.*$/gm, '');
   ok('DirectoryLookup makes no API calls',
-     !/People\./.test(pure) && !/UrlFetchApp/.test(pure),
+     !/People\./.test(pureCode) && !/UrlFetchApp/.test(pureCode),
      'the search function is injected so every decision is testable');
 
   // People, not AdminDirectory: admin.directory.user.readonly needs a
@@ -1240,6 +1248,138 @@ console.log('\n18. a compound surname is the same person');
      D.suggestCandidates(D.parseName('Berg,Hans'),
                          [{ givenName: 'Hans', familyName: 'Bergman - FC',
                             email: 'h@gsa.gov' }], 'FC').length === 0);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n19. a constructed address is VERIFIED, never assumed');
+{
+  // @clolry typed the six unresolvable names into an email client and five
+  // autocompleted instantly:
+  //
+  //   keonia.cobbins@gsa.gov   manuel.gotay@gsa.gov
+  //   megan.holycross-simmons@gsa.gov   dawn.mccleskey@gsa.gov
+  //   varuna.singh@gsa.gov
+  //
+  // All exactly forename.surname@gsa.gov. So the people exist, the addresses
+  // follow a rule, and People.searchDirectoryPeople's NAME search returns
+  // nothing for them — Gmail's autocomplete reads a different index.
+  const conv = (n) => D.conventionalAddress(D.parseName(n));
+
+  ok('the convention reproduces all five real addresses',
+     conv('Cobbins,Keonia R') === 'keonia.cobbins@gsa.gov' &&
+     conv('Gotay,Manuel J') === 'manuel.gotay@gsa.gov' &&
+     conv('McCleskey,Dawn P') === 'dawn.mccleskey@gsa.gov' &&
+     conv('Singh,Varuna M') === 'varuna.singh@gsa.gov',
+     [conv('Cobbins,Keonia R'), conv('Singh,Varuna M')]);
+
+  // A HYPHEN IS KEPT. megan.holycross-simmons@gsa.gov is the real address, so
+  // stripping punctuation wholesale would produce a wrong one.
+  ok('a hyphenated surname keeps its hyphen',
+     conv('Holycross-Simmons,Megan N') ===
+       'megan.holycross-simmons@gsa.gov', conv('Holycross-Simmons,Megan N'));
+  // But an apostrophe goes, which is what GSA does.
+  ok('an apostrophe is stripped',
+     conv("O'Brien,Sean M") === 'sean.obrien@gsa.gov',
+     conv("O'Brien,Sean M"));
+  // And a roster suffix is not part of the address.
+  ok('a generational suffix is excluded',
+     conv('Tekus Jr,John J') === 'john.tekus@gsa.gov');
+  ok('an unusable name produces nothing',
+     conv('Okonkwo') === '', 'no forename, no convention');
+
+  // CONSTRUCTING IS NOT RESOLVING. The address must be looked up and the name
+  // on it compared, because GSA disambiguates collisions with a middle
+  // initial — 'brian.j.hall@gsa.gov' is in @clolry's own Hall list — so a
+  // second Keonia Cobbins would hold keonia.a.cobbins and the plain form
+  // belongs to the first.
+  const nameSearchEmpty = () => [];
+
+  const verified = D.resolveOne(
+    { positionNumber: '1', employeeName: 'Cobbins,Keonia R', orgCode: 'FCA0EA' },
+    nameSearchEmpty,
+    (parsed) => ({ email: D.conventionalAddress(parsed), verified: true }));
+  ok('a verified convention resolves',
+     verified.email === 'keonia.cobbins@gsa.gov', verified);
+  ok('and is labelled verified-convention, not exact',
+     verified.method === 'verified-convention' &&
+     verified.confidence === 'verified', verified);
+
+  // AN UNVERIFIED ONE MUST NOT RESOLVE.
+  const unverified = D.resolveOne(
+    { positionNumber: '2', employeeName: 'Ghost,Nobody A', orgCode: 'FC' },
+    nameSearchEmpty,
+    () => ({ email: 'nobody.ghost@gsa.gov', verified: false,
+             reason: 'the directory does not return it' }));
+  ok('an unverified constructed address refuses',
+     unverified.email === '', unverified);
+  ok('and the refusal says what was tried',
+     /Tried nobody\.ghost@gsa\.gov/.test(unverified.reason),
+     unverified.reason);
+
+  // ONLY WHEN THE NAME SEARCH FOUND NOTHING. A refusal because two people
+  // matched, or because a nickname did not, is a REAL ambiguity and must not
+  // be overridden by a constructed guess.
+  const ambiguous = D.resolveOne(
+    { positionNumber: '3', employeeName: 'Kittrell,Angela K', orgCode: 'FCA' },
+    () => [{ givenName: 'Kim', familyName: 'Kittrell - FCA',
+             email: 'kim.kittrell@gsa.gov' }],
+    (parsed) => ({ email: D.conventionalAddress(parsed), verified: true }));
+  ok('a nickname refusal is NOT overridden by the convention',
+     ambiguous.email === '' && ambiguous.method === 'none', ambiguous);
+
+  const twoNamesakes = D.resolveOne(
+    { positionNumber: '4', employeeName: 'Smith,Michael', orgCode: 'FC' },
+    () => [{ givenName: 'Michael', familyName: 'Smith - FC', email: 'a@gsa.gov' },
+           { givenName: 'Michael', familyName: 'Smith - FC', email: 'b@gsa.gov' }],
+    (parsed) => ({ email: D.conventionalAddress(parsed), verified: true }));
+  ok('an ambiguous pair is NOT overridden either',
+     twoNamesakes.email === '', twoNamesakes);
+
+  // WITHOUT A VERIFIER, BEHAVIOUR IS UNCHANGED. The verifier is optional so
+  // every other test in this file stays free of the network.
+  const noVerifier = D.resolveOne(
+    { positionNumber: '5', employeeName: 'Cobbins,Keonia R', orgCode: 'FCA0EA' },
+    nameSearchEmpty);
+  ok('no verifier means no constructed resolution',
+     noVerifier.email === '' && noVerifier.method === 'none', noVerifier);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n20. the verifier compares the name on the address');
+{
+  const resolve = fs.readFileSync('lets_app/server/40_domain/DirectoryResolve.js', 'utf8');
+  const fn = resolve.slice(resolve.indexOf('function verifyConstructedAddress'),
+                           resolve.indexOf('function diagnoseDirectoryBuild'));
+
+  // IT MUST LOOK THE ADDRESS UP, not assume it.
+  ok('it queries the directory for the constructed address',
+     /query: candidate/.test(fn), fn.slice(0, 400));
+
+  // ONLY EXACT ADDRESS MATCHES COUNT. A query returning neighbours is not
+  // evidence about this address.
+  ok('it filters to entries whose address IS the candidate',
+     /String\(h\.email\)\.toLowerCase\(\) === candidate/.test(fn));
+
+  // THE NAME ON THE ADDRESS MUST AGREE, or a constructed address belonging to
+  // an unrelated person would be accepted.
+  ok('it compares the directory name against the roster name',
+     /candidateMatches\(parsed, exact\[0\]\)/.test(fn));
+  ok('and refuses when the name does not match',
+     /does not match the roster name/.test(fn));
+
+  // Absence and duplication are both refusals with distinct reasons, because
+  // "no such mailbox" and "two entries share it" need different responses.
+  ok('a missing address is refused with its own reason',
+     /does not exist or is not readable/.test(fn));
+  ok('and duplicate entries are refused separately',
+     /share ' \+ candidate/.test(fn));
+
+  // The queue should not ask a human about a case the sweep will resolve.
+  ok('the queue verifies before queueing',
+     /verifyConstructedAddress\(parsed\)/.test(resolve) &&
+     /willResolveAutomatically: true/.test(resolve),
+     'a queue that asks about answerable cases trains its reader to click ' +
+     'through it');
 }
 
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');

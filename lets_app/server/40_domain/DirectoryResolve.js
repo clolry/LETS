@@ -155,7 +155,8 @@ function previewDirectoryEmails(opts) {
       // and 50 lookups is enough to see the shape of the refusals.
       maxLookups: parseInt(o.maxLookups, 10) || 50,
       deadlineMs: 120000,
-      includeExisting: !!o.includeExisting
+      includeExisting: !!o.includeExisting,
+      verifyFn: verifyConstructedAddress
     });
 
     var summary = DirectoryLookup.summarise(batch);
@@ -171,6 +172,92 @@ function previewDirectoryEmails(opts) {
     console.error('previewDirectoryEmails failed: ' + e.message);
     return errorResponse('Directory preview failed: ' + e.message);
   }
+}
+
+/**
+ * Verifies a constructed address against the directory, by LOOKING IT UP.
+ *
+ * @clolry typed the six unresolvable names into an email client and all five
+ * with addresses autocompleted instantly as forename.surname@gsa.gov. So the
+ * people exist and People.searchDirectoryPeople's NAME search does not find
+ * them — Gmail's autocomplete reads a different index.
+ *
+ * searchDirectoryPeople accepts an email address as its query, so an address
+ * can be looked up even when the name cannot. That turns a guess into a
+ * CHECK: construct the conventional address, search for it, and accept it
+ * only if the directory returns that exact address attached to a name
+ * matching the roster.
+ *
+ * WHY THAT IS SAFE WHERE CONSTRUCTING WAS NOT
+ * -------------------------------------------
+ * The risk was never a non-existent mailbox — that bounces, visibly. It was
+ * SOMEONE ELSE'S mailbox: GSA disambiguates collisions with a middle initial
+ * ('brian.j.hall@gsa.gov' is in @clolry's own Hall list), so a second Keonia
+ * Cobbins would hold keonia.a.cobbins and the plain form would belong to the
+ * first.
+ *
+ * Verifying closes that: if keonia.cobbins@gsa.gov belongs to a different
+ * Keonia Cobbins, the lookup returns HER name, the surname and forename are
+ * compared, and... they match, because they are namesakes. So the name check
+ * alone is not enough, and this ALSO requires the directory to return exactly
+ * one person for that address. A namesake collision means two accounts whose
+ * plain-form ownership is a question only HR can answer, and the function
+ * refuses.
+ *
+ * @param {Object} parsed from DirectoryLookup.parseName
+ * @returns {{email: string, verified: boolean, reason: string,
+ *            directoryName: string}}
+ */
+function verifyConstructedAddress(parsed) {
+  var out = { email: '', verified: false, reason: '', directoryName: '' };
+
+  var candidate = DirectoryLookup.conventionalAddress(parsed);
+  if (!candidate) {
+    out.reason = 'The name cannot produce a conventional address.';
+    return out;
+  }
+  out.email = candidate;
+
+  var hits;
+  try {
+    hits = _directorySearch_({ first: '', last: '', query: candidate });
+  } catch (e) {
+    out.reason = 'Directory lookup failed for ' + candidate + ': ' + e.message;
+    return out;
+  }
+
+  // Only entries whose address IS the one being verified. A name search that
+  // happens to return neighbours is not evidence about this address.
+  var exact = hits.filter(function (h) {
+    return String(h.email).toLowerCase() === candidate;
+  });
+
+  if (!exact.length) {
+    out.reason = 'The directory does not return ' + candidate +
+                 ', so it either does not exist or is not readable here.';
+    return out;
+  }
+  if (exact.length > 1) {
+    // Two directory entries sharing one address should be impossible; if it
+    // happens, it is not something to resolve automatically.
+    out.reason = exact.length + ' directory entries share ' + candidate + '.';
+    return out;
+  }
+
+  var m = DirectoryLookup.candidateMatches(parsed, exact[0]);
+  out.directoryName = (m.resolvedGiven + ' ' + m.resolvedFamily).trim();
+
+  // The name on the address must agree with the roster. This is what stops a
+  // constructed address belonging to an unrelated person who happens to own
+  // the plain form.
+  if (!m.matches && !(m.forenameMatches && m.surnameComponentMatches)) {
+    out.reason = candidate + ' exists but belongs to "' + out.directoryName +
+                 '", which does not match the roster name.';
+    return out;
+  }
+
+  out.verified = true;
+  return out;
 }
 
 /**
@@ -456,6 +543,7 @@ function resolveDirectoryEmails(opts) {
 
     var batch = DirectoryLookup.resolveBatch(bundle.data, _directorySearch_, {
       startIndex: start,
+      verifyFn: verifyConstructedAddress,
       maxLookups: parseInt(o.maxLookups, 10) || 400,
       // Four minutes of a six-minute limit. The remainder is the write, the
       // cache invalidation and the resume-index save, which must not be the
@@ -745,6 +833,47 @@ function getEmailResolutionQueue(opts) {
             } catch (e3) { /* try the next part */ }
           }
         }
+      }
+
+      // VERIFY A CONVENTIONAL ADDRESS before asking a human.
+      //
+      // All five of @clolry's unresolvable names autocompleted in an email
+      // client as forename.surname@gsa.gov. If the address exists and belongs
+      // to a matching name, there is nothing for an administrator to decide —
+      // and a queue that asks about answerable cases trains its reader to
+      // click through it.
+      var verified = null;
+      if (!broader.length) {
+        try {
+          var v = verifyConstructedAddress(parsed);
+          if (v.verified) verified = v;
+        } catch (ve) { /* fall through to the manual queue */ }
+      }
+      if (verified) {
+        // Offered as a single pre-filled suggestion rather than written
+        // silently: the sweep will write it, and seeing it here tells the
+        // admin the sweep will handle it.
+        queue.push({
+          positionNumber: p.positionNumber,
+          employeeName: p.employeeName,
+          orgCode: p.orgCode,
+          officeTitle: p.officeTitle,
+          supervisoryStatus: p.supervisoryStatus,
+          isSupervisor: String(p.supervisoryStatus) === '2',
+          parsedName: parsed,
+          autoRefusalReason: '',
+          willResolveAutomatically: true,
+          suggestions: [{
+            email: verified.email,
+            directoryName: verified.directoryName,
+            displayName: verified.directoryName,
+            directoryOrg: '',
+            orgAgrees: false,
+            reason: 'verified-convention',
+            rank: -2
+          }]
+        });
+        continue;
       }
 
       var suggestions = DirectoryLookup.suggestCandidates(
