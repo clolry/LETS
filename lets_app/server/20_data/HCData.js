@@ -990,6 +990,129 @@ var HC = (function () {
    * @returns {{success: boolean, byOrgCode: Object, byDac: Object,
    *            counted: number, unattributed: number, error?: string}}
    */
+  /**
+   * Which position counts toward headcount for each PERSON. One seat each.
+   *
+   * @clolry: "Eberle should be included in the FCC0C headcount."
+   *
+   * Scott Eberle is the acting supervisor of the Non-IT Program Management
+   * Service Center and his only row is OBLIGATED. The old rule here was a flat
+   * `occupancyStatus === 'FILLED'`, so he was counted ZERO times — not in his
+   * own center, not anywhere.
+   *
+   * THE FLAT RULE WAS RIGHT ABOUT ONE CASE AND WRONG IN GENERAL. It came from
+   * @clolry correcting me: an OBLIGATED row is usually a permanent seat held
+   * open while its occupant serves a temp promotion, and that person is ALSO
+   * on a filled temp-promotion row, so counting both double-counts them.
+   * True — for the paired case.
+   *
+   * Measured on the live sheet: 19 OBLIGATED rows against 11 TEMP PROMOTION
+   * rows. If every obligated seat were half of a pair those would match. They
+   * do not, so at least eight people had no other row to be counted at and
+   * were dropped from the denominator entirely.
+   *
+   * SO PAIRING IS DETERMINED PER PERSON, NEVER INFERRED FROM THE STATUS.
+   * 'OBLIGATED' cannot tell you whether its occupant is counted elsewhere;
+   * only their other rows can.
+   *
+   * WHY NOT SIMPLY COUNT OBLIGATED TOO: that reintroduces the double-count.
+   * The eleven paired people would be counted twice, every service center's
+   * share would shift, and the total would still foot — the kind of error
+   * nobody finds.
+   *
+   * THIS LOGIC IS DUPLICATED IN HCRosterImport.headcountCountable, which is
+   * deliberate and already the established pattern for previewHeadcount
+   * (see its header). This module is 20_data and loads before 30_services, so
+   * it cannot call that one; and HCRosterImport is unit-tested through a bare
+   * require() with no HC global, so it cannot call this one. test_hc_data.js
+   * asserts the two agree on the same input, which is what keeps them honest.
+   *
+   * KEYED ON ROW INDEX, NOT ON POSITION NUMBER. A set keyed on position
+   * number collapses every blank to the single key '', so one countable row
+   * makes every other blank-numbered row in the array look countable — found
+   * by test_hc_roster_import §9, where it turned a filled count of 3 into 4.
+   * A duplicated position number would do the same, and that is a real
+   * condition validateRow blocks rather than one that cannot happen.
+   *
+   * @param {Array} positions
+   * @returns {{countable: Object, counted: number, lonelyObligated: Array}}
+   */
+  function hcCountableByPerson(positions) {
+    var byPerson = {};
+    var all = positions || [];
+    // DECLARED BEFORE THE LOOP, which writes to them. `var` hoists the
+    // declaration but not the assignment, so declaring these afterward left
+    // them undefined during the loop and the anonymous-seat branch threw
+    // "Cannot set properties of undefined". It only fired on a FILLED row with
+    // no name and no employee ID — a shape no test had — so it would have
+    // reached production as a broken budget dashboard.
+    var countable = {};
+    var counted = 0;
+    var lonelyObligated = [];
+
+    for (var i = 0; i < all.length; i++) {
+      var p = all[i];
+      if (!p) continue;
+      var occ = _str_(p.occupancyStatus).toUpperCase();
+      if (occ === 'VACANT') continue;
+
+      // An ID is the person; a name is a label. At 1,046 positions a shared
+      // surname is a near certainty, so a name-only key would merge two real
+      // people and count them once.
+      var key = p.employeeId ? ('id:' + p.employeeId)
+                             : ('nm:' + _str_(p.employeeName).toUpperCase());
+
+      if (key === 'nm:') {
+        // A SEAT WITH NO PERSON ON IT, BUT NOT MARKED VACANT. On the
+        // committed sheet a hand-edited row can be FILLED with no name, and
+        // the old flat rule counted it. Silently dropping it here would be the
+        // same class of bug this change exists to fix. Counted as the flat
+        // rule did: FILLED yes, OBLIGATED no — an anonymous obligated seat has
+        // no occupant for the Eberle rule to apply to.
+        if (occ !== 'OBLIGATED') { countable[i] = true; counted++; }
+        continue;
+      }
+
+      if (!byPerson[key]) byPerson[key] = [];
+      byPerson[key].push(i);
+    }
+
+    Object.keys(byPerson).forEach(function (key) {
+      var held = byPerson[key];
+
+      // Prefer a non-OBLIGATED seat: the temp promotion, or simply their one
+      // real job. That is where they work and where travel is approved.
+      var pickIdx = -1;
+      for (var j = 0; j < held.length; j++) {
+        if (_str_(all[held[j]].occupancyStatus).toUpperCase() !== 'OBLIGATED') {
+          pickIdx = held[j];
+          break;
+        }
+      }
+
+      if (pickIdx === -1) {
+        // Every row for this person is OBLIGATED. This is Eberle: count the
+        // seat, because the person is real and travels from it.
+        pickIdx = held[0];
+        var w = all[pickIdx];
+        lonelyObligated.push({
+          employeeName: w.employeeName,
+          positionNumber: w.positionNumber,
+          orgCode: w.orgCode
+        });
+      }
+
+      countable[pickIdx] = true;
+      counted++;
+    });
+
+    return {
+      countable: countable,
+      counted: counted,
+      lonelyObligated: lonelyObligated
+    };
+  }
+
   function hcServiceCenterHeadcount(positions) {
     try {
       var data = positions;
@@ -1009,6 +1132,9 @@ var HC = (function () {
       for (var o = 0; o < orgs.length; o++) {
         byCode[_str_(orgs[o].orgCode).toUpperCase()] = orgs[o];
       }
+
+      // ONE SEAT PER PERSON, decided before the loop. See hcCountableByPerson.
+      var pick = hcCountableByPerson(data);
 
       var byOrgCode = {};
       var byDac = {};
@@ -1041,11 +1167,16 @@ var HC = (function () {
         }
         if (!byDac[dac]) byDac[dac] = { filled: 0, vacant: 0, authorized: 0 };
 
-        // _occupancy_ already uppercased and defaulted blank to FILLED, so
-        // this is an exact comparison rather than a defensive one. OBLIGATED
-        // counts as NOT filled: the seat is committed to someone who is not
-        // in it yet, so nobody travels against it this year.
-        var isFilled = p.occupancyStatus === 'FILLED';
+        // ONE SEAT PER PERSON, not `occupancyStatus === 'FILLED'`.
+        //
+        // The old comment here said "OBLIGATED counts as NOT filled: the seat
+        // is committed to someone who is not in it yet". That reading was
+        // wrong — an OBLIGATED seat belongs to someone who IS a real employee
+        // and is working elsewhere — and acting on it dropped Scott Eberle and
+        // at least seven others from the denominator entirely.
+        // Keyed on the loop index, matching hcCountableByPerson's set. A
+        // position-number key collapses every blank to one entry.
+        var isFilled = !!pick.countable[i];
 
         byOrgCode[key].authorized++;
         byDac[dac].authorized++;
@@ -1059,7 +1190,15 @@ var HC = (function () {
         byOrgCode: byOrgCode,
         byDac: byDac,
         counted: counted,
-        unattributed: unattributed
+        unattributed: unattributed,
+        // People whose ONLY seat is OBLIGATED, counted there because they have
+        // nowhere else to be counted. Surfaced rather than buried: this is the
+        // case that was silently dropped, and a reader comparing a share
+        // against last month needs to see why it moved.
+        lonelyObligated: pick.lonelyObligated,
+        // The number of distinct PEOPLE the split divides by. Reported so the
+        // denominator is checkable against the sum of filled counts.
+        peopleCounted: pick.counted
       };
     } catch (e) {
       console.error('HC.hcServiceCenterHeadcount failed: ' + e.message);
@@ -1264,6 +1403,10 @@ var HC = (function () {
     // position numbers — so these sit OUTSIDE the HCPrivacy allow-list rather
     // than being sanitized by it.
     hcServiceCenterHeadcount: hcServiceCenterHeadcount,
+    // Shared so a caller can ask which single seat represents a person, and
+    // so test_hc_data.js can assert it agrees with
+    // HCRosterImport.headcountCountable on the same input.
+    hcCountableByPerson:      hcCountableByPerson,
     orgAncestorAtLevel:       orgAncestorAtLevel,
 
     // Shared so the validator and the roster editor apply the SAME rule as

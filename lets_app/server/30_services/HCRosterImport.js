@@ -541,20 +541,103 @@ var HCRosterImport = (function () {
    * field, and reading only a status column would have counted all of them as
    * staffed.
    *
-   * An unrecognized value on a row that HAS a real name defaults to FILLED,
-   * because a named person occupies their seat; a row with no name at all is
-   * VACANT.
+   * THAT NAME-FIRST TEST IS STILL LOAD-BEARING ON THIS FEED, for a different
+   * reason. Measured on the live sheet: 225 rows have no name but only 207
+   * carry status VACANT. The other 18 are authorized-but-empty seats whose
+   * status says APPROVED. Reading the status column first would turn all 18
+   * into phantom people in the per-capita denominator.
+   *
+   * THE FC WORKFORCE REPORT'S VOCABULARY, MEASURED
+   * ----------------------------------------------
+   * diagnoseHrFeedSource on the live sheet, 1,046 rows:
+   *
+   *   APPROVED        804    the position is authorized; the NAME says whether
+   *                          anyone is in it
+   *   VACANT          207
+   *   OBLIGATED        19    a permanent seat held open
+   *   TEMP PROMOTION   11    someone acting in a higher role
+   *   TEMPORARY         5    a term or temporary appointment
+   *
+   * NONE of APPROVED, TEMP PROMOTION or TEMPORARY contains 'FILL' or
+   * 'ENCUMBER'. Before this change all 820 of them reached FILLED through the
+   * final fallback rather than through a match — the function that decides the
+   * per-capita denominator was guessing on 78% of the roster and producing
+   * roughly the right answer by luck.
+   *
+   * That is worse than being wrong, because it cannot be reviewed. So each
+   * value is now matched EXPLICITLY, and an unrecognized value is reported
+   * rather than absorbed.
+   *
+   * WHY 'APPROVED' IS NOT 'FILLED' BY ITSELF. It is a position-authorization
+   * state — this seat exists and is funded — and it appears on both staffed
+   * and empty seats. The occupancy answer comes from the name. That is why
+   * the explicit branch for it still defers to the name test above.
+   *
+   * TEMP PROMOTION is FILLED: the person is in the seat and travels from it.
+   * It is also the other half of an OBLIGATED pair — see duplicatePeople.
+   *
+   * TEMPORARY is FILLED: a term appointment is a person who travels.
+   *
+   * AN UNRECOGNIZED VALUE ON A NAMED ROW IS STILL FILLED, because a named
+   * person occupies their seat and dropping them would understate the
+   * denominator. But `unknownOccupancy` now carries the value out so
+   * previewRosterImport can say so, instead of the roster quietly changing
+   * meaning when HR adds a status.
    */
+  var OCCUPANCY_VOCABULARY = {
+    // The measured vocabulary of the FC workforce report. Explicit, so a new
+    // value is a reported unknown rather than a silent FILLED.
+    'APPROVED':       'FILLED',
+    'VACANT':         'VACANT',
+    'OBLIGATED':      'OBLIGATED',
+    'TEMP PROMOTION': 'FILLED',
+    'TEMPORARY':      'FILLED',
+    // The retired FAS HRLinks feed's vocabulary, kept so a re-import of an
+    // older export still classifies correctly.
+    'FILLED':         'FILLED',
+    'ENCUMBERED':     'FILLED'
+  };
+
   function normalizeOccupancy(statusValue, employeeName) {
     var name = _str_(employeeName);
-    var s = _str_(statusValue).toUpperCase();
+    var s = _str_(statusValue).toUpperCase().trim();
 
+    // THE NAME DECIDES FIRST. 18 live rows say APPROVED with nobody in them.
     if (!name || /\bVACANT\b/.test(name.toUpperCase())) return 'VACANT';
+
+    var exact = OCCUPANCY_VOCABULARY[s];
+    if (exact) return exact;
+
+    // Substring fallbacks, for a spelling variant of a KNOWN concept —
+    // 'Obligated To Position', 'Temp Promo'. Ordered so the more specific
+    // concepts are tested before the generic ones.
     if (s.indexOf('VACAN') > -1) return 'VACANT';
     if (s.indexOf('OBLIGAT') > -1) return 'OBLIGATED';
+    if (s.indexOf('TEMP') > -1) return 'FILLED';
     if (s.indexOf('FILL') > -1) return 'FILLED';
     if (s.indexOf('ENCUMBER') > -1) return 'FILLED';
+    if (s.indexOf('APPROV') > -1) return 'FILLED';
+
+    // A named person in a seat of unknown status still travels.
     return 'FILLED';
+  }
+
+  /**
+   * Whether normalizeOccupancy recognized this status value at all.
+   *
+   * Exists so previewRosterImport can report "HR added a status value we have
+   * never seen" as a fact, rather than that value silently becoming FILLED.
+   * The whole reason the old vocabulary went unnoticed is that nothing ever
+   * said how many rows reached the fallback.
+   *
+   * @param {*} statusValue
+   * @returns {boolean}
+   */
+  function isKnownOccupancy(statusValue) {
+    var s = _str_(statusValue).toUpperCase().trim();
+    if (!s) return true;                    // blank is answered by the name
+    if (OCCUPANCY_VOCABULARY[s]) return true;
+    return /VACAN|OBLIGAT|TEMP|FILL|ENCUMBER|APPROV/.test(s);
   }
 
   /**
@@ -982,6 +1065,160 @@ var HCRosterImport = (function () {
   }
 
   /**
+   * Which positions count toward the per-capita headcount — one per PERSON.
+   *
+   * THE RULE: a person is counted once. When somebody holds both a
+   * TEMP PROMOTION seat and their OBLIGATED permanent seat, the temp-promotion
+   * seat is the one that counts, because that is where they work and where
+   * their travel would be approved. When an OBLIGATED seat has no filled
+   * twin, IT counts — the person is real and travels.
+   *
+   * WHY THIS FUNCTION EXISTS AT ALL
+   * -------------------------------
+   * @clolry: "Eberle should be included in the FCC0C headcount."
+   *
+   * Scott Eberle is the acting supervisor of the Non-IT Program Management
+   * Service Center. His row is OBLIGATED, and the old rule was a flat
+   * `occupancyStatus === 'FILLED'`, so he was counted ZERO times. Nothing
+   * reported it either: duplicatePeople returns early for anyone holding
+   * fewer than two positions, so a lone OBLIGATED row was invisible to the
+   * one diagnostic that could have caught it.
+   *
+   * The flat rule was right about the case it was written for and wrong in
+   * general. Measured on the live sheet: 19 OBLIGATED rows but only 11
+   * TEMP PROMOTION rows. If every obligated seat were the other half of a
+   * temp-promotion pair those would match. They do not, so AT LEAST EIGHT
+   * people were being dropped from the denominator entirely.
+   *
+   * SO THE PAIRING IS DETERMINED PER PERSON, NOT ASSUMED FROM THE STATUS.
+   * That is the whole point: 'OBLIGATED' alone cannot tell you whether the
+   * person is counted somewhere else. Only looking at their other rows can.
+   *
+   * WHY NOT JUST COUNT OBLIGATED AS FILLED
+   * --------------------------------------
+   * Because that reintroduces the double-count this replaced. The eleven
+   * people with both rows would be counted twice, every service center's
+   * share would shift, and the total would still foot — which is the kind of
+   * error nobody finds. @clolry corrected me on exactly this once already,
+   * when I argued the denominator should be 823 rather than 817.
+   *
+   * MATCHED ON EMPLOYEE ID WHEN PRESENT, name only as a fallback. An ID is the
+   * person; a name is a label, and at 1,046 positions a shared surname is a
+   * near certainty.
+   *
+   * VACANT SEATS ARE NEVER COUNTABLE. They hold no person, and the authorized
+   * count is reported separately for anyone who wants that basis.
+   *
+   * KEYED ON ROW INDEX, NOT ON POSITION NUMBER. The first version of this
+   * returned a set keyed on positionNumber, and §9's fixture rows carry no
+   * position number at all — so every blank collapsed to the single key '',
+   * and one countable row made the VACANT row in the same bucket look
+   * countable too. The count came out 4 where it should have been 3.
+   *
+   * A row index is unique by construction. The caller enumerates the same
+   * array in the same order, so `countable[i]` is unambiguous even on a
+   * roster with missing or duplicated position numbers — and a duplicated
+   * position number is a real condition that validateRow BLOCKS rather than
+   * one that cannot happen.
+   *
+   * @param {Array} rows parsed roster rows (or HC bundle records)
+   * @returns {{countable: Object, counted: number, pairedAway: number,
+   *            lonelyObligated: Array, note: string}}
+   */
+  function headcountCountable(rows) {
+    var byPerson = {};
+    var all = rows || [];
+    var countable = {};
+    var counted = 0;
+    var pairedAway = 0;
+    var lonelyObligated = [];
+
+    for (var i = 0; i < all.length; i++) {
+      var r = all[i];
+      if (!r) continue;
+      var occ = _str_(r.occupancyStatus).toUpperCase();
+      if (occ === 'VACANT') continue;             // no person in the seat
+
+      var key = r.employeeId ? ('id:' + r.employeeId)
+                             : ('nm:' + _str_(r.employeeName).toUpperCase());
+
+      if (key === 'nm:') {
+        // A SEAT WITH NO PERSON ON IT, BUT NOT MARKED VACANT.
+        //
+        // Found by §9, whose fixture rows carry an org code and a status and
+        // nothing else. Such a row cannot be keyed to a person, and silently
+        // skipping it would zero every count in that test — and, worse, on the
+        // committed sheet, where a hand-edited row can be FILLED with no name.
+        //
+        // Counted exactly as the old flat rule counted it: FILLED yes,
+        // OBLIGATED no. An anonymous OBLIGATED seat has no occupant for the
+        // Eberle rule to apply to.
+        if (occ !== 'OBLIGATED') { countable[i] = true; counted++; }
+        continue;
+      }
+
+      if (!byPerson[key]) byPerson[key] = [];
+      byPerson[key].push(i);
+    }
+
+    Object.keys(byPerson).forEach(function (key) {
+      var heldIdx = byPerson[key];
+
+      // The seat that represents where this person actually works.
+      //
+      // Prefer a non-OBLIGATED seat: that is the temp promotion, or simply
+      // their one real job. An OBLIGATED seat is a placeholder for somebody
+      // who is working elsewhere — UNLESS it is all they have, in which case
+      // it is where they are.
+      var pickIdx = -1;
+      for (var j = 0; j < heldIdx.length; j++) {
+        if (_str_(all[heldIdx[j]].occupancyStatus).toUpperCase() !== 'OBLIGATED') {
+          pickIdx = heldIdx[j];
+          break;
+        }
+      }
+
+      if (pickIdx === -1) {
+        // EVERY row for this person is OBLIGATED. This is Eberle. Count the
+        // first one, because the person exists and travels.
+        pickIdx = heldIdx[0];
+        var w = all[pickIdx];
+        lonelyObligated.push({
+          employeeId: w.employeeId,
+          employeeName: w.employeeName,
+          positionNumber: w.positionNumber,
+          orgCode: w.orgCode,
+          officeTitle: w.officeTitle
+        });
+      }
+
+      countable[pickIdx] = true;
+      counted++;
+      // Every other seat this person holds is deliberately not counted.
+      pairedAway += (heldIdx.length - 1);
+    });
+
+    return {
+      countable: countable,
+      counted: counted,
+      pairedAway: pairedAway,
+      lonelyObligated: lonelyObligated,
+      note: counted + ' person(s) counted once each. ' +
+            (pairedAway
+              ? (pairedAway + ' additional position(s) belong to someone ' +
+                 'already counted — typically a permanent seat held OBLIGATED ' +
+                 'while its occupant serves a temp promotion. ')
+              : '') +
+            (lonelyObligated.length
+              ? (lonelyObligated.length + ' person(s) hold ONLY an OBLIGATED ' +
+                 'seat and are counted there, because they have no other row ' +
+                 'to be counted at. Before this rule they were counted ' +
+                 'nowhere at all.')
+              : 'Nobody holds only an OBLIGATED seat.')
+    };
+  }
+
+  /**
    * People holding more than one position.
    *
    * @clolry: "The obligated positions that I could find are ones that show the
@@ -1375,14 +1612,30 @@ var HCRosterImport = (function () {
     }
 
     var out = {};
-    (rows || []).forEach(function (row) {
+
+    // ONE PER PERSON. Not `occupancyStatus === 'FILLED'`.
+    //
+    // @clolry: "Eberle should be included in the FCC0C headcount." His only
+    // row is OBLIGATED, so a FILLED-only rule counted him nowhere — and on
+    // the live sheet there are 19 OBLIGATED rows against 11 TEMP PROMOTION
+    // rows, so at least eight people were in that position.
+    //
+    // headcountCountable decides per PERSON which of their seats counts, so
+    // the eight are counted once each and the eleven who hold both seats are
+    // still counted once. See its header.
+    var pick = headcountCountable(rows);
+
+    (rows || []).forEach(function (row, rowIndex) {
+      // Keyed on the row INDEX, not the position number: §9's rows have no
+      // position number, and every blank would collapse to one key.
+      var counts = !!pick.countable[rowIndex];
       var dac = ancestorAtLevel(row.orgCode, 'DAC') ||
                 ancestorAtLevel(row.orgCode, 'AC');
       if (!dac) {
         out.UNATTRIBUTED = out.UNATTRIBUTED ||
           { orgCode: '', dacOrgCode: '', filled: 0, vacant: 0, authorized: 0 };
         out.UNATTRIBUTED.authorized++;
-        if (row.occupancyStatus === 'FILLED') out.UNATTRIBUTED.filled++;
+        if (counts) out.UNATTRIBUTED.filled++;
         else out.UNATTRIBUTED.vacant++;
         return;
       }
@@ -1395,7 +1648,7 @@ var HCRosterImport = (function () {
         };
       }
       out[key].authorized++;
-      if (row.occupancyStatus === 'FILLED') out[key].filled++;
+      if (counts) out[key].filled++;
       else out[key].vacant++;
     });
 
@@ -1416,6 +1669,8 @@ var HCRosterImport = (function () {
     occupancyDisagreement: occupancyDisagreement,
     normalizeSupervisoryStatus: normalizeSupervisoryStatus,
     normalizeOccupancy: normalizeOccupancy,
+    isKnownOccupancy: isKnownOccupancy,
+    headcountCountable: headcountCountable,
     interpretRow: interpretRow,
     validateRow: validateRow,
     findSupervisorCycles: findSupervisorCycles,

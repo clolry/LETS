@@ -957,4 +957,88 @@ console.log('\n11. Negative control (the suite must be able to fail):');
   console.log('   Unpadded _grade(7) returns "7" as expected — section 3 is live');
 }
 
+// ---------------------------------------------------------------------------
+// The headcount rule: one seat per PERSON, and the two copies must agree
+// ---------------------------------------------------------------------------
+{
+  console.log('\n[headcount] one seat per person, Eberle included');
+
+  // @clolry: "Eberle should be included in the FCC0C headcount."
+  //
+  // His only row is OBLIGATED, and the rule was a flat
+  // `occupancyStatus === 'FILLED'`, so he was counted nowhere. On the live
+  // sheet there are 19 OBLIGATED rows against 11 TEMP PROMOTION rows, so at
+  // least eight people were in that position.
+  const rows = [
+    { positionNumber: 'P1', employeeId: 'E1', employeeName: 'Eberle,Scott M',
+      orgCode: 'FCC0C', occupancyStatus: 'OBLIGATED' },
+    { positionNumber: 'P2', employeeId: 'E2', employeeName: 'Kelly,Shaun',
+      orgCode: 'FCBAB', occupancyStatus: 'FILLED' },
+    { positionNumber: 'P3', employeeId: 'E2', employeeName: 'Kelly,Shaun',
+      orgCode: 'FCB0A', occupancyStatus: 'OBLIGATED' },
+    { positionNumber: 'P4', employeeId: 'E3', employeeName: 'Other,Person',
+      orgCode: 'FCC0C', occupancyStatus: 'FILLED' },
+    { positionNumber: 'P5', employeeId: '', employeeName: '',
+      orgCode: 'FCC0C', occupancyStatus: 'VACANT' },
+    // A FILLED row with no name and no ID. The committed sheet can hold one
+    // after a hand edit, and the old flat rule counted it — so dropping it
+    // would be the same class of bug as dropping Eberle.
+    { positionNumber: 'P6', employeeId: '', employeeName: '',
+      orgCode: 'FCC0C', occupancyStatus: 'FILLED' }
+  ];
+
+  const { HC } = loadHC([], []);
+  const pick = HC.hcCountableByPerson(rows);
+
+  assert.strictEqual(pick.counted, 4,
+    'three named people plus one anonymous filled seat');
+  assert.ok(pick.countable[0],
+    'EBERLE IS COUNTED at his obligated seat — a flat FILLED rule dropped him');
+  assert.ok(pick.countable[1] && !pick.countable[2],
+    'Kelly counts at her temp-promotion seat, not her permanent one');
+  assert.ok(!pick.countable[4], 'a vacant seat is never countable');
+  assert.ok(pick.countable[5],
+    'an anonymous FILLED seat still counts, as it did before');
+  assert.strictEqual(pick.lonelyObligated.length, 1,
+    'Eberle is reported, not silently absorbed');
+  console.log('   Eberle counted; Kelly counted once; vacancy excluded');
+
+  // THE TWO COPIES MUST AGREE.
+  //
+  // This rule exists twice on purpose: HCData is 20_data and loads before
+  // 30_services, so it cannot call HCRosterImport; and HCRosterImport is
+  // unit-tested through a bare require() with no HC global, so it cannot call
+  // HCData. Duplicated rules drift, and this one decides the budget — so the
+  // agreement is asserted rather than hoped for.
+  const R = require('./server/30_services/HCRosterImport.js');
+  const mine = HC.hcCountableByPerson(rows);
+  const theirs = R.headcountCountable(rows);
+
+  assert.strictEqual(mine.counted, theirs.counted,
+    'HCData and HCRosterImport must count the same number of people');
+  assert.deepStrictEqual(
+    Object.keys(mine.countable).sort(),
+    Object.keys(theirs.countable).sort(),
+    'and must pick the SAME seats — a divergence silently moves money ' +
+    'between service centers');
+  assert.strictEqual(mine.lonelyObligated.length, theirs.lonelyObligated.length,
+    'and must agree on who holds only an obligated seat');
+  console.log('   both implementations agree on the same input');
+
+  // KEYED ON ROW INDEX, NOT POSITION NUMBER. A position-number key collapses
+  // every blank to one entry, so one countable row makes every other
+  // blank-numbered row look countable.
+  const noPn = [
+    { orgCode: 'FCC0C', occupancyStatus: 'FILLED' },
+    { orgCode: 'FCC0C', occupancyStatus: 'VACANT' },
+    { orgCode: 'FCC0C', occupancyStatus: 'FILLED' }
+  ];
+  const anon = HC.hcCountableByPerson(noPn);
+  assert.strictEqual(anon.counted, 2,
+    'rows with no position number must not collide');
+  assert.ok(anon.countable[0] && !anon.countable[1] && anon.countable[2],
+    'and the vacant row among them stays uncounted');
+  console.log('   blank position numbers do not collide');
+}
+
 console.log('\n--- ALL HC DATA LAYER ASSERTIONS PASSED! ---');

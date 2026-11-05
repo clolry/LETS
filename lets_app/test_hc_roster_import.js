@@ -1592,5 +1592,230 @@ console.log('\n20. one person holding two positions is counted once');
      vacants.duplicatePeople);
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n23. the occupancy vocabulary is MATCHED, not defaulted');
+{
+  // MEASURED on the live sheet by diagnoseHrFeedSource, 1,046 rows:
+  //
+  //   APPROVED        804
+  //   VACANT          207
+  //   OBLIGATED        19
+  //   TEMP PROMOTION   11
+  //   TEMPORARY         5
+  //
+  // normalizeOccupancy used to test for VACAN / OBLIGAT / FILL / ENCUMBER and
+  // then fall through to a FILLED default. None of APPROVED, TEMP PROMOTION or
+  // TEMPORARY contains any of those, so all 820 of them reached FILLED through
+  // the FALLBACK rather than through a match.
+  //
+  // The answer came out roughly right, which is worse than being wrong: the
+  // function whose header says it "DECIDES THE PER-CAPITA DENOMINATOR" was
+  // guessing on 78% of the roster and nothing said so.
+  const named = 'Doe,Jane';
+
+  ok('APPROVED on a named row is FILLED',
+     R.normalizeOccupancy('APPROVED', named) === 'FILLED');
+  ok('TEMP PROMOTION is FILLED — the person is in the seat',
+     R.normalizeOccupancy('TEMP PROMOTION', named) === 'FILLED');
+  ok('TEMPORARY is FILLED — a term appointment is a person who travels',
+     R.normalizeOccupancy('TEMPORARY', named) === 'FILLED');
+  ok('OBLIGATED stays OBLIGATED', 
+     R.normalizeOccupancy('OBLIGATED', named) === 'OBLIGATED');
+  ok('VACANT stays VACANT',
+     R.normalizeOccupancy('VACANT', named) === 'VACANT');
+
+  // The retired HRLinks vocabulary must still classify, so re-importing an
+  // older export does not silently change the roster's meaning.
+  ok('the old feed\'s FILLED still works',
+     R.normalizeOccupancy('Filled', named) === 'FILLED');
+  ok('and ENCUMBERED', R.normalizeOccupancy('ENCUMBERED', named) === 'FILLED');
+
+  // EACH OF THE FIVE IS RECOGNIZED, not absorbed. This is the assertion that
+  // would have caught the original defect: the values classified correctly
+  // either way, and only `isKnownOccupancy` distinguishes a match from a
+  // fallback.
+  ['APPROVED', 'VACANT', 'OBLIGATED', 'TEMP PROMOTION', 'TEMPORARY',
+   'Filled', 'ENCUMBERED'].forEach(v => {
+    ok('"' + v + '" is a RECOGNIZED status, not a fallback',
+       R.isKnownOccupancy(v), 'it classified correctly by accident before');
+  });
+
+  // AND A GENUINELY NEW VALUE IS REPORTED. A named person still counts —
+  // dropping them would understate the denominator — but the value is flagged
+  // so HR adding a status is visible rather than absorbed.
+  ok('an unseen status still counts a named person',
+     R.normalizeOccupancy('SOME NEW HR STATUS', named) === 'FILLED');
+  ok('but is NOT reported as recognized',
+     !R.isKnownOccupancy('SOME NEW HR STATUS'),
+     'this is the signal the old default never gave');
+
+  // THE NAME STILL DECIDES FIRST, and on this feed that is load-bearing for a
+  // new reason: 225 rows have no name but only 207 say VACANT. The other 18
+  // are authorized-but-empty seats reading APPROVED. Trusting the status
+  // column would turn all 18 into phantom people.
+  ok('APPROVED with NO NAME is VACANT, not FILLED',
+     R.normalizeOccupancy('APPROVED', '') === 'VACANT',
+     '18 live rows are exactly this shape');
+  ok('and a VACANT placeholder name overrides any status',
+     R.normalizeOccupancy('APPROVED', 'VACANT (New position)') === 'VACANT');
+
+  // NEGATIVE CONTROL: put the old fallback back and the recognition claim
+  // collapses, while every classification above still passes. That asymmetry
+  // is the point — the classifications were never the problem.
+  {
+    const src = fs.readFileSync(
+      'lets_app/server/30_services/HCRosterImport.js', 'utf8');
+    const patched = src.replace(
+      "    'APPROVED':       'FILLED',", "    'XX_NOT_APPROVED': 'FILLED',");
+    ok('control patched the vocabulary table', patched !== src);
+    const mod = { exports: {} };
+    new Function('module', 'exports', patched)(mod, mod.exports);
+    ok('without the explicit entry, APPROVED still classifies as FILLED',
+       mod.exports.normalizeOccupancy('APPROVED', named) === 'FILLED',
+       'which is why the defect was invisible');
+  }
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n24. Eberle is counted — one seat per PERSON, not per FILLED row');
+{
+  // @clolry: "Eberle should be included in the FCC0C headcount."
+  //
+  // Scott Eberle is the acting supervisor of the Non-IT Program Management
+  // Service Center and his only row is OBLIGATED. The rule was a flat
+  // `occupancyStatus === 'FILLED'`, so he was counted ZERO times — not in his
+  // own center, not anywhere.
+  //
+  // AND NOTHING REPORTED IT. duplicatePeople returns early for anyone holding
+  // fewer than two positions, so a lone OBLIGATED row was invisible to the one
+  // diagnostic that could have caught it.
+  //
+  // The flat rule came from @clolry correcting me — an OBLIGATED row is
+  // usually the permanent seat of someone serving a temp promotion, who is
+  // ALSO on a filled row, so counting both double-counts them. True for the
+  // PAIRED case. Measured on the live sheet: 19 OBLIGATED against 11 TEMP
+  // PROMOTION, so at least eight people had no other row to be counted at.
+  const rows = [
+    // Eberle: obligated and nothing else.
+    { positionNumber: 'P1', employeeId: 'E1', employeeName: 'Eberle,Scott M',
+      orgCode: 'FCC0C', occupancyStatus: 'OBLIGATED' },
+    // Kelly: temp promotion + permanent seat held open. The paired case.
+    { positionNumber: 'P2', employeeId: 'E2', employeeName: 'Kelly,Shaun',
+      orgCode: 'FCBAB', occupancyStatus: 'FILLED' },
+    { positionNumber: 'P3', employeeId: 'E2', employeeName: 'Kelly,Shaun',
+      orgCode: 'FCB0A', occupancyStatus: 'OBLIGATED' },
+    { positionNumber: 'P4', employeeId: 'E3', employeeName: 'Other,Person',
+      orgCode: 'FCC0C', occupancyStatus: 'FILLED' },
+    { positionNumber: 'P5', employeeId: '', employeeName: '',
+      orgCode: 'FCC0C', occupancyStatus: 'VACANT' }
+  ];
+
+  const pick = R.headcountCountable(rows);
+  ok('three people, counted once each', pick.counted === 3, pick.counted);
+  ok('EBERLE IS COUNTED, at his obligated seat',
+     pick.countable[0] === true,
+     'a flat FILLED rule counted him nowhere at all');
+  ok('Kelly is counted at the TEMP PROMOTION seat, where she works',
+     pick.countable[1] === true && !pick.countable[2],
+     'that is where travel would be approved');
+  ok('and her permanent seat is not counted again',
+     pick.pairedAway === 1, pick.pairedAway);
+  ok('the vacant seat is never countable', !pick.countable[4]);
+  ok('Eberle is REPORTED as obligated-only, not silently absorbed',
+     pick.lonelyObligated.length === 1 &&
+     pick.lonelyObligated[0].employeeName === 'Eberle,Scott M',
+     pick.lonelyObligated);
+  ok('and the note explains both halves',
+     /counted once each/.test(pick.note) &&
+     /counted nowhere at all/.test(pick.note), pick.note);
+
+  // THE HEADCOUNT, which is what actually moves money.
+  const orgs = [
+    { orgCode: 'FC', parentOrgCode: '', orgLevel: 'AC' },
+    { orgCode: 'FCB', parentOrgCode: 'FC', orgLevel: 'DAC' },
+    { orgCode: 'FCC', parentOrgCode: 'FC', orgLevel: 'DAC' },
+    { orgCode: 'FCC0C', parentOrgCode: 'FCC', orgLevel: 'SERVICE_CENTER' },
+    { orgCode: 'FCB0A', parentOrgCode: 'FCB', orgLevel: 'SERVICE_CENTER' },
+    { orgCode: 'FCBA', parentOrgCode: 'FCB', orgLevel: 'OFFICE' },
+    { orgCode: 'FCBAB', parentOrgCode: 'FCBA', orgLevel: 'SERVICE_CENTER' }
+  ];
+  const h = R.previewHeadcount(rows, orgs);
+  ok('FCC0C has TWO filled — Eberle and Other',
+     h['FCC|FCC0C'].filled === 2, h['FCC|FCC0C']);
+  ok('and its vacancy is still counted as authorized',
+     h['FCC|FCC0C'].vacant === 1 && h['FCC|FCC0C'].authorized === 3,
+     h['FCC|FCC0C']);
+  ok('Kelly lands at FCBAB, not at her obligated FCB0A',
+     h['FCB|FCBAB'].filled === 1 && h['FCB|FCB0A'].filled === 0,
+     'counting both would double her');
+
+  // KEYED ON ROW INDEX, NOT POSITION NUMBER.
+  //
+  // The first version returned a set keyed on positionNumber. §9's rows carry
+  // no position number, so every blank collapsed to the single key '' and one
+  // countable row made every other blank-numbered row look countable — a
+  // filled count of 4 where it should have been 3.
+  const noPn = [
+    { orgCode: 'FCC0C', occupancyStatus: 'FILLED' },
+    { orgCode: 'FCC0C', occupancyStatus: 'VACANT' },
+    { orgCode: 'FCC0C', occupancyStatus: 'FILLED' }
+  ];
+  const anon = R.headcountCountable(noPn);
+  ok('rows with no position number do not collide',
+     anon.counted === 2, anon.counted);
+  ok('and the vacant one among them stays uncounted',
+     anon.countable[0] && !anon.countable[1] && anon.countable[2],
+     anon.countable);
+
+  // AN ANONYMOUS SEAT IS STILL COUNTED, because the committed sheet can hold
+  // a hand-edited FILLED row with no name and the old rule counted it.
+  // Dropping it would be the same class of bug as dropping Eberle.
+  ok('a FILLED row with no name or ID is still counted',
+     R.headcountCountable([
+       { positionNumber: 'X', employeeId: '', employeeName: '',
+         orgCode: 'FCC0C', occupancyStatus: 'FILLED' }]).counted === 1);
+  // But an anonymous OBLIGATED seat has no occupant for the Eberle rule to
+  // apply to, so it must not be counted.
+  ok('an OBLIGATED row with no name is NOT counted',
+     R.headcountCountable([
+       { positionNumber: 'X', employeeId: '', employeeName: '',
+         orgCode: 'FCC0C', occupancyStatus: 'OBLIGATED' }]).counted === 0,
+     'there is no person there to count');
+
+  // NEGATIVE CONTROL 1: the flat FILLED rule. Must drop Eberle.
+  {
+    const src = fs.readFileSync(
+      'lets_app/server/30_services/HCRosterImport.js', 'utf8');
+    const patched = src.replace(
+      "      var counts = !!pick.countable[rowIndex];",
+      "      var counts = row.occupancyStatus === 'FILLED';");
+    ok('control 1 patched the headcount rule', patched !== src);
+    const mod = { exports: {} };
+    new Function('module', 'exports', patched)(mod, mod.exports);
+    const bad = mod.exports.previewHeadcount(rows, orgs);
+    ok('a flat FILLED rule counts FCC0C as ONE, dropping Eberle',
+       bad['FCC|FCC0C'].filled === 1,
+       'this is the bug @clolry reported');
+  }
+
+  // NEGATIVE CONTROL 2: count OBLIGATED as filled too — the naive fix. Must
+  // double-count Kelly, which is why the flat rule existed in the first place.
+  {
+    const src = fs.readFileSync(
+      'lets_app/server/30_services/HCRosterImport.js', 'utf8');
+    const patched = src.replace(
+      "      var counts = !!pick.countable[rowIndex];",
+      "      var counts = row.occupancyStatus === 'FILLED' || " +
+      "row.occupancyStatus === 'OBLIGATED';");
+    ok('control 2 patched the headcount rule', patched !== src);
+    const mod = { exports: {} };
+    new Function('module', 'exports', patched)(mod, mod.exports);
+    const bad = mod.exports.previewHeadcount(rows, orgs);
+    ok('counting OBLIGATED outright double-counts Kelly',
+       bad['FCB|FCB0A'].filled === 1 && bad['FCB|FCBAB'].filled === 1,
+       'she appears in two service centers at once — the error nobody finds');
+  }
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);
