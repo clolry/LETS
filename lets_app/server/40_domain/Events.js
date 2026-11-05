@@ -1,6 +1,6 @@
 /**
  * Events.js
- * The event catalogue, traveller proposals, and DAC set-asides.
+ * The event catalog, traveler proposals, and DAC set-asides.
  *
  * WHAT THIS SOLVES
  * ----------------
@@ -14,35 +14,35 @@
  *    first and then people select the event from a list - it could pre-fill
  *    dates, location, etc."
  *
- * A set-aside has to reserve money for a specific thing. Without a catalogue
+ * A set-aside has to reserve money for a specific thing. Without a catalog
  * that thing is a string a DAC typed, and matching requests against it is
  * fuzzy name comparison — the same problem the Go.gov reconciliation has, for
- * the same reason. With a catalogue the link is an ID and the draw-down is
+ * the same reason. With a catalog the link is an ID and the draw-down is
  * exact.
  *
  * THE THREE-WAY RELATIONSHIP
  * --------------------------
- *   Events            a catalogued occurrence: NCMA World Congress, Jul 2027
+ *   Events            a cataloged occurrence: NCMA World Congress, Jul 2027
  *   Event_Set_Asides  a DAC reserves $40,000 of IDV's budget for it
- *   Requests          a traveller selects it; their estimate draws the
+ *   Requests          a traveler selects it; their estimate draws the
  *                     reservation down
  *
  * WHY A SET-ASIDE MAY STILL NAME A BARE STRING
  * --------------------------------------------
- * Requiring a catalogue entry first would mean a DAC cannot reserve money at
+ * Requiring a catalog entry first would mean a DAC cannot reserve money at
  * the moment they are doing annual planning — which is the moment it matters.
  * So Event_Set_Asides accepts either an Event_ID or a free-text name, and the
  * ID is the better path rather than the only one.
  *
- * WHY A TRAVELLER CANNOT WRITE TO THE CATALOGUE
+ * WHY A TRAVELER CANNOT WRITE TO THE CATALOG
  * ---------------------------------------------
  * @clolry: "We need a way for a traveler to define an 'other' and then let
  * the back-end coordinator add that event."
  *
- * A traveller's "Other" lands in Event_Proposals, a separate tab. Not a
+ * A traveler's "Other" lands in Event_Proposals, a separate tab. Not a
  * PROPOSED row in Events — if proposals lived there, every picker query would
  * have to remember to filter them, and one forgotten filter would show
- * unvetted free text to every other traveller. A separate tab means the
+ * unvetted free text to every other traveler. A separate tab means the
  * picker CANNOT see a proposal.
  *
  * The request is submittable immediately, carrying the proposal ID. Blocking
@@ -113,7 +113,7 @@ var Events = (function () {
   // ==========================================================================
 
   /**
-   * Every catalogue event.
+   * Every catalog event.
    *
    * Reads BY HEADER NAME. Eighteen places in LETS read positionally and a
    * column insertion silently misfiles them (finding G-014); this is not a
@@ -215,7 +215,7 @@ var Events = (function () {
     return out;
   }
 
-  /** Pending traveller proposals. */
+  /** Pending traveler proposals. */
   function readProposals(db, includeResolved) {
     var data;
     try {
@@ -320,7 +320,7 @@ var Events = (function () {
 
         var hit = false;
         if (sa.eventId && eventId && sa.eventId === eventId) {
-          // EXACT. This is why the catalogue exists.
+          // EXACT. This is why the catalog exists.
           hit = true;
         } else if (!sa.eventId && sa.eventName && tripName) {
           // Free-text fallback: same name, same month. Deliberately strict —
@@ -345,7 +345,7 @@ var Events = (function () {
   // ==========================================================================
 
   /**
-   * The catalogue, the set-asides with live draw-down, and pending proposals.
+   * The catalog, the set-asides with live draw-down, and pending proposals.
    *
    * @param {Object} [options] { fiscalYear, includePast }
    * @returns {Object}
@@ -373,13 +373,13 @@ var Events = (function () {
         return {
           setAsideId: sa.setAsideId,
           eventId: sa.eventId,
-          // The catalogue name wins when linked, so renaming an event does
+          // The catalog name wins when linked, so renaming an event does
           // not leave a stale label on the reservation.
           eventName: (sa.eventId && byId[sa.eventId])
             ? byId[sa.eventId].eventName : sa.eventName,
           eventMonth: (sa.eventId && byId[sa.eventId])
             ? byId[sa.eventId].eventMonth : sa.eventMonth,
-          isCatalogued: !!(sa.eventId && byId[sa.eventId]),
+          isCataloged: !!(sa.eventId && byId[sa.eventId]),
           fiscalYear: sa.fiscalYear,
           orgCode: sa.orgCode,
           officeCode: sa.officeCode,
@@ -395,7 +395,7 @@ var Events = (function () {
           remaining: remaining,
           actualTravelers: d.travelerCount,
           linkedRequestIds: d.requestIds,
-          utilisationPct: sa.amount > 0
+          utilizationPct: sa.amount > 0
             ? Math.round((d.consumed / sa.amount) * 1000) / 10 : null,
           // Flagged rather than clamped. A reservation consumed beyond its
           // amount is a real condition a DAC needs to see, and clamping it to
@@ -450,7 +450,7 @@ var Events = (function () {
   }
 
   /**
-   * Catalogue events a traveller may select, newest-relevant first.
+   * Catalog events a traveler may select, newest-relevant first.
    *
    * Excludes CLOSED and CANCELLED, and anything that has already finished —
    * a picker offering last year's conference invites a misfiled request.
@@ -465,7 +465,7 @@ var Events = (function () {
       var events = readEvents(db).filter(function (e) {
         if (e.status === 'CLOSED' || e.status === 'CANCELLED') return false;
         // An event with no end date stays selectable: a half-entered
-        // catalogue row should not vanish from the picker without explanation.
+        // catalog row should not vanish from the picker without explanation.
         if (e.endDate && e.endDate < today) return false;
         return true;
       });
@@ -526,11 +526,11 @@ var Events = (function () {
     var hasEvent = !!_str_(s.eventId);
     var hasName = !!_str_(s.eventName);
     if (!hasEvent && !hasName) {
-      problems.push('Choose a catalogued event, or type an event name.');
+      problems.push('Choose a cataloged event, or type an event name.');
     }
     if (hasEvent && events) {
       var found = events.some(function (e) { return e.eventId === _str_(s.eventId); });
-      if (!found) problems.push('Event "' + s.eventId + '" is not in the catalogue.');
+      if (!found) problems.push('Event "' + s.eventId + '" is not in the catalog.');
     }
     // A free-text reservation needs a month, or the draw-down has nothing to
     // disambiguate a recurring conference by.
@@ -565,15 +565,15 @@ var Events = (function () {
     var n = parseInt(s.plannedTravelers, 10);
     if (s.plannedTravelers !== '' && s.plannedTravelers !== null &&
         s.plannedTravelers !== undefined) {
-      if (isNaN(n) || n < 0) problems.push('Planned travellers must be a whole number.');
-      else if (n > 500) problems.push(n + ' travellers looks like a typo.');
+      if (isNaN(n) || n < 0) problems.push('Planned travelers must be a whole number.');
+      else if (n > 500) problems.push(n + ' travelers looks like a typo.');
     }
 
     // The basis is how the amount was arrived at. Required for the same
     // reason a budget change needs a reason: in six months this row is the
     // only record of the reasoning.
     if (!_str_(s.basis)) {
-      problems.push('Record how you arrived at the amount — e.g. "10 travellers ' +
+      problems.push('Record how you arrived at the amount — e.g. "10 travelers ' +
                     'x $2,400 + $500 registration".');
     }
 
@@ -606,11 +606,11 @@ var Events = (function () {
 // assigning to `root`, and is therefore unreachable.
 
 /**
- * Catalogue events a traveller may pick from.
+ * Catalog events a traveler may pick from.
  *
  * OPEN to any signed-in user, because the travel form needs it. An event name,
  * its dates and its venue are not sensitive — they are published by the
- * conference organiser.
+ * conference organizer.
  *
  * @returns {Object}
  * @client
@@ -620,7 +620,7 @@ function getTravelEvents() {
 }
 
 /**
- * The planning view: catalogue, set-asides with live draw-down, and pending
+ * The planning view: catalog, set-asides with live draw-down, and pending
  * proposals.
  *
  * OPEN, consistent with the rest of the budget surface. @clolry: "budgeting
@@ -641,13 +641,13 @@ function getTravelEventPlanning(fiscalYear) {
 }
 
 /**
- * Records a traveller's "Other" event.
+ * Records a traveler's "Other" event.
  *
  * OPEN to any signed-in user, deliberately. @clolry: "We need a way for a
  * traveler to define an 'other'."
  *
- * It writes to Event_Proposals, NOT to the catalogue — so a traveller cannot
- * put unvetted text in front of every other traveller. A coordinator promotes
+ * It writes to Event_Proposals, NOT to the catalog — so a traveler cannot
+ * put unvetted text in front of every other traveler. A coordinator promotes
  * it later.
  *
  * @param {Object} proposal
@@ -679,7 +679,7 @@ function proposeTravelEvent(proposal) {
     // Duplicate proposals are EXPECTED, not an error: twelve people wanting
     // the same conference is exactly @clolry's scenario. Reported so the
     // coordinator can merge rather than create twelve events, and so the
-    // traveller is not told they did something wrong.
+    // traveler is not told they did something wrong.
     var existing = Events.readProposals(db, true);
     var nameLower = name.toLowerCase();
     var similar = existing.filter(function (x) {
@@ -711,7 +711,7 @@ function proposeTravelEvent(proposal) {
     return successResponse({
       proposalId: id,
       alreadyProposedCount: similar.length,
-      // The traveller sees this, so it has to read as information rather than
+      // The traveler sees this, so it has to read as information rather than
       // a rejection.
       message: similar.length
         ? 'Recorded. ' + similar.length + ' other request(s) have already ' +
@@ -725,10 +725,10 @@ function proposeTravelEvent(proposal) {
 }
 
 /**
- * Creates or updates a catalogue event. ADMIN ONLY.
+ * Creates or updates a catalog event. ADMIN ONLY.
  *
- * A traveller cannot reach this — the catalogue is what every other traveller
- * picks from, so unvetted text in it is a problem for everyone. Travellers use
+ * A traveler cannot reach this — the catalog is what every other traveler
+ * picks from, so unvetted text in it is a problem for everyone. Travelers use
  * proposeTravelEvent instead.
  *
  * @param {Object} ev
@@ -743,7 +743,7 @@ function saveTravelEvent(ev) {
     return errorResponse('Could not determine the active user.');
   }
   // COORDINATOR OR ADMIN. Defining an event is workflow, not money: it
-  // creates something travellers can pick from and reserves nothing. The
+  // creates something travelers can pick from and reserves nothing. The
   // set-aside editor below stays admin-only because that commits budget.
   if (!who || !isTravelCoordinator(who)) {
     console.warn('saveTravelEvent: refused caller ' + (who || '(none)'));
@@ -911,7 +911,7 @@ function saveEventSetAside(sa) {
     var now = new Date();
     var existingId = String(s.setAsideId || '').trim();
 
-    // When linked to a catalogue event, the month and fiscal year come FROM
+    // When linked to a catalog event, the month and fiscal year come FROM
     // the event. A caller-supplied month that disagreed with it would break
     // the draw-down match silently.
     var linked = null;
@@ -980,7 +980,7 @@ function saveEventSetAside(sa) {
 }
 
 /**
- * Resolves a traveller's event proposal. ADMIN ONLY.
+ * Resolves a traveler's event proposal. ADMIN ONLY.
  *
  * @clolry: the coordinator "add[s] that event and then associate[s] the
  * request with that new event (and then allow[s] future travelers to select
@@ -988,13 +988,13 @@ function saveEventSetAside(sa) {
  *
  * Two outcomes, and the difference matters:
  *
- *   PROMOTE  creates a new catalogue event from the proposal
+ *   PROMOTE  creates a new catalog event from the proposal
  *   MERGE    links the proposal to an event that already exists
  *
  * MERGE is the common case for @clolry's twelve-people-one-conference
  * scenario: the first proposal is promoted and the other eleven are merged
  * into it. Without a distinct MERGE outcome a coordinator would either create
- * twelve duplicate events or reject eleven travellers' proposals, and
+ * twelve duplicate events or reject eleven travelers' proposals, and
  * "rejected" is the wrong word for "someone else already asked".
  *
  * Either way the originating REQUEST is linked to the resulting event, which
@@ -1026,7 +1026,7 @@ function resolveEventProposal(proposalId, resolution) {
     return errorResponse('Action must be PROMOTE, MERGE or REJECT.');
   }
   if (action === 'REJECT' && !String(r.notes || '').trim()) {
-    // A traveller asked for something and is being told no. They are owed a
+    // A traveler asked for something and is being told no. They are owed a
     // reason, and the proposal row is where it lives.
     return errorResponse('A reason is required when rejecting a proposal.');
   }
@@ -1047,7 +1047,7 @@ function resolveEventProposal(proposalId, resolution) {
 
     if (action === 'PROMOTE') {
       // Build the event from the proposal, with coordinator overrides. The
-      // traveller supplied free text; the coordinator supplies the structure.
+      // traveler supplied free text; the coordinator supplies the structure.
       var draft = Object.assign({
         eventName: prop.proposedEventName,
         startDate: prop.proposedStartDate,
@@ -1065,7 +1065,7 @@ function resolveEventProposal(proposalId, resolution) {
       if (!eventId) return errorResponse('An event to merge into is required.');
       var events = Events.readEvents(db);
       var exists = events.some(function (e) { return e.eventId === eventId; });
-      if (!exists) return errorResponse('Event ' + eventId + ' is not in the catalogue.');
+      if (!exists) return errorResponse('Event ' + eventId + ' is not in the catalog.');
     }
 
     // Stamp the proposal.

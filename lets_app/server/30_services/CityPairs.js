@@ -52,7 +52,7 @@
  * So: if you change the fields on a cached result, or change how one is
  * computed, bump the version suffix in the same commit. CI greps for the
  * constants below, but it cannot tell you that a bump was NEEDED — that
- * judgement is yours.
+ * judgment is yours.
  */
 
 // Bump when the cached result shape or its computation changes.
@@ -404,7 +404,7 @@ function _readCityPairRows_(pairKey) {
  *
  * The award file names each airport's city, and that is not always the city an
  * employee's duty station records. FORT WORTH, TX resolved to NOTHING because
- * GSA files DFW and DAL under DALLAS — so a traveller based in Fort Worth got
+ * GSA files DFW and DAL under DALLAS — so a traveler based in Fort Worth got
  * an EMPTY airport picker, which blocks a submission rather than merely
  * inconveniencing it.
  *
@@ -444,7 +444,7 @@ var GSA_CITY_ALIASES = {
  * routes. A hardcoded city->airport map would drift silently.
  *
  * Metropolitan-area codes (WAS, NYC, LON) are returned but sort LAST and are
- * flagged isMetroArea, so they can be labelled "all airports" and can never
+ * flagged isMetroArea, so they can be labeled "all airports" and can never
  * win a default. They appear in domestic rows as well as international ones —
  * WAS outranked DCA on route count, which is what made the original
  * country-based detection wrong.

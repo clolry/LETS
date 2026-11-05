@@ -261,7 +261,7 @@ The first two are LETS-specific and are the missing half of Finding R-5.
 | `getScriptUrl` | `Render.js:342` | Returns own URL | — |
 | `getTravelUsersUpdateTimestamp` | `DataSync.js:49` | Cache-coherence timestamp | — |
 | `getNFSWorksheetTemplate` | `Request.js:22` | Blank form template from Drive | — |
-| **`getHCStaffingBundle`** | `HCStaffing.js:21` | — | **Returns the entire HC staffing roster to any caller.** Names, emails, org codes, position numbers, grades, supervisory status, occupancy. This is the organisation's personnel directory, exposed with no role check. One line: `return HC.hcGetBundle();` |
+| **`getHCStaffingBundle`** | `HCStaffing.js:21` | — | **Returns the entire HC staffing roster to any caller.** Names, emails, org codes, position numbers, grades, supervisory status, occupancy. This is the organization's personnel directory, exposed with no role check. One line: `return HC.hcGetBundle();` |
 | **`deleteTravelDraftFile`** | `Attachments.js:159` | — | Deletes a Drive file by ID with no ownership verification visible in the function body |
 
 `getHCStaffingBundle` and `deleteTravelDraftFile` are the two in this group a reviewer should look at. Both are inherited verbatim from TRIP `[VERIFIED]`, so the question is whether TRIP's risk acceptance transfers to LETS — a determination for the ISSO, not for me.
@@ -366,7 +366,7 @@ The poller detects decisions and then discards them. There is no write back to t
 
 To finish it, a developer needs: the new column added to the schema and to `Submission.js`'s positional row builder (see Pass 3 on why order matters), a `submitToFASTracker` call site in the submission path, a write-back loop inside or around `syncFASTrackerStatus`, and an installer following the exact pattern of `setupDoDSyncTrigger` `PerDiemSync.js:21-36`.
 
-**The brittle part to flag now.** The tracker is **another organisation's spreadsheet** — owned by the FAS front office, per the module's own header comment `FASTrackerSync.js:8-11`. The integration depends on:
+**The brittle part to flag now.** The tracker is **another organization's spreadsheet** — owned by the FAS front office, per the module's own header comment `FASTrackerSync.js:8-11`. The integration depends on:
 - the tab being named exactly `'FAS Travel Exceptions'`, with a silent fallback to `getSheets()[0]` if absent `FASTrackerSync.js:25,93`;
 - **column positions A–N**, written positionally with no header lookup `FASTrackerSync.js:148-163`;
 - the status string in **column M** containing the substring "approved" or "rejected", case-insensitively `FASTrackerSync.js:239-245`;
@@ -416,7 +416,7 @@ Three further consequences specific to this design:
 |---|---|---|
 | **Merge to `main`** | `.github/workflows/deploy-gas.yml` triggers on `push` to `main` and runs `clasp push --force` into the production project | Anyone who can push or merge to `main` |
 | **Manual dispatch** | Same workflow, `workflow_dispatch` | Anyone with Actions run permission |
-| **Direct `clasp push`** | A developer's own machine, using `lets_app/.clasp.json` | Anyone with the script ID and an authorised Google account |
+| **Direct `clasp push`** | A developer's own machine, using `lets_app/.clasp.json` | Anyone with the script ID and an authorized Google account |
 
 The deploy workflow is **well designed in one important respect**: it deliberately has no `pull_request` trigger, and the reason is documented at length in a header comment `deploy-gas.yml:1-16` — a `pull_request` trigger would make opening a PR *be* the deploy. A guard in `verify.yml:62-69` fails the build if anyone re-adds it. `verify.yml` itself is credential-free by design, with its own guard proving it `verify.yml:71-78`. This is careful work and should be preserved.
 
@@ -442,7 +442,7 @@ Three control weaknesses, all already self-documented by the repository:
 | 8 | **Bound/target spreadsheet** | **Every cell of the database** | Drive edit on the Sheet | **None** | Sheets version history only |
 | 9 | GitHub merge to `main` | Production code | Push/merge on `main` | **No branch protection** | Git history, Actions log |
 | 10 | GitHub Actions `workflow_dispatch` | Production code | Actions permission | Repo permissions | Actions log |
-| 11 | Local `clasp push` | Production code | Script ID + authorised account | None | None |
+| 11 | Local `clasp push` | Production code | Script ID + authorized account | None | None |
 | 12 | Sandbox project `1PLzwA_Tin…` | Separate instance | Editor on that project | Unknown | Unknown |
 | 13 | Root project `181ocqi16Ruz…` | 2 stub files | Editor on that project | Unknown | Unknown |
 | 14 | Outbound: GSA per-diem API, Federal Register API, State Dept download, jsDelivr CDN | Data in / scripts in | n/a | n/a | Stackdriver |

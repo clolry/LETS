@@ -632,7 +632,7 @@ console.log('\n6. this reader AGREES with LETS, on all 137 real org codes');
 
   // 6b — org resolution agrees on all 137. This is the load-bearing one:
   // identity resolves DOWN to the most specific row, attribution resolves UP
-  // to the nearest ancestor that has a value, and getting either backwards is
+  // to the nearest ancestor that has a value, and getting either backward is
   // invisible in the UI.
   const letsBundle = lets.hcGetBundle();
   ok('LETS reads the same sheet successfully', letsBundle.success === true);
@@ -707,7 +707,7 @@ console.log('\n7. caching helps and cannot hurt');
   ok('and reports itself as fresh', bypassed.cached === false);
 
   // A failure must NOT be cached, or a fixed property keeps failing for an
-  // hour afterwards.
+  // hour afterward.
   const broken = loadOC([], [], { noId: true });
   broken.run('HCRead.getTree(false)');
   ok('a failure is not written to the cache',

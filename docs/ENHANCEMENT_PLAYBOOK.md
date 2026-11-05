@@ -61,7 +61,7 @@ Merge to `main`. The pipeline runs `clasp push --force` and four regression guar
 
 **Do not push locally.** A local `clasp push` bypasses the review gate and all four guards.
 
-> **And never run `clasp push` from the repository root.** An untracked `.clasp.json` there has `rootDir: ""` and `skipSubdirectories: false`, so a push from that directory carries **228 files** into an undocumented Apps Script project — including 94 files from `reference_travel_app/`, which is another organisation's application (**G-048**) `[VERIFIED]`.
+> **And never run `clasp push` from the repository root.** An untracked `.clasp.json` there has `rootDir: ""` and `skipSubdirectories: false`, so a push from that directory carries **228 files** into an undocumented Apps Script project — including 94 files from `reference_travel_app/`, which is another organization's application (**G-048**) `[VERIFIED]`.
 
 ### Rule 2 — `clasp push` is not `clasp deploy`
 
@@ -97,7 +97,7 @@ The code reads flexibly by header name and **writes rigidly by position** `[VERI
 
 ## §7.2 Things you must not do
 
-**Each entry fails silently.** That is the reason this section exists rather than being left to judgement.
+**Each entry fails silently.** That is the reason this section exists rather than being left to judgment.
 
 ### 7.2.1 Never rename a trigger handler
 
@@ -179,7 +179,7 @@ Opening a PR would *become* the deploy, defeating review entirely. **A CI guard 
 >
 > > *"NEEDS_INFO_* states: the workflow says 'the ball is with the submitter.' Reviewers wait for the resubmit — they don't share edit access during this window. Avoids racey co-editing where the assigned reviewer and the submitter both touch the same fields."*
 >
-> **So adopting the guard changes behaviour**, not just enforcement. Today a reviewer can edit during `NEEDS_INFO_*` because nothing stops them. After adoption they cannot.
+> **So adopting the guard changes behavior**, not just enforcement. Today a reviewer can edit during `NEEDS_INFO_*` because nothing stops them. After adoption they cannot.
 >
 > **That may be exactly right** — the reasoning in the comment is sound. But it is a workflow policy change and it needs an owner's assent, not a developer's.
 >
@@ -194,7 +194,7 @@ Opening a PR would *become* the deploy, defeating review entirely. **A CI guard 
 
 Both are complete. Both throw on denial. Both return `{ email, ctx, request }` so the caller can reuse the loaded data without a second read `[VERIFIED]`.
 
-**`requireRequestViewer` allows:** the submitter; the currently-assigned reviewer; any admin; any reviewer whose scope covers the request; **and any Division Director assigned to a traveller on it** `[VERIFIED]`. That last clause matters — a naive guard would have locked DDs out.
+**`requireRequestViewer` allows:** the submitter; the currently-assigned reviewer; any admin; any reviewer whose scope covers the request; **and any Division Director assigned to a traveler on it** `[VERIFIED]`. That last clause matters — a naive guard would have locked DDs out.
 
 **`requireRequestEditor` additionally enforces** that the status is in `REQUEST_EDITABLE_STATUSES` — the eight pre-decision states `[VERIFIED]`. Terminal and DD-pending requests are immutable through this gate regardless of role.
 
@@ -212,7 +212,7 @@ Every client call site for the affected RPCs has both a failure handler and a `t
 }
 ```
 
-**Why this is a precondition and not a follow-up.** Add a throwing guard to `updateTravelerCosts` and the denial reaches that `catch`, where it is logged to a console nobody is watching. **The UI keeps the edit on screen while the server refused it** — the user believes a cost was saved that was not. That is worse than the unguarded behaviour it replaces.
+**Why this is a precondition and not a follow-up.** Add a throwing guard to `updateTravelerCosts` and the denial reaches that `catch`, where it is logged to a console nobody is watching. **The UI keeps the edit on screen while the server refused it** — the user believes a cost was saved that was not. That is worse than the unguarded behavior it replaces.
 
 **Fix it first.** It is one line:
 
@@ -313,7 +313,7 @@ node docs/evidence/pass5_guard_census.js
 
 ### 7.4.1 Not blocked, and the cheapest half is mechanical
 
-**No business decision gates this.** Giving an internal helper a trailing underscore is not a behaviour change — it removes a capability nobody was supposed to have.
+**No business decision gates this.** Giving an internal helper a trailing underscore is not a behavior change — it removes a capability nobody was supposed to have.
 
 ### 7.4.2 The 51 split three ways
 
@@ -517,7 +517,7 @@ G-013, G-016, G-023, G-024, G-035, G-036, G-037, G-038, G-039, G-040, G-043, G-0
 
 > **Fix the seventeen findings BEFORE wiring, not after.**
 >
-> There is no production data in the budget tabs, no user depending on current behaviour, and no migration. **These are the cheapest fixes available in the entire system and they will never be cheaper.** Wiring first means debugging a financial engine against live data while users submit against it.
+> There is no production data in the budget tabs, no user depending on current behavior, and no migration. **These are the cheapest fixes available in the entire system and they will never be cheaper.** Wiring first means debugging a financial engine against live data while users submit against it.
 
 | Phase | Work | Gate |
 |---|---|---|
@@ -532,7 +532,7 @@ G-013, G-016, G-023, G-024, G-035, G-036, G-037, G-038, G-039, G-040, G-043, G-0
 
 ### 7.6.4 The thing most likely to be underestimated
 
-**The two systems model cost incompatibly** `[VERIFIED]`. System A derives per-traveller, per-leg costs from authoritative per-diem rates and stores a `Grand_Total`. System B expects a single `totalEstimatedCost` supplied to it.
+**The two systems model cost incompatibly** `[VERIFIED]`. System A derives per-traveler, per-leg costs from authoritative per-diem rates and stores a `Grand_Total`. System B expects a single `totalEstimatedCost` supplied to it.
 
 **That is not a mapping exercise — it is BD-4.** Picking one without a decision hard-codes an answer to a question nobody asked.
 
@@ -697,7 +697,7 @@ Collecting one new piece of information is the most common enhancement, and it t
 |---|---|
 | Classify it in the data dictionary | `PII`, `CUI`, `Financial`, or none |
 | Remember the whole tab is visible to anyone with spreadsheet access | §7.9.1 |
-| **Never add it to a log line** | `Error_Log` captures serialised context; a new PII field would land there |
+| **Never add it to a log line** | `Error_Log` captures serialized context; a new PII field would land there |
 
 ---
 

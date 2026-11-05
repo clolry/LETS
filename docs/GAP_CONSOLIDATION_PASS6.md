@@ -117,7 +117,7 @@ This is the authoritative map. Every citation in the five pass documents resolve
 | S-8 | 5 | **G-007** | **No server-side last-admin protection.** `deleteRole` / `setRoleActive` can lea… |  |
 | S-9 | 5 | **G-029** | `fas_fo_reviewer` has no branch in `getReviewerContext` and resolves to `role: '… |  |
 | S-10 | 5 | **G-030** | **`requireRole()` silently grants access for any unrecognized role name** — no `… |  |
-| S-11 | 5 | **G-031** | `aas_fo_reviewer` carries `scope: 'all'` — organisation-wide visibility identica… |  |
+| S-11 | 5 | **G-031** | `aas_fo_reviewer` carries `scope: 'all'` — organization-wide visibility identica… |  |
 | S-12 | 5 | **G-008** | **Two of three site-gate allow-paths are controlled by the HC library, not by LE… | canonical for HC delegation |
 | S-13 | 5 | **G-006** | **No `oauthScopes` declared.** The effective grant is inferred from API usage an… |  |
 | S-14 | 5 | **G-032** | **`Is_Active` parsing treats only `false` / `'false'` as inactive.** Blank, `'no… |  |
@@ -271,7 +271,7 @@ Pass 1's own subtotals sum to 229 against its stated 230 — an internal arithme
 
 > **The figures in this table are a snapshot, and the tree has since moved.** `pass6_manifest_recount.js` now measures **231 total / 114 in `lets_app/` / 88 byte-identical / 19 LETS-only**. The cause is not a code change: **two untracked `.DS_Store` files appeared inside `lets_app/`** during this effort, one of them in `server/`. They are macOS metadata, excluded from neither `.claspignore` nor git — so they are invisible in review and would still be pushed to production.
 >
-> **The script reports the drift rather than absorbing it, which is the behaviour to keep.** A validator that silently re-baselines teaches nothing; one that says *"measured 114, Pass 1 said 112"* on every run makes the drift the reader's decision. The 53-file server count in this table is `.js` files only and is unaffected.
+> **The script reports the drift rather than absorbing it, which is the behavior to keep.** A validator that silently re-baselines teaches nothing; one that says *"measured 114, Pass 1 said 112"* on every run makes the drift the reader's decision. The 53-file server count in this table is `.js` files only and is unaffected.
 
 ### 6.3.4 Figures that were re-derived and held
 
@@ -363,7 +363,7 @@ This table is the direct input to `GAP_REGISTER.md`. That deliverable adds per-f
 |---|---|---|---|---|
 | **G-001** | **412 functions are reachable from any authenticated browser; 51 of them write with no authorization check.** Includes the 118 `_foo` names that look private and are not | C4/R4 | TRIP | R-4, S-19 |
 | **G-002** | **`bootstrapTravelAdmin` lets any authenticated user grant themselves `admin`** — writes both rows and clears the role cache so it takes effect at once | C4/R4 | TRIP | S-1 |
-| **G-003** | **The review-edit surface has no authorization.** 5 `update*` RPCs plus `reportDDFundingIssue` and `submitFundingCorrection` let any user rewrite itinerary, travellers, costs, `Grand_Total`, status and `Is_Client_Paid` on any request | C3/R4 | TRIP | S-4, S-17 |
+| **G-003** | **The review-edit surface has no authorization.** 5 `update*` RPCs plus `reportDDFundingIssue` and `submitFundingCorrection` let any user rewrite itinerary, travelers, costs, `Grand_Total`, status and `Is_Client_Paid` on any request | C3/R4 | TRIP | S-4, S-17 |
 | **G-004** | **Request disclosure chain.** `getRequestForReview` returns any request's full record (PII + probable CUI); `getRequestAttachments` yields its file IDs; `shareAttachmentsWithUsers` grants anyone access. IDs are sequential | C4/R3 | TRIP | S-2, S-16 |
 | **G-005** | **`deleteTravelDraftFile` trashes any Drive file ID with no ownership check**; `uploadTravelDraftFile` has no size or MIME limit | C3/R3 | TRIP | S-3 |
 | **G-006** | **No `oauthScopes` declared.** The effective grant is inferred from API usage and includes full Drive and all spreadsheets. Nobody chose it; it widens silently as code is added | C4/R2 | TRIP | S-13 |
@@ -401,7 +401,7 @@ This table is the direct input to `GAP_REGISTER.md`. That deliverable adds per-f
 | **G-028** | Attachment sharing to the next reviewer passes `'viewer'`, which is not a valid Drive role. Three layers of error suppression report success | C2/R2 | TRIP | S-6 |
 | **G-029** | `fas_fo_reviewer` has no branch in `getReviewerContext` and resolves to `role: 'none'`, so the FAS reviewer gets no dashboard | C2/R2 | TRIP | S-9 |
 | **G-030** | **`requireRole()` silently grants access for any unrecognized role name** — no `default: throw`. A future guard written against a new role name would do nothing | C4/R1 | TRIP | S-10 |
-| **G-031** | `aas_fo_reviewer` carries `scope: 'all'` — organisation-wide visibility identical to admin for all filtering. The role name does not advertise this | C3/R2 | TRIP | S-11 |
+| **G-031** | `aas_fo_reviewer` carries `scope: 'all'` — organization-wide visibility identical to admin for all filtering. The role name does not advertise this | C3/R2 | TRIP | S-11 |
 | **G-032** | **`Is_Active` parsing treats only `false` / `'false'` as inactive.** Blank, `'no'`, `0` and typos all read as active, so a manual spreadsheet revocation may not revoke | C3/R2 | TRIP | S-14 |
 | **G-033** | The 12-function `Validation.js` library has zero adoption outside its own self-test | C2/R2 | TRIP | S-18 |
 | **G-034** | **No CDN subresource integrity:** 34 external script and style references, zero `integrity=` attributes. A CDN compromise executes arbitrary JavaScript in every session | C4/R1 | Shared | S-24 |
@@ -426,7 +426,7 @@ This table is the direct input to `GAP_REGISTER.md`. That deliverable adds per-f
 | **G-053** | Proportional shares are never recomputed; they go stale after a mid-year rebaseline | C2/R1 | LETS | R-B9 |
 | **G-054** | The Tier-1 purpose list exists in three independent places — config, client array, and `<option>` markup | C2/R2 | Shared | R-C1 |
 | **G-055** | Tier thresholds ($10k IMM, $7k training) are user-declared, never computed from cost | C2/R2 | Shared | R-C3 |
-| **G-056** | **Six real named GSA employees' addresses are embedded in routing-test fixtures with their role assignments labelled** | C2/R2 | TRIP | S-23 |
+| **G-056** | **Six real named GSA employees' addresses are embedded in routing-test fixtures with their role assignments labeled** | C2/R2 | TRIP | S-23 |
 
 #### Low — 9 findings · *housekeeping*
 
@@ -545,7 +545,7 @@ Twelve items merged away, across the eight groups below. Each group is a case of
 | V-27 | **VT-15** (with V-21) | Both need the exact FAS status strings from column M |
 | V-24 | **VT-11** (with V-39) | `verifyPhase7Routing()` reports the FAS-primary vacancy Pass 4 asked about |
 
-Four tasks are Pass 6 additions rather than carry-forwards: **VT-24** (split back out of V-24, because the FAS-primary vacancy is answerable from the role table without running code), **VT-27** and **VT-28** (both implied by findings G-032 and G-065 but never written as tasks by the pass that found them), and **VT-29** (re-run the eight evidence scripts before publishing — they self-report divergence, so this is the cheapest regression check the effort has).
+Four tasks are Pass 6 additions rather than carry-forward: **VT-24** (split back out of V-24, because the FAS-primary vacancy is answerable from the role table without running code), **VT-27** and **VT-28** (both implied by findings G-032 and G-065 but never written as tasks by the pass that found them), and **VT-29** (re-run the eight evidence scripts before publishing — they self-report divergence, so this is the cheapest regression check the effort has).
 
 ### 6.7.2 The checklist, in execution order
 
@@ -614,9 +614,9 @@ Ranking criterion, stated so it can be argued with: **how many findings cannot b
 | **Why the claim fails** | The comparison is **not** a bare `===` against the raw field. The explicit `String()` coercion means `String(2) === '2'` — **a numeric `2` passes.** Proven by execution: `pass6_hc_gate_predicate.js` §[1] |
 | **Why it fails a second time** | *"Two of three allow-paths"* is also wrong. Path 3 (`_isBuLeadByTitle` `Access.js:864`) tests occupancy and office title but **never reads `supervisoryStatus`** `[VERIFIED]`. Even a genuine type mismatch would disable **one** path |
 
-**The concern was legitimate and the task is still worth its twenty minutes.** The values that *do* silently deny a real supervisor are **`'02'`, `' 2'`, `'2 '`, `'2.0'`, `'two'`** `[VERIFIED]` — zero-padded, whitespace-bearing, decimal-formatted. The gate neither trims nor normalises. Those are precisely the shapes produced by a spreadsheet export, a CSV round-trip, or a text-formatted column, so **VT-03 must ask for the exact distinct values with padding intact, not for the type.**
+**The concern was legitimate and the task is still worth its twenty minutes.** The values that *do* silently deny a real supervisor are **`'02'`, `' 2'`, `'2 '`, `'2.0'`, `'two'`** `[VERIFIED]` — zero-padded, whitespace-bearing, decimal-formatted. The gate neither trims nor normalizes. Those are precisely the shapes produced by a spreadsheet export, a CSV round-trip, or a text-formatted column, so **VT-03 must ask for the exact distinct values with padding intact, not for the type.**
 
-**And running the predicate produced a finding nobody had.** The adjacent `occupancyStatus` check is a **denylist** — only `VACANT` and `OBLIGATED` are refused `[VERIFIED]` `Access.js:417-418` — so a blank, absent, or unrecognised occupancy value **grants** access. **Two checks, two lines apart, failing in opposite directions:** an allowlist that fails closed beside a denylist that fails open. That is **G-074**, appended to the register.
+**And running the predicate produced a finding nobody had.** The adjacent `occupancyStatus` check is a **denylist** — only `VACANT` and `OBLIGATED` are refused `[VERIFIED]` `Access.js:417-418` — so a blank, absent, or unrecognized occupancy value **grants** access. **Two checks, two lines apart, failing in opposite directions:** an allowlist that fails closed beside a denylist that fails open. That is **G-074**, appended to the register.
 
 > **The method point, which is the fifth instance of the rule in §8.2 of the working notes and the first in this direction.** Every earlier instance was a *measurement* producing a confident wrong answer that contradicted established prose. This one is the reverse — **the prose was wrong and the measurement was right** — and the two are indistinguishable until the predicate is actually executed. A claim about what a line of code does is not verified by having read the line. `pass6_hc_gate_predicate.js` §[4] now scans every document for the withdrawn wording on each run, so it cannot creep back.
 
@@ -629,7 +629,7 @@ Six items in the V-series were not verification tasks at all. Nobody can resolve
 | ID | Decision | From | Blocks | Why only the owner can answer |
 |---|---|---|---|---|
 | **BD-1** | **Is the deployment supposed to run as `USER_ACCESSING` or `USER_DEPLOYING`?** | — (Pass 6 addition) | G-001–G-006 | VT-01 reports what it *is*. Only the owner can say what it should be. The answer changes whether every unguarded write executes with the caller's authority or a privileged one — and six source comments contradict the manifest, so one of the two is a latent misunderstanding in the codebase either way |
-| **BD-2** | **Should `aas_fo_reviewer` see every request in the organisation?** | V-36 | G-031 | The role carries `scope: 'all'` today — admin-equivalent data visibility under a name that does not advertise it. This is a policy question, not a defect, until the owner answers it |
+| **BD-2** | **Should `aas_fo_reviewer` see every request in the organization?** | V-36 | G-031 | The role carries `scope: 'all'` today — admin-equivalent data visibility under a name that does not advertise it. This is a policy question, not a defect, until the owner answers it |
 | **BD-3** | **In a `NEEDS_INFO_*` state, should the assigned reviewer retain edit access?** | V-37 | G-003, G-067 | Gates adoption of `requireRequestEditor`, which would remove that access. The cheapest fix for a Critical finding is blocked on this one answer |
 | **BD-4** | **Which cost figure is authoritative for budget purposes — System A's `Grand_Total`, or a user-entered estimate?** | V-28 | G-035, G-036, G-040 | The largest unresolved design question in the system. Every budget-integration decision depends on it, and the two layers currently assume different answers |
 | **BD-5** | **Who owns the `Requests` tab-name collision decision, and what is the decision?** | V-29 | G-013, G-023 | Gates all budget-integration work. Two schemas claim one tab name; someone must choose, rename, or separate them |

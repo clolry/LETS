@@ -1,5 +1,5 @@
 /**
- * Automated Verification Script for the event catalogue, set-aside editor,
+ * Automated Verification Script for the event catalog, set-aside editor,
  * proposal queue and the request-form "Other" option.
  *
  * WHY THIS SUITE IS MOSTLY SOURCE ASSERTIONS
@@ -16,8 +16,8 @@
  *
  * THE THREE THINGS THAT WOULD BE COSTLY AND SILENT
  * ------------------------------------------------
- * §3 — the "Other" proposal must not block submission. @clolry's traveller
- * has a deadline; losing their request because a catalogue write failed would
+ * §3 — the "Other" proposal must not block submission. @clolry's traveler
+ * has a deadline; losing their request because a catalog write failed would
  * be far worse than a coordinator matching it up by name.
  *
  * §4 — promoting a proposal must go through resolveEventProposal, not
@@ -138,7 +138,7 @@ console.log('\n3. the "Other" option does not block submission');
   ok('and a description block revealed by it', /id="eventOtherBlock"/.test(page));
 
   // The picker sits ABOVE the free-text name rather than replacing it. Most
-  // travel is ad-hoc; forcing every trip through a catalogue would mean a
+  // travel is ad-hoc; forcing every trip through a catalog would mean a
   // coordinator had to create an event before anyone could file a client
   // visit.
   ok('the free-text event name still exists', /id="tripName"/.test(page));
@@ -161,7 +161,7 @@ console.log('\n3. the "Other" option does not block submission');
   ok('a failed proposal still submits',
      /catch\(function \(err\) \{[\s\S]{0,200}submitting anyway/.test(ctl) ||
      /submitting anyway/.test(ctl),
-     'losing a request because a catalogue write failed is far worse');
+     'losing a request because a catalog write failed is far worse');
   ok('and the failure is logged', /Event proposal failed/.test(ctl));
   ok('the submit runs inside the proposal promise',
      /proposeIfNeeded\.then\(function \(\) \{/.test(ctl));
@@ -179,7 +179,7 @@ console.log('\n4. promoting a proposal links the originating request');
 
   // THE SILENT FAILURE THIS GUARDS. saveTravelEvent creates an event;
   // resolveEventProposal creates it AND links the request. Using the former
-  // would leave the traveller's request unlinked, and the DAC's reservation
+  // would leave the traveler's request unlinked, and the DAC's reservation
   // would never draw down — invisibly.
   ok('promoting goes through resolveEventProposal',
      /resolveEventProposal', proposalId,\s*\{ action: 'PROMOTE'/.test(evc),
@@ -208,11 +208,11 @@ console.log('\n4. promoting a proposal links the originating request');
   ok('and does not abort the batch',
      /\.catch\(function \(err\) \{[\s\S]{0,200}Could not merge proposal/.test(evc));
 
-  // REJECT requires a reason — a traveller is being told no.
+  // REJECT requires a reason — a traveler is being told no.
   ok('rejecting requires a reason',
      /A reason is required to reject a proposal/.test(evc));
-  ok('and the traveller is told it will be visible',
-     /traveller will see this/.test(evc));
+  ok('and the traveler is told it will be visible',
+     /traveler will see this/.test(evc));
 }
 
 // ---------------------------------------------------------------------------
@@ -229,22 +229,22 @@ console.log('\n5. the picker pre-fills but does not lock');
      /setIfBlank\('eventEndDate'/.test(ctl));
   ok('and only when the field is BLANK',
      /if \(node && !String\(node\.value \|\| ''\)\.trim\(\)\)/.test(ctl),
-     'overwriting what the traveller typed loses their work silently');
+     'overwriting what the traveler typed loses their work silently');
   ok('no field is disabled by the picker',
      !/eventPicker[\s\S]{0,400}\.disabled = true/.test(ctl));
 
-  // The waiver and meals must reach the traveller. Both change what they may
+  // The waiver and meals must reach the traveler. Both change what they may
   // claim: an unknown waiver means an over-claim, and meals provided mean an
   // M&IE deduction a reviewer will otherwise query.
   ok('a registration waiver is surfaced', /registrationWaivedFor/.test(ctl));
   ok('meals provided are surfaced', /mealsProvided/.test(ctl));
   ok('and a required extra form is flagged', /requiresSpecialForm/.test(ctl));
 
-  // A catalogue failure must not block the form.
-  ok('a catalogue failure hides the picker rather than blocking',
+  // A catalog failure must not block the form.
+  ok('a catalog failure hides the picker rather than blocking',
      /_hideEventPicker/.test(ctl));
   ok('and is logged',
-     /Event catalogue unavailable/.test(ctl));
+     /Event catalog unavailable/.test(ctl));
 }
 
 // ---------------------------------------------------------------------------
@@ -281,7 +281,7 @@ console.log('\n6. the set-aside editor collects what the server requires');
 
   // The estimate is ADVISORY and writes its own reasoning into the basis.
   ok('the amount estimator fills the basis text',
-     /saFormBasis'\)\.value = n \+ ' travellers/.test(evc));
+     /saFormBasis'\)\.value = n \+ ' travelers/.test(evc));
   ok('and labels itself an estimate',
      /estimate \\u2014 adjust as needed/.test(evc) || /adjust as needed/.test(evc));
 
@@ -303,7 +303,7 @@ console.log('\n7. the event editor collects what the server requires');
   });
 
   // The server REJECTS a virtual event with a city, because the city would
-  // flow into per-diem logic for an event nobody travelled to.
+  // flow into per-diem logic for an event nobody traveled to.
   ok('marking an event virtual clears and disables the location',
      /evFormVirtual[\s\S]{0,400}node\.disabled = on/.test(evc));
 
@@ -344,15 +344,15 @@ console.log('\n8. the planning view surfaces what a DAC reacts to');
   ok('with its own style', /ev-over/.test(evc));
   ok('and counted in the totals', /overCommittedCount/.test(evc));
 
-  // Planned versus actual travellers is the number a DAC reacts to.
-  ok('planned vs actual travellers is shown',
+  // Planned versus actual travelers is the number a DAC reacts to.
+  ok('planned vs actual travelers is shown',
      /actualTravelers \+ ' \/ ' \+ s\.plannedTravelers/.test(evc));
   ok('and an overage is called out', /travelerVariance > 0/.test(evc));
 
   // A free-text reservation still works but matches less reliably, so it is
   // marked for a coordinator to link up.
   ok('an unlinked reservation is marked',
-     /not linked to a catalogue event/.test(evc));
+     /not linked to a catalog event/.test(evc));
 
   ok('the table exists', /id="evSetAsides"/.test(page));
   ok('and a totals footer', /id="evSetAsideTotals"/.test(page));
@@ -363,7 +363,7 @@ console.log('\n8. the planning view surfaces what a DAC reacts to');
 console.log('\n9. escaping, because every field is user text');
 {
   const evc = code(EVC);
-  // Event names, proposals and notes are all free text typed by a traveller
+  // Event names, proposals and notes are all free text typed by a traveler
   // or an admin. "Research & Development" breaks the row it is in without
   // escaping, and a proposal is the one field an untrusted user controls.
   ok('the controller has an escaper', /function esc\(/.test(evc));
@@ -397,7 +397,7 @@ console.log('\n10. negative controls (the suite must be able to fail)');
   const ANCHOR2 = "proposeIfNeeded.then(function () {";
   ok('the submit-ordering anchor is present', ctlRaw.indexOf(ANCHOR2) > -1);
 
-  // 10c — overwrite what the traveller typed. §5 must fail.
+  // 10c — overwrite what the traveler typed. §5 must fail.
   const ANCHOR3 = "        if (node && !String(node.value || '').trim()) {";
   ok('the blank-only anchor is present', ctlRaw.indexOf(ANCHOR3) > -1);
   const clobber = ctlRaw.replace(ANCHOR3, "        if (node) {");

@@ -43,7 +43,7 @@
  * -------------------
  * Backfilled requests carry Primary_Justification prefixed 'BACKFILL:' and an
  * Approval_Log entry naming the administrator. A figure that entered the
- * budget without passing through review must be identifiable afterwards, or
+ * budget without passing through review must be identifiable afterward, or
  * the audit trail quietly implies an approval that never happened.
  */
 
@@ -76,7 +76,7 @@ var BudgetBackfill = (function () {
    * trip land in either bucket depending on which they chose.
    *
    * A trip whose end date has passed is COMPLETED. One still ahead is
-   * APPROVED_GOGOV — approved and booked, not yet travelled, which is exactly
+   * APPROVED_GOGOV — approved and booked, not yet traveled, which is exactly
    * what @clolry's "planned" travel is.
    *
    * @param {string} endDate YYYY-MM-DD
@@ -196,20 +196,20 @@ var BudgetBackfill = (function () {
 
     var count = parseInt(e.travelerCount, 10);
     if (!e.travelerCount && e.travelerCount !== 0) {
-      problems.push('Number of travellers is required.');
+      problems.push('Number of travelers is required.');
     } else if (isNaN(count) || count < 1) {
-      problems.push('Number of travellers must be at least 1.');
+      problems.push('Number of travelers must be at least 1.');
     } else if (count > 500) {
-      problems.push(count + ' travellers looks like a typo.');
+      problems.push(count + ' travelers looks like a typo.');
     }
 
-    // Named travellers are OPTIONAL, because @clolry is reconciling a quarter
+    // Named travelers are OPTIONAL, because @clolry is reconciling a quarter
     // of a year from records that may only hold a headcount. But if names ARE
-    // given, the count has to agree — otherwise the request and its traveller
+    // given, the count has to agree — otherwise the request and its traveler
     // rows disagree and no report reconciles.
     var names = (e.travelerNames || []).map(_str_).filter(Boolean);
     if (names.length && !isNaN(count) && names.length !== count) {
-      problems.push(names.length + ' traveller name(s) given but the count says ' +
+      problems.push(names.length + ' traveler name(s) given but the count says ' +
                     count + '. Either match them or leave the names blank.');
     }
 
@@ -433,7 +433,7 @@ var BudgetBackfill = (function () {
           'Is_LC_Travel': !!entry.isLcTravel,
           'Is_COE_Travel': !!entry.isCoeTravel,
           // MARKED. A figure that entered the budget without review must be
-          // identifiable afterwards.
+          // identifiable afterward.
           'Primary_Justification': 'BACKFILL: entered retroactively by ' +
             actorName + ' on ' + _dateOnly_(now) +
             (_str_(entry.notes) ? ' — ' + _str_(entry.notes) : ''),
@@ -443,7 +443,7 @@ var BudgetBackfill = (function () {
         // positional (docs/DATA_DICTIONARY.md §3.9).
         reqRows.push(reqHeaders.map(function (h) { return h in rec ? rec[h] : ''; }));
 
-        // Traveller rows, when names were given. The per-traveller cost is the
+        // Traveler rows, when names were given. The per-traveler cost is the
         // total divided evenly — stated as an even split in the record rather
         // than implied, since the real split is not known.
         var names = (entry.travelerNames || []).map(_str_).filter(Boolean);
@@ -460,7 +460,7 @@ var BudgetBackfill = (function () {
               'Subtotal': each,
               'Budget_Org_Code': tOrg,
               'Budget_Office_Code': officeForOrgCode(tOrg) || office,
-              'Role_Justification': 'Backfilled; per-traveller costs are an even ' +
+              'Role_Justification': 'Backfilled; per-traveler costs are an even ' +
                                     'split of the trip total.'
             };
             travRows.push(travHeaders.map(function (h) {
@@ -523,7 +523,7 @@ var BudgetBackfill = (function () {
         });
 
       console.log('BudgetBackfill: ' + actorEmail + ' imported ' + reqRows.length +
-                  ' request(s), ' + travRows.length + ' traveller row(s)');
+                  ' request(s), ' + travRows.length + ' traveler row(s)');
 
       return successResponse({
         created: created,

@@ -2048,7 +2048,7 @@ function updateCostsForReview(updates) {
 
       // First, handle removals
       if (removedLegCosts && removedLegCosts.length > 0) {
-        // Find and delete rows (working backwards to preserve indices)
+        // Find and delete rows (working backward to preserve indices)
         const rowsToDelete = [];
         for (let i = 1; i < legCostsData.length; i++) {
           const rowRequestId = legCostsData[i][lcIndex['Request_ID']];

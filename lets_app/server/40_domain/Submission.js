@@ -243,7 +243,7 @@ var LETS_OFFICE_MAP = [
 ];
 
 /**
- * HR org code for a budget office code, or '' when unrecognised.
+ * HR org code for a budget office code, or '' when unrecognized.
  *
  * Returns '' rather than echoing the input: a wrong org code attributes budget
  * to the wrong DAC, which is worse than an empty one that shows up as missing.
@@ -256,7 +256,7 @@ function _officeCodeToOrgCode_(officeCode) {
   return '';
 }
 
-/** Budget office code for an HR org code, or '' when unrecognised. */
+/** Budget office code for an HR org code, or '' when unrecognized. */
 function _orgCodeToOfficeCode_(orgCode) {
   var code = String(orgCode || '').trim().toUpperCase();
   for (var i = 0; i < LETS_OFFICE_MAP.length; i++) {
@@ -266,11 +266,11 @@ function _orgCodeToOfficeCode_(orgCode) {
 }
 
 /**
- * Distinct HR org codes across a traveller list, in first-seen order.
+ * Distinct HR org codes across a traveler list, in first-seen order.
  *
  * Denormalized onto the request row so DAC routing can determine which
- * approvals are needed without re-reading every traveller row. @clolry: a
- * request only needs the DAC of an org if someone from that org is travelling,
+ * approvals are needed without re-reading every traveler row. @clolry: a
+ * request only needs the DAC of an org if someone from that org is traveling,
  * and multiple DACs approve in parallel.
  */
 function _distinctTravelerOrgCodes_(travelers) {
@@ -445,7 +445,7 @@ function submitTravelRequestV2(formData) {
 
       // ----- Trip Overview. Previously DISCARDED at submission -----
       // These six inputs existed in the form, were never read by any JS, and
-      // had no column to land in. Owning Office is labelled required and
+      // had no column to land in. Owning Office is labeled required and
       // drives budget allocation; it was silently dropped on every request.
       formData.owningOffice || '',                                 // Owning_Office
       // Both code forms are stored. BudgetConfig.js allocates against the
@@ -466,9 +466,9 @@ function submitTravelRequestV2(formData) {
       // at the client boundary so no consumer has to reassemble it.
       formData.primaryJustification || '',                         // Primary_Justification
 
-      // Distinct traveller org codes. Denormalized onto the request so
+      // Distinct traveler org codes. Denormalized onto the request so
       // routing can tell which DACs must approve without re-reading every
-      // traveller row — a consolidated conference can draw on FCA, FCB and
+      // traveler row — a consolidated conference can draw on FCA, FCB and
       // FCC at once.
       _distinctTravelerOrgCodes_(formData.travelers).join(','),    // Traveler_Org_Codes
 
@@ -486,7 +486,7 @@ function submitTravelRequestV2(formData) {
       // verify.yml has a width guard for exactly this, and it caught it.
       //
       // They are blank because a new request has no actuals yet: nobody has
-      // travelled, no voucher exists, and no Go.gov expense report has been
+      // traveled, no voucher exists, and no Go.gov expense report has been
       // filed. Reconciliation_Status is the one exception — it starts at
       // UNRECONCILED rather than '' so the reconciliation queue can find the
       // request without treating blank as a state.
@@ -503,13 +503,13 @@ function submitTravelRequestV2(formData) {
       '',                                                          // Expense_Report_Name
       '',                                                          // Expense_Report_End_Date
 
-      // Event catalogue link. Set when the traveller selected a catalogued
+      // Event catalog link. Set when the traveler selected a cataloged
       // event, which pre-fills dates, location and purpose; blank for ad-hoc
       // travel, which is most of it.
       //
-      // Event_Proposal_ID is set instead when the traveller chose "Other" and
+      // Event_Proposal_ID is set instead when the traveler chose "Other" and
       // described an event that does not exist yet — the request is
-      // submittable and a coordinator links it afterwards.
+      // submittable and a coordinator links it afterward.
       formData.eventId || '',                                      // Event_ID
       formData.eventProposalId || '',                              // Event_Proposal_ID
 
@@ -574,7 +574,7 @@ function submitTravelRequestV2(formData) {
       const locationFlags = getLegLocationFlags(leg);
       const locationDisplay = formatLocationDisplay(leg);
 
-      // Get rates from legRates lookup (falls back to leg object for backwards compatibility)
+      // Get rates from legRates lookup (falls back to leg object for backward compatibility)
       const rates = legRates[leg.id] || {};
       const lodgingRate = rates.lodgingRate || leg.lodgingRate || '';
       const mieRate = rates.mieRate || leg.mieRate || '';
@@ -722,12 +722,12 @@ function submitTravelRequestV2(formData) {
           }
         })(),
 
-        // ----- Budget attribution, PER TRAVELLER -----
+        // ----- Budget attribution, PER TRAVELER -----
         // Each person is charged to their own org, not the request's owning
         // office. A consolidated conference request can include people from
         // FCA, FCB and FCC, and each DAC should see only their own share.
         //
-        // Falls back to the request's owning org when a traveller has no HC
+        // Falls back to the request's owning org when a traveler has no HC
         // org code — better to attribute somewhere reviewable than nowhere.
         traveler.orgCode || formData.owningOrgCode ||
           _officeCodeToOrgCode_(formData.owningOffice) || '',       // Budget_Org_Code

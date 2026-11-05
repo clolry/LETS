@@ -176,7 +176,7 @@ console.log('\n2. the field set is an ALLOW-LIST, asserted exactly');
   ok('but city and state survive, because travel needs them',
      pub.location.city === 'Washington' && pub.location.state === 'DC');
   ok('emailAddress is withheld at PUBLIC tier', !('emailAddress' in pub));
-  ok('and present at reviewer tier, who must contact travellers',
+  ok('and present at reviewer tier, who must contact travelers',
      rev.emailAddress === 'ada.lovelace@gsa.gov');
 
   // Admin gets the record untouched — the roster editor has to edit it.
@@ -284,11 +284,11 @@ console.log('\n4. the entry points apply the boundary');
 }
 
 // ---------------------------------------------------------------------------
-console.log('\n5. stripping employeeId did not break the traveller picker');
+console.log('\n5. stripping employeeId did not break the traveler picker');
 {
-  // FOUND BY AUDITING WHAT THE SANITISER REMOVED, not by the form failing.
+  // FOUND BY AUDITING WHAT THE SANITIZER REMOVED, not by the form failing.
   //
-  // The traveller autocomplete used employeeId as its option VALUE and
+  // The traveler autocomplete used employeeId as its option VALUE and
   // looked people up by it. Withholding the field alone would have made every
   // selection resolve to null — the picker would appear to work and select
   // nobody, for every non-admin user, which is almost all of them.

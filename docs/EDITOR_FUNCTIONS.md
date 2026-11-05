@@ -40,7 +40,7 @@ The roster drives approval routing, supervisor-based site access and every per-c
 |---|---|---:|---|
 | `diagnoseHrFeedSource()` | `lets_app/server/40_domain/HCRosterSync.js` | 128 | Reports which HR feed source this DEPLOYMENT is actually reading, and how |
 | `previewRosterImport(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 379 | Dry run: what importing the feed would change. |
-| `showServiceCentreHeadcount()` | `lets_app/server/40_domain/HCRosterSync.js` | 734 | The per-service-centre headcount, as a readable table. |
+| `showServiceCenterHeadcount()` | `lets_app/server/40_domain/HCRosterSync.js` | 734 | The per-service-center headcount, as a readable table. |
 | `importRoster(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 916 | Applies the import. Destructive: replaces every row in HC_Positions. |
 | `seedHCTestData(…)` | `lets_app/server/91_setup/HCSeed.js` | 708 | Seeds both HC tabs with FICTIONAL test data. |
 | `validateHCData()` | `lets_app/server/91_setup/HCSeed.js` | 916 | Read-only sanity check on whatever is currently in the HC tabs. |
@@ -113,7 +113,7 @@ Start with `diagAll`. These read and report; none of them change data.
 | `diagFasTrackerHeader()` | `lets_app/server/99_triggers/Diagnostics.js` | 941 | Compares the live tracker header against FAS_TRACKER_COLUMNS. |
 | `diagTripOverviewFields()` | `lets_app/server/99_triggers/Diagnostics.js` | 1005 | Trip Overview and budget-attribution fields on recent requests. |
 | `diagAccess()` | `lets_app/server/99_triggers/Diagnostics.js` | 1090 | Who currently holds site access, and by which path. |
-| `diagServiceCentreDirectors()` | `lets_app/server/99_triggers/Diagnostics.js` | 1217 | Who the Service Center Directors actually are, and who holds a sector scope. |
+| `diagServiceCenterDirectors()` | `lets_app/server/99_triggers/Diagnostics.js` | 1217 | Who the Service Center Directors actually are, and who holds a sector scope. |
 
 ## Cache warming and adoption checks
 

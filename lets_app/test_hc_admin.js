@@ -3,7 +3,7 @@
  *
  * WHY THIS EXISTS
  * ---------------
- * HC_Positions backs the HC namespace that 28 call sites depend on: traveller
+ * HC_Positions backs the HC namespace that 28 call sites depend on: traveler
  * lookup, duty station, GS-15 Division Director routing, and two of the three
  * site-access paths in canAccessTrip.
  *

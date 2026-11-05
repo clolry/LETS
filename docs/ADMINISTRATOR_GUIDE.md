@@ -23,7 +23,7 @@ Every factual claim carries a confidence marker:
 | Marker | Meaning |
 |---|---|
 | `[VERIFIED]` | Read directly from the source code or measured by a script in `docs/evidence/` |
-| `[INFERRED]` | A reasoned conclusion from verified facts, labelled so you can disagree with the reasoning |
+| `[INFERRED]` | A reasoned conclusion from verified facts, labeled so you can disagree with the reasoning |
 | `[CLAIMED]` | Asserted by project documentation and **not** confirmed in code |
 | `[UNKNOWN]` | Cannot be determined from the repository — requires someone with live access |
 
@@ -49,7 +49,7 @@ If you read only this page, read this table.
 | **Who can reach it?** | Anyone with a GSA Google account who passes the site gate. **Two of the gate's three allow-paths are controlled by an external HR data source, not by you** (§1.7) |
 | **Who is in charge of it?** | Not the person holding the application's `admin` role. That role is **fourth** in actual power, behind Apps Script project editors, spreadsheet editors, and whoever holds the CI deployment secret (§1.5) |
 | **How do I grant and revoke access?** | Through the admin console at `?mode=admin`. **Not** by editing the spreadsheet — §1.6.2 explains why that can silently fail to revoke anything |
-| **Is it secure?** | It has real strengths — no credential handling, no back doors, every role check fails closed. It also has six Critical findings, all inherited from TRIP, centred on one defect: **the server does not check who is calling it** (§1.4.5) |
+| **Is it secure?** | It has real strengths — no credential handling, no back doors, every role check fails closed. It also has six Critical findings, all inherited from TRIP, centered on one defect: **the server does not check who is calling it** (§1.4.5) |
 | **Can I see who did what?** | For travel decisions, yes — the audit trail is good. For **changes to who holds access**, largely no (§1.8) |
 | **What is the single biggest unknown?** | Whether the deployment runs as `USER_ACCESSING` or `USER_DEPLOYING`. The manifest says one thing and eight source comments say the other. It changes whose credentials every file and database operation uses (§1.3.4, **VT-01**) |
 
@@ -65,7 +65,7 @@ LETS is a working travel-request and approval system built on a proven foundatio
 
 LETS is a **web application that runs inside Google's infrastructure**, not on a server GSA operates. There is nothing to patch, no operating system to maintain, and no hosting bill. Google runs the code; GSA owns the code and the data.
 
-Its database is **a Google Sheet** `[VERIFIED]`. Not a metaphor — the requests, travellers, costs, approvals, and user roles are rows in tabs of a single spreadsheet, and anyone with edit access to that spreadsheet can change any of it directly. That fact drives much of §1.5 and §1.6.
+Its database is **a Google Sheet** `[VERIFIED]`. Not a metaphor — the requests, travelers, costs, approvals, and user roles are rows in tabs of a single spreadsheet, and anyone with edit access to that spreadsheet can change any of it directly. That fact drives much of §1.5 and §1.6.
 
 | Component | What it actually is | Identifier |
 |---|---|---|
@@ -93,7 +93,7 @@ This is the most important structural fact about LETS, and no project document s
 
 1. **The advertised "mandatory budget check" does not happen.** A travel request can be approved today with no budget consulted `[VERIFIED]`. If leadership believes budget enforcement is live, that belief is wrong.
 2. **Thirteen of the findings in the gap register describe defects in code nobody can currently trigger.** They are real, but latent. Do not spend the first remediation cycle on them.
-3. **That same fact makes them cheap.** There is no production data in those tabs to migrate and no user depending on current behaviour. **The budget module is cheaper to fix now than it will ever be again.** This is the single most useful scheduling fact in the whole assessment.
+3. **That same fact makes them cheap.** There is no production data in those tabs to migrate and no user depending on current behavior. **The budget module is cheaper to fix now than it will ever be again.** This is the single most useful scheduling fact in the whole assessment.
 
 > **`PROJECT_PLAN.md` is misleading on this point.** It describes LETS as "layering in an active financial governance engine" `[CLAIMED]`. The engine exists and is well written; it is not active, and "layering in" understates what remains — the two systems also disagree about which cost figure is authoritative, which is **BD-4**, a decision only you can make.
 
@@ -107,7 +107,7 @@ Measured by comparing every file byte-for-byte against the TRIP reference snapsh
 | **Modified by LETS** | 5 | 5% |
 | **Written for LETS** | 12 | 12% |
 
-The five modified files are worth knowing by name, because they are the entire surface where LETS changed inherited behaviour `[VERIFIED]`:
+The five modified files are worth knowing by name, because they are the entire surface where LETS changed inherited behavior `[VERIFIED]`:
 
 | File | What LETS changed |
 |---|---|
@@ -150,14 +150,14 @@ SUBMIT
   │                                                          │
   │                                                     approve
   │                                                          ↓
-  │                        ┌──── any traveller overhead-funded? ────┐
+  │                        ┌──── any traveler overhead-funded? ────┐
   │                        │ YES                               NO   │
   │                        ↓                                        ↓
   │                   PENDING_FAS ──fas_approve──→  APPROVED_GOGOV ←┘
   │                        │                               │
   │                     fas_deny                           ↓
   │                        ↓                   PENDING_DD_CONFIRMATION
-  │                     DENIED                   (one per traveller's
+  │                     DENIED                   (one per traveler's
   │                                               Division Director)
   │                                                        │
   │                                      all confirmed ────┴──── issue reported
@@ -172,7 +172,7 @@ SUBMIT
 | Surprise | Detail | Finding |
 |---|---|---|
 | **`COMPLETED` does not mean the trip happened** | It means the last Division Director confirmed funding — which occurs **before travel** `[VERIFIED]` `Review_DDConfirm.js:364-369`. There is no post-travel status, no actual-cost capture, and no reconciliation anywhere in the running system | **G-019** |
-| **A request can be approved with no human review at all** | If the AAS Front Office reviewer submits a request where every traveller is client-paid, the skip rules route past every stage and the FAS branch sees no overhead cost — so it lands at `APPROVED_GOGOV` immediately `[VERIFIED]` `Submission.js:100-101, 161-183` | **G-018** |
+| **A request can be approved with no human review at all** | If the AAS Front Office reviewer submits a request where every traveler is client-paid, the skip rules route past every stage and the FAS branch sees no overhead cost — so it lands at `APPROVED_GOGOV` immediately `[VERIFIED]` `Submission.js:100-101, 161-183` | **G-018** |
 | **A blank funding field counts as overhead** | The test is `!val \|\| val === 'overhead'` `[VERIFIED]` `Review_Action.js:528-529`. This is the correct conservative default — a missing value routes to *more* scrutiny, not less | *(a strength)* |
 | **No budget is consulted at any point** | Nothing in this diagram touches a budget `[VERIFIED]` | **G-015**, **G-016** |
 
@@ -229,7 +229,7 @@ All four are inherited from TRIP — the same four names are broken in the refer
 
 **G-011 — two pages have no role gate at all.**
 
-`?mode=budget` and `?mode=dd-confirm` apply no check beyond the site gate `[VERIFIED]` `Render.js:379, :184`. For `dd-confirm` this is partly mitigated — the data it loads is filtered by the caller's email matching a traveller's Division Director field. For `budget` there is nothing: the page is protected only by the fact that no link points to it.
+`?mode=budget` and `?mode=dd-confirm` apply no check beyond the site gate `[VERIFIED]` `Render.js:379, :184`. For `dd-confirm` this is partly mitigated — the data it loads is filtered by the caller's email matching a traveler's Division Director field. For `budget` there is nothing: the page is protected only by the fact that no link points to it.
 
 > **That distinction matters and is often confused.** Hiding the admin and reviewer links in the navigation is cosmetic — anyone can type `?mode=admin`, and the real protection is the server-side `isTravelAdmin` check, which is sound `[VERIFIED]`. But `?mode=budget` has **no** server-side check, so hiding its link is the *only* protection. That is security by obscurity and should be treated as no protection at all.
 
@@ -246,7 +246,7 @@ All four are inherited from TRIP — the same four names are broken in the refer
 | 3 | **The Apps Script editor** | Project editors | Everything. Run any function, read every stored secret |
 | 4 | **The Google Sheet** | Anyone with Drive edit access | Every row of every table, directly |
 | 5 | **GitHub Actions** | Whoever can merge to `main` | Replaces the production code |
-| 6 | **Five scheduled triggers** | Nobody — they run themselves | Cache warming and per-diem synchronisation |
+| 6 | **Five scheduled triggers** | Nobody — they run themselves | Cache warming and per-diem synchronization |
 
 **Paths 1 and 2 are different, and the difference is the central security fact of this system.** Path 1 is what you administer. Path 2 is what the system actually permits. §1.4.5 explains it.
 
@@ -293,7 +293,7 @@ Every Apps Script web app runs in one of two modes, chosen when the deployment i
 | `lets_app/appsscript.json:20` | `"executeAs": "USER_ACCESSING"` | `[VERIFIED]` in the file |
 | **Eight comments across six source files** | `USER_DEPLOYING` — including `Attachments.js:5` *"Architecture (USER_DEPLOYING mode)"* and `Reporting.js:310` *"The web app runs as the deploying owner (USER_DEPLOYING)"* | `[VERIFIED]` as comments |
 
-**And the manifest is not authoritative.** The "Execute as" setting is stored on the *deployment*, not in the pushed manifest file. A deployment created with one setting keeps it regardless of what the manifest says afterwards. `clasp push` cannot change it, and reading the file cannot tell you what it is `[VERIFIED]`.
+**And the manifest is not authoritative.** The "Execute as" setting is stored on the *deployment*, not in the pushed manifest file. A deployment created with one setting keeps it regardless of what the manifest says afterward. `clasp push` cannot change it, and reading the file cannot tell you what it is `[VERIFIED]`.
 
 **Why you cannot defer this.** Under `USER_DEPLOYING`, every unguarded server function in §1.4.5 executes with the owner's full Drive and Sheets credentials — so a user who should have no access to a file can cause the system to act on it anyway. Five findings move from "any user can corrupt data" to "any user can corrupt data **using a privileged identity**": **G-003, G-005, G-012, G-027, G-044**.
 
@@ -395,7 +395,7 @@ This is finding **G-008**, and §1.7 covers the dependency itself.
 
 ### 1.4.3 What each role can actually do
 
-Built from enforced behaviour, not role names `[VERIFIED]`.
+Built from enforced behavior, not role names `[VERIFIED]`.
 
 | Capability | `admin` | `aas_fo` | `fas_fo` | `bu` | `sector` | `approved_user` | HC supervisor | HC COS/CE |
 |---|---|---|---|---|---|---|---|---|
@@ -411,7 +411,7 @@ Built from enforced behaviour, not role names `[VERIFIED]`.
 | Bulk delete requests | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Export all data | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **Read any request in full** | ✅ | ✅ | ✅ | ✅ | ✅ | **✅** | **✅** | **✅** |
-| **Edit any request's costs, travellers, itinerary** | ✅ | ✅ | ✅ | ✅ | ✅ | **✅** | **✅** | **✅** |
+| **Edit any request's costs, travelers, itinerary** | ✅ | ✅ | ✅ | ✅ | ✅ | **✅** | **✅** | **✅** |
 | **Grant themselves `admin`** | ✅ | ✅ | ✅ | ✅ | ✅ | **✅** | **✅** | **✅** |
 
 ### 1.4.4 Read that table twice
@@ -450,7 +450,7 @@ Everything in §1.4.3's last three rows follows from this one fact:
 | Row | The function behind it | Finding |
 |---|---|---|
 | Read any request in full | `getRequestForReview` computes permission flags and then returns the record regardless `[VERIFIED]` | **G-004** |
-| Edit any request | Five of seven `update*` functions check nothing — itinerary, travellers, per-traveller costs, shared costs, grand total `[VERIFIED]` | **G-003** |
+| Edit any request | Five of seven `update*` functions check nothing — itinerary, travelers, per-traveler costs, shared costs, grand total `[VERIFIED]` | **G-003** |
 | Grant themselves admin | `bootstrapTravelAdmin` writes an admin role row for the caller and clears the role cache so it takes effect at once `[VERIFIED]` | **G-002** |
 
 **Two aggravating details.** Request IDs are sequential, so "you need to know the ID" is not a control `[VERIFIED]`. And 118 functions are named with a **leading** underscore — `_bulkDeleteSmokeRequests`, for instance — which looks private but confers nothing in Apps Script; only a **trailing** underscore does `[VERIFIED]`.
@@ -556,7 +556,7 @@ Stated so you do not go looking for controls that are not there:
 
 > **Revoke through the admin console, not the spreadsheet.** Both traps below only bite manual spreadsheet edits.
 
-**Trap 1 — `Is_Active` only recognises one word (G-032).**
+**Trap 1 — `Is_Active` only recognizes one word (G-032).**
 
 A row is treated as inactive **only** if the value is the boolean `false` or the text `"false"` `[VERIFIED]` `Access.js:243, 266`:
 
@@ -617,15 +617,15 @@ When the system looks up someone's roles and finds nothing, it calls `selfHealCu
 | **What is this org called?** | **DOWN** — to the most specific matching row | `FCA0A` → "Portfolio Management Service Center" |
 | **Whose budget does its travel hit?** | **UP** — to the nearest ancestor with an `Office_Code` | `FCA0A` → `FCA` → budget key `OMD` |
 
-**Only `FC`, `FCA`, `FCB` and `FCC` carry an `Office_Code`,** because only those four are budget offices in `BudgetConfig.js`. All 133 sub-org rows leave it **deliberately blank** and inherit it. Do not "helpfully" fill those cells in — copying `OMD` onto all 22 `FCA` descendants means a reorganisation has to edit 22 rows instead of one.
+**Only `FC`, `FCA`, `FCB` and `FCC` carry an `Office_Code`,** because only those four are budget offices in `BudgetConfig.js`. All 133 sub-org rows leave it **deliberately blank** and inherit it. Do not "helpfully" fill those cells in — copying `OMD` onto all 22 `FCA` descendants means a reorganization has to edit 22 rows instead of one.
 
-> **To move a service center to a different DAC, fill `Office_Code` and `Business_Unit` on that one row.** An explicit value beats the inherited one. That is the supported way to express a reorganisation, and it needs no code change.
+> **To move a service center to a different DAC, fill `Office_Code` and `Business_Unit` on that one row.** An explicit value beats the inherited one. That is the supported way to express a reorganization, and it needs no code change.
 
 **Adding a new org code.** Add a row to `HC_Orgs` with just `Org_Code` and `Division`; leave `Office_Code` blank so it inherits. A code *missing* from `HC_Orgs` still attributes correctly by prefix — the roster editor will show *"code not in HC_Orgs; inherited from FCA"* — so an out-of-date list degrades gracefully rather than breaking.
 
 **The list's own accuracy.** @clolry's words: *"as of May — it's a bit outdated but this should be pretty close."* Treat a code the validator flags as **possibly a real new org** rather than certainly a typo. The warning names the four top-level codes it failed to match and reports how many codes are loaded; *"4 codes loaded"* means `HC_Orgs` was never populated, not that the positions are wrong.
 
-**What "Load Org Codes" does.** Replaces every `HC_Orgs` row with the 137 known codes, leaves `HC_Positions` untouched, and clears the cache. Idempotent — safe to press twice. **It overwrites hand-edits to `HC_Orgs`**, including a reorganisation override as described above; re-apply those afterwards.
+**What "Load Org Codes" does.** Replaces every `HC_Orgs` row with the 137 known codes, leaves `HC_Positions` untouched, and clears the cache. Idempotent — safe to press twice. **It overwrites hand-edits to `HC_Orgs`**, including a reorganization override as described above; re-apply those afterward.
 
 ### 1.6.4 Routine checks worth scheduling
 
@@ -637,7 +637,7 @@ When the system looks up someone's roles and finds nothing, it calls `selfHealCu
 | **Quarterly** | Review the database spreadsheet's sharing list | It is an access-control list (§1.5.2) |
 | **Quarterly** | Re-run **VT-18** — trigger health, as **each** project editor | A departed owner's triggers fail silently (§1.3.3) |
 | **After any FY rollover** | Check per-diem sync status and the fiscal-year configuration | **G-037**: LETS IDs are hardcoded to FY27 `[VERIFIED]` |
-| **After any reorganisation** | Open HR Roster and check for org-code warnings | The loaded list is from May 2026 and new codes appear as warnings (§1.6.3a) |
+| **After any reorganization** | Open HR Roster and check for org-code warnings | The loaded list is from May 2026 and new codes appear as warnings (§1.6.3a) |
 | **Before any column change** | Stop — read §1.6.5 first | |
 
 **`verifyPhase7Routing()` has a wrinkle worth knowing** (**G-010**): it is itself unguarded and browser-callable, and it returns the complete role roster — every admin, every primary and backup, with names and addresses. Running it is safe. The finding is that anyone can.
@@ -708,7 +708,7 @@ Failing closed is the **right** default — an HR data outage should not grant a
 
 **The underlying worry was right; the trigger named was not.** Executed across input classes `[VERIFIED]`, the values that silently deny a real supervisor are **`'02'`, `' 2'`, `'2 '`, `'2.0'`, and `'two'`** — zero-padded, whitespace-bearing, and decimal-formatted text. The gate trims nothing and pads nothing. Those are exactly the shapes a spreadsheet export, a CSV round-trip, or a text-formatted column produces, so **the question is still worth twenty minutes — it just has to ask for the exact distinct values rather than the type.**
 
-**The adjacent field fails the other way.** `occupancyStatus` is read as a **denylist** — only `VACANT` and `OBLIGATED` are refused `[VERIFIED]` `Access.js:417-418` — so a blank, absent, or unrecognised occupancy value **grants** access. Two checks, two lines apart, failing in opposite directions. That is finding **G-074**, and VT-03 captures the data for it in the same visit.
+**The adjacent field fails the other way.** `occupancyStatus` is read as a **denylist** — only `VACANT` and `OBLIGATED` are refused `[VERIFIED]` `Access.js:417-418` — so a blank, absent, or unrecognized occupancy value **grants** access. Two checks, two lines apart, failing in opposite directions. That is finding **G-074**, and VT-03 captures the data for it in the same visit.
 
 > **VT-03 — twenty minutes, and it answers three questions.**
 > 1. Apps Script editor → Libraries: is an HC library attached? To production *and* to the sandbox?
@@ -746,7 +746,7 @@ It is rated Medium rather than High only because exploiting it requires compromi
 | Email auto-patched by self-heal | `Updated_By: 'hc_self_heal'` | **Not the caller** | Previous email not retained in any sheet |
 | Request status or reviewer changed by an admin | `Approval_Log` with the before and after status | `admin.name`, `admin.email`, role `Admin` | **None — exemplary** `[VERIFIED]` `Admin_Actions.js:68-80` |
 | Requests **bulk deleted** | `console.log` only `[VERIFIED]` `Admin_Cleanup.js:225` | The admin's email, **in Cloud Logging** | **The rows are gone from six tabs** and the application retains no record |
-| Costs, travellers, itinerary edited | `Approval_Log` | Real email — but the **role is hardcoded** as `'Submitter'` at six sites `[VERIFIED]` | The role column asserts rather than records |
+| Costs, travelers, itinerary edited | `Approval_Log` | Real email — but the **role is hardcoded** as `'Submitter'` at six sites `[VERIFIED]` | The role column asserts rather than records |
 | An admin viewing as another role | Nowhere | — | Read-only simulation; nothing to attribute (§1.4.6) |
 
 ### 1.8.2 The pattern, stated once
@@ -784,7 +784,7 @@ Eleven cases. The code wins in every one; the document is named so it can be fix
 | `PROJECT_PLAN.md:116` | *"minimal-scope credentials for each service"* | **No `oauthScopes` declared at all** (**G-006**) |
 | `Review_Update.js` ×6 | `Action_By_Role` is `'Submitter'` | The caller may be an admin or a reviewer (§1.8.2) |
 
-**The pattern is worth naming, because it tells you which documentation to trust.** Where a file's comments describe *that file's own* behaviour, they are accurate — `Users.js`, `Reporting.js`, and `Admin_Actions.js` all do exactly what their headers say `[VERIFIED]`. Where a comment describes what *other* files do, or what *will* happen, it describes intent that was never completed. **Read file headers as reliable about themselves and aspirational about everything else.**
+**The pattern is worth naming, because it tells you which documentation to trust.** Where a file's comments describe *that file's own* behavior, they are accurate — `Users.js`, `Reporting.js`, and `Admin_Actions.js` all do exactly what their headers say `[VERIFIED]`. Where a comment describes what *other* files do, or what *will* happen, it describes intent that was never completed. **Read file headers as reliable about themselves and aspirational about everything else.**
 
 ### 1.8.4 The accountability question you will be asked
 

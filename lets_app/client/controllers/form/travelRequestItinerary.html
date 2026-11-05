@@ -749,7 +749,7 @@
    * identically.
    *
    * Idempotent — calling it twice does not double-bind, because
-   * _setupLegCityAutocomplete also calls it and a leg can be re-initialised.
+   * _setupLegCityAutocomplete also calls it and a leg can be re-initialized.
    */
   Controller._bindLegCityManualEntry = function(legId) {
     const self = this;
@@ -837,7 +837,7 @@
     }
 
     // Manual entry stays available even WITH a dropdown: the GSA list does not
-    // include every city, and a traveller going somewhere unlisted must still
+    // include every city, and a traveler going somewhere unlisted must still
     // be able to type it. Previously this was bound inside the `if
     // (awInstance)` block, so a failed Awesomplete construction silently
     // removed the only way to enter a city.

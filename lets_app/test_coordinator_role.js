@@ -217,7 +217,7 @@ console.log('\n3. a coordinator is NOT a reviewer');
   ok('but does NOT set isReviewer', !/ctx\.isReviewer = true/.test(upTo),
      'a coordinator has no queue and no approve button');
 
-  // Their scope is organisation-wide: reassigning a stuck request and
+  // Their scope is organization-wide: reassigning a stuck request and
   // resolving a proposal are not scoped jobs.
   ok('their scope is all', /scope = \{ type: 'all'/.test(upTo),
      'a scoped coordinator could not do the thing the role exists for');
@@ -329,9 +329,9 @@ console.log('\n6. the role is grantable end to end');
   ok("and includes 'coordinator'", m && /'coordinator'/.test(m[1]), m && m[1]);
 
   const uc = code('lets_app/client/controllers/admin/travelUsersController.html');
-  ok('the UI catalogue offers it', /'coordinator':\s*\{/.test(uc));
+  ok('the UI catalog offers it', /'coordinator':\s*\{/.test(uc));
   ok('as grantable', /'coordinator':[\s\S]{0,200}grantable: true/.test(uc));
-  ok('with no scope, because it is organisation-wide',
+  ok('with no scope, because it is organization-wide',
      /'coordinator':[\s\S]{0,200}hasScope: false/.test(uc));
 
   // The hint must state the BOUNDARY, not just the grant. An admin choosing a

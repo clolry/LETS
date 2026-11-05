@@ -341,7 +341,7 @@ function getAdminDashboard(userEmail, period, customStart, customEnd) {
 
     // Check stats cache (action center is user-specific, can't cache).
     // For custom ranges, fold the start/end into the cache key so different
-    // windows don't collide. Non-custom keys stay backwards-compatible.
+    // windows don't collide. Non-custom keys stay backward-compatible.
     console.time('getAdminDashboard.cacheCheck');
     var cache = CacheService.getScriptCache();
     // Cache key version bump — increment when the perf-builder shape

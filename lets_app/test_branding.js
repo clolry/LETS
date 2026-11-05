@@ -502,7 +502,7 @@ console.log('12. the email logo is the ASD artwork, not the inherited one');
   // Rendered at 240 px wide by _buildAASLogo, so 480 is the 2x floor for a
   // retina client. Narrower than that and it renders soft.
   ok('it is at least 2x the 240px render width', w >= 480, { w, h });
-  ok('it has an alpha channel (colour type 6)', png[25] === 6, png[25]);
+  ok('it has an alpha channel (color type 6)', png[25] === 6, png[25]);
 }
 
 console.log(fails?('\n'+fails+' FAILURE(S)'):'\nALL ASSERTIONS PASSED!');

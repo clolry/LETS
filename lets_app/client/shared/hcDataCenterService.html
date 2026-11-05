@@ -211,10 +211,10 @@ window.HCDataCenter = (function() {
    * ACCEPTS EITHER, because employeeId is no longer always present.
    *
    * The server withholds employeeId from non-admin callers — it joins to
-   * payroll and HR systems this app does not own. The traveller picker used
+   * payroll and HR systems this app does not own. The traveler picker used
    * it as its option value, so withholding it alone would have made every
-   * selection resolve to null and silently broken traveller entry for every
-   * non-admin user. Found by auditing what the sanitiser removed, not by the
+   * selection resolve to null and silently broken traveler entry for every
+   * non-admin user. Found by auditing what the sanitizer removed, not by the
    * form failing.
    *
    * positionNumber is the right key anyway: it identifies a POSITION rather
@@ -277,7 +277,7 @@ window.HCDataCenter = (function() {
    * Previously built from _employeeIndex alone, which is empty for a
    * non-admin caller now that the server withholds employeeId — so the
    * details lookup returned nothing and the form could not populate a
-   * selected traveller.
+   * selected traveler.
    */
   function getDetailsMap() {
     var map = {};

@@ -60,7 +60,7 @@ Every count in this document is produced by [`evidence/pass6_schema_census.js`](
 |---|---|---|---|
 | **A — TRIP** | 16 | `SHEET_NAMES` `server/01_constants/Sheets.js:21` | **In use. This is the live database** |
 | **B — LETS** | 7 | `LETS_CONFIG.sheets` `server/00_config/BudgetConfig.js` | **Declared, never created, never read** (§3.6) |
-| **C — FAS tracker** | 1 tab, external | `FASTrackerSync.js` | **Another organisation's spreadsheet** (§3.7) |
+| **C — FAS tracker** | 1 tab, external | `FASTrackerSync.js` | **Another organization's spreadsheet** (§3.7) |
 
 **One tab name is claimed by both A and B** `[VERIFIED]`. That is §3.2.
 
@@ -123,7 +123,7 @@ The five trailing omissions are not corruption, but two of them are an audit gap
                       │
           ┌───────────▼────────────┐
           │   Traveler_Leg_Costs   │  PK: (Request_ID, Traveler_ID, Leg_ID)
-          │      31 columns        │  — one row per traveller per leg
+          │      31 columns        │  — one row per traveler per leg
           └────────────────────────┘
 
     ┌──────────────┐         ┌───────────────────┐
@@ -153,7 +153,7 @@ The five trailing omissions are not corruption, but two of them are an audit gap
 | Named ranges | **None** `[VERIFIED]` | |
 | Sheet protections | **None created by code** `[VERIFIED]` | |
 
-> **The sheet has no defences of its own.** Every rule above that says "yes, on write" means *the application validates it*. The spreadsheet does not. This is finding **G-045**, and it is why §1.5.1 of the Administrator's Guide ranks spreadsheet edit access as the **second** most powerful privilege in the system.
+> **The sheet has no defenses of its own.** Every rule above that says "yes, on write" means *the application validates it*. The spreadsheet does not. This is finding **G-045**, and it is why §1.5.1 of the Administrator's Guide ranks spreadsheet edit access as the **second** most powerful privilege in the system.
 
 ---
 
@@ -183,7 +183,7 @@ Current: **`L27-0001`**. Legacy rows keep `REQ-2026-0001` and remain valid for e
 
 **Go.gov truncates a trip name at exactly 40 characters** `[VERIFIED]` — measured across 565 real request names: 79 are exactly 40 long, none is longer, and the cut lands mid-word (`'Huntsville TDY – COBRA TDL 1-087 Invento'`).
 
-Travellers are asked to put the LETS ID at the **front** of the Go.gov trip name so the monthly expense report can be matched back automatically. A prefix survives truncation; a suffix is cut away on precisely the long-title trips most likely to be expensive.
+Travelers are asked to put the LETS ID at the **front** of the Go.gov trip name so the monthly expense report can be matched back automatically. A prefix survives truncation; a suffix is cut away on precisely the long-title trips most likely to be expensive.
 
 | prefix | characters | room left for the title | real titles that fit |
 |---|---|---|---|
@@ -238,7 +238,7 @@ A CI guard asserts all three, checked against each **function body** rather than
 | 8 | `Is_OCONUS` | Outside the continental US — `AK, HI, PR, VI, GU, AS, MP` | — |
 | 9 | `BLUF` | "Bottom line up front" — the request's summary justification | **CUI** |
 | 10 | `Purpose` | Travel purpose, from the Tier-1 list | **CUI** |
-| 11 | `Travel_Types` | Categorisation of the travel | — |
+| 11 | `Travel_Types` | Categorization of the travel | — |
 | 12 | `Mission_Critical_Types` | Mission-criticality rationale | **CUI** |
 | 13 | `Shared_Facilities` | Shared facilities cost | **Financial** |
 | 14 | `Shared_Facilities_Desc` | Description of that cost | — |
@@ -249,14 +249,14 @@ A CI guard asserts all three, checked against each **function body** rather than
 | 19 | `Shared_Other` | Other shared cost | **Financial** |
 | 20 | `Shared_Other_Desc` | Description | — |
 | 21 | `Shared_Total` | Sum of columns 13, 15, 17, 19 | **Financial** |
-| 22 | `Traveler_Total` | Sum of all travellers' subtotals | **Financial** |
+| 22 | `Traveler_Total` | Sum of all travelers' subtotals | **Financial** |
 | 23 | `Grand_Total` | `Shared_Total` + `Traveler_Total`. **The authoritative cost figure for System A** | **Financial** |
-| 24 | `Traveler_Count` | Number of traveller rows | — |
+| 24 | `Traveler_Count` | Number of traveler rows | — |
 | 25 | `Leg_Count` | Number of itinerary legs | — |
 | 26 | `Submitter_Name` | Who submitted | **PII** |
 | 27 | `Submitter_Email` | Submitter's address. **The field record-level authorization compares against** | **PII** |
 | 28 | `Submitter_BU` | Business unit | — |
-| 29 | `Submitter_Org_Code` | Organisation code | — |
+| 29 | `Submitter_Org_Code` | Organization code | — |
 | 30 | `Sector_Director_Name` | Routed sector director | **PII** |
 | 31 | `Sector_Director_Email` | " | **PII** |
 | 32 | `BU_Reviewer_Name` | Routed BU reviewer | **PII** |
@@ -281,7 +281,7 @@ A CI guard asserts all three, checked against each **function body** rather than
 
 | # | Column | Meaning | Sensitivity |
 |---|---|---|---|
-| 43 | `DD_Flagged_Travelers` | JSON array of traveller IDs the DD flagged | **PII** |
+| 43 | `DD_Flagged_Travelers` | JSON array of traveler IDs the DD flagged | **PII** |
 | 44 | `DD_Issue_Notes` | The DD's description of the funding problem | **CUI** |
 | 45 | `DD_Issue_Reporter` | Which DD raised it | **PII** |
 
@@ -314,7 +314,7 @@ A CI guard asserts all three, checked against each **function body** rather than
 
 ## §3.3 The request child tabs
 
-One request has many legs, many travellers, one cost row per traveller per leg, any number of attachments, and an audit trail.
+One request has many legs, many travelers, one cost row per traveler per leg, any number of attachments, and an audit trail.
 
 ### 3.3.1 `Request_Legs` — 15 columns
 
@@ -338,11 +338,11 @@ One row per itinerary leg. `[VERIFIED]`
 | 14 | `MIE_Rate` | Meals and incidentals rate used | **Financial** |
 | 15 | `Location_Display` | Formatted location string for the UI | — |
 
-**Columns 13 and 14 are a snapshot, not a reference.** The rate in force at the time of submission is copied into the row. A later per-diem sync does not retroactively change an existing request — which is correct behaviour, and worth knowing before anyone tries to reconcile a request against current rates.
+**Columns 13 and 14 are a snapshot, not a reference.** The rate in force at the time of submission is copied into the row. A later per-diem sync does not retroactively change an existing request — which is correct behavior, and worth knowing before anyone tries to reconcile a request against current rates.
 
 ### 3.3.2 `Request_Travelers` — 38 columns
 
-One row per traveller per request. The widest child tab, and the one holding the most sensitive data. `[VERIFIED]`
+One row per traveler per request. The widest child tab, and the one holding the most sensitive data. `[VERIFIED]`
 
 | # | Column | Meaning | Sensitivity |
 |---|---|---|---|
@@ -356,9 +356,9 @@ One row per traveller per request. The widest child tab, and the one holding the
 | 8 | `LCAT` | Labour category | **PII** |
 | 9 | `DD_Name` | Division Director who must confirm funding | **PII** |
 | 10 | `DD_Email` | **The field DD confirmation authorizes against** `Review_DDConfirm.js:330` | **PII** |
-| 11 | `Duty_Location` | Where the traveller is based | **PII** |
+| 11 | `Duty_Location` | Where the traveler is based | **PII** |
 | 12 | `Duty_Location_Code` | — | **PII** |
-| 13 | `Attending_Legs` | Which legs this traveller is on | — |
+| 13 | `Attending_Legs` | Which legs this traveler is on | — |
 | 14 | `Transport_Mode` | `private` or `gov` | — |
 | 15 | `Ticket_Cost` | Airfare | **Financial** |
 | 16 | `Total_Miles` | Driving distance | **Financial** |
@@ -371,7 +371,7 @@ One row per traveller per request. The widest child tab, and the one holding the
 | 23 | `Local_Travel_Total` | " | **Financial** |
 | 24 | `Other_Percentage` | Uplift percentage applied | **Financial** |
 | 25 | `Other_Total` | Computed from the percentage | **Financial** |
-| 26 | `Subtotal` | This traveller's total | **Financial** |
+| 26 | `Subtotal` | This traveler's total | **Financial** |
 | 27 | `Is_Client_Paid` | **The field that decides FAS routing.** See the warning below | — |
 | 28 | `Role_Justification` | Why this person must travel | **CUI** |
 | 29 | `Is_Full_Time_Telework` | — | **PII** |
@@ -382,7 +382,7 @@ One row per traveller per request. The widest child tab, and the one holding the
 | 34 | `Is_Speaking` | Presenting at the event | — |
 | 35 | `Event_Open_To_Press` | — | — |
 | 36 | `Receiving_NFS` | Receiving non-federal sponsorship | — |
-| 37 | `DD_Confirmed` | Set TRUE when that traveller's DD confirms funding | — |
+| 37 | `DD_Confirmed` | Set TRUE when that traveler's DD confirms funding | — |
 | 38 | `DD_Confirmed_At` | Timestamp | — |
 
 > **Column 27, `Is_Client_Paid`, carries more weight than its name suggests.** It determines whether a request needs FAS Front Office review for Executive Order 14222 compliance. The test is `!val || val === 'overhead'` `[VERIFIED]` `Review_Action.js:528` — meaning **a blank cell counts as overhead-funded** and routes to *more* scrutiny. That is the correct conservative default and is one of the system's quiet strengths.
@@ -391,13 +391,13 @@ One row per traveller per request. The widest child tab, and the one holding the
 
 **Columns 29–33 deserve an ISSO's attention.** Telework status, commute distance, security clearance, and passport validity are personnel attributes stored in a spreadsheet whose sharing list is an access-control list (§3.1.1). They are collected for legitimate cost and logistics reasons; they are also the most sensitive fields in the database.
 
-> **A related disclosure that is not in any tab.** Six real named GSA employees' email addresses are embedded in routing-test fixtures in `Submission.js`, with their role assignments labelled `[VERIFIED]` — finding **G-056**. It is inherited TRIP code, not LETS-added, and it is the one place personnel data appears in **source** rather than in the database.
+> **A related disclosure that is not in any tab.** Six real named GSA employees' email addresses are embedded in routing-test fixtures in `Submission.js`, with their role assignments labeled `[VERIFIED]` — finding **G-056**. It is inherited TRIP code, not LETS-added, and it is the one place personnel data appears in **source** rather than in the database.
 
 **On submission, 36 of the 38 columns are written** `[VERIFIED]`. Columns 37 and 38 are intentionally left blank — no Division Director has confirmed anything at submission time. That is correct, and it is the clearest example of why a narrower write is not automatically a defect.
 
 ### 3.3.3 `Traveler_Leg_Costs` — 31 columns
 
-One row per traveller per leg — the finest-grained cost data in the system. `[VERIFIED]`
+One row per traveler per leg — the finest-grained cost data in the system. `[VERIFIED]`
 Composite key: (`Request_ID`, `Traveler_ID`, `Leg_ID`).
 
 | # | Column | Meaning | Sensitivity |
@@ -430,7 +430,7 @@ Composite key: (`Request_ID`, `Traveler_ID`, `Leg_ID`).
 | 28 | `Local_Parking` | — | **Financial** |
 | 29 | `Local_Tolls` | — | **Financial** |
 | 30 | `Local_Travel_Total` | — | **Financial** |
-| 31 | `Leg_Subtotal` | This leg for this traveller | **Financial** |
+| 31 | `Leg_Subtotal` | This leg for this traveler | **Financial** |
 
 **The override triplets (15–17 and 22–24) are the audit-relevant part of this tab.** Each records that a human overrode a computed per-diem figure, by how much, and why. Those three columns together are the evidence for any question about why a cost differs from the published rate — and the reason columns are the only free-text justification of a financial decision anywhere in the child tabs.
 
@@ -442,7 +442,7 @@ Metadata only. The files themselves live in a Shared Drive. `[VERIFIED]`
 |---|---|---|---|
 | 1 | `Request_ID` | Parent request | — |
 | 2 | `Attachment_ID` | Format `att_<epoch ms>_<6 random chars>` | — |
-| 3 | `Traveler_ID` | Optional — attachments can be request- or traveller-level | — |
+| 3 | `Traveler_ID` | Optional — attachments can be request- or traveler-level | — |
 | 4 | `File_Name` | — | — |
 | 5 | `File_ID` | **The Drive file ID.** See the warning below | — |
 | 6 | `File_URL` | Direct Drive link | — |
@@ -596,7 +596,7 @@ A fallback identity source for users absent from HC. `[VERIFIED]`
 
 **The reader resolves that safely.** `_isTestSubmitter()` tests `flag === true || String(flag).toUpperCase() === 'TRUE'` `[VERIFIED]` `Email.js:3574` — so a blank means "do not suppress", mail is sent normally, and the whole function returns `false` on any error so a misconfigured row can never break email.
 
-**This is the opposite of the `Is_Active` trap, and the comparison is instructive.** Both columns are boolean-ish fields read from a spreadsheet. `Is_Active` defaults to the *permissive* reading (blank = active = has access), which is a security hazard. `Suppress_Emails` defaults to the *conservative* reading (blank = do not suppress = behave normally), which is correct. Same codebase, same kind of column, opposite defaults — which is worth noting because it shows the `Is_Active` behaviour is an oversight rather than a house style.
+**This is the opposite of the `Is_Active` trap, and the comparison is instructive.** Both columns are boolean-ish fields read from a spreadsheet. `Is_Active` defaults to the *permissive* reading (blank = active = has access), which is a security hazard. `Suppress_Emails` defaults to the *conservative* reading (blank = do not suppress = behave normally), which is correct. Same codebase, same kind of column, opposite defaults — which is worth noting because it shows the `Is_Active` behavior is an oversight rather than a house style.
 
 A separate one-shot migration exists to add this column to live sheets that predate it `Database.js:585-605` `[VERIFIED]`, which is why the seeder and the schema can disagree about its presence.
 
@@ -617,11 +617,11 @@ The only tab that self-creates *and* has a schema. `[VERIFIED]`
 | 3 | `Function_Name` | Where it failed | — |
 | 4 | `Error_Message` | — | **CUI** |
 | 5 | `Stack_Trace` | — | **CUI** |
-| 6 | `Context` | Serialised context at failure | **CUI** |
+| 6 | `Context` | Serialized context at failure | **CUI** |
 
 `logError` creates the tab with headers on first use if it is absent `[VERIFIED]` `Errors.js:50-58`, then appends a 6-element row — matching the schema exactly. **This is the pattern the `Feedback` tab should have followed.**
 
-Columns 4–6 are marked CUI because a stack trace and serialised context can contain request content, email addresses, and internal paths.
+Columns 4–6 are marked CUI because a stack trace and serialized context can contain request content, email addresses, and internal paths.
 
 ### 3.5.2 `Feedback` — 13 columns. **G-041 CLOSED.**
 
@@ -731,7 +731,7 @@ No new tab. Imported travel lands in `Requests` like anything else, because the 
 
 **Reviewer fields stay empty.** A name there would put completed travel on somebody's pending queue, and would put an approval in the record that never happened.
 
-**Every row is identifiable afterwards:** `Primary_Justification` is prefixed `BACKFILL:` and names the administrator, and an `Approval_Log` row with action `BACKFILL_IMPORT` states outright that *"NOT routed for approval and no notifications were sent"*. The log is what someone reads to ask who approved a thing; the honest answer here is nobody, and it has to say so.
+**Every row is identifiable afterward:** `Primary_Justification` is prefixed `BACKFILL:` and names the administrator, and an `Approval_Log` row with action `BACKFILL_IMPORT` states outright that *"NOT routed for approval and no notifications were sent"*. The log is what someone reads to ask who approved a thing; the honest answer here is nobody, and it has to say so.
 
 > **Duplicates are warned about, not blocked.** @clolry is typing in a quarter of a year, and entering a trip twice across two sittings would consume a DAC's budget twice. But two genuine trips to one event in a month happen — @clolry's own FAS tracker data has several — so the importer returns `needsConfirmation` with the matching request IDs and requires a second, deliberate press.
 
@@ -766,10 +766,10 @@ Org detail is populated **only** from `Requests.Traveler_Org_Codes`, which cover
 
 | Event | Attendance table | FAS tracker summary |
 |---|---|---|
-| CGP Spring Conference | 24 travellers | 4 travellers |
-| NCMA World Congress | 48 travellers | 5 travellers |
+| CGP Spring Conference | 24 travelers | 4 travelers |
+| NCMA World Congress | 48 travelers | 5 travelers |
 
-Different populations — ASD-wide versus FAS-exception-only. **Neither is wrong and they are not summed.** Every row carries `Source`, the event payload keeps `historical` and `letsDerived` in separate lists, and the dashboard shows both with their scope labelled. A blended average would describe neither population.
+Different populations — ASD-wide versus FAS-exception-only. **Neither is wrong and they are not summed.** Every row carries `Source`, the event payload keeps `historical` and `letsDerived` in separate lists, and the dashboard shows both with their scope labeled. A blended average would describe neither population.
 
 ### 3.5.2b `Event_Set_Asides` — 17 columns, **declared but not yet written**
 
@@ -969,13 +969,13 @@ Seventeen findings currently describe latent defects in this layer. **Wiring it 
 | **G-051** | No validation on cost — a negative estimate *increases* the apparent budget |
 | **G-063** | Eight placeholder approver addresses are seeded as live config |
 
-> **The scheduling conclusion, and it is the most useful fact in this section:** there is no production data in these tabs and no user depending on current behaviour. **Fixing these eight is cheaper now than it will ever be again** — and they should be fixed *before* wiring, not after.
+> **The scheduling conclusion, and it is the most useful fact in this section:** there is no production data in these tabs and no user depending on current behavior. **Fixing these eight is cheaper now than it will ever be again** — and they should be fixed *before* wiring, not after.
 
 ---
 
 ## §3.7 Layer C — the external FAS tracker
 
-**This is not our spreadsheet.** It belongs to another organisation and is the system of record for Executive Order 14222 travel-exception reporting. The structure below is inferred entirely from how the code reads and writes it `[INFERRED]` from `[VERIFIED]` code. **The real sheet is `[UNKNOWN]`.**
+**This is not our spreadsheet.** It belongs to another organization and is the system of record for Executive Order 14222 travel-exception reporting. The structure below is inferred entirely from how the code reads and writes it `[INFERRED]` from `[VERIFIED]` code. **The real sheet is `[UNKNOWN]`.**
 
 Tab name expected: `'FAS Travel Exceptions'`, **with a silent fallback to the first sheet** if that name is absent `[VERIFIED]` `FASTrackerSync.js:25, 93`.
 
@@ -1047,7 +1047,7 @@ Tab name expected: `'FAS Travel Exceptions'`, **with a silent fallback to the fi
 **Two consequences compound it:**
 
 1. **A duplicate `Request_ID` makes request lookup match the first row only.** Several lookups test `rows[i][0] === requestId` `[VERIFIED]`. Approving one request would operate on another's row. **Nothing detects it.**
-2. **`submitTravelRequestV2` writes to five tabs with no transaction** `[VERIFIED]`. A failure partway through leaves a request with legs but no travellers, or travellers but no costs. There is no rollback and no repair tool.
+2. **`submitTravelRequestV2` writes to five tabs with no transaction** `[VERIFIED]`. A failure partway through leaves a request with legs but no travelers, or travelers but no costs. There is no rollback and no repair tool.
 
 **VT-16 and VT-17 test whether either has already happened** — a `COUNTIF` for duplicate IDs, and a `MATCH` across the child tabs for orphan rows. Both are five to fifteen minutes and both are direct tests for real corruption.
 
@@ -1171,7 +1171,7 @@ Three cache layers sit between the spreadsheet and what a user sees `[VERIFIED]`
 >
 > If you must edit a sheet directly: allow ten minutes, or have an admin run `_bustRoutingCachesForTesting()` `Submission.js:1051` to clear the caches immediately.
 
-**One cache behaviour is worth praising.** The review envelope caches request *data* but **recomputes permission flags per user on every cache hit** `[VERIFIED]` `Review_Read.js:48-67`. Cached data never carries another user's permissions — a subtle thing to get right, and it was got right.
+**One cache behavior is worth praising.** The review envelope caches request *data* but **recomputes permission flags per user on every cache hit** `[VERIFIED]` `Review_Read.js:48-67`. Cached data never carries another user's permissions — a subtle thing to get right, and it was got right.
 
 ---
 

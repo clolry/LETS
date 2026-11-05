@@ -2053,7 +2053,7 @@ function _checkAllPageTemplates() {
  *
  * Warming CANNOT cover the space. There are 17,403 pairs and the cache holds
  * per-pair entries with a 24h TTL, so this reduces HOW OFTEN someone waits
- * rather than eliminating the wait. A traveller picking an unwarmed city still
+ * rather than eliminating the wait. A traveler picking an unwarmed city still
  * pays the full 2.7s, and the picker UI shows a spinner for exactly that case.
  * @clolry accepted that trade-off explicitly.
  *

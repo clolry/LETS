@@ -28,7 +28,7 @@
  *    trip-level number, and pretending otherwise would invent data.
  *
  * 2. Report Total != Amount Approved ON 37 OF 182 ROWS, by $4,569.93. Report
- *    Total is what the traveller claimed; Amount Approved is what GSA paid.
+ *    Total is what the traveler claimed; Amount Approved is what GSA paid.
  *    Reconciling against Report Total would overstate spend on a fifth of all
  *    rows. @clolry: "we need to use Amount Approved rather than Report Total."
  *
@@ -41,13 +41,13 @@
  * 4. THE EXPENSE EXPORT CARRIES NO REQUEST ID. Every cell of all 522 rows was
  *    searched for the Go.gov request codes; zero hits. 'Authorization
  *    Requests' is a bare Y/N. So the only automatic link is a LETS ID that a
- *    traveller typed into the trip name — which is why the SOP exists, and why
+ *    traveler typed into the trip name — which is why the SOP exists, and why
  *    matching falls back to proposing candidates for a human.
  *
  * WHY MATCHING CANNOT BE FULLY AUTOMATIC
  * --------------------------------------
- * Measured on the real files: traveller + exact title matches 231 of 522
- * expense reports (44.3%), plus 4 by date window. 32.6% belong to travellers
+ * Measured on the real files: traveler + exact title matches 231 of 522
+ * expense reports (44.3%), plus 4 by date window. 32.6% belong to travelers
  * with no request in the export at all. 20 rows have 2-3 equally plausible
  * candidates.
  *
@@ -56,7 +56,7 @@
  * that is what reconciliation measures.
  *
  * So a confident match is applied, an ambiguous one is PROPOSED, and anything
- * else is parked. An auto-match on a guess would attach one traveller's $7,548
+ * else is parked. An auto-match on a guess would attach one traveler's $7,548
  * to another's trip, and nothing downstream would question it.
  */
 
@@ -77,7 +77,7 @@ var GogovSync = (function () {
    *   L27-0001        current. 8 characters, so it fits inside Go.gov's
    *                   40-character trip-name limit and leaves room for the
    *                   trip name itself
-   *   REQ-2026-0362   legacy. Three travellers already typed these by hand
+   *   REQ-2026-0362   legacy. Three travelers already typed these by hand
    *                   into Go.gov before the format changed
    *
    * TOLERANT INPUT, STRICT OUTPUT. The three real hand-written examples each
@@ -335,7 +335,7 @@ var GogovSync = (function () {
         rowIndex: i,
         gogovRequestId: _str_(val(row, 'gogovRequestId')).toUpperCase(),
         tripName: title,
-        // The SOP convention. If the traveller put the LETS ID in the trip
+        // The SOP convention. If the traveler put the LETS ID in the trip
         // name, the match is exact and no human is needed.
         extractedLetsId: extractLetsId(title),
         employeeName: name,
@@ -375,7 +375,7 @@ var GogovSync = (function () {
         gogovEmployeeId: _str_(val(row, 'employeeId')),
         reportTotal: total,
         amountApproved: approved,
-        // Kept because nobody asks for it until a traveller disputes a
+        // Kept because nobody asks for it until a traveler disputes a
         // voucher, and then it is the only number that matters.
         disallowedAmount: round2(total - approved),
         reportEndDate: endDate,
@@ -400,8 +400,8 @@ var GogovSync = (function () {
    *
    *   lets-id     a LETS ID in the report name. Exact. AUTO.
    *   gogov-id    a Go.gov request ID in the report name. Exact. AUTO.
-   *   name-title  same traveller, same trip title, exactly one hit. AUTO.
-   *   name-date   same traveller, end dates within 14 days, one hit. AUTO.
+   *   name-title  same traveler, same trip title, exactly one hit. AUTO.
+   *   name-date   same traveler, end dates within 14 days, one hit. AUTO.
    *   ambiguous   several equally plausible. NEEDS_REVIEW.
    *   unmatched   nothing. Parked, still counted.
    *
@@ -423,18 +423,18 @@ var GogovSync = (function () {
       });
 
       if (byLets.length === 1) {
-        // THE TRAVELLER MUST STILL AGREE.
+        // THE TRAVELER MUST STILL AGREE.
         //
         // Found by running this matcher over the real export: a cited ID was
         // trusted on its own, and three expense reports were auto-matched to
         // requests belonging to DIFFERENT PEOPLE. Brandon Maness's $1,922.96
-        // landed on another traveller's request.
+        // landed on another traveler's request.
         //
         // One mistyped digit — or a copied trip name — moves money between
-        // travellers, and nothing downstream questions it. An explicit ID is
+        // travelers, and nothing downstream questions it. An explicit ID is
         // the STRONGEST signal available, which is exactly why a contradiction
-        // between it and the traveller name has to stop the match rather than
-        // be resolved in the ID's favour.
+        // between it and the traveler name has to stop the match rather than
+        // be resolved in the ID's favor.
         var owner = byLets[0].employeeNameNormalized;
         if (owner && expense.employeeNameNormalized &&
             owner !== expense.employeeNameNormalized) {
@@ -453,7 +453,7 @@ var GogovSync = (function () {
       }
 
       // An ID that matches nothing is worth saying out loud: it means the
-      // traveller followed the convention and the request is missing, which
+      // traveler followed the convention and the request is missing, which
       // is a different problem from not following it.
       if (!byLets.length) {
         return { status: 'NEEDS_REVIEW', requestId: '', method: '',
@@ -471,7 +471,7 @@ var GogovSync = (function () {
                .test(expense.reportName);
     });
     if (gogovIds.length === 1) {
-      // Traveller must agree here too, for the same reason as tier 1. A
+      // Traveler must agree here too, for the same reason as tier 1. A
       // 4-character code is short enough to collide with an ordinary word in
       // a trip name.
       var gOwner = gogovIds[0].employeeNameNormalized;
@@ -480,17 +480,17 @@ var GogovSync = (function () {
         return {
           status: 'NEEDS_REVIEW', requestId: '', method: '',
           candidates: [_cand_(gogovIds[0], 'Go.gov ID appears in the name, but ' +
-                                           'belongs to another traveller')],
+                                           'belongs to another traveler')],
           note: 'The Go.gov request ID in this report name belongs to ' +
                 (gogovIds[0].employeeName || gOwner) + ', not ' +
-                (expense.employeeName || 'this traveller') + '.'
+                (expense.employeeName || 'this traveler') + '.'
         };
       }
       return { status: 'AUTO_MATCHED', requestId: gogovIds[0].requestId,
                method: 'gogov-id', candidates: [] };
     }
 
-    // From here on, the traveller must match. Nothing else is reliable enough
+    // From here on, the traveler must match. Nothing else is reliable enough
     // to cross person boundaries.
     var samePerson = list.filter(function (r) {
       return r.employeeNameNormalized &&
@@ -498,7 +498,7 @@ var GogovSync = (function () {
     });
     if (!samePerson.length) {
       return { status: 'UNMATCHED', requestId: '', method: '', candidates: [],
-               note: 'No request in LETS for ' + (expense.employeeName || 'this traveller') +
+               note: 'No request in LETS for ' + (expense.employeeName || 'this traveler') +
                      '. Usually means the request predates what has been imported.' };
     }
 
@@ -519,14 +519,14 @@ var GogovSync = (function () {
         // of title-matched pairs have equal amounts — so a human decides.
         return { status: 'NEEDS_REVIEW', requestId: '', method: '',
                  candidates: byTitle.map(function (r) {
-                   return _cand_(r, 'same traveller and trip name');
+                   return _cand_(r, 'same traveler and trip name');
                  }),
-                 note: byTitle.length + ' requests share this traveller and ' +
+                 note: byTitle.length + ' requests share this traveler and ' +
                        'trip name. Amounts cannot distinguish them.' };
       }
     }
 
-    // TIER 4 — same traveller, end dates close together.
+    // TIER 4 — same traveler, end dates close together.
     var withDates = samePerson.filter(function (r) { return r.endDate; });
     if (expense.reportEndDate && withDates.length) {
       var near = withDates.filter(function (r) {
@@ -539,21 +539,21 @@ var GogovSync = (function () {
       if (near.length > 1) {
         return { status: 'NEEDS_REVIEW', requestId: '', method: '',
                  candidates: near.map(function (r) {
-                   return _cand_(r, 'same traveller, trip ended within 14 days');
+                   return _cand_(r, 'same traveler, trip ended within 14 days');
                  }),
-                 note: near.length + ' of this traveller\'s trips ended near ' +
+                 note: near.length + ' of this traveler\'s trips ended near ' +
                        expense.reportEndDate + '.' };
       }
     }
 
-    // Everything the traveller has, as candidates. Better than nothing: the
+    // Everything the traveler has, as candidates. Better than nothing: the
     // reviewer can see the whole list rather than searching for it.
     return {
       status: 'NEEDS_REVIEW', requestId: '', method: '',
       candidates: samePerson.slice(0, 20).map(function (r) {
-        return _cand_(r, 'same traveller');
+        return _cand_(r, 'same traveler');
       }),
-      note: 'Traveller matches but neither the trip name nor the dates line up.'
+      note: 'Traveler matches but neither the trip name nor the dates line up.'
     };
   }
 
@@ -573,12 +573,12 @@ var GogovSync = (function () {
   }
 
   /**
-   * Matches a whole batch, and summarises it.
+   * Matches a whole batch, and summarizes it.
    *
    * The summary is the SOP's feedback loop. @clolry asked how to instruct
    * users to put the LETS ID in the Go.gov trip name, and a convention nobody
    * measures decays — so the adoption rate is reported every month, with the
-   * travellers who did not follow it named.
+   * travelers who did not follow it named.
    *
    * @param {Array<Object>} expenses
    * @param {Array<Object>} requests
@@ -627,7 +627,7 @@ var GogovSync = (function () {
         letsIdAdoptionPct: results.length
           ? Math.round((withId.length / results.length) * 1000) / 10 : 0,
         // Named, so the feedback can be specific rather than a scold.
-        missingLetsIdTravellers: _distinct_(results
+        missingLetsIdTravelers: _distinct_(results
           .filter(function (r) { return !r.extractedLetsId; })
           .map(function (r) { return r.employeeName; })).slice(0, 50),
         byFiscalYear: byFy,

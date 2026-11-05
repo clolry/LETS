@@ -411,7 +411,7 @@ function bootstrapTravelAdmin(email, name, userId) {
  * ----------
  *   1. Apps Script editor → select `_seedInitialAdmins` in the function
  *      dropdown → Run.
- *   2. Authorise if prompted.
+ *   2. Authorize if prompted.
  *   3. Read the execution log. Every seeded identity is printed with the
  *      action taken ('created' or 'exists').
  *   4. Confirm in the spreadsheet: two new rows in Travel_Users and two in
@@ -761,7 +761,7 @@ function initTravelSystemConfig() {
  * real request names: 79 are exactly 40 long and none is longer, cut
  * mid-word.
  *
- * Travellers are asked to put the LETS ID at the FRONT of the Go.gov trip
+ * Travelers are asked to put the LETS ID at the FRONT of the Go.gov trip
  * name so the monthly expense report can be matched back automatically (see
  * GogovSync.extractLetsId). A prefix survives truncation; a suffix is cut
  * away on precisely the long-title trips most likely to be expensive.

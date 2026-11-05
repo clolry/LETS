@@ -235,7 +235,7 @@ systematic causes**. **No rating was changed.**
 > finding.** That is a rubric change, it would move ranks a sixth time, and **it is the
 > owner's call.** §6.6.4a records it as pending.
 >
-> **Two rows are flagged there as the weakest judgements in the register — G-026 and
+> **Two rows are flagged there as the weakest judgments in the register — G-026 and
 > G-027** — and **G-071** is rated on an assumption that **VT-09/VT-12 could
 > overturn**, in which case it becomes High.
 
@@ -333,7 +333,7 @@ cause** rather than silently updated:
    `PROJECT_PLAN.md:35` names a different sheet. **Finding G-075.** Only **VT-09**
    settles it.
 5. **`lets_app/.claspignore` still does not exclude `.DS_Store`** — one line, not
-   done, not authorised. Two such files are on disk and would be pushed.
+   done, not authorized. Two such files are on disk and would be pushed.
 6. **Should G-080 be fixed before the per-diem runbook is handed to anyone?** It is a
    **one-line fix for a silent wrong reimbursement figure** on reviewer-side edits of
    OCONUS legs. The runbook warns about it rather than fixing it, because fixing code
@@ -478,12 +478,12 @@ by the project owner and could not have been found by analysis at all**; and
 
 | ID | Finding | Severity |
 |---|---|---|
-| **G-069** | The client-paid override **fails open** — missing, null, or mis-keyed traveller rows skip FAS review entirely | High |
+| **G-069** | The client-paid override **fails open** — missing, null, or mis-keyed traveler rows skip FAS review entirely | High |
 | **G-070** | `SUBMITTER_CANCELLED` is read in three places and written nowhere, so reports cannot distinguish cancellation types | Low |
 | **G-071** | DD confirmation self-confirms when `DD_Email` **and** the session email are both blank | Low |
 | **G-072** | The CI hardcoded-ID guard used a 40-char floor and **missed 32/33-char Drive IDs and 72-char `AKfycb` deployment IDs** — length was never the issue; the pattern was `1`-anchored. **Remediated 2026-10-29** | Low |
 | **G-073** | Two initializers write **conflicting defaults** to one Script Property; whichever ran first decided the production sender | Low |
-| **G-074** | The site gate's `occupancyStatus` test is a **denylist**, so blank or unrecognised values **grant** access — two lines below an allowlist that fails closed | **Medium** |
+| **G-074** | The site gate's `occupancyStatus` test is a **denylist**, so blank or unrecognized values **grant** access — two lines below an allowlist that fails closed | **Medium** |
 | **G-075** | **The project brief names the wrong spreadsheet as the database.** `PROJECT_PLAN.md:35` identifies a "Parent Container" sheet; the live `TRAVEL_DB_SPREADSHEET_ID` points elsewhere. **Recovery performed from the brief would silently restore the wrong sheet** | **Medium** |
 | **G-076** | `_setupGSAPerDiemProperties` **destroyed the live GSA API key** and reset both mileage rates, unconditionally, from any browser. **Remediated 2026-10-29** | **Critical** |
 | **G-077** | `_viewScriptProperties` **returned every Script Property to any caller** — a one-call secret read. **Remediated 2026-10-29** | **Critical** |
@@ -656,7 +656,7 @@ cold restart has the shape of the problem without opening another file.
 |---|---|---|
 | **G-001** | **414 functions are reachable from any authenticated browser; 50 of them write with no authorization check.** Includes the 119 `_foo` names that look private and confer nothing | C4/R4 |
 | **G-002** | **`bootstrapTravelAdmin` lets any authenticated user grant themselves `admin`** — writes both rows and clears the role cache, so it takes effect at once | C4/R4 |
-| **G-003** | **The review-edit surface has no authorization.** 5 `update*` RPCs plus `reportDDFundingIssue` and `submitFundingCorrection` let any user rewrite itinerary, travellers, costs, `Grand_Total`, status and `Is_Client_Paid` on any request | C3/R4 |
+| **G-003** | **The review-edit surface has no authorization.** 5 `update*` RPCs plus `reportDDFundingIssue` and `submitFundingCorrection` let any user rewrite itinerary, travelers, costs, `Grand_Total`, status and `Is_Client_Paid` on any request | C3/R4 |
 | **G-004** | **Request disclosure chain.** `getRequestForReview` returns any request's full record (PII + probable CUI); `getRequestAttachments` yields its file IDs; `shareAttachmentsWithUsers` grants anyone access. IDs are sequential | C4/R3 |
 | **G-005** | **`deleteTravelDraftFile` trashes any Drive file ID with no ownership check**; `uploadTravelDraftFile` has no size or MIME limit | C3/R3 |
 | **G-006** | **No `oauthScopes` declared.** The effective grant is inferred from API usage and includes full Drive and all spreadsheets. Nobody chose it; it widens silently as code is added | C4/R2 |
@@ -767,7 +767,7 @@ you ask.**
 > (`181ocqi16Ruzb0kaPTiAC8OMXRp9bLwbfH-McBXImV6d5IKe9L751VFGF`). That root
 > `.clasp.json` has `rootDir: ""` and `skipSubdirectories: false`, so a
 > `clasp push` from the repository root would carry **229 files** into it —
-> including 94 from `reference_travel_app/`, which is another organisation's
+> including 94 from `reference_travel_app/`, which is another organization's
 > application. That is finding **G-048**, re-rated to **High**. **Never run
 > `clasp push` from the repository root.** VT-21 resolves it.
 
@@ -775,7 +775,7 @@ you ask.**
 
 ## 8. Deliverables — all 10 written
 
-| # | Document | Lines | Centrepieces |
+| # | Document | Lines | Centerpieces |
 |---|---|---|---|
 | 9 | [`README.md`](./README.md) | 280 | Routes by question, not by document title; three reading orders; the ID scheme; what is *not* in the set |
 | 1 | [`ADMINISTRATOR_GUIDE.md`](./ADMINISTRATOR_GUIDE.md) | 829 | §1.4.3's role × capability matrix; §1.5.1's privilege ranking; §1.8.4's two readings |
@@ -861,7 +861,7 @@ in-range-but-wrong line citation, **Pass 6's own effort total** (§0.2), and a
 | **Fix G-006 — declare `oauthScopes`** | **Now the most serious open Critical.** Closing G-077 removed the published address of the data; it did not narrow the grant. A manifest change — `ENHANCEMENT_PLAYBOOK.md` §7.5.1 |
 | **Add `.DS_Store` to `lets_app/.claspignore`** | **One line.** Two untracked `.DS_Store` files sit inside `lets_app/` and that ignore list does not exclude them, so `clasp push --force` carries them to production. Untracked means invisible in review — §0 |
 | **Fix G-022 — the false FAS-sync notice** | **A wording change**, and the cheapest high-value fix in the register. The intake form tells users their request will sync to the official FAS tracker; it will not. **The system is making a compliance claim to users that is not true** |
-| **VT-26 — read the 50 unguarded write functions** | **Re-prioritised upward on 2026-10-29.** Two of the two that have been read closely turned out to be Critical. It was placed last in Deliverable 10 because it needs no live access; **it is now the highest-value unperformed task in the set** |
+| **VT-26 — read the 50 unguarded write functions** | **Re-prioritized upward on 2026-10-29.** Two of the two that have been read closely turned out to be Critical. It was placed last in Deliverable 10 because it needs no live access; **it is now the highest-value unperformed task in the set** |
 | **Correct the root `README.md`** | Pre-existing, 111 lines, dated 2026-10-02. It advertises *"Real-time discretionary balance tracking"* and automated FAS sync — **G-025** and **G-024**, neither of which runs. It is the first thing a GitHub visitor reads |
 | **Remove four dead document references from source comments** | `Data_Model_v2.md`, `BUGS_FOUND.md`, `OPEN_QUESTIONS.md`, `REFACTOR_PLAN.md` exist in no commit (**G-046**). Three are superseded by D3 and D6. **Do not create them** — delete the comments |
 | **An ADR for the `Requests` tab collision** | Once **BD-5** is answered. Two schemas claim one tab name |
@@ -874,7 +874,7 @@ six pass documents, 81 findings, 29 verification tasks, six business
 decisions. **Six published figures and one published claim were withdrawn
 during the work, each recorded as a withdrawal rather than quietly fixed — and
 nine more figures MOVED on 2026-10-29 because the code changed, which is a
-different thing and is labelled as such.***
+different thing and is labeled as such.***
 
 **Do not delete this file yet.** All ten deliverables are written and the code
 change is documented, **but nothing is committed and nothing is deployed** —

@@ -142,10 +142,10 @@ function parseFare_(value) {
  *   IAD -> ORD   Connect    $441
  *
  * A connecting itinerary at four times the non-stop price is something a
- * submitter should see before choosing, not discover afterwards.
+ * submitter should see before choosing, not discover afterward.
  *
  * Unknown codes pass through uppercased rather than being mapped to a guess —
- * mislabelling an itinerary is worse than showing a raw code.
+ * mislabeling an itinerary is worse than showing a raw code.
  */
 function decodeAwardedService_(value) {
   var s = String(value || '').trim().toUpperCase();

@@ -207,7 +207,7 @@ console.log('\n2. nothing is routed, and nothing is emailed');
   ok('the import succeeds', r.success === true, r.error || r.problems);
 
   // Instrumented, not stubbed away: the mocks RECORD calls, so an empty
-  // recording is evidence rather than an artefact of the harness.
+  // recording is evidence rather than an artifact of the harness.
   ok('no email was sent', t.run('__EMAILS.length') === 0, t.run('__EMAILS.length'));
   ok('no routing function was called', t.run('__ROUTED.length') === 0,
      t.run('__ROUTED'));
@@ -242,7 +242,7 @@ console.log('\n3. status is DERIVED from the dates');
   ok('a trip that has ended is COMPLETED', st('2026-10-17') === 'COMPLETED');
   ok('a trip still ahead is APPROVED_GOGOV', st('2027-02-12') === 'APPROVED_GOGOV');
   // "Planned" travel is exactly the APPROVED_GOGOV case: approved and booked,
-  // not yet travelled.
+  // not yet traveled.
   ok('which is what "planned" travel means', st('2027-02-12') === 'APPROVED_GOGOV');
   ok('a missing end date defaults to a commitment', st('') === 'APPROVED_GOGOV',
      'counting an unknown trip as spent would overstate actuals');
@@ -276,7 +276,7 @@ console.log('\n3. status is DERIVED from the dates');
 console.log('\n4. every row says it was backfilled');
 {
   // These requests are APPROVED or COMPLETED without anyone approving them. If
-  // that is not identifiable afterwards, the audit trail quietly implies an
+  // that is not identifiable afterward, the audit trail quietly implies an
   // approval that never happened.
   const t = load();
   imp(t, [trip()]);
@@ -411,11 +411,11 @@ console.log('\n6. validation refuses what cannot be reconciled');
   ok('an implausible cost is challenged',
      v(trip({ totalCost: 5000000 })).some(p => /looks like a typo/.test(p)));
 
-  ok('zero travellers is rejected',
+  ok('zero travelers is rejected',
      v(trip({ travelerCount: 0 })).some(p => /at least 1/.test(p)));
 
   // Names are OPTIONAL — @clolry may only have a headcount. But if names are
-  // given they must agree with the count, or the request and its traveller
+  // given they must agree with the count, or the request and its traveler
   // rows disagree and no report reconciles.
   ok('names are optional',
      v(trip({ travelerNames: [] })).length === 0);
@@ -435,21 +435,21 @@ console.log('\n6. validation refuses what cannot be reconciled');
 }
 
 // ---------------------------------------------------------------------------
-console.log('\n7. traveller rows, and the even split');
+console.log('\n7. traveler rows, and the even split');
 {
   const t = load();
   imp(t, [trip({ travelerCount: 3, travelerNames: ['A Smith', 'B Jones', 'C Lee'],
                  totalCost: 12400 })]);
   const tr = t.travelers();
-  ok('one row per named traveller', tr.length === 3, tr.length);
+  ok('one row per named traveler', tr.length === 3, tr.length);
   ok('each linked to the request',
      tr.every(x => /^(L\d{2}-|REQ-)/.test(String(x.Request_ID))),
      tr.map(x => x.Request_ID));
-  ok('with distinct traveller IDs',
+  ok('with distinct traveler IDs',
      new Set(tr.map(x => x.Traveler_ID)).size === 3);
 
   // The real split is not known, so it is stated as an even one rather than
-  // implied. Someone reconciling a single traveller's cost needs to know the
+  // implied. Someone reconciling a single traveler's cost needs to know the
   // figure is derived.
   const total = tr.reduce((s, x) => s + Number(x.Subtotal), 0);
   ok('the splits sum to the trip total', Math.abs(total - 12400) < 0.05, total);
@@ -457,15 +457,15 @@ console.log('\n7. traveller rows, and the even split');
      tr.every(x => /even\s*split/i.test(String(x.Role_Justification))),
      tr[0].Role_Justification);
 
-  // Budget attribution per traveller, so a cross-DAC trip reconciles.
-  ok('each traveller carries a budget office code',
+  // Budget attribution per traveler, so a cross-DAC trip reconciles.
+  ok('each traveler carries a budget office code',
      tr.every(x => x.Budget_Office_Code === 'IDV'),
      tr.map(x => x.Budget_Office_Code));
 
-  // No names: no traveller rows, and that is correct rather than a failure.
+  // No names: no traveler rows, and that is correct rather than a failure.
   const t2 = load();
   imp(t2, [trip({ travelerCount: 4, travelerNames: [] })]);
-  ok('a headcount-only import writes no traveller rows',
+  ok('a headcount-only import writes no traveler rows',
      t2.travelers().length === 0);
   ok('but the request still records the count',
      Number(t2.req(0).Traveler_Count) === 4);
@@ -491,11 +491,11 @@ console.log('\n8. it fails safely');
   const nr = imp(noReq, [trip()]);
   ok('a missing Requests tab fails cleanly', nr.success === false, nr.error);
 
-  // Traveller and log tabs are OPTIONAL. Losing the traveller detail is
+  // Traveler and log tabs are OPTIONAL. Losing the traveler detail is
   // regrettable; losing the import because of it would be worse.
   const noTrav = load({ missingTabs: ['Request_Travelers', 'Approval_Log'] });
   const tr = imp(noTrav, [trip({ travelerNames: ['A', 'B', 'C'] })]);
-  ok('a missing travellers tab does not block the import',
+  ok('a missing travelers tab does not block the import',
      tr.success === true, tr.error);
   ok('and the request still lands', noTrav.reqCount() === 1);
 
@@ -508,7 +508,7 @@ console.log('\n8. it fails safely');
   imp(t, [trip()]);
   const inval = t.run('__INVALIDATED');
   ok('the Requests cache is invalidated', inval.indexOf('Requests') > -1, inval);
-  ok('and the traveller cache too', inval.indexOf('Request_Travelers') > -1);
+  ok('and the traveler cache too', inval.indexOf('Request_Travelers') > -1);
 }
 
 // ---------------------------------------------------------------------------
@@ -552,7 +552,7 @@ console.log('\n9. negative controls (the suite must be able to fail)');
     imp(t, [trip()]);
     ok('without it October travel is stamped with the import date',
        String(t.req(0).Submitted_At) !== '2026-10-14',
-       'so section 4 is exercising a real behaviour');
+       'so section 4 is exercising a real behavior');
   }
 }
 

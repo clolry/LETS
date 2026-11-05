@@ -738,11 +738,11 @@
      */
 
     /**
-     * Loads the event catalogue and wires the picker.
+     * Loads the event catalog and wires the picker.
      *
-     * CATALOGUE FAILURE MUST NOT BLOCK THE FORM. If the list cannot be
-     * loaded, the picker is hidden and the traveller types a name as before.
-     * A request with a deadline must not be blocked by an event catalogue
+     * CATALOG FAILURE MUST NOT BLOCK THE FORM. If the list cannot be
+     * loaded, the picker is hidden and the traveler types a name as before.
+     * A request with a deadline must not be blocked by an event catalog
      * being unavailable.
      */
     _bindEventPicker() {
@@ -756,11 +756,11 @@
           const events = (res.data && res.data.events) || [];
           self._catalogueEvents = events;
 
-          // "Other" is offered even when the catalogue is empty — that is the
-          // case where a traveller most needs it.
+          // "Other" is offered even when the catalog is empty — that is the
+          // case where a traveler most needs it.
           let html = '<option value="">No / ad-hoc travel</option>';
           if (events.length) {
-            html += '<optgroup label="Catalogued events">' +
+            html += '<optgroup label="Cataloged events">' +
               events.map(function (e) {
                 const when = e.startDate
                   ? ' \u2014 ' + escapeHtml(e.startDate) : '';
@@ -774,7 +774,7 @@
           sel.innerHTML = html;
         })
         .catch(function (err) {
-          console.warn('Event catalogue unavailable:', err && err.message);
+          console.warn('Event catalog unavailable:', err && err.message);
           self._hideEventPicker();
         });
 
@@ -797,7 +797,7 @@
     },
 
     /**
-     * Applies a catalogue selection.
+     * Applies a catalog selection.
      *
      * PRE-FILLS BUT DOES NOT LOCK. @clolry asked for pre-fill — "it could
      * pre-fill dates, location, etc." — and a locked field would be wrong:
@@ -805,7 +805,7 @@
      * dates from the event itself, and the per-diem calculation depends on
      * theirs.
      *
-     * So the event supplies defaults the traveller can correct. Event_ID
+     * So the event supplies defaults the traveler can correct. Event_ID
      * still links the request, which is what the set-aside draws down against.
      */
     _onEventSelected(value) {
@@ -839,7 +839,7 @@
 
       state.updateField('eventId', ev.eventId);
 
-      // Only fill a field the traveller has not already typed into.
+      // Only fill a field the traveler has not already typed into.
       // Overwriting their own entry with a default is the kind of thing that
       // loses work silently.
       const setIfBlank = (elKey, field, val) => {
@@ -869,7 +869,7 @@
         if (ev.registrationCost) {
           bits.push('registration $' + ev.registrationCost);
         }
-        // SURFACED, because both change what a traveller claims. A waiver they
+        // SURFACED, because both change what a traveler claims. A waiver they
         // did not know about means an over-claim; meals provided mean an M&IE
         // deduction a reviewer will otherwise query.
         if (ev.registrationWaivedFor) {
@@ -2920,8 +2920,8 @@
       // what lets a coordinator find the request from the proposal queue and
       // link it to the event they create.
       //
-      // A FAILED PROPOSAL DOES NOT BLOCK THE SUBMISSION. @clolry's traveller
-      // has a deadline; losing their request because a catalogue write failed
+      // A FAILED PROPOSAL DOES NOT BLOCK THE SUBMISSION. @clolry's traveler
+      // has a deadline; losing their request because a catalog write failed
       // would be a far worse outcome than a coordinator having to match it up
       // by name. The failure is logged and the request goes through unlinked.
       const picker = this._elements.eventPicker;
@@ -2938,7 +2938,7 @@
           }).then(function (res) {
             if (res && res.success && res.data) {
               formData.eventProposalId = res.data.proposalId;
-              // Surfaced on the success page: a traveller who knows eleven
+              // Surfaced on the success page: a traveler who knows eleven
               // colleagues already asked for the same event will not chase a
               // coordinator about it.
               self._eventProposalNote = res.data.message || '';

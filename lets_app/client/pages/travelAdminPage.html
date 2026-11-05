@@ -121,7 +121,7 @@
              screenshot / test the reviewer surface without leaving their
              admin context.
 
-             Labelled "as a reviewer" rather than "Travel Insights (test)".
+             Labeled "as a reviewer" rather than "Travel Insights (test)".
              @clolry: "I don't understand the difference between the admin
              portal's dashboard and the Travel Insights from the navbar."
              The difference is SCOPE — getReviewerContext filters that view to
@@ -654,7 +654,7 @@
       <!-- ============================================================== -->
       <!--
         HC_Positions and HC_Orgs back the HC namespace that 28 call sites
-        depend on: traveller lookup, duty station, GS-15 Division Director
+        depend on: traveler lookup, duty station, GS-15 Division Director
         routing, and two of three site-access paths.
 
         They were hand-edited in the spreadsheet, which is how three
@@ -673,7 +673,7 @@
             <span>Events &amp; Set-Asides</span>
           </h2>
           <p class="admin-view-header__scope">
-            Define events travellers can pick from, and reserve DAC budget
+            Define events travelers can pick from, and reserve DAC budget
             against them so routine travel does not consume it first.
           </p>
           <div class="admin-ribbon">
@@ -686,24 +686,24 @@
         <div class="admin-view__body">
           <div class="alert alert-danger py-2 px-3 small d-none" id="evError"></div>
 
-          <!-- PROPOSALS FIRST. A traveller is waiting and their request is
-               unlinked until somebody acts; the catalogue and reservations are
+          <!-- PROPOSALS FIRST. A traveler is waiting and their request is
+               unlinked until somebody acts; the catalog and reservations are
                not time-sensitive. -->
           <div class="card border-0 shadow-sm mb-3">
             <div class="card-header bg-white py-2 d-flex align-items-center gap-2">
-              <h3 class="h6 mb-0 fw-bold">Proposed by travellers</h3>
+              <h3 class="h6 mb-0 fw-bold">Proposed by travelers</h3>
               <span id="evProposalCount" class="ev-count"></span>
               <span class="text-muted small ms-auto">
-                From travellers who chose &ldquo;Other&rdquo; on a request
+                From travelers who chose &ldquo;Other&rdquo; on a request
               </span>
             </div>
             <div class="card-body py-2" id="evProposals"></div>
           </div>
 
-          <!-- CATALOGUE -->
+          <!-- CATALOG -->
           <div class="card border-0 shadow-sm mb-3">
             <div class="card-header bg-white py-2 d-flex align-items-center gap-2">
-              <h3 class="h6 mb-0 fw-bold">Event catalogue</h3>
+              <h3 class="h6 mb-0 fw-bold">Event catalog</h3>
               <button class="btn btn-sm btn-primary ms-auto" id="evNewEvent">
                 <i class="fas fa-plus me-1"></i>New event
               </button>
@@ -721,7 +721,7 @@
                     <th></th>
                   </tr>
                 </thead>
-                <tbody id="evCatalogue"></tbody>
+                <tbody id="evCatalog"></tbody>
               </table>
             </div>
           </div>
@@ -731,7 +731,7 @@
             <div class="card-header bg-white py-2 d-flex align-items-center gap-2">
               <h3 class="h6 mb-0 fw-bold">Reserved budget</h3>
               <button class="btn btn-sm btn-outline-primary ms-auto" id="evNewSetAside">
-                <i class="fas fa-plus me-1"></i>Reserve for an uncatalogued event
+                <i class="fas fa-plus me-1"></i>Reserve for an uncataloged event
               </button>
             </div>
             <div class="table-responsive">
@@ -745,7 +745,7 @@
                     <th class="text-end">Committed</th>
                     <th class="text-end">Unspent</th>
                     <th class="text-end">Used</th>
-                    <th class="text-end">Travellers</th>
+                    <th class="text-end">Travelers</th>
                   </tr>
                 </thead>
                 <tbody id="evSetAsides"></tbody>
@@ -1027,7 +1027,7 @@
                      maxlength="120" placeholder="NCMA World Congress">
             </div>
             <div class="col-md-4">
-              <label class="form-label small mb-1" for="evFormSponsor">Sponsor / organiser</label>
+              <label class="form-label small mb-1" for="evFormSponsor">Sponsor / organizer</label>
               <input type="text" class="form-control form-control-sm" id="evFormSponsor">
             </div>
             <div class="col-md-3">
@@ -1098,7 +1098,7 @@
               <input type="text" class="form-control form-control-sm" id="evFormMeals"
                      placeholder="Lunch days 1-3, breakfast day 2">
               <div class="form-text" style="font-size:0.68rem;">
-                Shown to travellers when they pick this event. Affects what they
+                Shown to travelers when they pick this event. Affects what they
                 may claim for M&amp;IE.
               </div>
             </div>
@@ -1182,11 +1182,11 @@
               </select>
             </div>
             <div class="col-md-4">
-              <label class="form-label small mb-1" for="saFormTravelers">Planned travellers</label>
+              <label class="form-label small mb-1" for="saFormTravelers">Planned travelers</label>
               <div class="input-group input-group-sm">
                 <input type="number" class="form-control" id="saFormTravelers" min="0" step="1">
                 <button class="btn btn-outline-secondary" type="button" id="saFormSuggest"
-                        title="Suggest an amount from the traveller count">
+                        title="Suggest an amount from the traveler count">
                   Estimate
                 </button>
               </div>
@@ -1205,7 +1205,7 @@
             <div class="col-md-8">
               <label class="form-label small mb-1" for="saFormBasis">How was this worked out? *</label>
               <input type="text" class="form-control form-control-sm" id="saFormBasis"
-                     placeholder="10 travellers x $2,400 travel + $1,295 registration">
+                     placeholder="10 travelers x $2,400 travel + $1,295 registration">
             </div>
             <div class="col-12">
               <label class="form-label small mb-1" for="saFormNotes">Notes</label>
@@ -1235,7 +1235,7 @@
           <input type="hidden" id="mgFormProposalId">
           <p class="small">
             Proposed as <strong id="mgFormName"></strong>. Merging links the
-            traveller's request to the event you choose, so a DAC's reservation
+            traveler's request to the event you choose, so a DAC's reservation
             draws down correctly.
           </p>
           <div class="mb-2">

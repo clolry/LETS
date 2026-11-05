@@ -23,7 +23,7 @@ console.log('✔ Proportional shares match specification (15.3%, 66.4%, 18.3%)')
 //
 // THE SHARED POOL IS $560,500, NOT $20,000. @clolry's FY27 funding model puts
 // four things in it: the $20,000 FO LC gap, the $440,000 travel portion of the
-// FY27 Event Plan (23 lines), the $52,500 COE programme, and $48,000 of FC
+// FY27 Event Plan (23 lines), the $52,500 COE program, and $48,000 of FC
 // senior-advisor travel.
 //
 // COE MOVED, which is why this file had to change rather than merely be

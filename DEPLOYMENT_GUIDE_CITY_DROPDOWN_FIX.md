@@ -86,7 +86,7 @@ It is called `_setupGSAPerDiemProperties`. The old version of it overwrites the 
 ### 3a. Get to the settings screen
 
 1. Open the LETS Apps Script project (as in Step 1b)
-2. On the **left sidebar**, click the **gear icon** (⚙) labelled **Project Settings**
+2. On the **left sidebar**, click the **gear icon** (⚙) labeled **Project Settings**
 3. Scroll down to the section headed **Script Properties**
 4. Click **Edit script properties**, then **Add script property**
 
@@ -111,7 +111,7 @@ Two boxes appear. Fill them in **exactly**:
 
 ### 3c. If your key was shared over chat or email
 
-**Treat it as compromised and get a new one.** It takes a minute at the link above and costs nothing. This key only reads public rate data, so the risk is low — someone else using up your hourly quota — but a credential that has travelled through a chat window is no longer private.
+**Treat it as compromised and get a new one.** It takes a minute at the link above and costs nothing. This key only reads public rate data, so the risk is low — someone else using up your hourly quota — but a credential that has traveled through a chat window is no longer private.
 
 ---
 
@@ -248,7 +248,7 @@ Ask your reviewer to look at:
 4. Pick the function from the dropdown, click **▶ Run**
 5. Output appears in the **Execution log** panel at the bottom
 
-**First run only:** Google will ask you to authorise the script. Click through the permission prompts. This is normal.
+**First run only:** Google will ask you to authorize the script. Click through the permission prompts. This is normal.
 
 ### Run these four, in this order
 
@@ -277,7 +277,7 @@ Ask your reviewer to look at:
 
 **Run this once.** Running it twice is harmless — it replaces the existing schedule rather than adding a second one.
 
-> **A caution about this one.** Scheduled jobs in Apps Script are **visible only to the account that created them.** Whoever runs 9e owns it invisibly. **If that person leaves the organisation, the job stops and nobody is told.** Note down who ran it.
+> **A caution about this one.** Scheduled jobs in Apps Script are **visible only to the account that created them.** Whoever runs 9e owns it invisibly. **If that person leaves the organization, the job stops and nobody is told.** Note down who ran it.
 
 ---
 
@@ -379,7 +379,7 @@ You skipped **9b**. Run `clearGSACitiesCache` (in `PerDiemGSA.gs`), then `warmGS
 |---|---|
 | **Per-diem calculations are unchanged** | Intentionally. The amounts on a request are computed by the same code as before. Only the dropdown preview is new |
 | **International destinations show no rates** | The international data source does not provide them in list form. A separate change could add this |
-| **ZIP code lookup was not added** | The government service supports finding a locality by ZIP, which would be genuinely useful since travellers rarely know which locality covers their hotel. **Not included here** — it is a new feature, not a bug fix |
+| **ZIP code lookup was not added** | The government service supports finding a locality by ZIP, which would be genuinely useful since travelers rarely know which locality covers their hotel. **Not included here** — it is a new feature, not a bug fix |
 | **Nobody has clicked this in a browser yet** | The logic was verified by executing it directly, not by using the real page. **Step 10 is the first real test.** Treat it as such |
 
 ---

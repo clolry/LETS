@@ -62,7 +62,7 @@ var BudgetDashboard = (function () {
    *                           promised, and a DAC that treats it as available
    *                           will overspend.
    *   APPROVED_GOGOV       -> committed. Approved and booked but not yet
-   *                           travelled.
+   *                           traveled.
    *   COMPLETED            -> actual. Travel happened.
    *   DENIED / CANCELLED   -> neither. The money was never spent.
    *
@@ -197,7 +197,7 @@ var BudgetDashboard = (function () {
       }
 
       // FUNDED_FROM_RELEASES IS CHARGED TO NOBODY. Falling through here is the
-      // behaviour, not an omission: the money comes from reservations that
+      // behavior, not an omission: the money comes from reservations that
       // were already taken out of a DAC's budget for an event that did not
       // happen, so charging it again would take the same money twice.
       //
@@ -314,7 +314,7 @@ var BudgetDashboard = (function () {
    * -----------------------------------------
    * Because the config line is $0. Without this block the advisor's travel
    * appears against a $0 reservation, which reads as "no budget needed"
-   * rather than "budget expected from somewhere else". A traveller booking
+   * rather than "budget expected from somewhere else". A traveler booking
    * against it would see no constraint, and nobody would notice the money had
    * never actually been released.
    *
@@ -385,7 +385,7 @@ var BudgetDashboard = (function () {
 
 
   /**
-   * Splits each DAC's discretionary balance across its service centres by
+   * Splits each DAC's discretionary balance across its service centers by
    * filled headcount.
    *
    * @clolry: "my priority right now is getting to the point where I can show
@@ -397,15 +397,15 @@ var BudgetDashboard = (function () {
    * Two different questions. The 15.3/66.4/18.3 split answers "how do the
    * three DACs share an enterprise cost", and that is agreed policy derived
    * from the baselines. This answers "how much of a DAC's own money belongs to
-   * each of its service centres", and there is no agreed policy — headcount is
-   * the proxy, because the thing being funded is people travelling.
+   * each of its service centers", and there is no agreed policy — headcount is
+   * the proxy, because the thing being funded is people traveling.
    *
    * The dashboard therefore shows two different proportionality rules at once.
    * That is deliberate and the payload labels both, because a reader who
    * assumes one rule applies throughout will not be able to reconcile the
    * numbers.
    *
-   * FILLED, NOT AUTHORISED
+   * FILLED, NOT AUTHORIZED
    * ----------------------
    * @clolry's choice: a vacant seat does not travel. Both counts ride along in
    * the payload so the basis is auditable rather than asserted — the
@@ -415,7 +415,7 @@ var BudgetDashboard = (function () {
    * ROUNDING: LARGEST REMAINDER, NOT round2 PER ROW
    * -----------------------------------------------
    * 26 shares of a dollar figure will not sum to it. Rounding each row
-   * independently leaves the service-centre column short of the DAC total by
+   * independently leaves the service-center column short of the DAC total by
    * up to 13 cents, and a dashboard whose column does not add up is assumed
    * wrong in full. So this allocates whole CENTS by truncation and hands the
    * shortfall out one cent at a time, largest share first — the method used
@@ -430,10 +430,10 @@ var BudgetDashboard = (function () {
    *
    * @param {Array} offices the office rows already built by getDashboard
    * @param {Array} [positions] pre-fetched HC bundle
-   * @param {Object} [scSpend] per-service-centre spend from spendByServiceCentre
+   * @param {Object} [scSpend] per-service-center spend from spendByServiceCenter
    * @returns {Object} { rows, byDac, basis, headcountSource, available, note }
    */
-  function serviceCentreAllocations(offices, positions, scSpend) {
+  function serviceCenterAllocations(offices, positions, scSpend) {
     scSpend = scSpend || { byOrgCode: {}, dacLevel: {} };
 
     var out = {
@@ -445,15 +445,15 @@ var BudgetDashboard = (function () {
       note: ''
     };
 
-    if (typeof HC === 'undefined' || !HC || typeof HC.hcServiceCentreHeadcount !== 'function') {
-      out.note = 'HR position data is unavailable, so per-service-centre ' +
+    if (typeof HC === 'undefined' || !HC || typeof HC.hcServiceCenterHeadcount !== 'function') {
+      out.note = 'HR position data is unavailable, so per-service-center ' +
                  'figures cannot be computed.';
       return out;
     }
 
     var hc;
     try {
-      hc = HC.hcServiceCentreHeadcount(positions);
+      hc = HC.hcServiceCenterHeadcount(positions);
     } catch (e) {
       console.warn('BudgetDashboard: headcount read failed: ' + e.message);
       out.note = 'HR position data could not be read: ' + e.message;
@@ -506,7 +506,7 @@ var BudgetDashboard = (function () {
           officeCode: office.officeCode,
           pool: office.discretionaryBase,
           filled: 0,
-          authorised: list.reduce(function (s, b) { return s + b.authorised; }, 0),
+          authorized: list.reduce(function (s, b) { return s + b.authorized; }, 0),
           allocated: 0,
           note: 'Every position in this DAC is vacant, so there is no filled ' +
                 'headcount to divide by.'
@@ -520,10 +520,10 @@ var BudgetDashboard = (function () {
       // This is the one choice in this function that would be easy to get
       // wrong and impossible to see. `available` is already net of the DAC's
       // whole spend, so dividing it per capita and then ALSO subtracting each
-      // centre's own spend below would charge every centre twice: once
+      // center's own spend below would charge every center twice: once
       // through its own rows and again through its share of its siblings'.
-      // Dividing the discretionary base and subtracting per-centre spend
-      // gives each centre an allocation it can reconcile against its own
+      // Dividing the discretionary base and subtracting per-center spend
+      // gives each center an allocation it can reconcile against its own
       // requests.
       var pool = office.discretionaryBase;
       var poolCents = Math.round(pool * 100);
@@ -534,7 +534,7 @@ var BudgetDashboard = (function () {
         return {
           bucket: b,
           cents: Math.floor(exact),
-          // Kept for the tie-break below. Two centres with the same fractional
+          // Kept for the tie-break below. Two centers with the same fractional
           // part must not have the extra cent assigned by object key order,
           // which is not stable across engines.
           frac: exact - Math.floor(exact)
@@ -571,27 +571,27 @@ var BudgetDashboard = (function () {
         var remaining = round2(amount - sp.committed - sp.actual);
 
         out.rows.push({
-          // The key. Blank for staff sitting above any service centre.
+          // The key. Blank for staff sitting above any service center.
           orgCode: a.bucket.orgCode,
           dacOrgCode: dacOrg,
           officeCode: office.officeCode,
-          isAboveServiceCentre: a.bucket.isAboveServiceCentre,
+          isAboveServiceCenter: a.bucket.isAboveServiceCenter,
           // Display only.
           displayName: a.bucket.displayName,
           filled: a.bucket.filled,
           vacant: a.bucket.vacant,
-          authorised: a.bucket.authorised,
+          authorized: a.bucket.authorized,
           // Share of the DAC's FILLED headcount, as a percentage to 2dp.
           sharePct: Math.round((a.bucket.filled / denominator) * 10000) / 100,
           allocation: amount,
-          // Live, from this centre's own travellers.
+          // Live, from this center's own travelers.
           committed: sp.committed,
           committedCount: sp.committedCount,
           completed: sp.actual,
           completedCount: sp.actualCount,
           remaining: remaining,
           isDeficit: remaining < 0,
-          utilisationPct: amount > 0
+          utilizationPct: amount > 0
             ? Math.round(((sp.committed + sp.actual) / amount) * 1000) / 10
             : null
         });
@@ -601,21 +601,21 @@ var BudgetDashboard = (function () {
         officeCode: office.officeCode,
         pool: round2(pool),
         filled: denominator,
-        authorised: list.reduce(function (s, b) { return s + b.authorised; }, 0),
+        authorized: list.reduce(function (s, b) { return s + b.authorized; }, 0),
         allocated: round2(allocated),
         // Must be 0. Carried rather than trusted, so a rounding regression is
         // visible on the page and not only in a test.
         unallocated: round2(pool - allocated),
-        // Per-centre spend summed back up, against the office figure computed
+        // Per-center spend summed back up, against the office figure computed
         // independently from the Requests tab. The two use DIFFERENT grains —
-        // traveller Subtotals here, request Grand_Totals there — so a gap is
-        // expected wherever a request carries shared costs or a traveller row
+        // traveler Subtotals here, request Grand_Totals there — so a gap is
+        // expected wherever a request carries shared costs or a traveler row
         // has no resolvable org. Shown rather than hidden: a reader comparing
         // the two tables will find the difference, and an unexplained
         // difference reads as a bug in both.
         spendReconciliation: {
-          centreCommitted: round2(dacCommitted),
-          centreCompleted: round2(dacActual),
+          centerCommitted: round2(dacCommitted),
+          centerCompleted: round2(dacActual),
           officeCommitted: office.committed,
           officeCompleted: office.completed,
           unexplained: round2((office.committed + office.completed) -
@@ -628,10 +628,10 @@ var BudgetDashboard = (function () {
     // order makes the table diffable between refreshes.
     out.rows.sort(function (a, b) {
       if (a.dacOrgCode !== b.dacOrgCode) return a.dacOrgCode < b.dacOrgCode ? -1 : 1;
-      // Above-service-centre staff lead their DAC's block; '' sorts first
+      // Above-service-center staff lead their DAC's block; '' sorts first
       // naturally, and this makes that explicit rather than incidental.
-      if (a.isAboveServiceCentre !== b.isAboveServiceCentre) {
-        return a.isAboveServiceCentre ? -1 : 1;
+      if (a.isAboveServiceCenter !== b.isAboveServiceCenter) {
+        return a.isAboveServiceCenter ? -1 : 1;
       }
       return a.orgCode < b.orgCode ? -1 : 1;
     });
@@ -646,58 +646,58 @@ var BudgetDashboard = (function () {
     if (!out.note) {
       out.note = 'Each DAC\'s available balance divided by its share of ' +
                  'FILLED positions. Vacant seats are excluded — they do not ' +
-                 'travel. Keyed on org code, never on service-centre name: ' +
-                 'two different centres share the name "Acquisition Service ' +
+                 'travel. Keyed on org code, never on service-center name: ' +
+                 'two different centers share the name "Acquisition Service ' +
                  'Center 1".';
     }
     return out;
   }
 
   /**
-   * Commitments and actuals per SERVICE CENTRE, from Request_Travelers.
+   * Commitments and actuals per SERVICE CENTER, from Request_Travelers.
    *
    * @clolry asked for "real-time updates based on requested estimates and
-   * reconciled actuals" at service-centre level. That cannot come from the
+   * reconciled actuals" at service-center level. That cannot come from the
    * Requests tab: a request carries ONE Owning_Office, and a consolidated
-   * conference request can hold travellers from three different DACs and a
-   * dozen different service centres.
+   * conference request can hold travelers from three different DACs and a
+   * dozen different service centers.
    *
    * Request_Travelers is the right grain. Each row already carries the
-   * traveller's own Org_Code and their Subtotal, for exactly this reason —
+   * traveler's own Org_Code and their Subtotal, for exactly this reason —
    * Sheets.js:320-324: "a consolidated conference request can include people
    * from FCA, FCB and FCC, and each DAC should see only their own share."
    *
    * WHY Org_Code AND NOT Budget_Org_Code
    * ------------------------------------
    * Budget_Org_Code holds the four-character DAC code (FC/FCA/FCB/FCC) — it is
-   * written by Submission.js from the owning office, so every traveller on a
-   * request shares it and it cannot distinguish service centres. Org_Code is
-   * the traveller's actual HC position code, e.g. FCA0BAA, which resolves up
-   * the stored parent chain to a service centre. Using Budget_Org_Code here
-   * would attribute every traveller to their DAC's above-service-centre
-   * bucket and leave all 22 centres reading zero, which looks like "nobody has
-   * travelled" rather than like a bug.
+   * written by Submission.js from the owning office, so every traveler on a
+   * request shares it and it cannot distinguish service centers. Org_Code is
+   * the traveler's actual HC position code, e.g. FCA0BAA, which resolves up
+   * the stored parent chain to a service center. Using Budget_Org_Code here
+   * would attribute every traveler to their DAC's above-service-center
+   * bucket and leave all 22 centers reading zero, which looks like "nobody has
+   * traveled" rather than like a bug.
    *
    * SUBTOTAL, NOT Grand_Total. Grand_Total is the whole request including
-   * shared costs; summing it per traveller would multiply the request's cost
-   * by its traveller count. Shared costs are deliberately NOT attributed to a
-   * service centre — they belong to the request's owning office, and splitting
+   * shared costs; summing it per traveler would multiply the request's cost
+   * by its traveler count. Shared costs are deliberately NOT attributed to a
+   * service center — they belong to the request's owning office, and splitting
    * them would need a policy decision nobody has made.
    *
    * @param {Object} db TravelDB instance
-   * @returns {Object} { byOrgCode, unattributed, travellersRead, available }
+   * @returns {Object} { byOrgCode, unattributed, travelersRead, available }
    */
-  function spendByServiceCentre(db) {
+  function spendByServiceCenter(db) {
     var out = {
       byOrgCode: {},
       unattributed: { committed: 0, actual: 0, count: 0 },
-      travellersRead: 0,
+      travelersRead: 0,
       available: false,
       note: ''
     };
 
     if (typeof HC === 'undefined' || !HC || typeof HC.orgAncestorAtLevel !== 'function') {
-      out.note = 'HR org hierarchy unavailable; per-centre spend not computed.';
+      out.note = 'HR org hierarchy unavailable; per-center spend not computed.';
       return out;
     }
 
@@ -706,18 +706,18 @@ var BudgetDashboard = (function () {
       reqData = db.readSheet(SHEET_NAMES.REQUESTS);
       travData = db.readSheet(SHEET_NAMES.REQUEST_TRAVELERS);
     } catch (e) {
-      console.warn('BudgetDashboard: per-centre spend unavailable: ' + e.message);
-      out.note = 'Could not read traveller rows: ' + e.message;
+      console.warn('BudgetDashboard: per-center spend unavailable: ' + e.message);
+      out.note = 'Could not read traveler rows: ' + e.message;
       return out;
     }
     if (!reqData || !reqData.headers.length || !travData || !travData.headers.length) {
-      out.note = 'No traveller rows to read.';
+      out.note = 'No traveler rows to read.';
       return out;
     }
 
     var groups = budgetStatusGroups();
 
-    // Request_ID -> which bucket, so the traveller loop does not rescan.
+    // Request_ID -> which bucket, so the traveler loop does not rescan.
     var ri = reqData.headerIndex;
     if (!('Request_ID' in ri) || !('Status' in ri)) {
       out.note = 'Requests lacks Request_ID or Status.';
@@ -730,7 +730,7 @@ var BudgetDashboard = (function () {
       var status = String(row[ri['Status']] || '').trim();
       if (groups.committed.indexOf(status) > -1) statusOf[id] = 'committed';
       else if (groups.actual.indexOf(status) > -1) statusOf[id] = 'actual';
-      // Denied, cancelled and draft are absent, so their travellers are
+      // Denied, cancelled and draft are absent, so their travelers are
       // skipped below rather than counted as unattributed.
     });
 
@@ -746,8 +746,8 @@ var BudgetDashboard = (function () {
       byCode[String(orgs[o].orgCode || '').toUpperCase()] = orgs[o];
     }
     if (!orgs.length) {
-      out.note = 'HC_Orgs is empty, so a traveller org code cannot be ' +
-                 'resolved to a service centre.';
+      out.note = 'HC_Orgs is empty, so a traveler org code cannot be ' +
+                 'resolved to a service center.';
       return out;
     }
 
@@ -756,7 +756,7 @@ var BudgetDashboard = (function () {
       var bucket = statusOf[reqId];
       if (!bucket) return;                    // dead status, or orphan row
 
-      out.travellersRead++;
+      out.travelersRead++;
 
       var amount = parseFloat(row[ti['Subtotal']]);
       if (isNaN(amount)) amount = 0;
@@ -914,11 +914,11 @@ var BudgetDashboard = (function () {
       var db;
       var spend;
       var scSpend = { byOrgCode: {}, unattributed: { committed: 0, actual: 0, count: 0 },
-                      travellersRead: 0, available: false, note: '' };
+                      travelersRead: 0, available: false, note: '' };
       try {
         db = new TravelDB();
         spend = spendByOffice(db);
-        scSpend = spendByServiceCentre(db);
+        scSpend = spendByServiceCenter(db);
       } catch (e) {
         // A database that cannot be read must not take the page down: the
         // baselines and set-asides are config and still render. `liveSpend`
@@ -979,7 +979,7 @@ var BudgetDashboard = (function () {
           isDeficit: available < 0,
           // Percentage of the discretionary base already committed. The number
           // a DAC actually reacts to.
-          utilisationPct: discretionaryBase > 0
+          utilizationPct: discretionaryBase > 0
             ? Math.round(((sp.committed + sp.actual) / discretionaryBase) * 1000) / 10
             : null
         };
@@ -989,11 +989,11 @@ var BudgetDashboard = (function () {
         return round2(offices.reduce(function (s, o) { return s + f(o); }, 0));
       };
 
-      var serviceCentres = serviceCentreAllocations(offices, null, scSpend);
+      var serviceCenters = serviceCenterAllocations(offices, null, scSpend);
 
       return successResponse({
         offices: offices,
-        serviceCentres: serviceCentres,
+        serviceCenters: serviceCenters,
         // Set-asides funded by releasing unused reservations rather than by a
         // charge. The advisor line is $0 in config on purpose, so without this
         // the page would show its travel against a $0 reservation and read it
@@ -1043,17 +1043,17 @@ var BudgetDashboard = (function () {
                                'three DACs by their FIXED share of the original ' +
                                'budget (OMD 15.3%, IDV 66.4%, CM 18.3%). Each ' +
                                'DAC\'s own balance is then divided between its ' +
-                               'service centres by FILLED HEADCOUNT. These are ' +
+                               'service centers by FILLED HEADCOUNT. These are ' +
                                'deliberately different rules for different ' +
                                'questions.',
-          serviceCentreSpendNote: scSpend.available
-            ? 'Per-centre commitments come from each traveller\'s own ' +
+          serviceCenterSpendNote: scSpend.available
+            ? 'Per-center commitments come from each traveler\'s own ' +
               'Subtotal and org code, so a consolidated request is split ' +
-              'between the centres its travellers belong to. Shared request ' +
+              'between the centers its travelers belong to. Shared request ' +
               'costs stay with the owning office and are not attributed to a ' +
-              'centre.'
-            : (scSpend.note || 'Per-centre commitments are not available.'),
-          travellersRead: scSpend.travellersRead,
+              'center.'
+            : (scSpend.note || 'Per-center commitments are not available.'),
+          travelersRead: scSpend.travelersRead,
           statusesSeen: spend.statusesSeen
         }
       });
@@ -1070,9 +1070,9 @@ var BudgetDashboard = (function () {
     setAsideAmount: setAsideAmount,
     fundedInFor: fundedInFor,
     releaseFundingFor: releaseFundingFor,
-    serviceCentreAllocations: serviceCentreAllocations,
+    serviceCenterAllocations: serviceCenterAllocations,
     spendByOffice: spendByOffice,
-    spendByServiceCentre: spendByServiceCentre,
+    spendByServiceCenter: spendByServiceCenter,
     round2: round2
   };
 })();

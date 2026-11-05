@@ -225,7 +225,7 @@ var LiabilityLogSync = (function () {
    * as spend, and that is a real shape.
    *
    * @clolry asked for the cancelled row to be imported rather than skipped, so
-   * the record shows what was authorised and then dropped.
+   * the record shows what was authorized and then dropped.
    */
   function statusFor(row) {
     if (_str_(row.documentNumber).toUpperCase() === 'CANCELLED') {
@@ -263,8 +263,8 @@ var LiabilityLogSync = (function () {
       return { fiscalYear: fiscalYearOf(approved), basis: 'VOUCHER_APPROVED' };
     }
     // Not yet approved. The travel end date is the only proxy available, and
-    // it is wrong for anything travelling near a year boundary — which is
-    // precisely why it is labelled rather than trusted.
+    // it is wrong for anything traveling near a year boundary — which is
+    // precisely why it is labeled rather than trusted.
     var end = _dateOnly_(row.endDate);
     if (end) {
       return { fiscalYear: fiscalYearOf(end), basis: 'PROVISIONAL_NOT_YET_APPROVED' };
@@ -273,7 +273,7 @@ var LiabilityLogSync = (function () {
   }
 
   /**
-   * Resolves a traveller's org code, falling back to the HR roster by name.
+   * Resolves a traveler's org code, falling back to the HR roster by name.
    *
    * @clolry asked why Melissa Mould showed as unattributed. The answer is that
    * her Organization CELL IS EMPTY — the org code FCBBBB he expected resolves
@@ -306,7 +306,7 @@ var LiabilityLogSync = (function () {
     if (!last || !first || !rosterIndex) {
       return {
         orgCode: '', source: 'NONE',
-        note: 'Organization is blank and the traveller could not be looked up.'
+        note: 'Organization is blank and the traveler could not be looked up.'
       };
     }
 
@@ -339,7 +339,7 @@ var LiabilityLogSync = (function () {
    *
    * Keyed on the FIRST forename token so 'Mould,Melissa J' matches a log row
    * reading 'Melissa'. Vacant seats are excluded: a vacant position has no
-   * occupant to have travelled.
+   * occupant to have traveled.
    *
    * @param {Array} positions HC bundle
    * @returns {Object}
@@ -474,7 +474,7 @@ var LiabilityLogSync = (function () {
    * The log has a Purpose but no event or trip title, and Requests.Trip_Name
    * is what every report and the event-history grouping keys on. Two rows have
    * a blank purpose as well, so this falls back through purpose -> route ->
-   * traveller, and never produces an empty string.
+   * traveler, and never produces an empty string.
    */
   function tripNameFor(trip) {
     var purpose = _str_(trip.purpose);

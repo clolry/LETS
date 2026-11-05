@@ -19,7 +19,7 @@ console.log('\n=== arbitrary status string accepted? ===');
 const r3 = RS.updateRequestStatus('LETS-2027-001', 'Totally Made Up', 'x@y.gov', '', st);
 console.log('status now:', JSON.stringify(r3.request.status));
 
-console.log('\n=== generateRequestId: collision behaviour ===');
+console.log('\n=== generateRequestId: collision behavior ===');
 console.log('with 0 existing:', RS.generateRequestId(0));
 console.log('with 5 existing:', RS.generateRequestId(5));
 console.log('-> count-based. Delete a request, next ID REUSES an existing number.');

@@ -1,7 +1,7 @@
 <!--
   travelEventsController.html
 
-  The admin event catalogue, the DAC set-aside editor, and the coordinator's
+  The admin event catalog, the DAC set-aside editor, and the coordinator's
   proposal queue.
 
   @clolry asked for three things that are one screen:
@@ -21,8 +21,8 @@
 
   THE PROPOSAL QUEUE IS FIRST
   ---------------------------
-  Proposals are time-sensitive — a traveller is waiting, and their request is
-  unlinked until somebody acts. The catalogue and reservations are not. So the
+  Proposals are time-sensitive — a traveler is waiting, and their request is
+  unlinked until somebody acts. The catalog and reservations are not. So the
   queue is at the top and carries a count, and the rest is below it.
 -->
 
@@ -97,7 +97,7 @@
   // ==========================================================================
 
   /**
-   * Groups pending proposals by normalised name.
+   * Groups pending proposals by normalized name.
    *
    * THE WHOLE POINT OF GROUPING. @clolry: "if we get 12 different requests
    * from people wanting to attend the same event". Twelve separate rows would
@@ -132,7 +132,7 @@
     }
 
     if (!groups.length) {
-      host.innerHTML = '<p class="ev-empty">No proposals waiting. Travellers who ' +
+      host.innerHTML = '<p class="ev-empty">No proposals waiting. Travelers who ' +
         'pick &ldquo;Other&rdquo; on a request appear here.</p>';
       return;
     }
@@ -183,16 +183,16 @@
   }
 
   // ==========================================================================
-  // CATALOGUE
+  // CATALOG
   // ==========================================================================
 
   function renderEvents() {
-    var host = el('evCatalogue');
+    var host = el('evCatalog');
     if (!host) return;
 
     if (!state.events.length) {
       host.innerHTML = '<tr><td colspan="7" class="ev-empty">No events yet. ' +
-        'Add one, or promote a traveller proposal above.</td></tr>';
+        'Add one, or promote a traveler proposal above.</td></tr>';
       return;
     }
 
@@ -208,7 +208,7 @@
       if (e.isVirtual) flags.push('virtual');
       if (e.isLocal) flags.push('local');
       // Surfaced in the list, not only in the editor: both change what a
-      // traveller may claim, and a coordinator reviewing the catalogue should
+      // traveler may claim, and a coordinator reviewing the catalog should
       // see them without opening each row.
       if (e.registrationWaivedFor) flags.push('waiver: ' + e.registrationWaivedFor);
       if (e.mealsProvided) flags.push('meals provided');
@@ -257,18 +257,18 @@
       // beyond its amount is a real condition a DAC needs to see; showing
       // zero remaining would hide the overrun.
       var remainCls = s.isOverCommitted ? 'ev-over' : '';
-      var util = s.utilisationPct === null ? '\u2014' : s.utilisationPct + '%';
-      var utilCls = s.utilisationPct === null ? ''
-        : (s.utilisationPct >= 100 ? 'ev-over'
-        : (s.utilisationPct >= 80 ? 'ev-warn' : ''));
+      var util = s.utilizationPct === null ? '\u2014' : s.utilizationPct + '%';
+      var utilCls = s.utilizationPct === null ? ''
+        : (s.utilizationPct >= 100 ? 'ev-over'
+        : (s.utilizationPct >= 80 ? 'ev-warn' : ''));
 
       return '<tr>' +
         '<td><strong>' + esc(s.eventName) + '</strong>' +
           // A free-text reservation is marked. It still draws down, by name
           // and month, but less reliably than an Event_ID — so a coordinator
           // can see which ones to link up.
-          (s.isCatalogued ? ''
-            : '<div class="ev-flags ev-warn">not linked to a catalogue event</div>') +
+          (s.isCataloged ? ''
+            : '<div class="ev-flags ev-warn">not linked to a catalog event</div>') +
           '<div class="ev-flags">' + esc(s.basis) + '</div></td>' +
         '<td>' + esc(s.eventMonth) + '</td>' +
         '<td>' + esc(s.officeCode) + '</td>' +
@@ -281,7 +281,7 @@
         '<td class="text-end ' + remainCls + '">' + money(s.remaining) + '</td>' +
         '<td class="text-end ' + utilCls + '">' + util + '</td>' +
         '<td class="text-end">' +
-          // Planned versus actual travellers, which is the number a DAC
+          // Planned versus actual travelers, which is the number a DAC
           // reacts to: reserved for 10, 14 going.
           (s.plannedTravelers
             ? esc(s.actualTravelers + ' / ' + s.plannedTravelers) +
@@ -385,7 +385,7 @@
     // PROMOTING a proposal goes through resolveEventProposal rather than
     // saveTravelEvent, because that is the call that also links the
     // originating request. Creating the event directly would leave the
-    // traveller's request unlinked and the reservation would never draw down.
+    // traveler's request unlinked and the reservation would never draw down.
     var call = proposalId
       ? serverCall('resolveEventProposal', proposalId,
           { action: 'PROMOTE', event: payload, notes: 'Created from proposal' })
@@ -482,15 +482,15 @@
     el('saFormHint').textContent = ev
       ? 'Linked to ' + ev.eventName + '. Requests that select this event draw ' +
         'the reservation down automatically.'
-      : 'Not linked to a catalogue event. The reservation will match requests ' +
-        'by name and month, which is less reliable — catalogue the event if ' +
+      : 'Not linked to a catalog event. The reservation will match requests ' +
+        'by name and month, which is less reliable — catalog the event if ' +
         'you can.';
 
     el('saFormModal').classList.remove('d-none');
   }
 
   /**
-   * Suggests an amount from planned travellers.
+   * Suggests an amount from planned travelers.
    *
    * ADVISORY ONLY, and it fills the basis text so the reasoning is recorded
    * rather than lost. The server requires a basis for exactly this reason:
@@ -505,15 +505,15 @@
     })[0];
     var reg = (ev && ev.registrationCost) || 0;
 
-    // $2,400 is a rough per-traveller travel figure, deliberately round so
+    // $2,400 is a rough per-traveler travel figure, deliberately round so
     // nobody mistakes it for a calculation. The admin is expected to correct
     // it — which is why it is a suggestion and not a computed field.
-    var perTraveller = 2400;
-    var amount = n * (perTraveller + reg);
+    var perTraveler = 2400;
+    var amount = n * (perTraveler + reg);
 
     el('saFormAmount').value = amount;
-    el('saFormBasis').value = n + ' travellers \u00d7 $' +
-      perTraveller.toLocaleString() + ' travel' +
+    el('saFormBasis').value = n + ' travelers \u00d7 $' +
+      perTraveler.toLocaleString() + ' travel' +
       (reg ? ' + $' + reg.toLocaleString() + ' registration' : '') +
       ' (estimate \u2014 adjust as needed)';
   }
@@ -600,10 +600,10 @@
   }
 
   function doReject(proposalId) {
-    // A traveller asked for something and is being told no. The server
+    // A traveler asked for something and is being told no. The server
     // requires a reason for that; prompting is crude but honest.
     var reason = window.prompt('Why are you rejecting this event? The ' +
-      'traveller will see this.');
+      'traveler will see this.');
     if (reason === null) return;
     if (!reason.trim()) {
       showError('A reason is required to reject a proposal.');
@@ -711,7 +711,7 @@
 
     // A virtual event must not carry a city — the server rejects that, and
     // the per-diem logic would otherwise read a location for an event nobody
-    // travelled to.
+    // traveled to.
     var virt = el('evFormVirtual');
     if (virt) {
       virt.addEventListener('change', function () {

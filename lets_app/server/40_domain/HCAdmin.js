@@ -153,7 +153,7 @@ function validateHCPosition(position, allPositions, originalPositionNumber, allO
   // supervisor chain, so a wrong value here silently grants or denies LETS.
   var sup = String(p.supervisoryStatus || '').trim();
   if (sup && sup !== '2' && sup !== '4' && sup !== '5' && sup !== '6' && sup !== '7' && sup !== '8') {
-    problems.push('Supervisory Status "' + sup + '" is not a recognised code. ' +
+    problems.push('Supervisory Status "' + sup + '" is not a recognized code. ' +
       'Use 2 for a supervisor, or leave it blank. This value grants LETS ' +
       'access on its own, so an unexpected code is worth checking.');
   }
@@ -230,7 +230,7 @@ function validateHCPosition(position, allPositions, originalPositionNumber, allO
     if (!resolved) {
       // Does NOT list every known code. With @clolry's real list loaded there
       // are 137 of them, and a 137-code error message is unreadable — the
-      // four top-level ones are what the user needs to recognise.
+      // four top-level ones are what the user needs to recognize.
       var tops = Object.keys(known).filter(function (k) { return k.length <= 3; }).sort();
       problems.push('Org Code "' + p.orgCode + '" does not start with any known org code. ' +
         'Codes are hierarchical, so a sub-org resolves to its parent — FCA0A ' +

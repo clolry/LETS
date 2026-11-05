@@ -34,7 +34,7 @@
  *
  * WHY A WHOLE SUITE RATHER THAN A GREP
  * ------------------------------------
- * The existing 60-odd CI guards are behavioural: they read source files and
+ * The existing 60-odd CI guards are behavioral: they read source files and
  * assert about their contents. Not one of them composes a page and parses it,
  * so a defect that only exists AFTER the includes are resolved is invisible to
  * all of them. §3 resolves the include graph the way the Apps Script
@@ -65,13 +65,13 @@ function walk(dir, out = []) {
 }
 
 /**
- * Tokenises HTML honouring RAW TEXT elements.
+ * Tokenizes HTML honouring RAW TEXT elements.
  *
  * <style> and <script> are raw-text: once open, nothing inside them is markup
  * until the matching end tag. A naive tag regex does not model that and would
- * report the CSS selectors inside a stylesheet as tags. Modelling it is the
+ * report the CSS selectors inside a stylesheet as tags. Modeling it is the
  * whole point here, because the swallow in consequence 2 above IS raw-text
- * behaviour.
+ * behavior.
  */
 function tokenize(src) {
   const toks = [];
@@ -340,14 +340,14 @@ console.log('7. no revealed/expanded state caps its height with a pixel ceiling'
   // bar or an avatar — .bar-chart__track and .pipeline__bar both do it on
   // purpose. These are the boxes that hold variable-length CONTENT.
   const mustNotCap = [
-    ['travelRequestStyles.html', '.tc__stage--employee', 'traveller card stage 1'],
-    ['travelRequestStyles.html', '.tc__stage--revealed', 'traveller card revealed stage'],
-    ['travelRequestStyles.html', '.tc__stage--details', 'traveller details (role, duty, BU)'],
+    ['travelRequestStyles.html', '.tc__stage--employee', 'traveler card stage 1'],
+    ['travelRequestStyles.html', '.tc__stage--revealed', 'traveler card revealed stage'],
+    ['travelRequestStyles.html', '.tc__stage--details', 'traveler details (role, duty, BU)'],
     ['travelRequestStyles.html', '.tc__stage--transport', 'transport mode + mileage'],
     ['travelRequestStyles.html', '.tc__stage--costs', 'per diem and grand total'],
     ['travelRequestStyles.html', '.tc__reveal--visible', 'revealed card fields'],
     ['travelRequestStyles.html', '.tc__details-right.tc__reveal', 'funding + role justification'],
-    ['travelReviewStyles.html', '.review-traveler-row__body', 'expanded traveller detail'],
+    ['travelReviewStyles.html', '.review-traveler-row__body', 'expanded traveler detail'],
     ['travelAdminStyles.html', '.action-detail', 'reviews / stalled-requests lists'],
   ];
 

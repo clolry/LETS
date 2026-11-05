@@ -332,7 +332,7 @@ var HC = (function () {
    * questions about the same code.
    *
    * A sub-org MAY override an inherited value by filling the cell in its own
-   * HC_Orgs row — a reorganisation that moves a service center to a different
+   * HC_Orgs row — a reorganization that moves a service center to a different
    * DAC is one row, not a code change.
    *
    * @param {string} code position's own org code, already uppercased
@@ -500,7 +500,7 @@ var HC = (function () {
   // THE MANIFEST IS WRITTEN LAST AND READ FIRST
   // -------------------------------------------
   // A reader that found chunk 0 and assumed the rest were present would
-  // deserialise a truncated roster — and a roster missing its last 150 people
+  // deserialize a truncated roster — and a roster missing its last 150 people
   // is indistinguishable from a roster where those people left. Both are
   // "valid" JSON of the right shape.
   //
@@ -931,7 +931,7 @@ var HC = (function () {
 
     // Start from the resolved row, not from the raw string: a code absent from
     // HC_Orgs still resolves to its nearest listed ancestor by prefix, so a
-    // position in an uncatalogued sub-org is attributed rather than dropped.
+    // position in an uncataloged sub-org is attributed rather than dropped.
     var node = resolveOrgByCode(code, byCode);
     var visited = {};
     var depth = 0;
@@ -955,7 +955,7 @@ var HC = (function () {
   }
 
   /**
-   * Filled and authorised headcount per service centre.
+   * Filled and authorized headcount per service center.
    *
    * THIS IS THE DENOMINATOR FOR THE PER-CAPITA BUDGET SPLIT, so what it counts
    * is a policy decision, not an implementation detail.
@@ -974,23 +974,23 @@ var HC = (function () {
    * He is right and it is not a style preference. 'Acquisition Service Center
    * 1' is BOTH FCBAB (under Office of MAS) and FCBBA (under Office of Non-MAS),
    * and the same holds for 2 and 3. A name-keyed roll-up would silently merge
-   * six real service centres into three and hand one DAC's money to another.
+   * six real service centers into three and hand one DAC's money to another.
    * `displayName` is carried for rendering only; test_budget_per_capita.js
    * §2 asserts no allocation path reads it.
    *
-   * POSITIONS ABOVE THE SERVICE-CENTRE LEVEL ARE NOT DISCARDED
+   * POSITIONS ABOVE THE SERVICE-CENTER LEVEL ARE NOT DISCARDED
    * ----------------------------------------------------------
-   * 17 people sit directly at a DAC or office code, above any service centre.
-   * They are returned under orgCode '' with `isAboveServiceCentre: true`, so
+   * 17 people sit directly at a DAC or office code, above any service center.
+   * They are returned under orgCode '' with `isAboveServiceCenter: true`, so
    * they still draw a per-capita share. Dropping them would inflate every
-   * service centre's share of its DAC and the total would still foot, which is
+   * service center's share of its DAC and the total would still foot, which is
    * the kind of error nobody finds.
    *
    * @param {Array} [positions] pre-fetched bundle, to avoid a second read
    * @returns {{success: boolean, byOrgCode: Object, byDac: Object,
    *            counted: number, unattributed: number, error?: string}}
    */
-  function hcServiceCentreHeadcount(positions) {
+  function hcServiceCenterHeadcount(positions) {
     try {
       var data = positions;
       if (!data) {
@@ -1033,13 +1033,13 @@ var HC = (function () {
           byOrgCode[key] = {
             orgCode: sc,
             dacOrgCode: dac,
-            isAboveServiceCentre: !sc,
+            isAboveServiceCenter: !sc,
             // Display only. Not a key, never compared.
             displayName: sc ? _str_((byCode[sc] || {}).division) : '',
-            filled: 0, vacant: 0, authorised: 0
+            filled: 0, vacant: 0, authorized: 0
           };
         }
-        if (!byDac[dac]) byDac[dac] = { filled: 0, vacant: 0, authorised: 0 };
+        if (!byDac[dac]) byDac[dac] = { filled: 0, vacant: 0, authorized: 0 };
 
         // _occupancy_ already uppercased and defaulted blank to FILLED, so
         // this is an exact comparison rather than a defensive one. OBLIGATED
@@ -1047,8 +1047,8 @@ var HC = (function () {
         // in it yet, so nobody travels against it this year.
         var isFilled = p.occupancyStatus === 'FILLED';
 
-        byOrgCode[key].authorised++;
-        byDac[dac].authorised++;
+        byOrgCode[key].authorized++;
+        byDac[dac].authorized++;
         if (isFilled) { byOrgCode[key].filled++; byDac[dac].filled++; }
         else { byOrgCode[key].vacant++; byDac[dac].vacant++; }
         counted++;
@@ -1062,7 +1062,7 @@ var HC = (function () {
         unattributed: unattributed
       };
     } catch (e) {
-      console.error('HC.hcServiceCentreHeadcount failed: ' + e.message);
+      console.error('HC.hcServiceCenterHeadcount failed: ' + e.message);
       return {
         success: false, error: e.message,
         byOrgCode: {}, byDac: {}, counted: 0, unattributed: 0
@@ -1262,8 +1262,8 @@ var HC = (function () {
 
     // Per-capita budget support. Counts only — no names, no emails, no
     // position numbers — so these sit OUTSIDE the HCPrivacy allow-list rather
-    // than being sanitised by it.
-    hcServiceCentreHeadcount: hcServiceCentreHeadcount,
+    // than being sanitized by it.
+    hcServiceCenterHeadcount: hcServiceCenterHeadcount,
     orgAncestorAtLevel:       orgAncestorAtLevel,
 
     // Shared so the validator and the roster editor apply the SAME rule as
@@ -1281,7 +1281,7 @@ var HC = (function () {
 
     // Chunked cache internals, for the test suite. The real roster is 514KB —
     // 5.7x the single-entry cap — so the reassembly and partial-read
-    // behaviour is load-bearing and must be assertable without CacheService.
+    // behavior is load-bearing and must be assertable without CacheService.
     _cachePutChunked:       _cachePutChunked_,
     _cacheGetChunked:       _cacheGetChunked_,
     _cacheRemoveChunked:    _cacheRemoveChunked_,

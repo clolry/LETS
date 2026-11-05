@@ -96,7 +96,7 @@ window.TravelCostService = (function() {
    * configured value on every request.
    *
    * Mirrors loadMileageRates: same dedupe-by-promise pattern, same
-   * resolve-on-failure behaviour so a dead RPC degrades to the fallback
+   * resolve-on-failure behavior so a dead RPC degrades to the fallback
    * instead of hanging the form.
    */
   async function loadCostConfig() {

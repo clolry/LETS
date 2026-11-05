@@ -9,7 +9,7 @@
 |---|---|
 | `ASD Bracketed Logo on Blue.png` | **The master.** 1562x1007, white ink on an opaque blue field. Highest resolution available |
 | `ASD_logo_200x129.png` | 200x129, blue ink on opaque white. **Too low-res for the splash** — this is what caused the graininess on 2026-10-30 |
-| `ASD_mark_1002x636_blue_transparent.png` | **Derived, and the one to reuse.** The master with the blue field keyed out and the ink recoloured to `#064C9A`. Transparent background |
+| `ASD_mark_1002x636_blue_transparent.png` | **Derived, and the one to reuse.** The master with the blue field keyed out and the ink recolored to `#064C9A`. Transparent background |
 
 ## Where the logo is embedded in the application
 
@@ -34,18 +34,18 @@ email logo, neither needs updating** unless the new asset is narrower than
 ## Regenerating
 
 Work from `ASD_mark_1002x636_blue_transparent.png` — it is already keyed and
-recoloured. Downscale with an **area-average** filter (not nearest-neighbour)
+recolored. Downscale with an **area-average** filter (not nearest-neighbor)
 and keep alpha premultiplied, or the antialiased edges will fringe.
 
 **Sizing rule:** a raster asset needs ~2x its CSS size to stay sharp on a
 retina display. The splash renders at 213 CSS px wide, so 426 px is the floor;
 the email logo renders at 240 px, so 480 px is its floor.
 
-**Keep the alpha channel.** All three embedded copies are colour-type 6
+**Keep the alpha channel.** All three embedded copies are color-type 6
 (RGBA). `ASD_logo_200x129.png` is opaque RGB on white and will show a white
 box anywhere the background is not white — which is most of them.
 
-## Ink colour
+## Ink color
 
 `#064C9A`, measured from `ASD_logo_200x129.png`. Verified: every one of the
 15,685 opaque pixels in the email asset is exactly this value.

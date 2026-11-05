@@ -42,12 +42,12 @@ The $48k FC senior advisor is `FUNDED_FROM_RELEASES` at $0 after the Chief of
 Staff declined to charge the DACs. `SetAsideRelease.js` records releases from
 cancelled Q1 events; nothing released yet.
 
-**Per-capita service-centre split works off the real roster.** 817 filled
-positions, 22 service centres, foots to $444,500 exactly by largest-remainder.
+**Per-capita service-center split works off the real roster.** 817 filled
+positions, 22 service centers, foots to $444,500 exactly by largest-remainder.
 Keyed on org code throughout — `FCBAB` and `FCBBA` are both "Acquisition
-Service Center 1", so a name-keyed roll-up would merge six centres into three.
+Service Center 1", so a name-keyed roll-up would merge six centers into three.
 
-`showServiceCentreHeadcount()` in `40_domain/HCRosterSync.js` prints the table.
+`showServiceCenterHeadcount()` in `40_domain/HCRosterSync.js` prints the table.
 
 **The real HR roster is imported.** 1,046 ASD positions from the FAS HRLinks
 feed, scoped to `FC` — the feed is 4,274 rows across all five FAS portfolios,
@@ -65,7 +65,7 @@ is unresolvable from three disagreeing sources.
 |---|---|
 | ASD discretionary | $444,500.00 |
 | Filled positions | 817 of 1,046 |
-| Service centres | 22 |
+| Service centers | 22 |
 | Org codes in `HC_Orgs` | 137 |
 | Staffed positions needing an email | ~218 remaining of 564 |
 | FY27 travel log rows | 30, all FY27 by voucher-approval date |
@@ -79,7 +79,7 @@ is unresolvable from three disagreeing sources.
   says nothing, manual org chart says `joe.hall@gsa.gov` which he could not
   resolve.
 - **Whether `FCA0EA` is contractor-heavy.** Five of six unresolvable names were
-  in that one service centre, which is unlikely to be chance.
+  in that one service center, which is unlikely to be chance.
 
 ## Not started
 
@@ -87,22 +87,22 @@ is unresolvable from three disagreeing sources.
 piece of work. His specification, verbatim in intent:
 
 > Columns for Org Code, Trips, Estimated $, Actual $, Pending $, Total
-> Committed, Allocated Budget, Remaining Budget, Budget Health (coloured bar).
+> Committed, Allocated Budget, Remaining Budget, Budget Health (colored bar).
 > All org codes in proper org-chart structure, expandable per org to show that
-> org's travel records — traveller name, type, purpose, route, dates, and the
+> org's travel records — traveler name, type, purpose, route, dates, and the
 > three dollar columns. Filterable by all orgs / FC / FCA etc., searchable by
-> org code or traveller.
+> org code or traveler.
 
 Decisions he already made:
 
 - Estimated/Actual/Pending as three columns; estimates retained after actuals
   arrive.
 - Spend at **every** hierarchy level; Allocated/Remaining only where a real
-  allocation exists (4 DACs + 22 service centres). Do not invent
+  allocation exists (4 DACs + 22 service centers). Do not invent
   division-level budgets.
-- Per-centre spend must come from `Request_Travelers`, not `Requests` — a
+- Per-center spend must come from `Request_Travelers`, not `Requests` — a
   request carries one `Owning_Office` but a consolidated conference request
-  holds travellers from several DACs. `BudgetDashboard.spendByServiceCentre`
+  holds travelers from several DACs. `BudgetDashboard.spendByServiceCenter`
   already does this correctly; reuse it.
 
 **The daily liability-log pull.** `LiabilityLogSync.js` parses and plans but
@@ -111,7 +111,7 @@ writing a `LETS_Key` column back to his sheet for idempotency — the log's own
 `Document Number` is empty on 29 of 30 rows.
 
 **Five `sector director` call sites** still match a title that does not exist
-in this organisation, so all five find nobody. Should use `Org_Level ===
+in this organization, so all five find nobody. Should use `Org_Level ===
 'SERVICE_CENTER'`.
 
 ## Process notes worth carrying forward

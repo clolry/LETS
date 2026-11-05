@@ -4,7 +4,7 @@
  * WHY THE STRINGS MATTER MORE THAN THE WORDING
  * --------------------------------------------
  * These option values are written into the FAS Travel Exemption Tracker, which
- * is a GOOGLE FORM. A value the form does not recognise is rejected or lands
+ * is a GOOGLE FORM. A value the form does not recognize is rejected or lands
  * as free text, so the strings cannot be tidied, abbreviated or re-worded —
  * including the tracker's own typo, "Oversees Employee (within OCONUS)", and
  * its en-dashes (U+2013) in the primary-justification list.
@@ -54,7 +54,7 @@
  */
 
 // Step 4 classification rewritten against the FAS exemption tracker's own
-// option strings. The tracker is a Google Form: a value it does not recognise
+// option strings. The tracker is a Google Form: a value it does not recognize
 // is rejected or lands as free text, so the strings cannot be tidied.
 const fs=require('fs'),vm=require('vm');
 let fails=0;
@@ -104,7 +104,7 @@ console.log('1. Purpose of Travel is derived, not asked');
   // an internal management meeting, because Step 1 had already asked.
   ok('no travel-types checkbox column', page.indexOf('id="travelTypesContainer"')===-1);
   ok('derived panel present instead', page.indexOf('id="derivedPurposeList"')>-1);
-  ok('labelled as automatic', /Determined automatically/.test(page));
+  ok('labeled as automatic', /Determined automatically/.test(page));
   // Nothing in the page should offer these as choices any more.
   ok('no Customer Meeting checkbox', page.indexOf('type="checkbox" value="Customer Meeting"')===-1);
   ok('no Local Travel checkbox', page.indexOf('type="checkbox" value="Local Travel"')===-1);
@@ -113,7 +113,7 @@ console.log('1. Purpose of Travel is derived, not asked');
 console.log('2. Mission-critical options are the tracker\'s, verbatim');
 {
   const got=valuesIn('missionCriticalContainer');
-  got.forEach(v=>ok('tracker recognises "'+v.slice(0,40)+'"', TRACKER_MC.indexOf(v)>-1, v));
+  got.forEach(v=>ok('tracker recognizes "'+v.slice(0,40)+'"', TRACKER_MC.indexOf(v)>-1, v));
   ok('all 8 present', got.length===8, got.length);
   // The old list was the prose from the OAS memo quoted in the tracker's
   // introduction, not the form's option labels.
@@ -127,7 +127,7 @@ console.log('3. Primary justification exists and matches the tracker');
   ok('single-select present', i>-1);
   const block=page.slice(i, page.indexOf('</select>',i));
   const opts=[...block.matchAll(/<option value="([^"]+)"/g)].map(m=>m[1]);
-  opts.forEach(v=>ok('tracker recognises "'+v.slice(0,38)+'"', TRACKER_PRIMARY.indexOf(v)>-1, v));
+  opts.forEach(v=>ok('tracker recognizes "'+v.slice(0,38)+'"', TRACKER_PRIMARY.indexOf(v)>-1, v));
   ok('all 11 present', opts.length===11, opts.length);
   // En-dashes, not hyphens: the form uses U+2013.
   ok('en-dash preserved', opts.some(v=>v.indexOf('\u2013')>-1), opts[0]);
@@ -166,7 +166,7 @@ console.log('4. all 13 tracker purposes derive from data the form already has');
   Object.keys(DIRECT).forEach(code=>{
     const got=state({travelPurpose:code}).getTrackerPurposes();
     ok(code+' -> '+DIRECT[code].slice(0,30), got.indexOf(DIRECT[code])>-1, got);
-    ok(code+' is recognised by the tracker', TRACKER_PURPOSES.indexOf(DIRECT[code])>-1);
+    ok(code+' is recognized by the tracker', TRACKER_PURPOSES.indexOf(DIRECT[code])>-1);
   });
 
   // IMM split by the COMPUTED total, not the submitter's Step 1 guess.

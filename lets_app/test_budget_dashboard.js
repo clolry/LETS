@@ -400,8 +400,8 @@ console.log('\n3. statuses are classified by what they mean to a budget');
   // Available = base - committed - actual.
   ok('available subtracts both', by.OMD.available === 61587.50 - 5000,
      by.OMD.available);
-  ok('and utilisation is a percentage of the discretionary base',
-     by.OMD.utilisationPct === 8.1, by.OMD.utilisationPct);
+  ok('and utilization is a percentage of the discretionary base',
+     by.OMD.utilizationPct === 8.1, by.OMD.utilizationPct);
 }
 
 // ---------------------------------------------------------------------------
@@ -510,11 +510,11 @@ console.log('\n6. the payload admits what it does not know');
 
   ok('and reports the fiscal year', m.fiscalYear === 'FY27', m.fiscalYear);
 
-  // Statuses seen, so an unrecognised one in the sheet is diagnosable rather
+  // Statuses seen, so an unrecognized one in the sheet is diagnosable rather
   // than silently uncounted.
   const seen = load([row('R1', 'SOME_NEW_STATUS', 'OMD', 'FCA', 500)]);
   const sr = seen.run('getBudgetDashboard()');
-  ok('unrecognised statuses are reported in meta',
+  ok('unrecognized statuses are reported in meta',
      sr.data.meta.statusesSeen.SOME_NEW_STATUS === 1,
      sr.data.meta.statusesSeen);
   ok('and counted against no office',
@@ -608,8 +608,8 @@ console.log('\n8. negative controls (the suite must be able to fail)');
   //
   // THE PATCH TARGET MUST BE UNIQUE. `out.unattributed.count++;` at the same
   // indentation now appears TWICE — once in spendByOffice and once in
-  // spendByServiceCentre — and String.replace takes the first match, which is
-  // the service-centre one. This control therefore passed while patching code
+  // spendByServiceCenter — and String.replace takes the first match, which is
+  // the service-center one. This control therefore passed while patching code
   // §4 does not exercise: a negative control that proves nothing, which is
   // worse than none because it is counted as evidence. Anchored on the
   // following line, which is unique to spendByOffice.

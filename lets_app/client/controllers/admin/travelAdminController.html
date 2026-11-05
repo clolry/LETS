@@ -261,7 +261,7 @@
       if (this._isFullAdmin) return;
 
       // Nav sections a coordinator has no business in. Users grants roles;
-      // the roster is HR data; reports read across the whole organisation.
+      // the roster is HR data; reports read across the whole organization.
       ['users', 'roster'].forEach(function (view) {
         var btn = document.querySelector('[data-view="' + view + '"]');
         if (btn) btn.classList.add('hidden');

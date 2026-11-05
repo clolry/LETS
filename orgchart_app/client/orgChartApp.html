@@ -103,7 +103,7 @@
     });
     var record = state.nodes[id];
 
-    // Passes `id` down rather than patching parentId afterwards. The earlier
+    // Passes `id` down rather than patching parentId afterward. The earlier
     // version tried to find each child's index by counting descendants after
     // the fact and set the wrong element — which broke the ancestor walk in
     // search, the one thing parentId exists for.

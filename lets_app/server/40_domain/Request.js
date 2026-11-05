@@ -90,7 +90,7 @@ function getTravelFormStaffing() {
       // PII BOUNDARY — see 30_services/HCPrivacy.js.
       //
       // This function is browser-callable by any signed-in user (G-001) and
-      // feeds the traveller picker, so it legitimately needs names, emails
+      // feeds the traveler picker, so it legitimately needs names, emails
       // and org codes for the WHOLE roster. It does not need the rest.
       //
       // Withheld below admin:

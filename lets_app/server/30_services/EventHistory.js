@@ -22,7 +22,7 @@
  *    cost, and covers only travel submitted through LETS.
  *
  * The FAS Travel Exception Tracker summary is deliberately NOT a source here.
- * It disagreed sharply — CGP Spring Conference at 4 travellers against
+ * It disagreed sharply — CGP Spring Conference at 4 travelers against
  * @clolry's 24 — and @clolry explained why:
  *
  *   "Lets use my table rather than the FAS tracker - while there may have only
@@ -106,7 +106,7 @@ var EVENT_HISTORY_SEED = [
 // THE TRAVEL RESTRICTION WINDOW
 // ============================================================================
 //
-// @clolry, on being shown NCMA World Congress labelled 'biennial':
+// @clolry, on being shown NCMA World Congress labeled 'biennial':
 //
 //   "NCMA is not biennial we just were under a restriction in 2025 where we
 //    couldn't send anyone to attend 2025 and most of 2026 were severely
@@ -274,7 +274,7 @@ var EventHistory = (function () {
    *
    * The actual question is narrower. For an annual event, how many times did
    * the anniversary come round and get missed, and was ASD barred from
-   * travelling on each of those dates?
+   * traveling on each of those dates?
    *
    * NCMA: July 2024 to July 2026 skips exactly one anniversary, July 2025,
    * and July 2025 sits inside the restriction window. One skipped cycle,
@@ -409,7 +409,7 @@ var EventHistory = (function () {
     // A raw gap measures how long since ASD last attended. That is not the
     // same as how often the event happens, and conflating them produced a
     // wrong answer @clolry had to correct: NCMA World Congress occurred July
-    // 2024 and July 2026, a 24-month gap, and was labelled 'biennial' with a
+    // 2024 and July 2026, a 24-month gap, and was labeled 'biennial' with a
     // next date of July 2028.
     //
     // @clolry: "NCMA is not biennial we just were under a restriction in 2025
@@ -443,7 +443,7 @@ var EventHistory = (function () {
 
     var adj = gaps.map(function (g) { return g.adjusted; });
     var annualish = adj.length && adj.every(function (g) { return g >= 10 && g <= 14; });
-    // Still recognised, but only when the two-year cadence survives
+    // Still recognized, but only when the two-year cadence survives
     // discounting — i.e. the gap was not caused by a travel ban.
     var biennialish = adj.length && adj.every(function (g) { return g >= 22 && g <= 26; });
     var anyRestricted = gaps.some(function (g) { return g.blockedCycles > 0; });
@@ -528,7 +528,7 @@ var EventHistory = (function () {
    *
    * Attendance inside the window averages 5.2 against 17.9 outside it. So the
    * decline is a POLICY CEILING, and a ceiling lifts. A DAC told "attendance
-   * is down 95%" plans for one traveller next May; a DAC told "last normal
+   * is down 95%" plans for one traveler next May; a DAC told "last normal
    * year was 20, and the two readings since were under a travel ban" plans
    * for something near 20.
    *
@@ -756,7 +756,7 @@ var EventHistory = (function () {
 
       if (cId > -1 && row[cId]) g.requestIds.push(String(row[cId]));
 
-      // Traveler_Org_Codes is a comma-separated list, one entry per traveller.
+      // Traveler_Org_Codes is a comma-separated list, one entry per traveler.
       // Falls back to the owning org when it is blank, so a request still
       // attributes somewhere rather than vanishing from the breakdown.
       var orgsRaw = cOrgs > -1 ? String(row[cOrgs] || '') : '';

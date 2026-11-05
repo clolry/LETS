@@ -18,12 +18,12 @@
  *
  * Sections 1 and 2 cover the failing and throwing lookups. Section 3 covers
  * the success path, because the GSA list does not contain every city and a
- * traveller going somewhere unlisted must still be able to type it. Section 4
+ * traveler going somewhere unlisted must still be able to type it. Section 4
  * covers a null Awesomplete instance — the binding previously lived inside
  * `if (awInstance)`, so a failed construction silently removed the only way to
  * enter a city.
  *
- * Section 6 is a structural assertion rather than a behavioural one: it reads
+ * Section 6 is a structural assertion rather than a behavioral one: it reads
  * the source and checks the binding call sits OUTSIDE the conditional. Worth
  * noting the first version of that check sliced past the block's closing brace
  * and matched the unconditional call that follows, so it could never fail —
@@ -72,7 +72,7 @@ function build(opts){
   const src=fs.readFileSync('lets_app/client/controllers/form/travelRequestItinerary.html','utf8');
   const blocks=src.match(/<script[^>]*>([\s\S]*?)<\/script>/g).map(b=>b.replace(/<\/?script[^>]*>/g,''));
   // Only the Controller method definitions are needed; the file's IIFE wiring
-  // pulls in far more of the page than this behaviour requires.
+  // pulls in far more of the page than this behavior requires.
   const wanted=blocks.join('\n');
   const i=wanted.indexOf('Controller._loadLegCities =');
   const j=wanted.indexOf('Controller._resetLegCityAutocomplete =');
@@ -117,7 +117,7 @@ console.log('2. lookup THROWS — same guarantee');
 
 console.log('3. lookup SUCCEEDS — manual entry still works');
 {
-  // The GSA list does not contain every city. A traveller going somewhere
+  // The GSA list does not contain every city. A traveler going somewhere
   // unlisted must still be able to type it.
   const h=build({lookup:{success:true,cities:['CHICAGO','SPRINGFIELD'],source:'GSA'}});
   const input=h.el('legCity_L1');

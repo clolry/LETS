@@ -23,7 +23,7 @@
  *
  * Section 3 covers the gross-up labels. The traveler card and the review cost
  * matrix both printed a hardcoded "15%" beside a figure computed at 30%. A
- * number labelled with the wrong rate is worse than an unlabelled one — an
+ * number labeled with the wrong rate is worse than an unlabeled one — an
  * approver reading "15%" next to a 30% figure has been actively misinformed.
  *
  * Section 4 covers GSA Site. Four separate places hardcoded the same

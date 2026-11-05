@@ -415,7 +415,7 @@ if (!reviewCtl) {
     console.log('  shown to the user everywhere else. At a swallowing site the');
     console.log('  denial would be invisible — the UI would keep the edit on');
     console.log('  screen while the server refused it, which is worse than');
-    console.log('  the unguarded behaviour it replaces.');
+    console.log('  the unguarded behavior it replaces.');
     console.log('');
     console.log('  The recipe must fix the swallowing site FIRST. That is one');
     console.log('  line, and it is a precondition, not a follow-up.');

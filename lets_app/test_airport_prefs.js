@@ -212,7 +212,7 @@ console.log('1. metro codes must never win a default (the real-data bug)');
   ok('WAS present but LAST', codes[codes.length-1]==='WAS', codes);
   ok('DCA is first despite WAS having more routes', codes[0]==='DCA', codes.map((c,i)=>c+':'+r.airports[i].routeCount));
   ok('WAS flagged isMetroArea', r.airports.find(a=>a.code==='WAS').isMetroArea===true);
-  ok('WAS labelled', r.airports.find(a=>a.code==='WAS').metroLabel.indexOf('Washington')>-1);
+  ok('WAS labeled', r.airports.find(a=>a.code==='WAS').metroLabel.indexOf('Washington')>-1);
   ok('DCA not flagged metro', r.airports.find(a=>a.code==='DCA').isMetroArea===false);
   ok('isMetroArea works on a DOMESTIC row', r.airports.find(a=>a.code==='WAS').country==='UNITED STATES');
 }

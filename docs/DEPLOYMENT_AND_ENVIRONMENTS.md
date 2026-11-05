@@ -26,7 +26,7 @@ What *is* in the repository is **the configuration that would be applied** — t
 |---|---|
 | `[VERIFIED]` | Read from a file in the repository, or measured by `pass6_deployment_census.js` |
 | `[CONFIGURED]` | **New in this deliverable.** The repository specifies this; whether the live project matches is a separate question |
-| `[INFERRED]` | A reasoned conclusion, labelled so you can disagree |
+| `[INFERRED]` | A reasoned conclusion, labeled so you can disagree |
 | `[UNKNOWN]` | Held outside the repository. Requires someone with live access |
 
 Every count is produced by [`evidence/pass6_deployment_census.js`](./evidence/pass6_deployment_census.js).
@@ -122,7 +122,7 @@ A second web app, `orgchart_app/`, reading the same spreadsheet LETS writes.
 
 **Why this matters more than "an extra project exists":**
 
-1. **It would push another organisation's application code** into a project nobody has documented. **98 files** are reference snapshots of systems LETS does not own.
+1. **It would push another organization's application code** into a project nobody has documented. **98 files** are reference snapshots of systems LETS does not own.
 2. **All pushed `.js` files share one global scope** (`SYSTEM_COMPONENT_MAP.md` §2.1.1). Pushing `lets_app/` and `reference_travel_app/` together means **two full copies of the same ~459 function names in one namespace** — the later-loading definition silently wins. The result would not merely be untidy; it would be unpredictable.
 3. **It is untracked**, so it exists only on whichever machine created it. Nobody reviewing this repository would see it.
 4. **A single `clasp push` from the wrong directory is the whole accident.** No flag, no confirmation.
@@ -240,7 +240,7 @@ The eight, located `[VERIFIED]`:
 
 **Note the shape of the evidence.** Three of the eight describe *bugs that only occur under* `USER_DEPLOYING` — `Feedback.js` explains that `getUserProperties()` reads the deploying user's properties, breaking a fast path. **A developer does not write three bug comments about a mode the system is not in.** Two others (`Attachments.js`, `HCStaffing.js`) explain that a feature *works because of* it.
 
-> **`[INFERRED]`, and stated as inference: the live deployment is probably `USER_DEPLOYING`.** The reasoning is that five of eight comments describe observed behaviour rather than intent. **This is not a substitute for VT-01** — it is a prediction, and `ADMINISTRATOR_GUIDE.md` §1.3.4 rates the Critical findings on the manifest's declared value precisely so the ratings do not rest on this inference.
+> **`[INFERRED]`, and stated as inference: the live deployment is probably `USER_DEPLOYING`.** The reasoning is that five of eight comments describe observed behavior rather than intent. **This is not a substitute for VT-01** — it is a prediction, and `ADMINISTRATOR_GUIDE.md` §1.3.4 rates the Critical findings on the manifest's declared value precisely so the ratings do not rest on this inference.
 
 **Whichever way it resolves, one body of evidence in this codebase is wrong** and should be corrected so the next reader is not misled. That is **BD-1**.
 
@@ -269,7 +269,7 @@ The eight, located `[VERIFIED]`:
 |---|---|---|
 | **No `pull_request` trigger on deploy** | Opening a PR would *be* the deploy, defeating review entirely | The workflow file cites NIST CM-3 and CM-5 and says *"Do not add `pull_request` here"* |
 | **`verify.yml` holds no credentials at all** | A fork PR executing untrusted code cannot deploy | *"DELIBERATELY USES NO CREDENTIALS … therefore cannot deploy … including from fork PRs"* |
-| **`concurrency: deploy-gas-production`, `cancel-in-progress: false`** | Two interleaved pushes leaving production in a mixed state | `clasp push --force` overwrites; deploys are serialised |
+| **`concurrency: deploy-gas-production`, `cancel-in-progress: false`** | Two interleaved pushes leaving production in a mixed state | `clasp push --force` overwrites; deploys are serialized |
 | **`clasp` pinned to `3.4.1` exactly** | An unpinned install putting an uncontrolled third-party version on the production deploy path | Cites supply-chain control SR-3; notes clasp 2.x/3.x differ in auth handling |
 | **`permissions: contents: read`** | Over-broad token scope | Least privilege, both workflows |
 | **Four regression guards** | Each of the above silently regressing | §5.3.2 |
@@ -289,7 +289,7 @@ The eight, located `[VERIFIED]`:
 
 **Guard 2 has a nice detail worth noticing:** it greps its own file for a secret-interpolation pattern, so its explanatory comment **deliberately avoids writing the pattern literally** or it would match itself `[VERIFIED]`. Someone thought that through.
 
-**Guard 4's rationale is the most valuable thing in the file.** clasp pushes every `.js` into one global scope where all top-level code runs on **every** execution. A pushed test file would call `require('assert')` at load time, throw, and **abort every execution including `doGet`** — taking the whole application down. `.claspignore` lists files explicitly rather than by glob *because the glob behaviour could not be verified without clasp*, and CI enforces the list `[VERIFIED]`. That is correct paranoia about a real and obscure hazard.
+**Guard 4's rationale is the most valuable thing in the file.** clasp pushes every `.js` into one global scope where all top-level code runs on **every** execution. A pushed test file would call `require('assert')` at load time, throw, and **abort every execution including `doGet`** — taking the whole application down. `.claspignore` lists files explicitly rather than by glob *because the glob behavior could not be verified without clasp*, and CI enforces the list `[VERIFIED]`. That is correct paranoia about a real and obscure hazard.
 
 ### 5.3.3 Guard 3 had a real coverage gap — now closed
 
@@ -363,7 +363,7 @@ Both directions, before adoption `[VERIFIED]` — a guard that fires on ordinary
 
 **Code is verified on Node 20 and deployed by Node 24.** Harmless in practice — `clasp push` only uploads files and runs none of the code — but it means **the tested toolchain is not the deploying one**.
 
-`deploy-gas.yml` documents the divergence in a comment and explains it was left alone deliberately to avoid changing deploy-path behaviour during a security fix `[VERIFIED]`. **That is the right call and the right way to record it**; it is noted here only so a future reader does not treat it as an oversight.
+`deploy-gas.yml` documents the divergence in a comment and explains it was left alone deliberately to avoid changing deploy-path behavior during a security fix `[VERIFIED]`. **That is the right call and the right way to record it**; it is noted here only so a future reader does not treat it as an oversight.
 
 ---
 
@@ -435,7 +435,7 @@ Two functions set the sender address, both idempotent — each writes only if th
 `resolveLetsEnvironment` and `resolveFASTrackerTarget` `TripConfig.js:54-127` `[VERIFIED]`:
 
 ```
-LETS_ENV unset or unrecognised  →  'development'
+LETS_ENV unset or unrecognized  →  'development'
 'production' (case/space insensitive)  →  'production'
 ```
 
@@ -590,7 +590,7 @@ It matters only because an administrator familiar with other Apps Script tools w
 
 1. **Recreate or re-bind the database spreadsheet**, then set `TRAVEL_DB_SPREADSHEET_ID`.
 2. **Attach the HC library** and record its identifier somewhere permanent.
-3. **Restore every Script Property** from a record that does not currently exist — **which is why VT-09 is a recovery artefact, not just a verification task.**
+3. **Restore every Script Property** from a record that does not currently exist — **which is why VT-09 is a recovery artifact, not just a verification task.**
 4. **Re-create the deployment** with the correct "Execute as" and "Who has access" — which requires BD-1 to have been answered.
 5. **Re-install all five triggers**, from an account that will not be deprovisioned.
 6. **Re-share the Shared Drive** and set `SHARED_DRIVE_FOLDER_ID`.

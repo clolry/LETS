@@ -3,7 +3,7 @@
  *
  * WHAT THIS PROTECTS
  * ------------------
- * "Overhead" was relabelled "GSA-Paid" and made the default, because this
+ * "Overhead" was relabeled "GSA-Paid" and made the default, because this
  * workgroup does roughly one client-paid trip a year where the group this code
  * was inherited from did a great deal of customer-funded travel.
  *

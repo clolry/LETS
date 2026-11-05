@@ -19,7 +19,7 @@
  * @clolry confirmed TEST_FAS_TRACKER_SPREADSHEET_ID points at a real copy of
  * the live sheet, which makes an end-to-end check safe. Doing it on a copy is
  * the entire point: a misaligned append to the official tracker is an
- * uncorrectable write to another organisation's system of record.
+ * uncorrectable write to another organization's system of record.
  *
  * THREE INDEPENDENT REFUSALS
  * --------------------------
@@ -101,9 +101,9 @@ function submitFASTrackerTestRow() {
       console.log('Header matches FAS_TRACKER_COLUMNS.');
     }
 
-    // Deliberately a two-org, two-traveller request: that is the case the
+    // Deliberately a two-org, two-traveler request: that is the case the
     // single-office form could not represent, and the one whose expense
-    // breakdown and traveller/duty pairing are most likely to reveal a
+    // breakdown and traveler/duty pairing are most likely to reveal a
     // mapping error.
     var sample = {
       requestId: 'LETS-DIAG-' + Date.now(),

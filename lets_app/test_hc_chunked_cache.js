@@ -22,7 +22,7 @@
  * THE FAILURE THIS GUARDS AGAINST
  * -------------------------------
  * A truncated roster is valid JSON of the right shape. A reader that found
- * chunk 0 and assumed the rest were present would deserialise, say, 900 of
+ * chunk 0 and assumed the rest were present would deserialize, say, 900 of
  * 1,046 people — and that is indistinguishable from 146 people having left.
  * Nothing would error. The access gate would deny those people, the org chart
  * would omit them, and every per-capita budget share would shift.
@@ -48,7 +48,7 @@ const ok = (n, c, x) => {
 /**
  * A CacheService stand-in that records calls and can evict.
  *
- * Mimics the two behaviours that matter: a 100KB per-entry cap that REJECTS
+ * Mimics the two behaviors that matter: a 100KB per-entry cap that REJECTS
  * rather than truncating, and independent expiry of individual keys.
  */
 function makeCache() {
@@ -193,7 +193,7 @@ console.log('\n2. a large value round-trips exactly');
 console.log('\n3. a partial chunk set is a MISS, never a partial roster');
 {
   // THE SECTION THAT MATTERS. CacheService evicts individual entries under
-  // pressure. A reader that returned what it found would deserialise a
+  // pressure. A reader that returned what it found would deserialize a
   // truncated roster — valid JSON, right shape, wrong number of people — and
   // that is indistinguishable from staff having left. The access gate would
   // deny them and every per-capita share would shift, with nothing in error.
@@ -487,7 +487,7 @@ console.log('\n8. the designed path does not log as a failure');
      /CACHE_CONFIG\.TTL\.LONG,\s*\n?\s*true\)/.test(refresh),
      'the warming trigger runs hourly and logged the same false warning');
 
-  // BEHAVIOURAL, NOT JUST TEXTUAL. The assertions above read source; these
+  // BEHAVIORAL, NOT JUST TEXTUAL. The assertions above read source; these
   // two run it, because the log LEVEL is the whole fix and a regex on the
   // source could pass while the branch did something else.
   const runPut = (text) => {

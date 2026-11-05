@@ -10,7 +10,7 @@
  *
  * @clolry confirmed Test_Submitters is EMPTY. So every sandbox submission has
  * been sending real notifications, and any Sector Director or BU Reviewer that
- * HC resolved received them. That is inherited behaviour, not something recent
+ * HC resolved received them. That is inherited behavior, not something recent
  * work introduced, and it is why he declined to supply real approver addresses
  * for the routing work.
  *

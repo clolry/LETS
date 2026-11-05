@@ -502,7 +502,7 @@ console.log('\n7c. A sub-org keeps its own NAME but inherits its parent\'s BUDGE
     'a six-level code keeps its own name');
   console.log('   FCA0BAA inherits OMD across missing intermediate rows');
 
-  // An explicit value on the sub-org must WIN, so a reorganisation moving a
+  // An explicit value on the sub-org must WIN, so a reorganization moving a
   // service center to another DAC is one row rather than a code change.
   const moved = orgs.slice();
   moved[2] = orgRow({ Org_Code: 'FCA0A', Office_Code: 'IDV', Business_Unit: 'IDV',
@@ -573,17 +573,17 @@ console.log('\n7d. The real org list is internally consistent:');
   assert.strictEqual(depth('FCA0A'), 2, 'FC > FCA > FCA0A');
   assert.strictEqual(depth('FCBAA'), 3, 'FC > FCB > FCBA > FCBAA');
   assert.ok(depth('FCA0A') !== depth('FCBAA'),
-    'two service centres at different depths — length cannot give the level');
-  console.log('   Service centres sit at different depths (2 and 3)');
+    'two service centers at different depths — length cannot give the level');
+  console.log('   Service centers sit at different depths (2 and 3)');
 
-  // 22 SERVICE CENTRES. A Service Center Director is the supervisory person
+  // 22 SERVICE CENTERS. A Service Center Director is the supervisory person
   // whose own Dept ID is one of these, which is how the routing reviewer
   // should be found — four call sites currently look for a 'sector director'
-  // title that does not exist in this organisation.
+  // title that does not exist in this organization.
   const scCodes = vm.runInContext('hcServiceCenterCodes()', seedCtx);
-  assert.strictEqual(scCodes.length, 22, 'expected 22 service centres');
+  assert.strictEqual(scCodes.length, 22, 'expected 22 service centers');
   assert.ok(scCodes.every(c => byCode[c].orgLevel === 'SERVICE_CENTER'));
-  console.log('   22 service centres, identified by level not by name');
+  console.log('   22 service centers, identified by level not by name');
 
   // TWO SHARE A NAME, legitimately — Acquisition Service Center 2 exists
   // under both Office of MAS and Office of Non-MAS. @clolry confirmed they
@@ -676,7 +676,7 @@ console.log('\n7d. The real org list is internally consistent:');
 // ---------------------------------------------------------------------------
 // 8. Caching, and the return type CacheWarming.js depends on
 // ---------------------------------------------------------------------------
-console.log('\n8. Cache behaviour:');
+console.log('\n8. Cache behavior:');
 
 {
   const rows = [posRow({ Position_Number: 'P1', Employee_Name: 'Ada', Org_Code: 'FC', Grade: 15 })];
@@ -715,7 +715,7 @@ console.log('\n9. Failure modes:');
 {
   // Missing tabs are a setup state, not a crash. Every inherited caller checks
   // `bundle.success && bundle.data` and continues, so an empty-but-successful
-  // bundle reproduces the pre-existing no-library behaviour.
+  // bundle reproduces the pre-existing no-library behavior.
   const noTabs = loadHC([], ORGS, { quiet: true, noPositionsTab: true });
   const b = noTabs.HC.hcGetBundle();
   assert.strictEqual(b.success, true);
@@ -952,7 +952,7 @@ console.log('\n11. Negative control (the suite must be able to fail):');
   const brokenHC = vm.runInContext('HC', ctx);
 
   assert.strictEqual(brokenHC._grade(7), '7',
-    'NEGATIVE CONTROL FAILED: removing the pad did not change behaviour, so ' +
+    'NEGATIVE CONTROL FAILED: removing the pad did not change behavior, so ' +
     'section 3 is not actually exercising the GS-07 coercion bug.');
   console.log('   Unpadded _grade(7) returns "7" as expected — section 3 is live');
 }

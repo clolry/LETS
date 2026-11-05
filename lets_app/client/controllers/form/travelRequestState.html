@@ -107,21 +107,21 @@
     _formData: {
       // Step 1: Trip Overview
 
-      // EVENT CATALOGUE LINK.
+      // EVENT CATALOG LINK.
       //
-      // eventId is set when the traveller picked a catalogued event, which is
+      // eventId is set when the traveler picked a cataloged event, which is
       // what lets a DAC's set-aside draw down against this request.
       //
       // eventProposalId is set instead when they chose "Other" and described
-      // something not yet catalogued. The request is still submittable —
+      // something not yet cataloged. The request is still submittable —
       // blocking on a coordinator would be wrong for anyone with a deadline —
-      // and a coordinator links it afterwards.
+      // and a coordinator links it afterward.
       //
       // Both blank for ordinary ad-hoc travel, which is most of it.
       eventId: '',
       eventProposalId: '',
       // Held only to build the proposal on submit. Never stored on the
-      // request itself: the catalogued event carries the authoritative
+      // request itself: the cataloged event carries the authoritative
       // location once a coordinator has created it.
       eventOtherLocation: '',
       eventOtherNotes: '',
@@ -171,7 +171,7 @@
       primaryJustification: '',
       // Both lists end in "Other:", so the tracker expects free text when it
       // is chosen. Stored separately and appended at submission, so the
-      // option VALUE stays exactly what the Google Form recognises.
+      // option VALUE stays exactly what the Google Form recognizes.
       primaryJustificationOther: '',
       missionCriticalOther: '',
 
@@ -728,7 +728,7 @@
         // Defaults to 'overhead' (GSA-Paid). The workgroup this code was
         // inherited from did a great deal of customer-funded travel; this one
         // does perhaps one client-paid trip a year, so leaving it blank made
-        // every traveller pick the same answer. The stored value stays
+        // every traveler pick the same answer. The stored value stays
         // 'overhead' because Submission.js routing, Admin_Dashboard spend
         // buckets, ReviewerDashboard and Review_Action all branch on it —
         // only the LABEL changed to GSA-Paid.
@@ -1208,7 +1208,7 @@
      * contribute no purpose. They still drive delegation tiering and the
      * Step 1 banner.
      *
-     * @returns {Array<string>} tracker-recognised purpose strings
+     * @returns {Array<string>} tracker-recognized purpose strings
      */
     getTrackerPurposes() {
       const purpose = this._formData.travelPurpose || '';
@@ -1218,7 +1218,7 @@
       // --- 1:1 delegation-code mappings ---------------------------------
       // Keys are the Step 1 option values; values are the tracker's exact
       // option strings. The tracker is a Google Form and rejects anything it
-      // does not recognise, so these cannot be re-worded.
+      // does not recognize, so these cannot be re-worded.
       const DIRECT = {
         COMPLIANCE_SITE_VISIT: 'Site Visits, Inspections, Acceptance, Delivery',
         CUSTOMER_ENGAGEMENT: 'Customer Meeting',
@@ -1242,7 +1242,7 @@
           : 'Internal Mission Meeting (all travelers under $10,000)');
       }
 
-      // --- flags computed from the itinerary and travellers --------------
+      // --- flags computed from the itinerary and travelers --------------
       // These are additive: a customer meeting can also be international, and
       // the tracker's question is "check all that apply".
       if (this._anyLegIsInternational()) add('International');
@@ -1261,10 +1261,10 @@
     },
 
     /**
-     * True when any traveller has a leg flagged as local travel.
+     * True when any traveler has a leg flagged as local travel.
      *
      * Read from legCosts rather than the leg itself: local travel is a
-     * per-traveller determination (distance from THEIR duty station), so the
+     * per-traveler determination (distance from THEIR duty station), so the
      * same leg can be local for one person and not another.
      */
     _anyLegIsLocalTravel() {
@@ -1277,7 +1277,7 @@
     },
 
     /**
-     * True when a traveller is based OCONUS.
+     * True when a traveler is based OCONUS.
      *
      * The tracker's option is "Oversees Employee (within OCONUS)" — travel BY
      * someone stationed outside the continental US, not travel TO such a
@@ -1322,9 +1322,9 @@
           reason = 'Purpose of Travel is "' + label + '" and the trip total is ' +
                    this.formatCurrency(this.getGrandTotal());
         } else if (value === 'Local Travel') {
-          reason = 'at least one traveller has a leg within the local-travel radius';
+          reason = 'at least one traveler has a leg within the local-travel radius';
         } else if (value === 'Oversees Employee (within OCONUS)') {
-          reason = 'at least one traveller is based outside the continental US';
+          reason = 'at least one traveler is based outside the continental US';
         } else if (value === 'International' && this._anyLegIsInternational()) {
           reason = 'at least one leg is outside the United States';
         } else {

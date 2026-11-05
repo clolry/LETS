@@ -26,7 +26,7 @@
  *
  *   - WHICH event was cancelled, and therefore whether cancelling it was the
  *     right call;
- *   - WHO authorised moving its money, which is the control an auditor asks
+ *   - WHO authorized moving its money, which is the control an auditor asks
  *     for first;
  *   - WHAT the money went to, so the advisor's travel can be traced to its
  *     funding decision rather than appearing as an unfunded charge;

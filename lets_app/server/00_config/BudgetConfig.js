@@ -45,7 +45,7 @@
 // ----------------------------------------------------------
 // Each line is needed in three places with different shapes: as a budget
 // set-aside, as a seeded Event_Set_Asides row, and as a seeded Events
-// catalogue row so a traveller can pick it. One table generates all three, so
+// catalog row so a traveler can pick it. One table generates all three, so
 // the $15,000 for Atlanta Q1 cannot say one thing to the budget and another
 // to the picker.
 //
@@ -58,7 +58,7 @@
 // -------------------------------------------------
 // The plan gives a quarter, not dates. `quarter` is therefore the only time
 // field here, and the seeder writes NO Start_Date or End_Date. Deriving "Q1"
-// into, say, 2026-10-15 would put a date in front of a traveller that nobody
+// into, say, 2026-10-15 would put a date in front of a traveler that nobody
 // agreed to, and per-diem and airfare lookups would then quote against it.
 // A coordinator sets real dates when the event is scheduled.
 //
@@ -105,7 +105,7 @@ function _letsEventPlanSetAsides_() {
     // ---- All-hands: $95,000 ----------------------------------------------
     ['ALLHANDS_Q3',    'ASD All Execs & Staff',        95000.00, 'Q3', '',                        'asd-all-execs-staff'],
 
-    // ---- Alliant programme management review: $10,000 --------------------
+    // ---- Alliant program management review: $10,000 --------------------
     ['ALLIANT_PMR_Q4', 'ASD Alliant PMR',              10000.00, 'Q4', '',                        'asd-alliant-pmr'],
 
     // ---- Sponsored / co-sponsored, travel-funded portion: $55,000 --------
@@ -202,8 +202,8 @@ var LETS_CONFIG = {
   //
   // THEY ARE NOT HEADCOUNT SHARES. On filled positions the split would be
   // OMD 16.65 / IDV 66.83 / CM 16.52, which would move about $9,100 off CM.
-  // Headcount drives the per-service-centre split INSIDE a DAC
-  // (BudgetDashboard.serviceCentreAllocations); it does not drive this.
+  // Headcount drives the per-service-center split INSIDE a DAC
+  // (BudgetDashboard.serviceCenterAllocations); it does not drive this.
   //
   // WHY THE FRONT OFFICE CARRIES A SELF_FUNDED LINE FOR ITS WHOLE BASELINE
   // ----------------------------------------------------------------------
@@ -271,7 +271,7 @@ var LETS_CONFIG = {
                    'leaving no discretionary balance.'
     },
 
-    // ---- B. Shared: leadership and programme ------------------------------
+    // ---- B. Shared: leadership and program ------------------------------
     {
       id: 'SETASIDE_FO_LC_GAP',
       title: 'FO LC Gap',
@@ -324,7 +324,7 @@ var LETS_CONFIG = {
     //
     // THE AMOUNT IS 0 HERE ON PURPOSE. A released set-aside is a DATA event,
     // not configuration: which event was cancelled, how much it held, who
-    // authorised the release and what the money went to are all facts that
+    // authorized the release and what the money went to are all facts that
     // happen during the year. They live in Event_Set_Asides with Status
     // RELEASED, and BudgetDashboard reads them — see SetAsideRelease.js.
     //

@@ -21,9 +21,9 @@
  * which places her in FCBBB at supervisory status 8. The FAS HR feed has her in
  * FCBBBB as a status-2 supervisor.
  *
- * The consequence was not one wrong row. Every per-capita service-centre figure
+ * The consequence was not one wrong row. Every per-capita service-center figure
  * reported before this module existed was computed from that stale file: 807
- * filled positions, 22 service-centre shares, every dollar allocation. A roster
+ * filled positions, 22 service-center shares, every dollar allocation. A roster
  * six months out of date produces allocations that look precise and are wrong,
  * which is worse than an obvious gap because nobody checks a confident number.
  *
@@ -144,7 +144,7 @@ var HCRosterImport = (function () {
     //                       signed-in user against Email_Address
     //   Access.js:982       the Division Director lookup matches on email
     //   HCPrivacy.js:79     on the reviewer allow-list, so a reviewer can
-    //                       contact a traveller
+    //                       contact a traveler
     //
     // @clolry: "the email address provided in this data source is definitive
     // and without question." So it is read straight through — no inference,
@@ -162,12 +162,12 @@ var HCRosterImport = (function () {
     // 'Dept. ID 2 Letter' is NOT used and is listed nowhere below. It is a
     // two-character portfolio abbreviation, so reading it as the org code
     // would collapse the entire roster into one bucket and make every
-    // per-capita service-centre share identical — a figure that looks precise
+    // per-capita service-center share identical — a figure that looks precise
     // and is meaningless.
     //
     // 'POI' — the HRLinks equivalent — is also NOT used. A POI is a payroll
     // servicing code and several orgs share one, so keying budget attribution
-    // off it would merge unrelated service centres.
+    // off it would merge unrelated service centers.
     orgCode:        ['Dept ID', 'Dept ID (Org)', 'Org Code', 'Office Symbol',
                      'Organization', 'Org Symbol', 'Organizational Code'],
 
@@ -204,7 +204,7 @@ var HCRosterImport = (function () {
     // warning is the signal.
     payPlanOnly:    ['PP', 'Pay Plan'],
 
-    // THE FIELD THAT GRANTS SITE ACCESS, so the mapping is a judgement worth
+    // THE FIELD THAT GRANTS SITE ACCESS, so the mapping is a judgment worth
     // stating rather than a guess worth hiding.
     //
     // Access.js:435 admits anyone whose Supervisory_Status is '2'. The old
@@ -309,7 +309,7 @@ var HCRosterImport = (function () {
    *   hcGetOrgChartTree  publishes every imported name to a chart reachable by
    *                   any domain user with the link.
    *   the per-capita split  divides by filled headcount, so a denominator
-   *                   four times too large makes every service-centre
+   *                   four times too large makes every service-center
    *                   allocation meaningless.
    *
    * WHY A PREFIX AND NOT "RESOLVES AGAINST HC_Orgs"
@@ -317,7 +317,7 @@ var HCRosterImport = (function () {
    * The obvious filter is to drop any row whose org code is absent from
    * HC_Orgs. That would be wrong in a way that is hard to see: HCData's
    * resolveOrgByCode deliberately falls back to the nearest listed ANCESTOR by
-   * prefix, so a real ASD person in a sub-org nobody has catalogued yet still
+   * prefix, so a real ASD person in a sub-org nobody has cataloged yet still
    * resolves — and validateRow treats an unlisted code as a WARNING for
    * exactly that reason.
    *
@@ -399,7 +399,7 @@ var HCRosterImport = (function () {
   }
 
   /**
-   * Normalises a supervisory-status value.
+   * Normalizes a supervisory-status value.
    *
    * THE FIELD THAT GRANTS SITE ACCESS. Access.js:416 treats '2' as supervisor
    * and that alone can admit someone to LETS, so a value that arrives as the
@@ -408,7 +408,7 @@ var HCRosterImport = (function () {
    * 663 and 11 rows — which is what a spreadsheet does to a numeric column.
    *
    * So a trailing '.0' is stripped and the result is returned as a string.
-   * Unrecognised codes are PRESERVED rather than blanked: HR owns this
+   * Unrecognized codes are PRESERVED rather than blanked: HR owns this
    * vocabulary and inventing a default would be worse than carrying a value
    * validateRow will flag.
    */
@@ -420,7 +420,7 @@ var HCRosterImport = (function () {
   }
 
   /**
-   * Normalises a grade to a zero-padded string.
+   * Normalizes a grade to a zero-padded string.
    *
    * THE VT-03 DEFECT, from HCAdmin.validateHCPosition: a sheet cell holding 07
    * arrives as the number 7, String(7) is '07' to nobody, and every grade
@@ -498,20 +498,20 @@ var HCRosterImport = (function () {
       return { payPlan: m2[1], series: '', grade: normalizeGrade(m2[2]) };
     }
 
-    // A bare number, or something unrecognised. Pass it through rather than
+    // A bare number, or something unrecognized. Pass it through rather than
     // blanking it: a value we cannot parse is still evidence, and validateRow
     // will flag a grade that matches nothing.
     return { payPlan: '', series: '', grade: normalizeGrade(s) };
   }
 
   /**
-   * Normalises occupancy to FILLED | VACANT | OBLIGATED.
+   * Normalizes occupancy to FILLED | VACANT | OBLIGATED.
    *
    * THIS DECIDES THE PER-CAPITA DENOMINATOR, so it must not guess generously.
    *
    * WHAT OBLIGATED MEANS IN THIS FEED, AND WHY EXCLUDING IT IS CORRECT
    * -----------------------------------------------------------------
-   * I had this backwards and @clolry corrected it: "The obligated positions
+   * I had this backward and @clolry corrected it: "The obligated positions
    * that I could find are ones that show the person in a temp promotion so
    * they are listed on the sheet twice (once as temp promotion and once as
    * obligated)."
@@ -519,7 +519,7 @@ var HCRosterImport = (function () {
    * So an OBLIGATED row is a person's PERMANENT seat, held open while they
    * serve a temporary promotion elsewhere. The same human also appears on the
    * temp-promotion row, which is FILLED. They are two real positions and one
-   * traveller.
+   * traveler.
    *
    * Counting OBLIGATED as filled would therefore DOUBLE-COUNT six people, not
    * find six missing ones. I had suggested the denominator should be 823
@@ -541,7 +541,7 @@ var HCRosterImport = (function () {
    * field, and reading only a status column would have counted all of them as
    * staffed.
    *
-   * An unrecognised value on a row that HAS a real name defaults to FILLED,
+   * An unrecognized value on a row that HAS a real name defaults to FILLED,
    * because a named person occupies their seat; a row with no name at all is
    * VACANT.
    */
@@ -676,7 +676,7 @@ var HCRosterImport = (function () {
     } else if (orgCodesByCode && !orgCodesByCode[row.orgCode]) {
       // NOT a problem. An org code absent from HC_Orgs still resolves to its
       // nearest listed ancestor by prefix, so the money lands in the right
-      // DAC — it just will not roll up to a named service centre. Blocking
+      // DAC — it just will not roll up to a named service center. Blocking
       // would reject real people over a reference-data gap.
       warnings.push('Org code ' + row.orgCode + ' is not in HC_Orgs. Travel ' +
                     'will attribute to its nearest known parent.');
@@ -697,7 +697,7 @@ var HCRosterImport = (function () {
     if (row.supervisoryStatus &&
         ['2', '4', '5', '6', '7', '8'].indexOf(row.supervisoryStatus) === -1) {
       warnings.push('Supervisory status "' + row.supervisoryStatus +
-                    '" is not a recognised code. This field grants LETS ' +
+                    '" is not a recognized code. This field grants LETS ' +
                     'access on its own, so it is worth checking.');
     }
 
@@ -842,7 +842,7 @@ var HCRosterImport = (function () {
       COMPARED.forEach(function (f) {
         var now = _str_(row[f]);
         var before = _str_(prior[f]);
-        // Email and org are case-normalised on both sides, so a case-only
+        // Email and org are case-normalized on both sides, so a case-only
         // difference is not a change.
         if (f === 'emailAddress') { now = now.toLowerCase(); before = before.toLowerCase(); }
         if (f === 'orgCode') { now = now.toUpperCase(); before = before.toUpperCase(); }
@@ -1064,7 +1064,7 @@ var HCRosterImport = (function () {
       };
 
       // THE CASE THAT MATTERS. Two FILLED rows for one person means the
-      // per-capita denominator counts them twice, and every service-centre
+      // per-capita denominator counts them twice, and every service-center
       // share shifts by a fraction nobody would notice.
       if (filled.length > 1) doubleCounted.push(entry);
       else benign.push(entry);
@@ -1081,7 +1081,7 @@ var HCRosterImport = (function () {
       note: doubleCounted.length
         ? (doubleCounted.length + ' person(s) hold more than one FILLED ' +
            'position, so they are counted twice in the per-capita ' +
-           'denominator and every service-centre share is slightly wrong. ' +
+           'denominator and every service-center share is slightly wrong. ' +
            'This needs a decision — see the samples.')
         : (benign.length
             ? (benign.length + ' person(s) hold two positions — typically a ' +
@@ -1120,7 +1120,7 @@ var HCRosterImport = (function () {
            'This feed covers all of FAS, so exclusion is expected. Check the ' +
            'prefixes above look like other portfolios rather than mangled ' +
            'ASD codes — importing out-of-scope staff would grant LETS access ' +
-           'to supervisors outside this organisation.';
+           'to supervisors outside this organization.';
   }
 
   /**
@@ -1136,7 +1136,7 @@ var HCRosterImport = (function () {
    *                       into LETS.
    *   Access.js:982       the Division Director lookup matches on email too.
    *   HCPrivacy.js:79     emailAddress is on the reviewer allow-list because
-   *                       "a reviewer must be able to contact a traveller".
+   *                       "a reviewer must be able to contact a traveler".
    *
    * Reported as an aggregate rather than as a warning per row, because 900
    * identical warnings bury the ones that matter. previewRosterImport surfaces
@@ -1146,7 +1146,7 @@ var HCRosterImport = (function () {
    * WHY THE IMPORT STILL PROCEEDS. The alternative is staying on 16 fictional
    * people, which breaks the same access gate AND every budget allocation.
    * Importing a roster with no emails is strictly better, and the gap is
-   * fixable afterwards — the Google Directory lookup already scoped in
+   * fixable afterward — the Google Directory lookup already scoped in
    * docs/handoff/README.md item A resolves an address from a name, which is
    * exactly this problem.
    *
@@ -1197,7 +1197,7 @@ var HCRosterImport = (function () {
    * The FAS feed has both 'Position Status' and a bare 'Status'. This module
    * reads the first, on the reasoning that an '"Obligated To" Employee Name'
    * column only makes sense beside a POSITION-level status — but that is a
-   * judgement, and it decides the per-capita denominator.
+   * judgment, and it decides the per-capita denominator.
    *
    * So when the two columns suggest different occupancy, say so. A handful of
    * disagreements is normal; hundreds would mean the wrong column was chosen,
@@ -1221,7 +1221,7 @@ var HCRosterImport = (function () {
     // kind.
     //
     // The secondary column holds 'A' and 'T' — personnel ACTION codes, a
-    // different vocabulary entirely. normalizeOccupancy recognises none of
+    // different vocabulary entirely. normalizeOccupancy recognizes none of
     // them, so every value fell through to its FILLED default. The arithmetic
     // consequence: a FILLED row "agreed" by accident, a VACANT row agreed
     // because the name test fires first, and ONLY the 6 OBLIGATED rows could
@@ -1236,7 +1236,7 @@ var HCRosterImport = (function () {
     // that invites a decision.
     var KNOWN = /VACAN|OBLIGAT|FILL|ENCUMBER/;
     var secondaryValues = {};
-    var recognised = 0;
+    var recognized = 0;
     var seenValues = 0;
 
     (rows || []).forEach(function (r) {
@@ -1244,7 +1244,7 @@ var HCRosterImport = (function () {
       if (!v) return;
       seenValues++;
       secondaryValues[v] = (secondaryValues[v] || 0) + 1;
-      if (KNOWN.test(v)) recognised++;
+      if (KNOWN.test(v)) recognized++;
     });
 
     var distinct = Object.keys(secondaryValues).sort(function (a, b) {
@@ -1254,10 +1254,10 @@ var HCRosterImport = (function () {
       return v + ' (' + secondaryValues[v] + ')';
     });
 
-    // A column that speaks occupancy will use recognisable words on most
+    // A column that speaks occupancy will use recognizable words on most
     // rows. Half is a deliberately loose bar: the point is to separate
     // 'Filled/Vacant' from 'A/T', not to grade near-misses.
-    var comparable = seenValues > 0 && recognised >= seenValues / 2;
+    var comparable = seenValues > 0 && recognized >= seenValues / 2;
 
     if (!comparable) {
       return {
@@ -1331,14 +1331,14 @@ var HCRosterImport = (function () {
   }
 
   /**
-   * Headcount the imported roster would produce, per service centre.
+   * Headcount the imported roster would produce, per service center.
    *
    * Included in the PREVIEW on purpose. The roster's whole budget consequence
    * is this number, and an admin confirming a replace should see what it does
-   * to the allocations before committing — not discover afterwards that a
-   * service centre's share moved by a third.
+   * to the allocations before committing — not discover afterward that a
+   * service center's share moved by a third.
    *
-   * Duplicates HCData.hcServiceCentreHeadcount's rule rather than calling it,
+   * Duplicates HCData.hcServiceCenterHeadcount's rule rather than calling it,
    * because that function reads the COMMITTED sheet and this has to count rows
    * that are not written yet.
    *
@@ -1380,8 +1380,8 @@ var HCRosterImport = (function () {
                 ancestorAtLevel(row.orgCode, 'AC');
       if (!dac) {
         out.UNATTRIBUTED = out.UNATTRIBUTED ||
-          { orgCode: '', dacOrgCode: '', filled: 0, vacant: 0, authorised: 0 };
-        out.UNATTRIBUTED.authorised++;
+          { orgCode: '', dacOrgCode: '', filled: 0, vacant: 0, authorized: 0 };
+        out.UNATTRIBUTED.authorized++;
         if (row.occupancyStatus === 'FILLED') out.UNATTRIBUTED.filled++;
         else out.UNATTRIBUTED.vacant++;
         return;
@@ -1391,10 +1391,10 @@ var HCRosterImport = (function () {
       if (!out[key]) {
         out[key] = {
           orgCode: sc, dacOrgCode: dac,
-          filled: 0, vacant: 0, authorised: 0
+          filled: 0, vacant: 0, authorized: 0
         };
       }
-      out[key].authorised++;
+      out[key].authorized++;
       if (row.occupancyStatus === 'FILLED') out[key].filled++;
       else out[key].vacant++;
     });

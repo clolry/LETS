@@ -42,7 +42,7 @@ const PROPS_KEYS = {
   // BRANDING. Configurable so this app can be deployed for another
   // workgroup without a code change.
   //
-  // Every user-visible mention of the app name, the owning organisation and
+  // Every user-visible mention of the app name, the owning organization and
   // the contact mailbox resolves through these. They were hardcoded as "TRIP",
   // "AAS" and aastravel@gsa.gov in 136 places, which made the app
   // indistinguishable from the workgroup it was inherited from.
@@ -78,7 +78,7 @@ const PROPS_KEYS = {
   // in FCBBB with supervisory status 8, while the HR feed has her in FCBBBB
   // as a status-2 supervisor. The May file is six months stale.
   //
-  // The consequence was not one wrong row. Every per-capita service-centre
+  // The consequence was not one wrong row. Every per-capita service-center
   // figure produced before this property existed was computed from that stale
   // file, so all 22 shares need recomputing from the feed. A roster that is
   // quietly out of date produces allocations that look precise and are wrong,
@@ -255,7 +255,7 @@ function getOtherCostPercentage() {
  * BudgetConfig.js is evaluated on EVERY execution, before any user code, and a
  * failure there takes down the whole web app including the travel workflow
  * (see the `var LETS_CONFIG` note in that file). PropertiesService is an
- * external call that can throw or be unauthorised. Calling it at
+ * external call that can throw or be unauthorized. Calling it at
  * file-evaluation time would put the entire app behind a service that has
  * nothing to do with rendering a page.
  *
@@ -325,7 +325,7 @@ function getSetAsideAmountOverride(key, defaultAmount) {
  *
  * The concrete case: the May 2026 staffing plan places Melissa Mould in FCBBB
  * at supervisory status 8. The HR feed has her in FCBBBB as a status-2
- * supervisor. Every per-capita service-centre allocation computed before this
+ * supervisor. Every per-capita service-center allocation computed before this
  * property existed came from the May file, so all 22 shares are suspect until
  * recomputed from the feed.
  *
@@ -512,7 +512,7 @@ function getEmailFromName() {
 // WHY THESE EXIST
 // ---------------
 // The app was inherited from another workgroup and still called itself TRIP,
-// signed emails as "AAS TRIP", pointed at aastravel@gsa.gov, and labelled a
+// signed emails as "AAS TRIP", pointed at aastravel@gsa.gov, and labeled a
 // review stage "AAS FO". @clolry: deploying this for another workgroup should
 // not require a code change to rebrand it.
 //
@@ -530,7 +530,7 @@ function getAppName() {
 }
 
 /**
- * Owning organisation, short form, e.g. 'ASD'. Used where space is tight —
+ * Owning organization, short form, e.g. 'ASD'. Used where space is tight —
  * review-stage labels, the sender name.
  * @returns {string}
  * @server
@@ -540,7 +540,7 @@ function getOrgShortName() {
 }
 
 /**
- * Owning organisation, long form. 'ACQUISITION SOLUTIONS DEVELOPMENT'.
+ * Owning organization, long form. 'ACQUISITION SOLUTIONS DEVELOPMENT'.
  *
  * This is the OFFICE. It is not what belongs in an email footer — see
  * getOrgServiceName.
@@ -562,7 +562,7 @@ function getOrgLongName() {
  * WHY THIS IS A SEPARATE PROPERTY FROM ORG_LONG_NAME
  * --------------------------------------------------
  * A footer names the agency and the SERVICE, which is the level the public
- * recognises — GSA, then FAS. ASD is an office three levels down, and
+ * recognizes — GSA, then FAS. ASD is an office three levels down, and
  * substituting it would have replaced a wrong name with a differently wrong
  * one.
  *
@@ -606,7 +606,7 @@ function getOrgFOLabel() {
 /**
  * Label for the first review stage.
  *
- * The inherited code says "SD" for Sector Director. This organisation calls it
+ * The inherited code says "SD" for Sector Director. This organization calls it
  * Service Center Director, so the label is SCD. The STORED value in
  * Initial_Review_Level is still 'Sector' — renaming stored data would need a
  * migration, and this is a wording change.

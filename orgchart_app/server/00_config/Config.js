@@ -53,7 +53,7 @@ function getHCSpreadsheetId() {
 }
 
 /**
- * Organisation name for the page title.
+ * Organization name for the page title.
  * @returns {string}
  */
 function getOrgName() {

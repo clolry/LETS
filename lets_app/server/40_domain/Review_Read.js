@@ -72,7 +72,7 @@ function getRequestForReview(requestId, db) {
         const isSubmitter = currentUserLower === submitterEmailLower;
 
         // Re-sanitized per caller. The cached copy is the FULL envelope, so
-        // serving it as-is would hand a scoped reviewer another traveller's
+        // serving it as-is would hand a scoped reviewer another traveler's
         // clearance and commute.
         cachedData.travelers = sanitizeTravelersForCaller(
           cachedData.travelers, cachedAccess.basis, currentUser);
@@ -397,7 +397,7 @@ function getRequestForReview(requestId, db) {
     // payload.
     //
     // So any signed-in user who knew a request ID received the submitter and
-    // all four reviewers by name and email, and per traveller: employee ID,
+    // all four reviewers by name and email, and per traveler: employee ID,
     // LCAT, security clearance held, valid passport held, telework status,
     // home commute distance and parking cost, plus every attachment file ID —
     // which shareAttachmentsWithUsers would then grant anyone access to.
@@ -441,7 +441,7 @@ function getRequestForReview(requestId, db) {
       request: request,
       legs: legs,
       // Reduced for anyone who is not the current reviewer, an admin, or the
-      // traveller themselves. A scoped reviewer three stages away has no need
+      // traveler themselves. A scoped reviewer three stages away has no need
       // for another person's security clearance or home commute.
       travelers: sanitizeTravelersForCaller(travelers, access.basis, currentUser),
       attachments: attachments,

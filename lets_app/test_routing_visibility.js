@@ -242,7 +242,7 @@ console.log('5. the server and client stage maps agree');
   });
 }
 
-console.log('6. the submission forwards the routed status');
+console.log('6. the submission forward the routed status');
 {
   const sub=fs.readFileSync('lets_app/server/40_domain/Submission.js','utf8');
   // Without this the confirmation falls back to initialLevel and the fix is

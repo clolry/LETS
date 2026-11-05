@@ -3,7 +3,7 @@
  * Entry points for loading the real HR roster from the FAS HRLinks feed.
  *
  * Split from 30_services/HCRosterImport.js deliberately: that file is pure —
- * no spreadsheet, no clock, no session — so every mapping, normalisation and
+ * no spreadsheet, no clock, no session — so every mapping, normalization and
  * diff decision is testable without Apps Script. This file is the part that
  * touches the world, and it is kept thin for the same reason.
  *
@@ -25,7 +25,7 @@
  * -------------------------------
  * Because that is the roster's entire budget consequence. The per-capita split
  * divides each DAC's discretionary balance by its share of filled positions,
- * so replacing the roster moves money between service centres. An admin
+ * so replacing the roster moves money between service centers. An admin
  * confirming this should see that before committing, not discover it after.
  */
 
@@ -369,7 +369,7 @@ function diagnoseHrFeedSource() {
  * Dry run: what importing the feed would change.
  *
  * Reads the feed, compares it to HC_Positions, and returns the adds, changes,
- * deletions and the resulting service-centre headcount — plus a token that
+ * deletions and the resulting service-center headcount — plus a token that
  * importRoster requires.
  *
  * @returns {Object} successResponse({ ... }) | errorResponse
@@ -446,17 +446,17 @@ function previewRosterImport(opts) {
     // chain to the nearest row whose Org_Level is 'SERVICE_CENTER'. With
     // HC_Orgs holding only the four seed rows — which have no Org_Level and no
     // Parent_Org_Code at all — that walk finds nothing, so all 22 service
-    // centres read zero and every allocation is undefined.
+    // centers read zero and every allocation is undefined.
     //
     // @clolry's first live preview showed exactly this: 1,046 importable
-    // positions, 817 filled, and "service centres 0". The roster was right and
+    // positions, 817 filled, and "service centers 0". The roster was right and
     // the denominator did not exist. Checked HERE rather than after the import
     // because the symptom appears on the budget page, two steps removed from
     // the cause.
     var levelled = orgs.filter(function (o) {
       return String(o.orgLevel || '').trim();
     }).length;
-    var serviceCentres = orgs.filter(function (o) {
+    var serviceCenters = orgs.filter(function (o) {
       return String(o.orgLevel || '').toUpperCase() === 'SERVICE_CENTER';
     }).length;
 
@@ -498,13 +498,13 @@ function previewRosterImport(opts) {
       scopeNote: parsed.scopeNote,
       outOfScopeByPrefix: parsed.outOfScopeByPrefix,
       // The org hierarchy the per-capita split depends on. Reported even when
-      // healthy, so "service centres 0" is never ambiguous between "no
+      // healthy, so "service centers 0" is never ambiguous between "no
       // hierarchy loaded" and "no staff matched".
       orgHierarchy: {
         rows: orgs.length,
         withOrgLevel: levelled,
-        serviceCentres: serviceCentres,
-        ready: serviceCentres > 0
+        serviceCenters: serviceCenters,
+        ready: serviceCenters > 0
       },
       // Admin-resolved email addresses that the import will RE-APPLY. Shown
       // because the alternative — an admin seeing "1,046 rows replaced" and
@@ -672,7 +672,7 @@ function _logRosterPreview_(p) {
   });
   L.push('HEADCOUNT — the per-capita budget denominator');
   L.push('  filled positions       ' + filled);
-  L.push('  service centres        ' + scTotal);
+  L.push('  service centers        ' + scTotal);
 
   // A ZERO HERE HAS TWO VERY DIFFERENT CAUSES and the number alone cannot
   // tell them apart: either HC_Orgs has no hierarchy to roll up to, or the
@@ -681,11 +681,11 @@ function _logRosterPreview_(p) {
   // diagnostic round trip.
   var oh = p.orgHierarchy || {};
   if (!scTotal) {
-    if (!oh.serviceCentres) {
+    if (!oh.serviceCenters) {
       L.push('');
       L.push('  BLOCKED: HC_Orgs holds ' + (oh.rows || 0) + ' row(s), ' +
              (oh.withOrgLevel || 0) + ' with an Org_Level, and 0 service ' +
-             'centres. The per-capita split walks each position\'s parent ' +
+             'centers. The per-capita split walks each position\'s parent ' +
              'chain to the nearest SERVICE_CENTER row, so it has nothing to ' +
              'roll up to and every allocation would be zero.');
       L.push('  FIX: run hcLoadRealOrgCodes() in 40_domain/HCAdmin.js — it ' +
@@ -693,8 +693,8 @@ function _logRosterPreview_(p) {
              'Then re-run this preview.');
     } else {
       L.push('');
-      L.push('  WARNING: HC_Orgs has ' + oh.serviceCentres + ' service ' +
-             'centre(s) but no imported position rolls up to any of them. ' +
+      L.push('  WARNING: HC_Orgs has ' + oh.serviceCenters + ' service ' +
+             'center(s) but no imported position rolls up to any of them. ' +
              'The roster\'s org codes and HC_Orgs disagree.');
     }
   }
@@ -718,7 +718,7 @@ function _logRosterPreview_(p) {
 }
 
 /**
- * The per-service-centre headcount, as a readable table.
+ * The per-service-center headcount, as a readable table.
  *
  * SEPARATE FROM THE PREVIEW BECAUSE OF THE LOG LIMIT. @clolry's run printed
  * "Logging output too large. Truncating output." and the headcount — the one
@@ -731,7 +731,7 @@ function _logRosterPreview_(p) {
  *
  * @editor
  */
-function showServiceCentreHeadcount() {
+function showServiceCenterHeadcount() {
   var denied = _hcAdminGuard_();
   if (denied) return denied;
 
@@ -757,9 +757,9 @@ function showServiceCentreHeadcount() {
   });
 
   var L = [];
-  L.push('=== Service-centre headcount (FILLED positions) ===');
+  L.push('=== Service-center headcount (FILLED positions) ===');
   L.push('');
-  L.push('DAC   Org code  Filled  Vacant  Share   Service centre');
+  L.push('DAC   Org code  Filled  Vacant  Share   Service center');
 
   var grandFilled = 0;
   Object.keys(byDac).sort().forEach(function (dac) {
@@ -768,7 +768,7 @@ function showServiceCentreHeadcount() {
     grandFilled += dacFilled;
 
     list.sort(function (a, b) {
-      // Above-service-centre staff lead their DAC's block.
+      // Above-service-center staff lead their DAC's block.
       if (!a.orgCode !== !b.orgCode) return a.orgCode ? 1 : -1;
       return a.orgCode < b.orgCode ? -1 : 1;
     }).forEach(function (b) {
@@ -779,7 +779,7 @@ function showServiceCentreHeadcount() {
         _lpad_(String(b.filled), 6) + '  ' +
         _lpad_(String(b.vacant), 6) + '  ' +
         _lpad_(share.toFixed(2) + '%', 7) + ' ' +
-        (b.orgCode ? (nameByCode[b.orgCode] || '') : '(above service-centre level)'));
+        (b.orgCode ? (nameByCode[b.orgCode] || '') : '(above service-center level)'));
     });
     L.push(_pad_(dac, 6) + _pad_('TOTAL', 10) + _lpad_(String(dacFilled), 6));
     L.push('');
@@ -808,7 +808,7 @@ function _lpad_(v, n) {
 /**
  * previewRosterImport without the log output.
  *
- * Used by showServiceCentreHeadcount, which prints its own table and would
+ * Used by showServiceCenterHeadcount, which prints its own table and would
  * otherwise emit the full preview above it — pushing the table past the log
  * limit, which is the problem it exists to solve.
  *
@@ -894,7 +894,7 @@ function _rosterPreviewNotes_(parsed, diff, existing) {
   });
   notes.push(filled + ' of ' + parsed.rows.length + ' positions are FILLED. ' +
              'That is the number the per-capita budget split divides by — ' +
-             'vacant seats do not travel, so every service centre\'s share ' +
+             'vacant seats do not travel, so every service center\'s share ' +
              'will move when this is applied.');
 
   if (!existing.length) {

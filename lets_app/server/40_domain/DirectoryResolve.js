@@ -10,7 +10,7 @@
  * ----------------------------------------
  * AdminDirectory.Users.list is the obvious choice and is wrong here. It needs
  * admin.directory.user.readonly, which only a Workspace SUPER ADMIN can
- * authorise. This web app runs as USER_ACCESSING (appsscript.json), so the
+ * authorize. This web app runs as USER_ACCESSING (appsscript.json), so the
  * scope would be requested from whichever ordinary user happened to trigger
  * it, and the call would fail for everyone who is not an admin.
  *
@@ -206,7 +206,7 @@ function previewDirectoryEmails(opts) {
       verifyFn: verifyConstructedAddress
     });
 
-    var summary = DirectoryLookup.summarise(batch);
+    var summary = DirectoryLookup.summarize(batch);
     // NOTHING WAS WRITTEN, so the pre-batch bundle is the current roster and
     // counting from it is correct here — unlike in the sweep, where the same
     // count must come from a fresh read.
@@ -329,7 +329,7 @@ function verifyConstructedAddress(parsed) {
  * @clolry has now run previewDirectoryEmails three times and received
  * byte-identical output — 50 lookups, 0 resolved, 46 noMatch, the same ten
  * names — across two commits that each changed the matching logic. Identical
- * output after a behavioural change means the code under test did not change,
+ * output after a behavioral change means the code under test did not change,
  * and nothing in the result distinguishes "the fix did not work" from "the fix
  * is not running".
  *
@@ -338,8 +338,8 @@ function verifyConstructedAddress(parsed) {
  * added for exactly the same reason. The lesson generalises: anything whose
  * only observable is a count needs a version marker.
  *
- * The markers below are ASSERTIONS ABOUT BEHAVIOUR, not a version string.
- * A string can be bumped without the behaviour shipping; these run the real
+ * The markers below are ASSERTIONS ABOUT BEHAVIOR, not a version string.
+ * A string can be bumped without the behavior shipping; these run the real
  * matcher against the real candidate shape from @clolry's diagnostic, so a
  * PASS means that specific defect is genuinely fixed in the running build.
  *
@@ -672,7 +672,7 @@ function resolveDirectoryEmails(opts) {
       // Each resolution is individually certain; a COLLISION between two of
       // them is not visible to either. Access.js:435 matches the signed-in
       // user against Email_Address and takes the first hit, so two positions
-      // sharing an address makes authorisation depend on row order.
+      // sharing an address makes authorization depend on row order.
       //
       // Reachable on this data: the directory holds eight Halls, and
       // 'Hall,Adam C' resolved to adam.hall@gsa.gov. If another Hall resolved
@@ -782,7 +782,7 @@ function resolveDirectoryEmails(opts) {
     // instead of parking at the end and no-opping forever.
     _setDirectoryResumeIndex_(outcome.resumeIndex);
 
-    var summary = DirectoryLookup.summarise(batch);
+    var summary = DirectoryLookup.summarize(batch);
     // The claim is checkable against something real. 'complete: true' with no
     // number beside it is what @clolry was handed eight times.
     summary.stillNeedingEmail = outcome.stillNeedingEmail;
@@ -936,7 +936,7 @@ function installDirectoryLookupTrigger() {
 //
 // So a resolved address is stored in HC_Email_Overrides, keyed on
 // Position_Number, and re-applied by the import. HC_Positions is the feed's to
-// overwrite; the override tab is the organisation's.
+// overwrite; the override tab is the organization's.
 //
 // WHY A SEPARATE TAB RATHER THAN A PROTECTED COLUMN
 // -------------------------------------------------
@@ -1222,7 +1222,7 @@ function saveEmailOverride(entry) {
 
     // ONE ADDRESS, ONE PERSON. Two positions sharing a mailbox means one of
     // them will match the wrong person at the access gate, and whichever is
-    // found first wins — a non-deterministic authorisation.
+    // found first wins — a non-deterministic authorization.
     if (email) {
       var clash = findPositionWithEmail_(bundle.data, email, pn);
       if (clash) {

@@ -47,7 +47,7 @@ Two caveats before you rely on any of it:
   §8.1 documents which parts are actually reachable in running code — notably
   that the budget governance layer exposes no callable entry points, so the
   mandatory budget check described above does not currently execute. Treat the
-  docs as the authority on present behaviour and this README as the intent.
+  docs as the authority on present behavior and this README as the intent.
 - **The deployment sections were measured before this repository's deploy
   gates existed.** `docs/DEPLOYMENT_AND_ENVIRONMENTS.md` §5.2.1 records that no
   `clasp deploy` step runs and that it is therefore unknown whether a merge

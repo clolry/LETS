@@ -390,7 +390,7 @@ const schemaOf = n => (tripSchemas.find(s => s.key === n) || { cols: [] }).cols;
  * -----------------------------
  * An earlier draft of this section used an allowlist of "known partial"
  * write sites. That was the wrong shape: an allowlist hides the next
- * mismatch behind the author's judgement instead of stating a rule. The
+ * mismatch behind the author's judgment instead of stating a rule. The
  * rule is a property of the Apps Script API, so it can be applied
  * mechanically:
  *

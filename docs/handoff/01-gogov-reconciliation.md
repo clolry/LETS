@@ -168,7 +168,7 @@ against double counting when a month is imported twice.
 
 The expense export has a `Employee ID` (`76E00049503`) that does not match
 LETS's format. It is stable and unique per person, so each confirmed match
-should store the pairing. **24% of travellers appear more than once** across
+should store the pairing. **24% of travelers appear more than once** across
 the sample (94 of 391), so month one is laborious and month six is nearly
 free.
 
@@ -194,9 +194,9 @@ fiscal years    : FY2026 $537,451.15   FY2027 $269,890.88
 ```
 
 **The 32% unmatched are overwhelmingly other offices' people.** 522 expense
-rows cover **391 distinct travellers**; @clolry's org is roughly 30 a month.
+rows cover **391 distinct travelers**; @clolry's org is roughly 30 a month.
 
-Restricting the batch to travellers who also appear in the request export —
+Restricting the batch to travelers who also appear in the request export —
 a proxy for the real ASD roster filter — drops 33% of the rows and gives:
 
 ```
@@ -221,7 +221,7 @@ Each cost real time to find. Each is load-bearing.
 ### 5.1 `Report Total` ≠ `Amount Approved`
 
 Differs on **112 of 522** rows (21%). `Report Total` is what the
-traveller **claimed**; `Amount Approved` is what GSA **paid**.
+traveler **claimed**; `Amount Approved` is what GSA **paid**.
 
 ```
 CAMERON, CHERYL T.   claimed 3,618.80   approved 3,133.97   disallowed 484.83
@@ -231,7 +231,7 @@ Reconciling against `Report Total` overstates spend on a fifth of all rows,
 and every row still looks plausible. @clolry: *"we need to use Amount Approved
 rather than Report Total."*
 
-`Disallowed_Amount` is stored because nobody asks for it until a traveller
+`Disallowed_Amount` is stored because nobody asks for it until a traveler
 disputes a voucher, and then it is the only number that matters.
 
 ### 5.2 One monthly export spans TWO fiscal years
@@ -268,7 +268,7 @@ dropped because only one side has it — which is exactly why a name match
 I searched every cell of all 522 rows for the Go.gov request codes. **Zero
 hits.** `Authorization Requests` is a bare `Y`/`N` (167 Y, 15 N).
 
-So the only automatic link is a LETS ID a traveller typed into the trip name.
+So the only automatic link is a LETS ID a traveler typed into the trip name.
 Hence the SOP in §7.
 
 ### 5.6 Go.gov's org columns are useless
@@ -283,8 +283,8 @@ attribution must come from LETS's own roster, never from the file.
 ```
 lets-id      a LETS ID in the report name          exact   AUTO
 gogov-id     a Go.gov request ID in the name       exact   AUTO
-name-title   same traveller + same trip title      1 hit   AUTO
-name-date    same traveller + end within 14 days   1 hit   AUTO
+name-title   same traveler + same trip title      1 hit   AUTO
+name-date    same traveler + end within 14 days   1 hit   AUTO
 ambiguous    several equally plausible                      NEEDS_REVIEW
 unmatched    nothing                                        parked, still counted
 ```
@@ -292,18 +292,18 @@ unmatched    nothing                                        parked, still counte
 ### The defect this caught — read this one
 
 The test asserting *"no auto-match attaches a report to a different
-traveller"* **FAILED when first written.**
+traveler"* **FAILED when first written.**
 
 A cited LETS ID was trusted on its own. Three real expense reports were
 auto-matched to requests belonging to other people — **Brandon Maness's
-$1,922.96 landed on another traveller's request.**
+$1,922.96 landed on another traveler's request.**
 
 An explicit ID is the strongest signal available, which is precisely why a
-contradiction between it and the traveller name must **stop** the match rather
-than be resolved in the ID's favour. One mistyped digit moves money between
+contradiction between it and the traveler name must **stop** the match rather
+than be resolved in the ID's favor. One mistyped digit moves money between
 people and nothing downstream questions it.
 
-Both ID tiers now verify the traveller. **Do not relax this.**
+Both ID tiers now verify the traveler. **Do not relax this.**
 
 ### Amount cannot break a tie
 
@@ -336,7 +336,7 @@ That is also why the request ID was shortened from `REQ-2026-0123` (13 chars)
 to `L27-0001` (8). The full form left room for only 32% of real trip titles;
 the short form fits 61%.
 
-**The parser is tolerant of input, strict about output.** Three travellers
+**The parser is tolerant of input, strict about output.** Three travelers
 already do this by hand and each wrote it differently — these are the actual
 three rows out of 522:
 
@@ -348,7 +348,7 @@ three rows out of 522:
 
 All three resolve. `test_gogov_sync.js` §1 also covers an underscore form
 (`'REQ-2026-0435_GABLE, ROBERT'`) that does not appear in this export but is
-the kind of thing a fourth traveller will invent.
+the kind of thing a fourth traveler will invent.
 
 The current `L27-` form is matched **more strictly** than the legacy `REQ-`
 one, because `REQ` is distinctive while `L27` is three characters that occur
@@ -356,7 +356,7 @@ by accident — against the real titles a loose pattern matched `'Order
 L270001-A'` and `'Hotel L27 0001 confirm'`.
 
 Adoption is **0.6%** today. `matchBatch().summary` reports it every month and
-names the travellers who did not follow it. **That feedback loop is the
+names the travelers who did not follow it. **That feedback loop is the
 feature** — a convention nobody measures decays.
 
 ---
@@ -372,7 +372,7 @@ node lets_app/test_budget_backfill.js #  89 assertions
 
 Section 8 **of `test_gogov_sync.js`** runs the matcher over the **real export
 files**, which are **gitignored**:
-@clolry's exports carry ~400 real GSA traveller names and 391 employee IDs
+@clolry's exports carry ~400 real GSA traveler names and 391 employee IDs
 each, and **G-056** already flags six real employees' addresses in test
 fixtures as a problem. Adding hundreds more names to git history is not
 reversible.
@@ -446,8 +446,8 @@ stated window. They parse cleanly; they should be flagged for a human rather
 than dropped, and somebody should ask Go.gov why they are there.
 
 **Name matching drops middle initials**, so two people with the same first and
-last name collide. The traveller check turns that into a review item rather
-than a wrong match. At ~30 ASD travellers the risk is negligible; across 391
+last name collide. The traveler check turns that into a review item rather
+than a wrong match. At ~30 ASD travelers the risk is negligible; across 391
 it is a matter of time.
 
 **Should the importer filter to ASD?** It must, eventually — two thirds of the

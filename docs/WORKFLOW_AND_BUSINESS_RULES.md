@@ -3,7 +3,7 @@ title: "LETS Workflow and Business Rules"
 description: "Every rule the system enforces, every rule it claims and does not enforce, and every rule only the business owner can decide"
 status: canonical
 tier: 1
-audience: "project manager, system owner, reviewer, developer changing workflow behaviour"
+audience: "project manager, system owner, reviewer, developer changing workflow behavior"
 last_updated: "2026-10-28"
 evidence_base: "docs/evidence/pass6_rule_census.js"
 ---
@@ -109,8 +109,8 @@ On submission, `determineInitialRouting()` `Submission.js:74` decides the first 
 
 | ID | Rule | Type |
 |---|---|---|
-| **W-08** | At the FAS stage: if **any** traveller is overhead-funded → `PENDING_FAS`, assigned to the active `fas_fo_reviewer` primary | APPLIED |
-| **W-09** | If **no** traveller is overhead-funded → **`APPROVED_GOGOV` immediately. No human approval at any stage.** | APPLIED |
+| **W-08** | At the FAS stage: if **any** traveler is overhead-funded → `PENDING_FAS`, assigned to the active `fas_fo_reviewer` primary | APPLIED |
+| **W-09** | If **no** traveler is overhead-funded → **`APPROVED_GOGOV` immediately. No human approval at any stage.** | APPLIED |
 
 **The overhead test is lenient and inverted** — `!val || val === 'overhead'` `[VERIFIED]` `Review_Action.js:528`. A **blank** `Is_Client_Paid` counts as overhead.
 
@@ -118,7 +118,7 @@ On submission, `determineInitialRouting()` `Submission.js:74` decides the first 
 
 ### 4.2.3 W-01 and W-09 combine into self-approval
 
-**If the AAS Front Office reviewer submits a request where every traveller is client-paid**, W-01 sets the start stage to FAS, and W-09 sees no overhead — so the request reaches `APPROVED_GOGOV` with **no Sector, no BU, no FO, no FAS review, and no email to any approver** `[VERIFIED]`. The `Approval_Log` records a single `Submitted` row.
+**If the AAS Front Office reviewer submits a request where every traveler is client-paid**, W-01 sets the start stage to FAS, and W-09 sees no overhead — so the request reaches `APPROVED_GOGOV` with **no Sector, no BU, no FO, no FAS review, and no email to any approver** `[VERIFIED]`. The `Approval_Log` records a single `Submitted` row.
 
 This is finding **G-018**.
 
@@ -165,14 +165,14 @@ SUBMIT ──(W-01…W-09 decide the entry point)
   │                                                       │
   │                                                  oso_approve
   │                                                       ↓
-  │                     ┌─── any traveller overhead-funded? ───┐
+  │                     ┌─── any traveler overhead-funded? ───┐
   │                     │ YES                             NO   │
   │                     ↓                                      ↓
   │                PENDING_FAS ──fas_approve──→ APPROVED_GOGOV ←┘
   │                     │                              │
   │                  fas_deny                          ↓
   │                     ↓                  PENDING_DD_CONFIRMATION
-  │                  DENIED                  (one per traveller's DD)
+  │                  DENIED                  (one per traveler's DD)
   │                                                    │
   │                                   all confirm ─────┴───── issue reported
   │                                          ↓                      ↓
@@ -216,7 +216,7 @@ Seven `throw` sites in the file `[VERIFIED]`. A rule that does not throw is not 
 
 ### 4.3.5 The runtime override, and which way it fails
 
-A rule sits **on top of** the table in §4.3.1. On `oso_approve`, the handler re-reads traveller rows and, if no traveller is overhead-funded, rewrites the outcome to `APPROVED_GOGOV` — skipping FAS review entirely `[VERIFIED]` `Review_Action.js:125-145`.
+A rule sits **on top of** the table in §4.3.1. On `oso_approve`, the handler re-reads traveler rows and, if no traveler is overhead-funded, rewrites the outcome to `APPROVED_GOGOV` — skipping FAS review entirely `[VERIFIED]` `Review_Action.js:125-145`.
 
 | ID | Rule | Type |
 |---|---|---|
@@ -238,24 +238,24 @@ return rows.some(row => {
 Executed against every input class — the copy is verified character-for-character against the source before running `[VERIFIED]`:
 
 **Terminology note (2026-10-31):** the UI now labels this funding type
-**GSA-Paid** rather than "Overhead", and it is the DEFAULT for a new traveller —
+**GSA-Paid** rather than "Overhead", and it is the DEFAULT for a new traveler —
 this workgroup does roughly one client-paid trip a year. The STORED value is
 unchanged (`overhead`), so everything below still holds verbatim. The blank-cell
 row is now less likely to occur, since the form no longer starts unset.
 
 | Input | `isOverhead` | Outcome |
 |---|---|---|
-| One overhead traveller | `true` | `PENDING_FAS` — reviewed |
+| One overhead traveler | `true` | `PENDING_FAS` — reviewed |
 | All client-paid | `false` | `APPROVED_GOGOV` — skips FAS |
 | **Blank cell on a row** | `true` | `PENDING_FAS` — reviewed |
 | Mixed: one of two overhead | `true` | `PENDING_FAS` — reviewed |
-| **No traveller rows at all** | `false` | **`APPROVED_GOGOV` — SKIPS FAS** |
+| **No traveler rows at all** | `false` | **`APPROVED_GOGOV` — SKIPS FAS** |
 | **`rows` is null** | `false` | **`APPROVED_GOGOV` — SKIPS FAS** |
 | **`Is_Client_Paid` column missing** | `false` | **`APPROVED_GOGOV` — SKIPS FAS** |
 
 > **All three degraded inputs fail open.** The guard clause returns `false` — "no overhead" — and `false` means skip FAS.
 >
-> **This is a new finding from Pass 6, registered as G-069 (High).** It matters because the two degraded conditions are not hypothetical: they are **G-012** (partial submission leaves a request with no traveller rows) and **G-014** (a renamed or reordered column). A request hit by either is approved **without** the compliance review it requires.
+> **This is a new finding from Pass 6, registered as G-069 (High).** It matters because the two degraded conditions are not hypothetical: they are **G-012** (partial submission leaves a request with no traveler rows) and **G-014** (a renamed or reordered column). A request hit by either is approved **without** the compliance review it requires.
 >
 > **Note the asymmetry inside one function.** The per-row default (`!val` → overhead) fails **closed** and is correct. The collection-level guard clause fails **open**. Same function, two lines apart, opposite defaults.
 >
@@ -278,17 +278,17 @@ row is now less likely to occur, since the form no longer starts unset.
 
 ## §4.4 System A — Division Director funding confirmation
 
-After `APPROVED_GOGOV`, each traveller's Division Director must confirm funding before the request reaches `COMPLETED` `[VERIFIED]` `Review_DDConfirm.js`.
+After `APPROVED_GOGOV`, each traveler's Division Director must confirm funding before the request reaches `COMPLETED` `[VERIFIED]` `Review_DDConfirm.js`.
 
 ### 4.4.1 The rules
 
 | ID | Rule | Type | Where |
 |---|---|---|---|
-| **W-17** | A DD may confirm **only** traveller rows whose `DD_Email` equals their own address | **ENFORCED** — non-matching rows are skipped | `:330` |
+| **W-17** | A DD may confirm **only** traveler rows whose `DD_Email` equals their own address | **ENFORCED** — non-matching rows are skipped | `:330` |
 | **W-17a** | Attachment sharing to the next reviewer passes `'viewer'`, which is **not a valid Drive role**. Three layers of error suppression report success either way (**G-028**) | APPLIED — broken | `Attachments.js:467` |
-| **W-18** | Confirming sets `DD_Confirmed = TRUE` and `DD_Confirmed_At` on that traveller's row | APPLIED | `:333` |
-| **W-19** | When **every** traveller row is confirmed, the request becomes `COMPLETED` and an `All_DD_Confirmed` action is logged | APPLIED | `:364` |
-| **W-20** | A DD reporting a funding problem sets the request to `Pending_Correction` and records the flagged travellers, notes, and reporter | APPLIED | `:420` |
+| **W-18** | Confirming sets `DD_Confirmed = TRUE` and `DD_Confirmed_At` on that traveler's row | APPLIED | `:333` |
+| **W-19** | When **every** traveler row is confirmed, the request becomes `COMPLETED` and an `All_DD_Confirmed` action is logged | APPLIED | `:364` |
+| **W-20** | A DD reporting a funding problem sets the request to `Pending_Correction` and records the flagged travelers, notes, and reporter | APPLIED | `:420` |
 | **W-21** | The submitter correcting funding sets the request back to `Pending_DD_Confirmation`, clears the three DD issue fields, and re-emails **only the affected DDs** | APPLIED | `:702` |
 | **W-22** | Authorization here is **purely record-level**. There is no role check — a person who is nobody's DD matches no rows and confirms nothing | ENFORCED (by construction) | `:330` |
 
@@ -304,11 +304,11 @@ The comparison is `ddEmail === currentUserEmail` after both are lower-cased `[VE
 | *(blank)* | `dd@gsa.gov` | No match — **correct, fails closed** |
 | *(blank)* | *(blank)* | **Confirms** |
 
-**The last row is the only edge, and it is narrow.** If a traveller row has a blank `DD_Email` *and* the session returns a blank address, the comparison `'' === ''` succeeds and the row confirms.
+**The last row is the only edge, and it is narrow.** If a traveler row has a blank `DD_Email` *and* the session returns a blank address, the comparison `'' === ''` succeeds and the row confirms.
 
-**Whether this is reachable is `[UNKNOWN]`.** `Review_DDConfirm.js:292` calls `.getEmail().toLowerCase()` with **no `|| ''` fallback** — while 13 other call sites in the codebase *do* guard against a blank email `[VERIFIED]`. So the codebase elsewhere treats a blank session email as possible, and here does not. If it is possible, a blank-`DD_Email` traveller row self-confirms.
+**Whether this is reachable is `[UNKNOWN]`.** `Review_DDConfirm.js:292` calls `.getEmail().toLowerCase()` with **no `|| ''` fallback** — while 13 other call sites in the codebase *do* guard against a blank email `[VERIFIED]`. So the codebase elsewhere treats a blank session email as possible, and here does not. If it is possible, a blank-`DD_Email` traveler row self-confirms.
 
-> **This is worth one line of defence rather than an investigation.** Adding `if (!currentUserEmail || !ddEmail) continue;` closes it regardless of whether the condition can occur. Registered as **G-071** (Low).
+> **This is worth one line of defense rather than an investigation.** Adding `if (!currentUserEmail || !ddEmail) continue;` closes it regardless of whether the condition can occur. Registered as **G-071** (Low).
 
 ### 4.4.3 Two naming traps in this sub-workflow
 
@@ -346,7 +346,7 @@ All line references below are in `server/30_services/Costs.js`. **Note there are
 | **C-01** | **M&IE is paid at 75% on the first day, the last day, and any single-day trip** | APPLIED | `calculateMieTotal` `:326` |
 | **C-02** | Lodging is paid per **night**, not per day | APPLIED | `calculateLodgingTotal` `:294`, `calculateNights` `:254` |
 | **C-03** | Per-diem source routes by location: GSA (CONUS) / DoD (OCONUS) / State (foreign) | APPLIED | `getPerDiemForLeg` `:90` |
-| **C-04** | Mileage uses the `private` or `gov` rate per traveller's transport mode | APPLIED | `calculateTransportationTotal` `:392`, modes at `:400`, `:404` |
+| **C-04** | Mileage uses the `private` or `gov` rate per traveler's transport mode | APPLIED | `calculateTransportationTotal` `:392`, modes at `:400`, `:404` |
 | **C-05** | An "other costs" gross-up is applied, configured by the `other_cost_percentage` Script Property. **Set to 30%** in both environments as of 2026-10-30 | APPLIED | `calculateOtherCosts` `:499`, `Props.js:117` |
 | **C-06** | Lodging and M&IE support an override with `{enabled, amount, reason}`, stored per leg | APPLIED | `:294`, `:326` |
 | **C-07** | The rate in force at submission is **copied into the row**, not referenced | APPLIED | `DATA_DICTIONARY.md` §3.3.1 |
@@ -355,7 +355,7 @@ All line references below are in `server/30_services/Costs.js`. **Note there are
 
 **C-01 matches the Federal Travel Regulation** and is implemented cleanly with a per-day breakdown `[VERIFIED]`. **C-06 is good auditability** — the override reason is the only free-text justification of a financial decision anywhere in the child tabs.
 
-**C-07 is correct behaviour worth knowing:** a later per-diem sync does **not** retroactively change an existing request. Reconciling a request against *current* rates would therefore be wrong.
+**C-07 is correct behavior worth knowing:** a later per-diem sync does **not** retroactively change an existing request. Reconciling a request against *current* rates would therefore be wrong.
 
 ### 4.5.2 The configurable rates, and the rule that is only claimed
 
@@ -386,12 +386,12 @@ All line references below are in `server/30_services/Costs.js`. **Note there are
 
 > **An administrator who runs the documented setup step and then sets mileage rates will find the rates unchanged, with no error.** This is the clearest "documented rule that does not exist" in System A, and the fix is to correct the key names in the initializer.
 
-### 4.5.3 Fiscal period derivation — one implementation is mislabelled
+### 4.5.3 Fiscal period derivation — one implementation is mislabeled
 
 | ID | Rule | Type | Finding |
 |---|---|---|---|
 | **C-11** | Fiscal year = calendar year + 1 for October–December | APPLIED — **correct** `[VERIFIED]` | — |
-| **C-12** | The dashboards' *"FY Quarter"* uses quarters starting **Jan / Apr / Jul / Oct** | APPLIED — **mislabelled** | **G-049** |
+| **C-12** | The dashboards' *"FY Quarter"* uses quarters starting **Jan / Apr / Jul / Oct** | APPLIED — **mislabeled** | **G-049** |
 
 **Federal Q1 is October–December. This code's "Q1" is January–March** `[VERIFIED]`. The arithmetic is internally consistent; the label is wrong for every quarter of the year.
 
@@ -404,7 +404,7 @@ All line references below are in `server/30_services/Costs.js`. **Note there are
 | ID | Rule | Type |
 |---|---|---|
 | **C-13** | Every stage transition notifies the acting reviewer **and** the next reviewer | APPLIED |
-| **C-14** | `APPROVED_GOGOV` triggers a DD confirmation email to **each traveller's** DD with a deep link | APPLIED |
+| **C-14** | `APPROVED_GOGOV` triggers a DD confirmation email to **each traveler's** DD with a deep link | APPLIED |
 | **C-15** | A funding correction re-emails **only the affected DDs**, not all of them | APPLIED |
 | **C-16** | If the acting user has `Suppress_Emails = TRUE` in `Test_Submitters`, **every** send is dropped and reports success | APPLIED |
 | **C-17** | Sender identity comes from Script Properties, defaulting to `ASD.Travel-Events@gsa.gov` | APPLIED |
@@ -510,7 +510,7 @@ Remaining Discretionary Balance =
 | **Defects that go live (B-07…B-14)** | **8** |
 | **Unenforced claims that become exploitable (B-15, B-16)** | **2** |
 
-> **The scheduling conclusion, and it is the most useful fact in this document:** there is no production data in the budget tabs and no user depending on current behaviour. **Fixing B-07 through B-16 is cheaper now than it will ever be again** — and they should be fixed **before** wiring, not after. Wiring first means debugging a financial engine against live data.
+> **The scheduling conclusion, and it is the most useful fact in this document:** there is no production data in the budget tabs and no user depending on current behavior. **Fixing B-07 through B-16 is cheaper now than it will ever be again** — and they should be fixed **before** wiring, not after. Wiring first means debugging a financial engine against live data.
 
 ---
 
@@ -597,7 +597,7 @@ The product's headline feature. Traced end to end `[VERIFIED]`:
 | 7 | Routing that diverts a blocked request to exception approval | `[NOT FOUND]` |
 | 8 | **Cost bridging** — System A computes `Grand_Total`; System B expects `totalEstimatedCost` | `[NOT FOUND]` |
 
-**Point 8 is the one most likely to be underestimated.** The two systems model cost incompatibly: System A derives per-traveller, per-leg costs from authoritative per-diem rates; System B expects a single total. **Which figure is authoritative is BD-4**, and it is a design decision, not a mapping exercise.
+**Point 8 is the one most likely to be underestimated.** The two systems model cost incompatibly: System A derives per-traveler, per-leg costs from authoritative per-diem rates; System B expects a single total. **Which figure is authoritative is BD-4**, and it is a design decision, not a mapping exercise.
 
 ---
 
@@ -625,13 +625,13 @@ Collected in one place, because this is the backlog. Each has an ID so it can be
 
 Neither happens. **A user who reads these and proceeds believes two compliance actions have occurred that have not.** That is a different and more serious category than a stale comment in a source file, and both should be corrected before any other item in this table — they are wording changes, not engineering.
 
-### 4.8.2 The pattern in where claims drift from behaviour
+### 4.8.2 The pattern in where claims drift from behavior
 
 Worth stating because it tells you which comments to trust:
 
 | Where the comment is | Reliability |
 |---|---|
-| A file header describing **that file's own** behaviour | **Accurate** — `Users.js`, `Reporting.js`, `Admin_Actions.js` all do what they say `[VERIFIED]` |
+| A file header describing **that file's own** behavior | **Accurate** — `Users.js`, `Reporting.js`, `Admin_Actions.js` all do what they say `[VERIFIED]` |
 | A comment describing what **another** file does | Often aspirational |
 | A comment describing what **will** happen | Describes intent that was never completed |
 | **UI text shown to a user** | **Two of the worst cases in the system** |
@@ -651,7 +651,7 @@ Worth stating because it tells you which comments to trust:
 | **BD-4** | **Which cost figure is authoritative — System A's `Grand_Total` or a user-entered estimate?** | B-07, B-08, G-040 | The largest unresolved design question in the system. The two layers assume different answers |
 | **BD-3** | **In a `NEEDS_INFO_*` state, should the assigned reviewer retain edit access?** | G-003, G-067 | Gates adoption of `requireRequestEditor` — the cheapest fix for a Critical finding |
 | **BD-5** | **Who owns the `Requests` tab-name collision decision, and what is it?** | G-013, G-023 | Two schemas claim one tab name. Someone must choose, rename, or separate them |
-| **BD-2** | **Should `aas_fo_reviewer` see every request in the organisation?** | G-031 | The role carries `scope: 'all'` today — admin-equivalent visibility under a name that does not advertise it |
+| **BD-2** | **Should `aas_fo_reviewer` see every request in the organization?** | G-031 | The role carries `scope: 'all'` today — admin-equivalent visibility under a name that does not advertise it |
 
 **Four of the six block findings rated Critical or High.** `GAP_REGISTER.md` must mark those `BLOCKED ON BD-n` rather than leaving them looking like open engineering work.
 

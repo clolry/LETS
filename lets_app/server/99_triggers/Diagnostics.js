@@ -26,7 +26,7 @@
  *   diagAccess()       who currently has access, and by which path
  *   diagAirportPrefs() stored preferences and the promotion threshold
  *   diagTriggers()     installed triggers, and whether their handlers exist
- *   diagServiceCentreDirectors()  who the 22 service centres' directors are,
+ *   diagServiceCenterDirectors()  who the 22 service centers' directors are,
  *                      and what a sector_override row would currently grant
  *
  *   diagDutyStationAirports()   which HC duty stations resolve to an airport
@@ -66,7 +66,7 @@
  * genuinely useful to an attacker; logging it means the information is
  * available to a developer looking at the editor and nobody else.
  *
- * Even so, diagAccess() enumerates who holds access, which is organisational
+ * Even so, diagAccess() enumerates who holds access, which is organizational
  * information. It is guarded with isTravelAdmin() for that reason — not
  * because the log is reachable, but because the function should refuse to
  * compute the answer for a non-admin regardless.
@@ -74,7 +74,7 @@
  * DO NOT add anything here that writes — with ONE narrow exception, the
  * `run…` wrappers at the foot of this file. Two of those do write, and the
  * reasoning is stated there rather than here so it cannot be read as a general
- * licence. If a DIAGNOSTIC ever needs to mutate state, it belongs in 91_setup/
+ * license. If a DIAGNOSTIC ever needs to mutate state, it belongs in 91_setup/
  * with its own guard and its own review.
  */
 
@@ -96,7 +96,7 @@ function diagAll() {
   diagFasTrackerHeader();
   diagTriggers();
   diagAccess();
-  diagServiceCentreDirectors();
+  diagServiceCenterDirectors();
   console.log('================================================================');
   console.log('END OF DIAGNOSTICS');
   console.log('================================================================');
@@ -378,7 +378,7 @@ function diagHcData() {
   // the RETURN path is: a browser caller gets whatever this returns, and
   // Stackdriver output is admin-visible anyway.
   //
-  // Guarded rather than sanitised: a diagnostic whose output is filtered is
+  // Guarded rather than sanitized: a diagnostic whose output is filtered is
   // no longer a diagnostic.
   try {
     var _who = Session.getActiveUser().getEmail() || '';
@@ -580,7 +580,7 @@ function diagTriggers() {
  *
  * getAirportsForCity matches ORIGIN_CITY_NAME / DESTINATION_CITY_NAME
  * EXACTLY. GSA and HR do not always agree on a city's name, and when they
- * disagree the traveller gets NO airport options at all — which would block a
+ * disagree the traveler gets NO airport options at all — which would block a
  * submission rather than merely inconvenience it.
  *
  * Found in the sandbox: FORT WORTH returns no match, because GSA files that
@@ -637,7 +637,7 @@ function diagDutyStationAirports() {
     if (unresolved.length) {
       console.log('');
       console.log(unresolved.length + ' city/state pair(s) resolve to NO airport.');
-      console.log('A traveller based there gets an empty airport picker.');
+      console.log('A traveler based there gets an empty airport picker.');
       console.log('Run diagUnresolvedCityNames() to see what GSA calls them.');
       console.log('');
       console.log('If an alias for one of these was added recently, a STALE CACHE');
@@ -798,7 +798,7 @@ function diagCityNamesForState(stateCode) {
  * ---------------
  * submitToFASTracker appends to a LIVE sheet owned by the FAS front office and
  * shared across every FAS portfolio. A misaligned row is an uncorrectable
- * write to another organisation's system of record.
+ * write to another organization's system of record.
  *
  * The previous implementation wrote 14 values in an order matching nothing —
  * its comments claimed column D was Portfolio where the real column D is Event
@@ -834,7 +834,7 @@ function diagFasTrackerRow() {
     console.log('      the portfolio, so it always receives the FC code above.');
     console.log('      The division codes drive internal DAC routing instead.');
 
-    // Fictional. Deliberately exercises a two-traveller, two-org request,
+    // Fictional. Deliberately exercises a two-traveler, two-org request,
     // because that is the case the single-office form could not represent.
     var sample = {
       requestId: 'LETS-DIAG',
@@ -1048,7 +1048,7 @@ function diagTripOverviewFields() {
       console.log('    Traveler_Org_Codes: ' + (r[c['Traveler_Org_Codes']] || '[empty]'));
     });
 
-    // Per-traveller attribution is the point: a consolidated request can draw
+    // Per-traveler attribution is the point: a consolidated request can draw
     // on FCA, FCB and FCC at once, and each DAC should see only their share.
     var tSheet = ss.getSheetByName(SHEET_NAMES.REQUEST_TRAVELERS);
     if (tSheet && tSheet.getLastRow() > 1) {
@@ -1059,7 +1059,7 @@ function diagTripOverviewFields() {
         var tTake = Math.min(8, tSheet.getLastRow() - 1);
         var tRows = tSheet.getRange(tSheet.getLastRow() - tTake + 1, 1, tTake, tSchema.length).getValues();
         console.log('');
-        console.log('Last ' + tTake + ' traveller row(s), budget attribution:');
+        console.log('Last ' + tTake + ' traveler row(s), budget attribution:');
         tRows.forEach(function (r) {
           console.log('  ' + (r[tc['Employee_Name']] || '?') +
             '  org=' + (r[tc['Budget_Org_Code']] || '[empty]') +
@@ -1167,13 +1167,13 @@ function diagAccess() {
  * Who the Service Center Directors actually are, and who holds a sector scope.
  *
  * ADMIN ONLY. Enumerates named people and the access each would hold.
- * Read-only: no sheet write, no property write, no behaviour change.
+ * Read-only: no sheet write, no property write, no behavior change.
  *
  * WHY THIS EXISTS
  * ---------------
  * Five call sites identify a Service Center Director by matching officeTitle
  * against the string 'sector director'. That title does not exist in this
- * organisation — @clolry: "We don't call them Sector Directors, we call them
+ * organization — @clolry: "We don't call them Sector Directors, we call them
  * Service Center Directors" — so all five find NOBODY, silently:
  *
  *   Access.js:132    _findSectorDirectorPosition, which routing depends on
@@ -1185,7 +1185,7 @@ function diagAccess() {
  * The consequence today is that findSectorDirector returns null for every
  * submission, determineInitialRouting takes its "no SD found" branch
  * (Submission.js:110) and every request starts at the DAC stage instead.
- * Nothing errors. The service-centre review stage simply never happens.
+ * Nothing errors. The service-center review stage simply never happens.
  *
  * WHY A DIAGNOSTIC BEFORE A FIX
  * -----------------------------
@@ -1194,13 +1194,13 @@ function diagAccess() {
  * codes (Sheets.js:598, HCSeed.js:366) — but applying it raises three
  * questions that only the live roster can answer:
  *
- *   1. Does every service centre have exactly one such person? @clolry
+ *   1. Does every service center have exactly one such person? @clolry
  *      believes so. If any has two, the current code would return whichever
  *      came first in bundle order, which is nondeterministic across imports
  *      — so that has to be known rather than assumed.
  *   2. Does every one of them have an email? Without it Access.js:98 returns
  *      null and routing cascades anyway, so the fix would change nothing for
- *      that centre.
+ *      that center.
  *   3. Which titles do they actually hold? Recorded so the next reader can
  *      see why a title match was the wrong instrument, rather than taking it
  *      on trust.
@@ -1208,17 +1208,17 @@ function diagAccess() {
  * THE GRADE CHECK IS REPORTED, NOT APPLIED. All five call sites additionally
  * require grade '15'. @clolry: "I don't know why we would need to check the
  * grade." I agree it looks like a proxy for seniority that the org level
- * already states — and an SES director would fail it, since HCData normalises
+ * already states — and an SES director would fail it, since HCData normalizes
  * SES to 'SES' rather than a number. This prints what the check WOULD exclude
  * so the decision rests on names rather than on reasoning.
  *
  * @editor
  */
-function diagServiceCentreDirectors() {
+function diagServiceCenterDirectors() {
   try {
     var _who = Session.getActiveUser().getEmail() || '';
     if (!_who || typeof isTravelAdmin !== 'function' || !isTravelAdmin(_who)) {
-      console.warn('diagServiceCentreDirectors: refused non-admin caller ' +
+      console.warn('diagServiceCenterDirectors: refused non-admin caller ' +
                    (_who || '(none)'));
       return { success: false, error: 'Administrator access is required.' };
     }
@@ -1227,7 +1227,7 @@ function diagServiceCentreDirectors() {
   }
 
   console.log('');
-  console.log('--- SERVICE CENTRE DIRECTORS ---');
+  console.log('--- SERVICE CENTER DIRECTORS ---');
 
   try {
     var bundle = HC.hcGetBundle();
@@ -1250,7 +1250,7 @@ function diagServiceCentreDirectors() {
     // The 22, from the STORED Org_Level rather than from code length.
     //
     // @clolry reads the code positionally: 1st digit sub-agency, 2nd
-    // portfolio, 3rd office, 4th sub-office, 5th service centre, 6th
+    // portfolio, 3rd office, 4th sub-office, 5th service center, 6th
     // division, 7th branch. On today's data that is consistent with
     // Org_Level — every SERVICE_CENTER row is 5 characters and no 5-character
     // row is anything else.
@@ -1258,31 +1258,31 @@ function diagServiceCentreDirectors() {
     // Org_Level is still what this reads, for two reasons. Depth varies by
     // branch: FCA has no 4-character sub-office level while FCB and FCC do,
     // so FCA0A sits two levels deep and FCBAA three. And a person ABOVE a
-    // service centre — at FCA, or FC itself — has no service centre at all,
+    // service center — at FCA, or FC itself — has no service center at all,
     // which a truncation rule cannot express and the stored walk reports as
     // ''. That distinction is already load-bearing in the per-capita budget
-    // split, which buckets those people as isAboveServiceCentre.
+    // split, which buckets those people as isAboveServiceCenter.
     var scCodes = orgs.filter(function (o) {
       return String(o.orgLevel || '').toUpperCase() === 'SERVICE_CENTER';
     }).map(function (o) { return String(o.orgCode).toUpperCase(); }).sort();
 
-    console.log('service centres in HC_Orgs: ' + scCodes.length +
+    console.log('service centers in HC_Orgs: ' + scCodes.length +
                 ' (expected 22)');
     console.log('');
 
-    // Candidates per centre: a SUPERVISORY person whose own org code IS the
-    // centre's code. Somebody in FCA0BAA belongs to a branch; somebody
-    // sitting directly at FCA0B is at the service-centre level.
+    // Candidates per center: a SUPERVISORY person whose own org code IS the
+    // center's code. Somebody in FCA0BAA belongs to a branch; somebody
+    // sitting directly at FCA0B is at the service-center level.
     var positions = bundle.data || [];
-    var byCentre = {};
-    scCodes.forEach(function (c) { byCentre[c] = []; });
+    var byCenter = {};
+    scCodes.forEach(function (c) { byCenter[c] = []; });
 
     positions.forEach(function (p) {
       if (!p) return;
       var code = String(p.orgCode || '').toUpperCase();
-      if (!(code in byCentre)) return;
+      if (!(code in byCenter)) return;
       if (String(p.supervisoryStatus) !== '2') return;
-      byCentre[code].push(p);
+      byCenter[code].push(p);
     });
 
     var counts = { none: 0, one: 0, many: 0 };
@@ -1291,14 +1291,14 @@ function diagServiceCentreDirectors() {
     var titles = {};
 
     scCodes.forEach(function (code) {
-      var found = byCentre[code];
+      var found = byCenter[code];
       var orgName = String((byCode[code] || {}).division || '');
       var label = code + '  ' + orgName;
 
       if (!found.length) {
         counts.none++;
         console.log('  [NONE] ' + label);
-        // A centre with no supervisory person at its own code is not
+        // A center with no supervisory person at its own code is not
         // necessarily an error — the seat may be vacant, or the director may
         // sit one level up. Both are worth seeing.
         return;
@@ -1329,10 +1329,10 @@ function diagServiceCentreDirectors() {
     });
 
     console.log('');
-    console.log('centres with exactly one supervisory person: ' + counts.one);
-    console.log('centres with more than one:                  ' + counts.many +
+    console.log('centers with exactly one supervisory person: ' + counts.one);
+    console.log('centers with more than one:                  ' + counts.many +
                 (counts.many ? '   <- these need a tie-break rule' : ''));
-    console.log('centres with none at their own code:         ' + counts.none);
+    console.log('centers with none at their own code:         ' + counts.none);
 
     // THE TITLE EVIDENCE. Printed because the whole defect is that five call
     // sites match a title string, and the honest way to retire that approach
@@ -1358,7 +1358,7 @@ function diagServiceCentreDirectors() {
       console.log('');
       console.log('NO EMAIL (' + noEmail.length + ') — Access.js:98 returns ' +
                   'null without one, so routing would cascade past these ' +
-                  'centres even after the title fix:');
+                  'centers even after the title fix:');
       noEmail.forEach(function (x) { console.log('  ' + x); });
     }
 
@@ -1369,7 +1369,7 @@ function diagServiceCentreDirectors() {
       wouldFailGrade.forEach(function (x) { console.log('  ' + x); });
       console.log('  All five call sites require grade "15". @clolry: "I ' +
                   'don\'t know why we would need to check the grade." Note ' +
-                  'that an SES director normalises to "SES", not a number, ' +
+                  'that an SES director normalizes to "SES", not a number, ' +
                   'so the check rejects them too.');
     }
 
@@ -1386,12 +1386,12 @@ function diagServiceCentreDirectors() {
     //
     //   HC_Orgs.Sector is 'ASD' on all 137 rows (HCSeed.js:351), so one name
     //   matches everything; and the 4-character truncation of a 5-character
-    //   service-centre code yields FCA0 / FCB0 / FCC0, which are not org
+    //   service-center code yields FCA0 / FCB0 / FCC0, which are not org
     //   codes at all — the '0' is a filler, not a level.
     //
     // The scope matchers then compare substring(0, 4) of a request's org code
     // against that set, and 'FC'.substring(0, 4) is 'FC', which is in it. So
-    // the resolved set covers the entire organisation.
+    // the resolved set covers the entire organization.
     //
     // @clolry is not aware of any sector_override rows, which would make this
     // latent. Latent is worth confirming rather than assuming, so this counts
@@ -1463,12 +1463,12 @@ function diagServiceCentreDirectors() {
         var fake = codes.filter(function (c) { return !byCode[c]; });
         if (fake.length) {
           console.log('  of which NOT REAL org codes: ' + fake.join(', ') +
-                      '   (a 4-char truncation of a 5-char service centre)');
+                      '   (a 4-char truncation of a 5-char service center)');
         }
         console.log('  org codes a request could carry and still match: ' +
                     reachable + ' of ' + orgs.length +
                     (reachable === orgs.length
-                      ? '   <- ORGANISATION-WIDE, not one service centre'
+                      ? '   <- ORGANIZATION-WIDE, not one service center'
                       : ''));
       });
     } catch (e) {
@@ -1479,7 +1479,7 @@ function diagServiceCentreDirectors() {
     console.log('Nothing was changed. This is a read-only report.');
     return { success: true };
   } catch (error) {
-    console.log('diagServiceCentreDirectors FAILED: ' + error.message);
+    console.log('diagServiceCenterDirectors FAILED: ' + error.message);
     return { success: false, error: error.message };
   }
 }
@@ -1541,7 +1541,7 @@ function diagServiceCentreDirectors() {
  *                           would revoke their access.
  *   occupancyDisagreement   the feed has two status columns; a large count
  *                           means occupancy is being read from the wrong one,
- *                           which moves every service centre's budget share.
+ *                           which moves every service center's budget share.
  *
  * @editor
  */
@@ -1598,8 +1598,8 @@ function runRosterPreview() {
   }
 
   console.log('');
-  console.log('For the per-service-centre headcount table, run ' +
-              'showServiceCentreHeadcount() in 40_domain/HCRosterSync.js.');
+  console.log('For the per-service-center headcount table, run ' +
+              'showServiceCenterHeadcount() in 40_domain/HCRosterSync.js.');
 }
 
 /**
@@ -1609,7 +1609,7 @@ function runRosterPreview() {
  * TAKES ITS OWN FRESH PREVIEW rather than a pasted token, deliberately. A
  * token copied out of an earlier log describes a state of the feed that may
  * have changed since, and confirming a preview nobody re-read is the thing the
- * token exists to prevent. This way the preview that authorises the import is
+ * token exists to prevent. This way the preview that authorizes the import is
  * always the one that just ran, and its summary is printed above the result.
  *
  * STILL REFUSES if the preview reports anything that should stop an import:
@@ -1634,16 +1634,16 @@ function runRosterImport() {
   // The per-capita split walks each position's stored parent chain to the
   // nearest SERVICE_CENTER row in HC_Orgs. With only the four seed rows
   // loaded — which carry no Org_Level — there is nothing to roll up to.
-  // @clolry's first preview showed 817 filled positions and "service centres
+  // @clolry's first preview showed 817 filled positions and "service centers
   // 0" for exactly this reason.
   //
   // Refused rather than warned, because the symptom surfaces on the budget
   // page two steps from the cause, and hcLoadRealOrgCodes is a ten-second fix.
   var oh = p.data.orgHierarchy || {};
   if (!oh.ready) {
-    console.log('REFUSING: HC_Orgs has no service-centre hierarchy (' +
-                (oh.rows || 0) + ' row(s), ' + (oh.serviceCentres || 0) +
-                ' service centres).');
+    console.log('REFUSING: HC_Orgs has no service-center hierarchy (' +
+                (oh.rows || 0) + ' row(s), ' + (oh.serviceCenters || 0) +
+                ' service centers).');
     console.log('Every per-capita budget allocation would be zero, and the ' +
                 'org chart would have nothing to nest positions under.');
     console.log('');
@@ -1655,7 +1655,7 @@ function runRosterImport() {
   // A real person the feed no longer lists loses supervisor-based LETS access
   // and stops counting toward their org's per-capita share. That may be
   // correct — people do leave — but it is not something to discover
-  // afterwards.
+  // afterward.
   if (c.deletes > 0) {
     console.log('REFUSING: the import would remove ' + c.deletes +
                 ' position(s) that are NOT test data.');
@@ -1689,7 +1689,7 @@ function runRosterImport() {
  * testing purposes."
  *
  * Needed because runRosterImport deliberately REFUSES when the import would
- * remove positions that are not recognisable fixtures. Eight of the 24 current
+ * remove positions that are not recognizable fixtures. Eight of the 24 current
  * rows are hand-entered team members with real @gsa.gov addresses, so
  * identifySeedRows correctly declines to treat them as test data. The right
  * answer is a deliberate clear, not a weaker refusal.
@@ -1976,7 +1976,7 @@ function runSaveEmailOverride() {
  * Print the current budget dashboard payload.
  *
  * Useful for checking the FY27 figures without loading the page: the DAC
- * balances, the set-aside breakdown, the per-service-centre allocations and
+ * balances, the set-aside breakdown, the per-service-center allocations and
  * the release funding for the FC senior advisor.
  *
  * @editor

@@ -1,7 +1,7 @@
 /**
  * FASTrackerSync.js
  * Integration Service for the official FAS Travel Exception Tracker Google Sheet.
- * Fulfills EO 14222 and the FAS Delegation of Travel-Approving Official Authority.
+ * Fulfils EO 14222 and the FAS Delegation of Travel-Approving Official Authority.
  *
  * ENVIRONMENT SAFETY
  * ------------------
@@ -48,7 +48,7 @@ var FASTrackerSync = (function() {
    *
    * Columns the tracker owns and LETS must NOT write are listed here anyway,
    * so the array length always matches the sheet. They are left blank:
-   * 'Column 13' (an artefact of the live sheet), and everything from 'Status:'
+   * 'Column 13' (an artifact of the live sheet), and everything from 'Status:'
    * onward, which the FAS front office fills in during their review.
    */
   var FAS_TRACKER_COLUMNS = [
@@ -104,7 +104,7 @@ var FASTrackerSync = (function() {
   /**
    * The portfolio code the tracker expects.
    *
-   * The tracker's Portfolio field is PORTFOLIO-level: this whole organisation
+   * The tracker's Portfolio field is PORTFOLIO-level: this whole organization
    * is 'FC — Office of Acquisition Solutions Development (CREATE)'. The
    * FCA/FCB/FCC codes in HC_Orgs are DIVISIONS within FC and drive internal DAC
    * routing and budget attribution — they are not what the tracker wants.

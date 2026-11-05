@@ -21,7 +21,7 @@ A read-only web app showing the ASD reporting structure, built from the same
    spreadsheet opens, whether both tabs are present, how many people and org
    codes it found, and any problems in the data.
 4. **Deploy → New deployment → Web app.** Set *Execute as* to **Me** and
-   *Who has access* to **anyone within the organisation**.
+   *Who has access* to **anyone within the organization**.
 
 ### Why "Execute as: Me"
 

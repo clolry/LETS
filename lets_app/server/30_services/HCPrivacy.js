@@ -36,14 +36,14 @@
  * CALLER is entitled to see. Three tiers:
  *
  *   PUBLIC     name, title, org, city/state. What a directory shows.
- *   REVIEWER   adds email, because a reviewer has to contact a traveller.
+ *   REVIEWER   adds email, because a reviewer has to contact a traveler.
  *   ADMIN      everything, because the roster editor has to edit it.
  *
  * WHY TIERS RATHER THAN A SINGLE GATE
  * -----------------------------------
  * A single admin-only gate would be simpler and would break the application:
  * the travel form needs names and org codes to let a submitter pick
- * travellers, and routing needs the supervisor chain. Locking HC to admins
+ * travelers, and routing needs the supervisor chain. Locking HC to admins
  * would mean nobody could file a request.
  *
  * So the question is not "may this caller read HC" but "which FIELDS". That is
@@ -76,7 +76,7 @@ var HC_FIELDS_PUBLIC = [
 
 /** Additionally visible to a reviewer or above. */
 var HC_FIELDS_REVIEWER = [
-  'emailAddress'             // a reviewer must be able to contact a traveller
+  'emailAddress'             // a reviewer must be able to contact a traveler
 ];
 
 /**

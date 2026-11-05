@@ -86,7 +86,7 @@ One web address. The screen a user gets depends on a `?mode=` value in the URL �
 
 1. **The advertised mandatory budget check does not happen.** A travel request can be approved today with no budget consulted `[VERIFIED]`. If leadership believes budget enforcement is live, that belief is wrong.
 2. **Seventeen findings describe defects nobody can trigger.** Real, but latent.
-3. **That makes them the cheapest fixes available.** No production data in those tabs, no user depending on current behaviour, no migration. **They will never be cheaper to fix than now** — and they should be fixed *before* the layer is wired, not after.
+3. **That makes them the cheapest fixes available.** No production data in those tabs, no user depending on current behavior, no migration. **They will never be cheaper to fix than now** — and they should be fixed *before* the layer is wired, not after.
 
 ### 8.1.3 What was inherited
 
@@ -127,7 +127,7 @@ So hiding a button, hiding a link, or showing someone an access-denied page cont
 | 2 | **G-002** | **Grant themselves the `admin` role**, taking effect immediately |
 | 3 | **G-004** | Read any request's full record — PII and probable CUI — then obtain its attachment file IDs and grant themselves access. **Request IDs are sequential** |
 | 4 | **G-006** | *(configuration)* The application's Google permissions were never declared, so the effective grant is inferred from code and **includes full Drive** |
-| 5 | **G-003** | Rewrite any request's itinerary, travellers, costs, grand total, status, and funding determination |
+| 5 | **G-003** | Rewrite any request's itinerary, travelers, costs, grand total, status, and funding determination |
 | 6 | **G-005** | **Trash any Google Drive file** by ID, with no ownership check |
 
 **All six live in code byte-identical to the TRIP reference** `[VERIFIED]`.
@@ -184,13 +184,13 @@ Seventy business rules were inventoried and typed by whether the code enforces t
 
 ### 8.3.2 "Completed" does not mean the trip happened
 
-`COMPLETED` means every traveller's Division Director confirmed funding, which occurs **before travel** `[VERIFIED]`. There is **no post-travel status and no actual-cost capture anywhere in the running system**.
+`COMPLETED` means every traveler's Division Director confirmed funding, which occurs **before travel** `[VERIFIED]`. There is **no post-travel status and no actual-cost capture anywhere in the running system**.
 
 > **Any statement to leadership about "completed travel spend" built on this status would be wrong.** The system is an approval system that stops at approval (**G-019**).
 
 ### 8.3.3 One emergent rule that is a policy question
 
-**If the AAS Front Office reviewer submits a request where every traveller is client-paid, it is approved with no human review at any stage** `[VERIFIED]`.
+**If the AAS Front Office reviewer submits a request where every traveler is client-paid, it is approved with no human review at any stage** `[VERIFIED]`.
 
 **This is not a defect in the ordinary sense.** It is the emergent result of two individually sensible rules — *you cannot review your own request*, and *client-paid travel needs no FAS review*. Neither is wrong; their combination produces self-approval.
 
@@ -244,15 +244,15 @@ Seventy business rules were inventoried and typed by whether the code enforces t
 | **BD-3** | **G-003** (Critical) and **G-067** | In a "needs more information" state, should the assigned reviewer keep edit access? |
 | **BD-5** | G-013, G-023 | Two schemas claim the same database tab name. Who decides, and what is the decision? |
 | **BD-6** | G-018, G-055 | Is Front-Office self-approval intended? Should cost thresholds be computed rather than self-declared? |
-| **BD-2** | G-031 | Should the AAS Front Office reviewer role see every request in the organisation? |
+| **BD-2** | G-031 | Should the AAS Front Office reviewer role see every request in the organization? |
 | **BD-4** | *(blocks no single finding)* | **Which cost figure is authoritative** — the system's computed grand total, or a user-entered estimate? |
 | **BD-1** | *(conditions all six Criticals)* | Is the deployment meant to run as the visiting user, or as the deploying owner? |
 
-### 8.5.1 BD-3 is the one to prioritise
+### 8.5.1 BD-3 is the one to prioritize
 
 **G-003 is a Critical finding, and its cheapest fix is G-067 — and both wait on the same decision.** One conversation unblocks the cheapest available remedy for two of the six Critical findings.
 
-**The decision has substance.** `requireRequestEditor` already implements an answer: it refuses reviewer edits during a "needs information" state, on the reasoning that the ball is with the submitter and co-editing would race. **That may be exactly right** — but adopting the guard *changes workflow behaviour*, not just enforcement, and that needs an owner's assent rather than a developer's.
+**The decision has substance.** `requireRequestEditor` already implements an answer: it refuses reviewer edits during a "needs information" state, on the reasoning that the ball is with the submitter and co-editing would race. **That may be exactly right** — but adopting the guard *changes workflow behavior*, not just enforcement, and that needs an owner's assent rather than a developer's.
 
 ### 8.5.2 BD-4 is the one most likely to be skipped
 
@@ -281,7 +281,7 @@ No finding is tagged as blocked on it, because it does not block a specific defe
 
 > **"Under six hours" was wrong and this document repeated it.** The figure originated in `GAP_CONSOLIDATION_PASS6.md` §6.7.2 and was read off a table rather than summed; the per-task costs add to 421 minutes. Corrected at source and everywhere it was cited. **This is precisely the failure mode §8.3 describes** — a derived figure going stale in silence — which is why `pass6_checklist_check.js` §[2] now recomputes it on every run.
 
-### 8.6.1 Two of these are also disaster-recovery artefacts
+### 8.6.1 Two of these are also disaster-recovery artifacts
 
 **If the Apps Script project were lost and rebuilt from the repository, the code would be correct and the system would not work** `[VERIFIED]`. Eight categories of configuration live outside git, and **the most dangerous absence produces no error at all**: the HR data library is referenced at 28 sites, declared in no manifest, and every failure is a logged warning. A rebuilt project would start, serve pages, and **silently deny access to every supervisor** who relies on it.
 
@@ -363,4 +363,4 @@ Sixteen scripts, about fifteen seconds. Several of them deliberately report wher
 
 ---
 
-*End of Deliverable 8. This document introduces no findings; it synthesises Deliverables 1–7. Where it gives a number, that number resolves to a named script. Where it gives a judgement — §8.7 most of all — it gives both sides, because a one-sided summary of this system would be either alarmist or complacent, and neither would be true.*
+*End of Deliverable 8. This document introduces no findings; it synthesises Deliverables 1–7. Where it gives a number, that number resolves to a named script. Where it gives a judgment — §8.7 most of all — it gives both sides, because a one-sided summary of this system would be either alarmist or complacent, and neither would be true.*

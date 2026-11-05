@@ -137,7 +137,7 @@ The key is a long string of letters and numbers, about 40 characters.
 - [ ] Its name matches the box above exactly
 - [ ] The value has no leading or trailing space *(click into it; the cursor should land immediately against the first character)*
 
-> **You can verify this far without running anything, and if the update is not deployed yet, stop here.** The key is set. It will start working the moment the code is deployed. **Return for Step 4 afterwards.**
+> **You can verify this far without running anything, and if the update is not deployed yet, stop here.** The key is set. It will start working the moment the code is deployed. **Return for Step 4 afterward.**
 
 ---
 
@@ -186,7 +186,7 @@ Mileage rates look as though a setup function configures them. **One does not, a
 
 > **The file matters.** The dropdown only lists functions from the file you have open. If a function seems to be missing, you are in the wrong file.
 
-> **First run only:** Google asks you to authorise the script. Click through the prompts. This is normal and expected.
+> **First run only:** Google asks you to authorize the script. Click through the prompts. This is normal and expected.
 
 ### Run the raw connection test
 
@@ -325,7 +325,7 @@ warmGSACitiesCache: 49 ok / 0 failed (FY2027)
 >
 > Scheduled jobs in Apps Script are **visible only to the account that created them.** Nobody else can see this job exists, including you if you use a different account.
 >
-> **If that person leaves the organisation, the job silently stops.** Nothing breaks immediately — lists are fetched on demand instead, just more slowly — but no warning is ever issued.
+> **If that person leaves the organization, the job silently stops.** Nothing breaks immediately — lists are fetched on demand instead, just more slowly — but no warning is ever issued.
 >
 > **Record the date and the account in whatever handover notes your team keeps.**
 
@@ -381,7 +381,7 @@ If the rate text ended up in the box, **stop and report it.** It would be stored
 ### 8d. Confirm an amount actually appears
 
 1. Fill in travel dates for the leg
-2. Go to the **Travelers** section and add a traveller
+2. Go to the **Travelers** section and add a traveler
 3. **Lodging and M&IE amounts should appear against that leg**
 
 > ### ⚠️ If the amounts stay at zero, nothing will tell you why

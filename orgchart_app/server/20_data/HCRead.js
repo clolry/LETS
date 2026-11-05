@@ -88,7 +88,7 @@ var HCRead = (function () {
    *
    * Blank defaults to ACTIVE, because the overwhelming majority of rows are
    * active and leaving the cell empty is the common hand-entry case. The
-   * alternative default would hide most of the organisation.
+   * alternative default would hide most of the organization.
    */
   function _bool_(v, defaultValue) {
     if (v === '' || v === null || v === undefined) return defaultValue !== false;
@@ -207,7 +207,7 @@ var HCRead = (function () {
    * The org row that NAMES this code — longest prefix, exact match preferred.
    *
    * Org codes are hierarchical and there are 137 of them: FCA0A sits under
-   * FCA, which sits under FC. @clolry's organisation uses six levels.
+   * FCA, which sits under FC. @clolry's organization uses six levels.
    *
    * Longest prefix wins, and that is the load-bearing part: FC is a prefix of
    * every other code, so a first-match or shortest-match rule would resolve
@@ -244,7 +244,7 @@ var HCRead = (function () {
    * Only FC, FCA, FCB and FCC carry an Office_Code, because only those four
    * are budget offices. All 133 sub-org rows leave it deliberately blank —
    * copying the parent's value onto every descendant would mean a
-   * reorganisation had to edit 22 rows instead of one.
+   * reorganization had to edit 22 rows instead of one.
    *
    * So resolveOrgByCode alone returns a BLANK key for every sub-org, which is
    * the exact symptom the hierarchy work set out to remove. Identity resolves
@@ -454,7 +454,7 @@ var HCRead = (function () {
      *
      * Vacant seats are omitted from the chart, which would orphan anyone
      * reporting to one — they would render as a second top-level root,
-     * visually implying they are a peer of the head of the organisation
+     * visually implying they are a peer of the head of the organization
      * rather than several levels below.
      *
      * Cycle-guarded and depth-capped. A data-entry mistake making A report to

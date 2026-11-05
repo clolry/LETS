@@ -520,7 +520,7 @@ console.log('      global scope where all top-level code runs on every');
 console.log('      execution. A pushed test file would call require() at');
 console.log('      load time, throw, and abort every execution including');
 console.log('      doGet. The .claspignore lists files explicitly rather');
-console.log('      than by glob because the glob behaviour could not be');
+console.log('      than by glob because the glob behavior could not be');
 console.log('      verified without clasp — so CI enforces the list.');
 
 // does .claspignore cover the junk files that exist?

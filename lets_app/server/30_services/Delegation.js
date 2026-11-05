@@ -18,7 +18,7 @@
  * The obvious implementation is a Travel_User_Roles row giving the delegate
  * the principal's role. It would work, and it would be wrong three ways:
  *
- *   1. Indistinguishable afterwards. Six months on, nobody can tell whether
+ *   1. Indistinguishable afterward. Six months on, nobody can tell whether
  *      Bob was a BU reviewer or was covering for Alice for a fortnight.
  *   2. No end date. A role granted for two weeks of leave stays granted until
  *      somebody remembers.

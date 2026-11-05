@@ -173,7 +173,7 @@
 
 <body class="travel-portal-body">
   <script>
-    // Set BEFORE navLoader initialises: it prefers this over resolving the
+    // Set BEFORE navLoader initializes: it prefers this over resolving the
     // script URL asynchronously, and an async resolve would lose the
     // user-gesture activation that a top-level navigation requires.
     window._travelScriptUrl = '<?= scriptUrl ?>';
@@ -606,7 +606,7 @@
                   <th>End *</th>
                   <th>Office *</th>
                   <th class="text-end">Total cost *</th>
-                  <th class="text-end">Travellers *</th>
+                  <th class="text-end">Travelers *</th>
                   <th>Purpose</th>
                   <th>Names (optional)</th>
                   <th></th>
@@ -639,7 +639,7 @@
     function syncFASTrackerNow() {
       // STILL A STUB. The button has always done this; left visible because
       // removing a control @clolry has used would be a surprise, but it is
-      // labelled below so nobody trusts it.
+      // labeled below so nobody trusts it.
       alert('Not yet implemented. This button has never triggered a sync — ' +
             'the FAS tracker poller runs on its own schedule.');
     }
@@ -679,7 +679,7 @@
 
         document.getElementById('kpiCompleted').textContent = money(t.completed);
         // Deliberately "at approved estimate". There is no reconciliation
-        // step in LETS, and labelling an estimate as an actual would claim a
+        // step in LETS, and labeling an estimate as an actual would claim a
         // process that does not exist.
         document.getElementById('kpiCompletedSub').textContent =
           t.completedCount + ' trip' + (t.completedCount === 1 ? '' : 's') +
@@ -693,11 +693,11 @@
         var body = document.getElementById('dacTableBody');
         body.innerHTML = d.offices.map(function (o) {
           var availCls = o.isDeficit ? 'text-danger' : 'text-success';
-          // Colour the utilisation, because that is the number a DAC reacts
+          // Color the utilization, because that is the number a DAC reacts
           // to. Thresholds are presentational only; nothing branches on them.
-          var useCls = o.utilisationPct === null ? 'text-muted'
-                     : (o.utilisationPct >= 90 ? 'text-danger'
-                     : (o.utilisationPct >= 70 ? 'text-warning' : 'text-muted'));
+          var useCls = o.utilizationPct === null ? 'text-muted'
+                     : (o.utilizationPct >= 90 ? 'text-danger'
+                     : (o.utilizationPct >= 70 ? 'text-warning' : 'text-muted'));
           return '<tr>' +
             '<td class="fw-bold">' + escapeHtml(o.officeName) +
               (o.orgCode ? ' <span class="text-muted fw-normal" style="font-size:0.75rem;">' +
@@ -715,7 +715,7 @@
             '<td class="text-end">' + money(o.completed) + '</td>' +
             '<td class="text-end fw-bold ' + availCls + '">' + money(o.available) + '</td>' +
             '<td class="text-end ' + useCls + '">' +
-              (o.utilisationPct === null ? '&mdash;' : o.utilisationPct + '%') + '</td>' +
+              (o.utilizationPct === null ? '&mdash;' : o.utilizationPct + '%') + '</td>' +
           '</tr>';
         }).join('');
 
@@ -881,7 +881,7 @@
         var out = '';
         if (hist.length) {
           out += '<div>' + hist.map(function (o) {
-            // A reading taken under the travel ban is greyed and marked.
+            // A reading taken under the travel ban is grayed and marked.
             // @clolry: "most of 2026 were severely limited for travel and
             // events due to the current administration's restrictions."
             // Showing "1 attendee" in the same style as "20 attendees"
@@ -932,7 +932,7 @@
        * interest: CGP Spring Conference 20 -> 1, a 95% fall. Both of the later
        * readings were taken under the administration travel restrictions.
        *
-       * A DAC shown "down 95%" reserves for one traveller next May. The
+       * A DAC shown "down 95%" reserves for one traveler next May. The
        * answer they need is the last NORMAL year — 20 — with the ban-era
        * readings set aside. The raw decline is still shown underneath, because
        * hiding it would be its own distortion.

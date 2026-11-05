@@ -159,7 +159,7 @@ This is a naming trap with real consequences. `COMPLETED` is reached when the la
 
 So **System A is an approval system that stops at approval.** An administrator reading a dashboard that says "COMPLETED" is seeing *funding confirmed pre-travel*, not *trip finished and paid*. Any report of "actual spend" built on System A data would be reporting estimates.
 
-### 4.1.6 Fiscal year and quarter derivation — three implementations, one of them mislabelled
+### 4.1.6 Fiscal year and quarter derivation — three implementations, one of them mislabeled
 
 | Function | Definition | Correct? |
 |---|---|---|
@@ -521,7 +521,7 @@ Sender identity comes from Script Properties `travel_email_address` / `travel_em
 | Handoff doc §3C | "Estimate-to-actual reconciliation with double-counting prevention" | Double-counting prevention **works** `[VERIFIED]`; but reconciliation has no writer, overwrites the original estimate (R-B3), and frees commitments on blank actuals (R-B2) |
 | Handoff doc §4C line 123 | "`syncFASTrackerStatus()` … automatically advances the LETS request" | Returns a change list; advances nothing |
 | `RequestService.js:147` (JSDoc) | "Advances Kanban stage with role and permission checks" | **No checks of any kind** — observed accepting arbitrary statuses from arbitrary users (R-B11) |
-| `ReviewerDashboard.js:468` (label) | `'FY Quarter'` | Calendar quarters. Mislabelled Jan–Mar every year |
+| `ReviewerDashboard.js:468` (label) | `'FY Quarter'` | Calendar quarters. Mislabeled Jan–Mar every year |
 | `PROJECT_PLAN.md:159` | "Wire `travelRequestTravelers.html` to Budget Engine" | That file is byte-identical to TRIP's and has no budget references. Understates the work: requires schema change, payload change, state layer, and field mapping |
 | `PROJECT_PLAN.md:161` | "Finalize Org Approver Routing — connect `Org_Approvers` to email dispatch" | `Org_Approvers` is a **second, incompatible approval model**, not a missing wire. Live routing uses `Travel_User_Roles` + HC with a 4-stage cascade. Choosing between them is an architecture decision |
 | Handoff doc §5 (roles) | Describes budget approval roles | The live role set is `admin`, `aas_fo_reviewer`, `fas_fo_reviewer`, `bu_reviewer`, `sector_override`, `approved_user` — no budget role exists |

@@ -24,7 +24,7 @@
  * feed has her in FCBBBB as a status-2 supervisor.
  *
  * The damage was not one row. Every per-capita figure reported before this
- * existed came from that stale file — 807 filled positions, 22 service-centre
+ * existed came from that stale file — 807 filled positions, 22 service-center
  * shares, every dollar. §7 is the guard that no code path can read the May
  * file again.
  *
@@ -159,13 +159,13 @@ console.log('\n1b. the REAL FC workforce report headers, as supplied by @clolry'
 
   // 'Dept ID', NOT 'Dept. ID 2 Letter'. The two-letter column is a portfolio
   // abbreviation; reading it as the org code would collapse the whole roster
-  // into one bucket and make all 22 per-capita service-centre shares
+  // into one bucket and make all 22 per-capita service-center shares
   // identical — a figure that looks precise and means nothing.
   ok('the org code comes from Dept ID',
      m.mapping.orgCode === 'Dept ID', m.mapping.orgCode);
   ok('and NOT from the 2-letter department column',
      m.unmapped.indexOf('Dept. ID\n2 Letter') > -1,
-     'a 2-letter code would merge every service centre into one');
+     'a 2-letter code would merge every service center into one');
 
   // THE COLUMN THAT MADE THIS SOURCE WORTH SWITCHING TO. The HRLinks feed had
   // 33 columns and no address, which is why ~5,100 lines of directory name
@@ -270,12 +270,12 @@ console.log('\n1b-ii. the retired FAS HRLinks headers still map');
 
   // 'Dept ID (Org)' not 'POI'. A POI is a payroll servicing code shared by
   // several orgs, so keying budget attribution off it would merge unrelated
-  // service centres.
+  // service centers.
   ok('the org code comes from Dept ID (Org)',
      m.mapping.orgCode === 'Dept ID (Org)', m.mapping.orgCode);
   ok('and NOT from POI',
      m.mapping.orgCode !== 'POI' && m.unmapped.indexOf('POI') > -1,
-     'a POI is shared across orgs; it would merge service centres');
+     'a POI is shared across orgs; it would merge service centers');
 
   ok('the supervisor join uses Reports To Position #',
      m.mapping.reportsTo === 'Reports To Position #', m.mapping.reportsTo);
@@ -450,7 +450,7 @@ console.log('\n1e. the two status columns are cross-checked');
 {
   // The feed has 'Position Status' AND a bare 'Status'. Occupancy comes from
   // the first, on the reasoning that an '"Obligated To" Employee Name' column
-  // only makes sense beside a position-level status. That is a judgement, and
+  // only makes sense beside a position-level status. That is a judgment, and
   // it decides the per-capita denominator — so a disagreement is reported.
   const H2 = ['Position#', 'Employee Name', 'Dept ID (Org)',
               'Position Status', 'Status'];
@@ -510,7 +510,7 @@ console.log('\n1e. the two status columns are cross-checked');
   // @clolry's live preview reported "6 row(s) would be classified differently
   // by Status", which reads as a small data inconsistency and was nothing of
   // the kind. The Status column holds 'A' and 'T' — personnel ACTION codes.
-  // normalizeOccupancy recognises neither, so every value fell through to its
+  // normalizeOccupancy recognizes neither, so every value fell through to its
   // FILLED default: a FILLED row agreed by accident, a VACANT row agreed
   // because the name test fires first, and ONLY the 6 OBLIGATED rows could
   // ever differ.
@@ -572,7 +572,7 @@ console.log('\n2. the three fields a spreadsheet silently corrupts');
      R.normalizeSupervisoryStatus(2) === '2',
      typeof R.normalizeSupervisoryStatus(2));
   // An unknown code is PRESERVED, not blanked. HR owns this vocabulary.
-  ok('an unrecognised code is preserved, not defaulted',
+  ok('an unrecognized code is preserved, not defaulted',
      R.normalizeSupervisoryStatus('9') === '9',
      'inventing a default is worse than carrying a value we flag');
 
@@ -944,7 +944,7 @@ console.log('\n8. the import cannot wipe the roster, and cannot run unconfirmed'
 console.log('\n9. the headcount preview matches the live rule');
 {
   // The preview counts rows that are not written yet, so it duplicates
-  // HCData.hcServiceCentreHeadcount's rule. Duplicated rules drift, so this
+  // HCData.hcServiceCenterHeadcount's rule. Duplicated rules drift, so this
   // asserts they agree on the shape that matters.
   const orgs = [
     { orgCode: 'FC', parentOrgCode: '', orgLevel: 'AC' },
@@ -963,13 +963,13 @@ console.log('\n9. the headcount preview matches the live rule');
   ];
   const h = R.previewHeadcount(rows, orgs);
 
-  // A DIVISION rolls up to its service centre. Mould sits at FCBBBB, which is
+  // A DIVISION rolls up to its service center. Mould sits at FCBBBB, which is
   // Division 2 of Acquisition Service Center 2.
-  ok('a division-level position rolls up to its service centre',
+  ok('a division-level position rolls up to its service center',
      h['FCB|FCBBB'] && h['FCB|FCBBB'].filled === 3,
      h['FCB|FCBBB']);
   ok('and its vacant seat is counted separately, not dropped',
-     h['FCB|FCBBB'].vacant === 1 && h['FCB|FCBBB'].authorised === 4,
+     h['FCB|FCBBB'].vacant === 1 && h['FCB|FCBBB'].authorized === 4,
      h['FCB|FCBBB']);
 
   // An unlisted code resolves to its nearest listed ancestor by prefix — the
@@ -979,8 +979,8 @@ console.log('\n9. the headcount preview matches the live rule');
      'FCBBBBZZ must count toward FCBBB, not vanish');
 
   // Someone sitting directly at the DAC is NOT discarded. Dropping them would
-  // inflate every service centre's share and the total would still foot.
-  ok('a position above any service centre gets its own bucket',
+  // inflate every service center's share and the total would still foot.
+  ok('a position above any service center gets its own bucket',
      h['FCB|'] && h['FCB|'].filled === 1 &&
      h['FCB|'].orgCode === '', h['FCB|']);
 
@@ -1343,7 +1343,7 @@ console.log('\n16. the preview prints itself to the execution log');
 console.log('\n17. the org hierarchy must exist before the roster is useful');
 {
   // @clolry's first live preview: 1,046 importable positions, 817 filled,
-  // "service centres 0". The roster was correct and the DENOMINATOR did not
+  // "service centers 0". The roster was correct and the DENOMINATOR did not
   // exist — HC_Orgs held only the four seed rows, which carry no Org_Level and
   // no Parent_Org_Code, so the walk to the nearest SERVICE_CENTER found
   // nothing.
@@ -1354,10 +1354,10 @@ console.log('\n17. the org hierarchy must exist before the roster is useful');
   const sync = fs.readFileSync('lets_app/server/40_domain/HCRosterSync.js', 'utf8');
   const diag = fs.readFileSync('lets_app/server/99_triggers/Diagnostics.js', 'utf8');
 
-  ok('the preview counts service centres in HC_Orgs',
+  ok('the preview counts service centers in HC_Orgs',
      /orgLevel \|\| ''\)\.toUpperCase\(\) === 'SERVICE_CENTER'/.test(sync), sync.length);
   ok('and reports the hierarchy state in the payload',
-     /orgHierarchy: \{/.test(sync) && /ready: serviceCentres > 0/.test(sync));
+     /orgHierarchy: \{/.test(sync) && /ready: serviceCenters > 0/.test(sync));
 
   // A ZERO MUST SAY WHICH CAUSE IT IS. "No hierarchy loaded" and "the roster
   // matched none of it" are a missing setup step and a data disagreement
@@ -1374,7 +1374,7 @@ console.log('\n17. the org hierarchy must exist before the roster is useful');
   // fix and the alternative is a roster whose budget output is silently zero.
   ok('runRosterImport refuses when the hierarchy is absent',
      /if \(!oh\.ready\) \{/.test(diag) &&
-     /REFUSING: HC_Orgs has no service-centre hierarchy/.test(diag));
+     /REFUSING: HC_Orgs has no service-center hierarchy/.test(diag));
   ok('and its refusal names hcLoadRealOrgCodes and its file',
      /hcLoadRealOrgCodes\(\) in 40_domain\/HCAdmin\.js/.test(diag));
 
@@ -1391,7 +1391,7 @@ console.log('\n18. clearing the roster is deliberate, guarded and fails closed')
   // @clolry: "Remove all data in the existing HC sheet - I added our team for
   // testing purposes."
   //
-  // Needed because runRosterImport REFUSES removals that are not recognisable
+  // Needed because runRosterImport REFUSES removals that are not recognizable
   // fixtures, and 8 of the 24 rows are hand-entered team members with real
   // @gsa.gov addresses. identifySeedRows is right to decline those — the
   // answer is a deliberate clear, not a weaker refusal.
@@ -1435,7 +1435,7 @@ console.log('\n18. clearing the roster is deliberate, guarded and fails closed')
   ok('every row is printed BEFORE anything is deleted',
      printAt > -1 && clearAt > -1 && printAt < clearAt,
      'counting after the fact is not a safeguard');
-  ok('and each row is labelled fixture or real',
+  ok('and each row is labeled fixture or real',
      /looksLikeFixture \? '\[fixture\] ' : '\[real\]/.test(body),
      'the 16-vs-8 distinction must be visible, not inferred');
 
@@ -1464,8 +1464,8 @@ console.log('\n19. the log limit does not eat the headcount table');
   const diag = fs.readFileSync('lets_app/server/99_triggers/Diagnostics.js', 'utf8');
 
   ok('there is a dedicated headcount printer',
-     /function showServiceCentreHeadcount\(\)/.test(sync));
-  ok('and it is admin-gated', /function showServiceCentreHeadcount\(\) \{\n  var denied = _hcAdminGuard_\(\);/.test(sync));
+     /function showServiceCenterHeadcount\(\)/.test(sync));
+  ok('and it is admin-gated', /function showServiceCenterHeadcount\(\) \{\n  var denied = _hcAdminGuard_\(\);/.test(sync));
 
   // runRosterPreview must NOT dump the whole payload any more.
   ok('runRosterPreview no longer prints the entire payload',
@@ -1475,7 +1475,7 @@ console.log('\n19. the log limit does not eat the headcount table');
      /--- column mapping ---/.test(diag) &&
      /--- would REMOVE \(not test data\) ---/.test(diag));
   ok('and points at the headcount printer',
-     /showServiceCentreHeadcount\(\) in 40_domain\/HCRosterSync\.js/.test(diag));
+     /showServiceCenterHeadcount\(\) in 40_domain\/HCRosterSync\.js/.test(diag));
 
   // THE QUIET FLAG IS A PARAMETER, NOT A FUNCTION SWAP. My first version
   // reassigned _logRosterPreview_ and restored it in a finally block. That
@@ -1498,7 +1498,7 @@ console.log('\n20. one person holding two positions is counted once');
   // the person in a temp promotion so they are listed on the sheet twice
   // (once as temp promotion and once as obligated)."
   //
-  // I had this backwards. I suggested the denominator should be 823 rather
+  // I had this backward. I suggested the denominator should be 823 rather
   // than 817 because the OBLIGATED rows' A/T action codes looked active —
   // true, and irrelevant. An OBLIGATED row is the person's PERMANENT seat held
   // open while they serve a temp promotion, and the same human is also on a
@@ -1542,11 +1542,11 @@ console.log('\n20. one person holding two positions is counted once');
      hc['FCB|FCBAB'].filled === 2 && hc['FCB|FCB0A'].filled === 0,
      'that is where they currently work, so where travel would be approved');
   ok('while the permanent seat still counts as a vacancy there',
-     hc['FCB|FCB0A'].vacant === 1 && hc['FCB|FCB0A'].authorised === 1,
+     hc['FCB|FCB0A'].vacant === 1 && hc['FCB|FCB0A'].authorized === 1,
      hc['FCB|FCB0A']);
 
   // THE CASE THAT WOULD BREAK THE BUDGET. Two FILLED rows for one person
-  // double-counts them in the denominator, shifting every service-centre
+  // double-counts them in the denominator, shifting every service-center
   // share by a fraction nobody would notice.
   const bad = R.parseFeed([H,
     ['90001', '0012345', 'Kelly,Shaun', 'FCBAB', 'Filled'],

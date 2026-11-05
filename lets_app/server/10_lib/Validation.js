@@ -190,7 +190,7 @@ function requireObject(value, fieldName) {
  * WHY BOTH
  * --------
  * The format shortened because Go.gov truncates a trip name at exactly 40
- * characters, and travellers are asked to put the LETS ID at the front of it
+ * characters, and travelers are asked to put the LETS ID at the front of it
  * so expense reports can be matched back. 'REQ-2026-0123 ' consumed 14 of
  * those 40; 'L27-0001 ' consumes 9. See Database.generateRequestId.
  *

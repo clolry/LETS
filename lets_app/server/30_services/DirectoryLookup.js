@@ -13,7 +13,7 @@
  *                       supervisor is admitted by that rule.
  *   Access.js:982       the Division Director lookup matches on email too.
  *   HCPrivacy.js:79     emailAddress is on the reviewer allow-list because
- *                       "a reviewer must be able to contact a traveller".
+ *                       "a reviewer must be able to contact a traveler".
  *
  * @clolry: "remember that we want to setup Google Contacts Directory lookup to
  * find the email address."
@@ -26,7 +26,7 @@
  * Email_Address is how LETS decides who someone IS. Write the wrong address
  * onto a position whose Supervisory_Status is '2' and you have granted that
  * person site access, made them a candidate Division Director for approval
- * routing, and pointed a reviewer's "contact the traveller" link at them. None
+ * routing, and pointed a reviewer's "contact the traveler" link at them. None
  * of that announces itself: the roster looks complete, and the only symptom is
  * that the wrong person can see and approve travel.
  *
@@ -167,7 +167,7 @@ var DirectoryLookup = (function () {
   var QUOTA_WINDOW_MS = 65000;
 
   /**
-   * Generational suffixes, recognised on either side of a comparison.
+   * Generational suffixes, recognized on either side of a comparison.
    *
    * Module scope rather than a local in parseName, because candidateMatches
    * needs the same list and two copies would drift.
@@ -470,7 +470,7 @@ var DirectoryLookup = (function () {
    * is not disagreement.
    *
    * PREFIX IN EITHER DIRECTION. The directory may carry the DAC ('FC') where
-   * the roster carries a service centre ('FCA0B'), or the reverse if the
+   * the roster carries a service center ('FCA0B'), or the reverse if the
    * directory is more specific. Both are agreement; the shorter being a
    * prefix of the longer is what makes them the same branch.
    *
@@ -488,7 +488,7 @@ var DirectoryLookup = (function () {
   /**
    * Does a directory candidate match the roster name?
    *
-   * EXACT ON SURNAME AND FORENAME, after normalising case, punctuation and
+   * EXACT ON SURNAME AND FORENAME, after normalizing case, punctuation and
    * spacing. Deliberately strict:
    *
    *   - no fuzzy or edit-distance matching. 'Jon' and 'John' are different
@@ -567,7 +567,7 @@ var DirectoryLookup = (function () {
     // @clolry's live sweep showed the asymmetry directly: 'Kirkland III,Ozel'
     // resolved and 'Tekus Jr,John J' did not. Both are suffixed; the
     // difference is that Kirkland's directory entry omits the III and
-    // Tekus's includes the Jr. So the behaviour depended on whether the
+    // Tekus's includes the Jr. So the behavior depended on whether the
     // directory happened to carry the suffix, which is not a rule — it is a
     // coin toss across an unknown share of 1,046 positions.
     //
@@ -775,7 +775,7 @@ var DirectoryLookup = (function () {
           method: 'compound-surname',
           // NOT 'exact'. The surnames genuinely differ, and a later reader
           // asking "why does Andrea Heller have Andrea Azarcon's address"
-          // deserves to find this labelled as an inference rather than a
+          // deserves to find this labeled as an inference rather than a
           // certainty.
           confidence: 'inferred',
           returnedCount: list.length,
@@ -1380,13 +1380,13 @@ var DirectoryLookup = (function () {
   }
 
   /**
-   * Summarises a batch for a human.
+   * Summarizes a batch for a human.
    *
    * The counts that matter are the REFUSALS by reason, not the successes. An
    * admin needs to know how many positions still have no address and why,
    * because those are the ones that still cannot sign in.
    */
-  function summarise(batch) {
+  function summarize(batch) {
     var byReason = { ambiguous: 0, notFound: 0, noMatch: 0, unparseable: 0, error: 0 };
     (batch.refused || []).forEach(function (r) {
       if (r.method === 'ambiguous') byReason.ambiguous++;
@@ -1589,7 +1589,7 @@ var DirectoryLookup = (function () {
       }
       // 'email-hint' means only that the mailbox names the right family, which
       // every same-surname colleague satisfies — @clolry's output showed
-      // eight Halls all labelled email-hint, which told him nothing and made
+      // eight Halls all labeled email-hint, which told him nothing and made
       // the list look more informative than it was.
       //
       // So it is only a REASON when nothing better applies, and it never
@@ -1626,7 +1626,7 @@ var DirectoryLookup = (function () {
     // A LIST WITH NO DISTINGUISHING SIGNAL IS WORSE THAN NO LIST.
     //
     // @clolry's output for 'Hall,Joseph C' offered eight Halls — Adam, Brian,
-    // Christopher, Dan, David, Deanna, Ellis, Emma — every one labelled
+    // Christopher, Dan, David, Deanna, Ellis, Emma — every one labeled
     // 'email-hint', which is true of anyone named Hall and therefore says
     // nothing. The first was pre-filled into the accept command, so the
     // path of least resistance was to assign Adam Hall's address to Joseph
@@ -1676,7 +1676,7 @@ var DirectoryLookup = (function () {
     countNeedingEmail: countNeedingEmail,
     resolveStartIndex: resolveStartIndex,
     sweepOutcome: sweepOutcome,
-    summarise: summarise
+    summarize: summarize
   };
 })();
 

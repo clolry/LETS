@@ -61,7 +61,7 @@ const SHEET_NAMES = {
   //
   // So a resolved address is NOT stored only in HC_Positions. It is stored
   // here, keyed on Position_Number, and re-applied on every import. The
-  // roster is the feed's to overwrite; this tab is the organisation's.
+  // roster is the feed's to overwrite; this tab is the organization's.
   //
   // WHY NOT A COLUMN ON HC_Positions. Because the import clears the sheet.
   // Any "do not overwrite this column" rule would have to be enforced inside
@@ -92,12 +92,12 @@ const SHEET_NAMES = {
   // baselines in BudgetConfig.js, which needed a code deploy to change.
   BUDGET_ALLOCATIONS: 'Budget_Allocations',
 
-  // The event CATALOGUE: one row per event occurrence a traveller can pick
+  // The event CATALOG: one row per event occurrence a traveler can pick
   // from. Distinct from Historical_Events, which records what already
   // happened — see the schema comment.
   EVENTS:             'Events',
 
-  // Traveller-proposed events awaiting a coordinator. @clolry: "We need a way
+  // Traveler-proposed events awaiting a coordinator. @clolry: "We need a way
   // for a traveler to define an 'other' and then let the back-end coordinator
   // add that event."
   EVENT_PROPOSALS:    'Event_Proposals',
@@ -197,10 +197,10 @@ const TRAVEL_SHEET_SCHEMAS = {
     // request form collected neither correctly.
     'Primary_Justification',
 
-    // Distinct HR org codes across this request's travellers, comma-separated.
-    // Denormalized deliberately: budget attribution is PER TRAVELLER (a
+    // Distinct HR org codes across this request's travelers, comma-separated.
+    // Denormalized deliberately: budget attribution is PER TRAVELER (a
     // conference can draw from FCA, FCB and FCC at once), and routing needs to
-    // know which DACs must approve without re-reading every traveller row.
+    // know which DACs must approve without re-reading every traveler row.
     'Traveler_Org_Codes',
 
     // ======================================================================
@@ -208,7 +208,7 @@ const TRAVEL_SHEET_SCHEMAS = {
     // ======================================================================
     //
     // APPENDED, never inserted. Every reader in LETS resolves columns by
-    // header NAME, but the eighteen positional readers catalogued in
+    // header NAME, but the eighteen positional readers cataloged in
     // DATA_DICTIONARY §3.9 index from the LEFT — so a column added at the end
     // is invisible to them, while one inserted mid-schema would misfile
     // everything after it.
@@ -244,21 +244,21 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Expense_Report_End_Date',
 
     // ======================================================================
-    // EVENT CATALOGUE LINK — appended, same positional reasoning as above
+    // EVENT CATALOG LINK — appended, same positional reasoning as above
     // ======================================================================
     //
-    // Set when the traveller picked an event from the catalogue, which
+    // Set when the traveler picked an event from the catalog, which
     // pre-fills dates, location and purpose. Blank for ad-hoc travel, which
     // is most of it.
     //
-    // Event_Proposal_ID is set instead when the traveller chose "Other" and
+    // Event_Proposal_ID is set instead when the traveler chose "Other" and
     // described an event that does not exist yet. The request is then
     // SUBMITTABLE but unlinked, and a coordinator resolves the proposal
     // later — @clolry: the coordinator "add[s] that event and then
     // associate[s] the request with that new event."
     //
     // Blocking submission until an event exists would be the obvious
-    // alternative and would be wrong: a traveller should not wait on a
+    // alternative and would be wrong: a traveler should not wait on a
     // coordinator to file a request with a deadline.
     'Event_ID',
     'Event_Proposal_ID',
@@ -274,7 +274,7 @@ const TRAVEL_SHEET_SCHEMAS = {
     //
     // WHY A KEY COLUMN AND NOT A CONTENT HASH
     // ---------------------------------------
-    // A recurring sync has to recognise the row it imported yesterday, or it
+    // A recurring sync has to recognize the row it imported yesterday, or it
     // writes the same 30 trips every morning. The log's own Document Number
     // is empty on 29 of 30 rows, so it cannot be the key.
     //
@@ -392,10 +392,10 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Airfare_Fare_Basis',      // YCA
     'Airfare_Segments',        // JSON: [{from,to,ycaFare,airline,awardedService}]
 
-    // Budget attribution. Each traveller is charged to THEIR OWN org, not the
+    // Budget attribution. Each traveler is charged to THEIR OWN org, not the
     // request's owning office: a consolidated conference request can include
     // people from FCA, FCB and FCC, and each DAC should see only their own
-    // share. Org_Code comes from the traveller's HC position; Office_Code is
+    // share. Org_Code comes from the traveler's HC position; Office_Code is
     // the BudgetConfig.js key it maps to via HC_Orgs.
     'Budget_Org_Code',         // FC | FCA | FCB | FCC
     'Budget_Office_Code'       // FO | OMD | IDV | CM
@@ -599,7 +599,7 @@ const TRAVEL_SHEET_SCHEMAS = {
     // supervisory person whose own Dept ID is one of those 22 codes, which is
     // how the routing reviewer should be found. Four call sites currently
     // match a title containing 'sector director', which does not exist in
-    // this organisation — so all four find nobody.
+    // this organization — so all four find nobody.
     'Org_Level',
     'Office_Code',                 // BudgetConfig.js key. May be blank
     'Business_Unit',
@@ -760,7 +760,7 @@ const TRAVEL_SHEET_SCHEMAS = {
   // The obvious implementation is to grant the delegate the principal's role
   // in Travel_User_Roles. That would work and would be wrong in three ways:
   //
-  //   1. It is indistinguishable from a real grant afterwards. Six months on,
+  //   1. It is indistinguishable from a real grant afterward. Six months on,
   //      nobody can tell whether Bob was a BU reviewer or was covering for
   //      Alice for a fortnight.
   //   2. It has no end date. A role row granted for two weeks of leave stays
@@ -802,10 +802,10 @@ const TRAVEL_SHEET_SCHEMAS = {
   ],
 
   // ==========================================================================
-  // THE EVENT CATALOGUE
+  // THE EVENT CATALOG
   // ==========================================================================
   //
-  // One row per event OCCURRENCE a traveller can select when raising a
+  // One row per event OCCURRENCE a traveler can select when raising a
   // request. @clolry: "perhaps we build a way for the admin to define events
   // on the back end first and then people select the event from a list - it
   // could pre-fill dates, location, etc."
@@ -822,12 +822,12 @@ const TRAVEL_SHEET_SCHEMAS = {
   // grouping cannot promise.
   //
   // The two are linked by Historical_Event_Name so the planning view can show
-  // "we sent 25 last year" against a catalogue entry.
+  // "we sent 25 last year" against a catalog entry.
   //
   // WHY ONE ROW PER OCCURRENCE, NOT PER EVENT
   // -----------------------------------------
   // "NCMA World Congress" is a series; "NCMA World Congress, July 2027" is
-  // the thing a traveller attends and a DAC reserves money for. A series-level
+  // the thing a traveler attends and a DAC reserves money for. A series-level
   // row would have to carry a list of dates, and every consumer would have to
   // pick the right one. Series_Key groups the occurrences instead.
   Events: [
@@ -853,7 +853,7 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Expected_Attendees',
     'Status',                 // PROPOSED | OPEN | CLOSED | CANCELLED
     'Historical_Event_Name',  // links to Historical_Events for prior-year data
-    'Proposed_By',            // set when promoted from a traveller proposal
+    'Proposed_By',            // set when promoted from a traveler proposal
     'Proposal_ID',
     'Notes',
     'Is_Active',
@@ -864,7 +864,7 @@ const TRAVEL_SHEET_SCHEMAS = {
   ],
 
   // ==========================================================================
-  // TRAVELLER-PROPOSED EVENTS
+  // TRAVELER-PROPOSED EVENTS
   // ==========================================================================
   //
   // @clolry: "We need a way for a traveler to define an 'other' and then let
@@ -875,12 +875,12 @@ const TRAVEL_SHEET_SCHEMAS = {
   // WHY A SEPARATE TAB RATHER THAN A 'PROPOSED' STATUS ON Events
   // -----------------------------------------------------------
   // Events has a Status column including PROPOSED, so this looks redundant.
-  // It is not, for one reason: a traveller must not be able to write to the
-  // catalogue that every other traveller picks from.
+  // It is not, for one reason: a traveler must not be able to write to the
+  // catalog that every other traveler picks from.
   //
   // If proposals landed in Events as PROPOSED rows, every list query would
   // have to remember to filter them out, and one forgotten filter would show
-  // unvetted traveller text — including typos and duplicates — in the picker.
+  // unvetted traveler text — including typos and duplicates — in the picker.
   // A separate tab means the picker CANNOT see a proposal, rather than
   // relying on it being filtered.
   //
@@ -888,12 +888,12 @@ const TRAVEL_SHEET_SCHEMAS = {
   // links the originating request to it.
   Event_Proposals: [
     'Proposal_ID',            // PK
-    'Proposed_Event_Name',    // traveller's free text, verbatim
+    'Proposed_Event_Name',    // traveler's free text, verbatim
     'Proposed_Start_Date',
     'Proposed_End_Date',
-    'Proposed_Location',      // free text; a traveller may not know the venue
+    'Proposed_Location',      // free text; a traveler may not know the venue
     'Proposed_Purpose',
-    'Notes',                  // the traveller's own justification
+    'Notes',                  // the traveler's own justification
     'Request_ID',             // the request that prompted it. Linked to the
                               // created event on promotion
     'Proposed_By',
@@ -918,8 +918,8 @@ const TRAVEL_SHEET_SCHEMAS = {
   // WHY THIS IS NOT JUST COLUMNS ON Requests
   // ----------------------------------------
   // Measured against @clolry's real exports: only 45% of expense reports can
-  // be confidently matched to a request by traveller and title. 32.6% belong
-  // to travellers with no request in the export at all, mostly because the
+  // be confidently matched to a request by traveler and title. 32.6% belong
+  // to travelers with no request in the export at all, mostly because the
   // request predates the window.
   //
   // An unmatched expense report is still REAL MONEY that GSA paid. Storing
@@ -940,7 +940,7 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Employee_Name_Normalized', // 'FIRST LAST' uppercased. Stored rather than
                               // derived at query time: 71 of 182 sample rows
                               // are ALL CAPS and the rest mixed, so the
-                              // normalisation is not obvious from the raw value
+                              // normalization is not obvious from the raw value
     'Gogov_Employee_ID',      // e.g. 76E00049503. Does NOT match LETS
                               // Employee_ID (0010001) — kept for traceability,
                               // not as a join key
@@ -948,7 +948,7 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Amount_Approved',        // THE RECONCILIATION FIGURE
     'Disallowed_Amount',      // Report_Total - Amount_Approved. Stored because
                               // it is the number nobody thinks to ask for
-                              // until a traveller disputes a voucher
+                              // until a traveler disputes a voucher
     'Report_End_Date',        // text YYYY-MM-DD in the export, not a serial
     'Submit_Date',
     'Fiscal_Year',            // from Report_End_Date. One monthly export spans
@@ -1040,14 +1040,14 @@ const TRAVEL_SHEET_SCHEMAS = {
   // event-specific, DAC-owned, and expire.
   Event_Set_Asides: [
     'Set_Aside_ID',           // PK
-    // EITHER a catalogue event, or a free-text name.
+    // EITHER a catalog event, or a free-text name.
     //
     // Event_ID is the better path: it pins the reservation to a real
     // occurrence with known dates, and a request that selects that event
     // draws down against it automatically.
     //
     // Event_Name survives because a DAC often knows they want to reserve for
-    // a conference before anyone has catalogued it. Requiring a catalogue
+    // a conference before anyone has cataloged it. Requiring a catalog
     // entry first would mean the reservation could not be made at the moment
     // the DAC is doing their annual planning, which is the moment it matters.
     'Event_ID',

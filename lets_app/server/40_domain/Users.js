@@ -20,10 +20,10 @@
 const TRAVEL_ROLE_TYPES = [
   'admin',
   // Workflow authority without money or privilege: reassign a reviewer,
-  // manage the event catalogue, resolve traveller event proposals. Cannot set
+  // manage the event catalog, resolve traveler event proposals. Cannot set
   // budgets, reserve set-asides, edit the HR roster or grant roles.
   //
-  // THIS LIST IS THE SERVER'S VALIDATION. Adding the role to the UI catalogue
+  // THIS LIST IS THE SERVER'S VALIDATION. Adding the role to the UI catalog
   // alone would let an admin pick 'coordinator' from the dropdown and get
   // "Invalid roleType" on save — a failure that looks like a bug rather than
   // a missing entry. See 30_services/Access.js isTravelCoordinator.

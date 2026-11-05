@@ -10,7 +10,7 @@
  *                       user against Email_Address
  *   Access.js:982       the Division Director lookup matches on email
  *   HCPrivacy.js:79     on the reviewer allow-list, so a reviewer can contact
- *                       a traveller
+ *                       a traveler
  *
  * So a WRONG email is far worse than no email, and the difference is a
  * security boundary. Write the wrong address onto a position whose
@@ -19,7 +19,7 @@
  * them — with no symptom other than the wrong person approving travel.
  *
  * Name matching is inherently ambiguous: GSA has more than one Michael Smith.
- * Every section below exists to pin the refusal behaviour, because the
+ * Every section below exists to pin the refusal behavior, because the
  * dangerous failure here is a confident guess, not a gap.
  *
  * §6 is the one that matters most: three independent negative controls that
@@ -304,7 +304,7 @@ console.log('\n5b. the summary leads with the refusals');
       { method: 'none', candidateCount: 0, reason: 'No directory entry found' }
     ]
   };
-  const s = D.summarise(batch);
+  const s = D.summarize(batch);
   ok('resolutions are counted by method',
      s.byMethod['unique-name'] === 2 && s.byMethod['middle-name'] === 1,
      s.byMethod);
@@ -423,7 +423,7 @@ console.log('\n7. the network layer is guarded and separated');
      'the search function is injected so every decision is testable');
 
   // People, not AdminDirectory: admin.directory.user.readonly needs a
-  // Workspace super admin to authorise, and this app runs as USER_ACCESSING.
+  // Workspace super admin to authorize, and this app runs as USER_ACCESSING.
   //
   // COMMENTS ARE STRIPPED FIRST. DirectoryResolve's own header explains why
   // AdminDirectory was rejected, so a naive grep for the string reports a
@@ -715,7 +715,7 @@ console.log('\n11. the org code is a legitimate tie-break, narrowly used');
   // The diagnostic falsified it: the directory suffix is 'FC', which is the
   // same code space as the roster's Dept ID (Org) — 'FCA0B' is FC's
   // descendant. Not a correlation; the same identifier.
-  ok('a roster service centre agrees with its DAC suffix',
+  ok('a roster service center agrees with its DAC suffix',
      D.candidateOrgMatches('FCA0B', 'FC') === true);
   ok('and the reverse direction agrees too',
      D.candidateOrgMatches('FC', 'FCA0B') === true,
@@ -815,11 +815,11 @@ console.log('\n12. the refusal reports what the directory actually returned');
 }
 
 // ---------------------------------------------------------------------------
-console.log('\n13. the deployed build can be identified from its behaviour');
+console.log('\n13. the deployed build can be identified from its behavior');
 {
   // @clolry has now run previewDirectoryEmails three times and received
   // byte-identical output across two commits that each changed the matching
-  // logic. Identical output after a behavioural change means the code under
+  // logic. Identical output after a behavioral change means the code under
   // test did not change — but nothing in the result distinguishes "the fix
   // did not work" from "the fix is not running".
   //
@@ -833,8 +833,8 @@ console.log('\n13. the deployed build can be identified from its behaviour');
   const diag = resolve.slice(resolve.indexOf('function diagnoseDirectoryBuild'),
                              resolve.indexOf('function diagnoseDirectoryMatch'));
 
-  // IT MUST ASSERT BEHAVIOUR, NOT A VERSION STRING. A string can be bumped
-  // in a commit whose behaviour never ships; running the real matcher against
+  // IT MUST ASSERT BEHAVIOR, NOT A VERSION STRING. A string can be bumped
+  // in a commit whose behavior never ships; running the real matcher against
   // the real candidate shape cannot be.
   ok('it runs the matcher rather than reading a version constant',
      /candidateMatches\(parsed, live\)/.test(diag) &&
@@ -1103,10 +1103,10 @@ console.log('\n16. the mailbox confirms the legal name where the display name do
 }
 
 // ---------------------------------------------------------------------------
-console.log('\n17. an indistinguishable list is labelled, not ranked');
+console.log('\n17. an indistinguishable list is labeled, not ranked');
 {
   // @clolry's output for 'Hall,Joseph C' offered eight Halls — Adam, Brian,
-  // Christopher, Dan, David, Deanna, Ellis, Emma — every one labelled
+  // Christopher, Dan, David, Deanna, Ellis, Emma — every one labeled
   // 'email-hint', which is true of anyone named Hall and therefore says
   // nothing. Adam sorted first and was pre-filled into the accept command, so
   // the path of least resistance was to give Joseph Hall someone else's
@@ -1207,7 +1207,7 @@ console.log('\n18. a compound surname is the same person');
 
   // CONFIDENCE IS 'inferred', NOT 'exact'. The surnames genuinely differ, and
   // a later reader asking "why does Andrea Heller have Andrea Azarcon's
-  // address" deserves to find an inference labelled as one.
+  // address" deserves to find an inference labeled as one.
   ok('and its confidence is inferred, not exact',
      picked.confidence === 'inferred', picked.confidence);
 
@@ -1310,7 +1310,7 @@ console.log('\n19. a constructed address is VERIFIED, never assumed');
     (parsed) => ({ email: D.conventionalAddress(parsed), verified: true }));
   ok('a verified convention resolves',
      verified.email === 'keonia.cobbins@gsa.gov', verified);
-  ok('and is labelled verified-convention, not exact',
+  ok('and is labeled verified-convention, not exact',
      verified.method === 'verified-convention' &&
      verified.confidence === 'verified', verified);
 
@@ -1345,7 +1345,7 @@ console.log('\n19. a constructed address is VERIFIED, never assumed');
   ok('an ambiguous pair is NOT overridden either',
      twoNamesakes.email === '', twoNamesakes);
 
-  // WITHOUT A VERIFIER, BEHAVIOUR IS UNCHANGED. The verifier is optional so
+  // WITHOUT A VERIFIER, BEHAVIOR IS UNCHANGED. The verifier is optional so
   // every other test in this file stays free of the network.
   const noVerifier = D.resolveOne(
     { positionNumber: '5', employeeName: 'Cobbins,Keonia R', orgCode: 'FCA0EA' },
@@ -1398,7 +1398,7 @@ console.log('\n21. two certain resolutions must not collide');
   // EACH RESOLUTION IS INDIVIDUALLY CERTAIN AND A COLLISION IS INVISIBLE TO
   // BOTH. Access.js:435 matches the signed-in user against Email_Address and
   // takes the first hit, so two positions sharing an address makes
-  // authorisation depend on row order.
+  // authorization depend on row order.
   //
   // Reachable on @clolry's data: the directory holds eight Halls and
   // 'Hall,Adam C' resolved to adam.hall@gsa.gov. Another Hall resolving to

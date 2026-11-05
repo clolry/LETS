@@ -61,7 +61,7 @@
  * None of the seeded emails are real, so no real person gains access from
  * this data. But the mechanism is now active: a future real roster grants
  * LETS access to every supervisor in it, without any entry in
- * Travel_User_Roles and without an audit record. That is the behaviour
+ * Travel_User_Roles and without an audit record. That is the behavior
  * docs/GAP_REGISTER.md G-008 describes. It is by design in the inherited
  * code; it is worth knowing it switched on.
  *
@@ -150,7 +150,7 @@ var HC_SEED_ORGS = [
 //   DIVISION         6 chars
 //   BRANCH           7 chars
 //
-// TWO SERVICE CENTRES SHARE A NAME, legitimately: Acquisition Service Center
+// TWO SERVICE CENTERS SHARE A NAME, legitimately: Acquisition Service Center
 // 2 exists under both Office of MAS (FCBAC) and Office of Non-MAS (FCBBB).
 // @clolry confirmed they are distinct. The code is the key; a display name
 // should prefix the parent office or a dropdown shows two identical entries.
@@ -168,7 +168,7 @@ var HC_SEED_ORGS = [
 // officeCode and businessUnit are DELIBERATELY blank on all 133 sub-orgs.
 // Only FC/FCA/FCB/FCC are budget offices in BudgetConfig.js, and
 // HCData.inheritOrgField walks up the prefix chain to find them. Copying OMD
-// onto all 22 FCA descendants would mean a reorganisation had to edit 22 rows
+// onto all 22 FCA descendants would mean a reorganization had to edit 22 rows
 // instead of one.
 //
 // To move a service center to a different DAC, fill officeCode and
@@ -357,21 +357,21 @@ function hcRealOrgRecords() {
 }
 
 /**
- * Service centre org codes.
+ * Service center org codes.
  *
  * @clolry: "We don't call them Sector Directors, we call them Service Center
  * Directors - I'm not precisely sure how to tell you how to identify what a
  * service center is or who the director is."
  *
- * The answer was in the org list: a service centre is a row whose level is
+ * The answer was in the org list: a service center is a row whose level is
  * SERVICE_CENTER, and there are 22. The DIRECTOR is then the supervisory
  * person whose own Dept ID is exactly that code — somebody in FCA0BAA belongs
  * to a branch, while somebody sitting directly at FCA0B is at the service
- * centre level.
+ * center level.
  *
  * THIS MATTERS BECAUSE FOUR CALL SITES LOOK FOR THE WRONG THING. They match a
  * title containing 'sector director', which does not exist in this
- * organisation — so all four find nobody, including the one that resolves the
+ * organization — so all four find nobody, including the one that resolves the
  * routing reviewer. That would have failed silently the moment the real
  * roster loaded.
  *
@@ -577,7 +577,7 @@ var HC_SEED_POSITIONS = [
     employeeId: '', name: '',
     email: '',
     orgCode: 'FCB', officeTitle: 'Deputy Division Director',
-    // VACANT, and deliberately a GS-15. Two behaviours depend on it:
+    // VACANT, and deliberately a GS-15. Two behaviors depend on it:
     //   1. hcFindDivisionDirector must SKIP it — an empty seat cannot approve
     //      travel (Request.js:137 requires occupancyStatus !== 'VACANT').
     //   2. hcGetOrgChartTree must OMIT it — a chart reachable by any domain
@@ -1077,7 +1077,7 @@ function validateHCData() {
  * Second, clearing and importing are different decisions with different
  * evidence. Mixing them would mean the only way to discard test data is to run
  * a 1,046-row import, and the only way to see what was discarded is to read
- * the import's output afterwards.
+ * the import's output afterward.
  *
  * WHY HC_Orgs IS LEFT ALONE
  * -------------------------

@@ -3230,7 +3230,7 @@
     const newStage = this._getDisclosureStage(traveler);
     const currentStage = parseInt(card.dataset.disclosureStage) || 1;
 
-    // Only advance stages, don't go backwards (user can still edit previous sections)
+    // Only advance stages, don't go backward (user can still edit previous sections)
     if (newStage <= currentStage) return;
 
     card.dataset.disclosureStage = newStage;

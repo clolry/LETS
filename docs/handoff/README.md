@@ -51,7 +51,7 @@ outstanding work was mapped against the files each piece touches:
 | B | Fix the four `sector director` call sites | `Access.js`, `Admin_Dashboard.js`, `Users.js`, `HCData.js` |
 | C | Reconciliation UI | `GogovSync.js`, new reconcile controller |
 | D | Request-report importer | `BudgetBackfill.js`, `GogovSync.js` |
-| E | Per-capita service-centre allocations | `BudgetDashboard.js`, budget page |
+| E | Per-capita service-center allocations | `BudgetDashboard.js`, budget page |
 | F | M&IE deduction from `Meals_Provided` | `travelCostService.html`, `travelPerDiem.html` |
 | G | Portfolio partitioning (FAS-wide) | ~everything: 70+ references across 18 files |
 
@@ -136,7 +136,7 @@ Rule 5.
 
 **Do not run `clasp push` locally, and never from the repository root.** CI
 deploys. A root push carries 228 files into an undocumented Apps Script
-project, including another organisation's application — **G-048**. Playbook
+project, including another organization's application — **G-048**. Playbook
 Rule 1.
 
 **If you add a Google API call, read Playbook §7.5.1 first.** The manifest
@@ -161,7 +161,7 @@ been dead for exactly this reason.
 ## Reference data
 
 Both tasks benefit from @clolry's Go.gov exports, which are **gitignored and
-local to his machine**: ~400 real GSA traveller names and 391 employee IDs
+local to his machine**: ~400 real GSA traveler names and 391 employee IDs
 each. **G-056** already flags six real employees' addresses in test fixtures
 as a problem worth fixing rather than repeating.
 

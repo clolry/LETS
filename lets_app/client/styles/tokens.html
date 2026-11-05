@@ -27,14 +27,14 @@
               drops below threshold.
 
   WCAG-AA notes:
-    --color-text-primary (#424143 AAS dark grey, 8.21:1 on white — AAA)
+    --color-text-primary (#424143 AAS dark gray, 8.21:1 on white — AAA)
     --color-text-secondary (#6B7280, 4.83:1 on white — AA)
     --color-text-muted (#9CA3AF, 2.85:1 — large text / UI only, NEVER body)
-  Per BRAND.md: --aas-grey (#BBBDBF) must NEVER be used for text on white.
+  Per BRAND.md: --aas-gray (#BBBDBF) must NEVER be used for text on white.
 
   Chunk 16 history (2026-05-21):
     16.1 — Canonical --aas-* palette added; brand-primary → AAS Blue;
-           text-primary → AAS Dark Grey; --font-sans → Calibri stack.
+           text-primary → AAS Dark Gray; --font-sans → Calibri stack.
     16.2 — Three-token-system consolidation. travelBaseStyles.html and
            travelReviewStyles.html :root blocks deleted; their tokens are
            now Layer 5 aliases here. Resolves OPEN_QUESTIONS Q23.
@@ -51,9 +51,9 @@
     --aas-flex-green:            #286D3B;  /* AAS FLEX service delivery model */
     --aas-innovate-burgundy:     #522032;  /* AAS INNOVATE service delivery model */
     --aas-orange:                #CF4817;  /* Accent / highlight */
-    --aas-dark-grey:             #424143;  /* Default body text color on white (AAA) */
-    --aas-grey:                  #BBBDBF;  /* Secondary UI elements — NEVER for text on white */
-    --aas-light-grey:            #F2F2F2;  /* Background fills */
+    --aas-dark-gray:             #424143;  /* Default body text color on white (AAA) */
+    --aas-gray:                  #BBBDBF;  /* Secondary UI elements — NEVER for text on white */
+    --aas-light-gray:            #F2F2F2;  /* Background fills */
 
     /* Out-of-brand-guide AAS palette extras (used in the codebase but not
        documented in BRAND.md). Kept for back-compat; flag for review during
@@ -85,18 +85,18 @@
     --color-brand-primary:       var(--aas-blue);
     --color-brand-dark:          var(--aas-blue-dark);
 
-    /* Text — default body text uses AAS dark grey per BRAND.md */
-    --color-text-primary:        var(--aas-dark-grey);  /* 8.21:1 on white — AAA */
+    /* Text — default body text uses AAS dark gray per BRAND.md */
+    --color-text-primary:        var(--aas-dark-gray);  /* 8.21:1 on white — AAA */
     --color-text-secondary:      #6B7280;               /* 4.83:1 on white — AA */
     --color-text-muted:          #9CA3AF;               /* 2.85:1 — UI / large text only */
 
     /* Surfaces + borders */
     --color-surface:             #ffffff;
     --color-surface-alt:         #f9fafb;
-    --color-surface-tint:        var(--aas-light-grey); /* Subtle fill */
+    --color-surface-tint:        var(--aas-light-gray); /* Subtle fill */
     --color-border:              #e5e7eb;
     --color-border-strong:       #d1d5db;
-    --color-border-muted:        var(--aas-grey);       /* Quiet border (NOT text) */
+    --color-border-muted:        var(--aas-gray);       /* Quiet border (NOT text) */
 
     /* Focus ring (Section 508 baseline) */
     --color-focus-ring:          var(--aas-blue);
@@ -194,8 +194,8 @@
        or holds the original value where the token wasn't already canonical.
        ======================================================================== */
     /* --brand-* (from travelBaseStyles "AAS BRAND COLORS - Single Source of Truth") */
-    --brand-dark:                var(--aas-dark-grey);
-    --brand-darkGrey:            var(--aas-dark-grey);
+    --brand-dark:                var(--aas-dark-gray);
+    --brand-darkGray:            var(--aas-dark-gray);
     --brand-blue:                var(--aas-blue);
     --brand-blue-dark:           var(--aas-blue-dark);
     --brand-gold:                var(--aas-gold);
@@ -204,8 +204,8 @@
     --brand-green:               var(--aas-flex-green);
     --brand-red:                 var(--aas-innovate-burgundy);
     --brand-lightBlue:           var(--aas-fedsim-blue);
-    --brand-lightGrey:           var(--aas-light-grey);
-    --brand-mediumGrey:          var(--aas-grey);
+    --brand-lightGray:           var(--aas-light-gray);
+    --brand-mediumGray:          var(--aas-gray);
     --brand-bg-light:            #FFFFFF;
 
     /* --color-primary/* — semantic primary used widely; aliased to brand chain */

@@ -75,7 +75,7 @@ Backfilled requests carry `Primary_Justification` prefixed `BACKFILL:` and an
 `BACKFILL_IMPORT` and a comment that says outright that no review happened.
 
 A figure that entered the budget without passing through review must be
-identifiable afterwards, or the audit trail quietly implies an approval that
+identifiable afterward, or the audit trail quietly implies an approval that
 never happened. The log is what someone reads to ask "who approved this", and
 the honest answer is nobody.
 
@@ -192,7 +192,7 @@ user pick the status would let the same trip land in either bucket depending
 on which they chose, and both would look correct.
 
 A trip whose end date has passed is `COMPLETED`. One still ahead is
-`APPROVED_GOGOV` — approved and booked, not yet travelled, which is exactly
+`APPROVED_GOGOV` — approved and booked, not yet traveled, which is exactly
 what @clolry's "planned" travel is.
 
 ### 5.2 The fiscal year, and the off-by-one-day that matters
@@ -232,8 +232,8 @@ them at once rather than one per round trip. Current rules, each with a reason:
 | office must be one of `FO`, `OMD`, `IDV`, `CM` | it is the budget the cost counts against |
 | cost required, **zero allowed**, not blank | zero-cost travel is real — local and no-cost conferences appear throughout @clolry's FAS tracker data — but it must be *typed*, not reached by leaving the field empty |
 | cost not negative, not over $1,000,000 | typo detection |
-| traveller count ≥ 1, ≤ 500 | typo detection |
-| names optional, but if given the count must agree | @clolry is reconciling a quarter from records that may hold only a headcount; but a request and its traveller rows disagreeing means no report reconciles |
+| traveler count ≥ 1, ≤ 500 | typo detection |
+| names optional, but if given the count must agree | @clolry is reconciling a quarter from records that may hold only a headcount; but a request and its traveler rows disagreeing means no report reconciles |
 
 ### 5.4 Duplicates are a warning, never a block
 
@@ -300,10 +300,10 @@ Reports group by this, and stamping it `now` would put October travel in
 whatever month the import ran. There is a negative control for exactly this
 (`test_budget_backfill.js` §9).
 
-### 5.8 Per-traveller costs are an even split, and say so
+### 5.8 Per-traveler costs are an even split, and say so
 
-When names are given, each traveller row gets `total / names.length` and a
-`Role_Justification` reading *"Backfilled; per-traveller costs are an even
+When names are given, each traveler row gets `total / names.length` and a
+`Role_Justification` reading *"Backfilled; per-traveler costs are an even
 split of the trip total."*
 
 The real split is not known. Stating the assumption in the record is the
@@ -438,7 +438,7 @@ The instruction is real and there is a CI guard enforcing it. The citation
 points at nothing. The conventions actually live in
 `docs/ENHANCEMENT_PLAYBOOK.md` §7.1–7.2.
 
-Not a defect in behaviour, but it will cost whoever follows the reference the
+Not a defect in behavior, but it will cost whoever follows the reference the
 same time it cost me.
 
 ---
@@ -467,7 +467,7 @@ across the three DACs by their proportional shares and the three parts sum to
 the full $20,000.
 
 `discretionaryBase` is baseline minus set-asides. `available` is
-`discretionaryBase − committed − completed`. Utilisation is a percentage of
+`discretionaryBase − committed − completed`. Utilization is a percentage of
 the discretionary base, not of the baseline.
 
 ### What the statuses mean to a budget
@@ -475,7 +475,7 @@ the discretionary base, not of the baseline.
 | status group | meaning |
 |---|---|
 | `PENDING` + `NEEDS_INFO` | **committed.** Not spent, but promised — a DAC that treats it as available will overspend |
-| `APPROVED_GOGOV` | **committed.** Approved and booked, not yet travelled |
+| `APPROVED_GOGOV` | **committed.** Approved and booked, not yet traveled |
 | `COMPLETED` | **actual.** Travel happened |
 | `DENIED` / `CANCELLED` | **neither.** The money was never spent |
 

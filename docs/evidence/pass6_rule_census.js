@@ -12,14 +12,14 @@
  * A business-rules document makes two kinds of claim, and they need
  * different evidence:
  *
- *   "the system does X"        — a claim about behaviour. Best shown by
+ *   "the system does X"        — a claim about behavior. Best shown by
  *                                running the logic and printing the result.
  *   "the system claims X but   — a claim about a gap. Best shown by
  *    does not do X"              locating the claim and the absence.
  *
  * This script does both. Section [1] extracts the state machine from source
  * rather than trusting a transcription, because a hand-copied transition
- * table is exactly the kind of artefact that drifts. Sections [4] and [5]
+ * table is exactly the kind of artifact that drifts. Sections [4] and [5]
  * EXECUTE decision logic lifted verbatim from the application, so the
  * documented outcome is observed rather than predicted.
  *
@@ -324,8 +324,8 @@ console.log('    Review_Update.js identity comparisons  ' +
 // ---------------------------------------------------------------------------
 
 console.log('\n[4] THE FAIL-OPEN TEST — the client-paid override');
-console.log('  On oso_approve the handler re-reads traveller rows and, if no');
-console.log('  traveller is overhead-funded, rewrites the outcome to');
+console.log('  On oso_approve the handler re-reads traveler rows and, if no');
+console.log('  traveler is overhead-funded, rewrites the outcome to');
 console.log('  APPROVED_GOGOV, skipping FAS review entirely.');
 console.log('');
 console.log('  So this one predicate decides whether a request receives FAS');
@@ -353,9 +353,9 @@ function _hasOverheadFromRows(rows, isClientPaidCol) {
 
 // confirm the copy still matches the source, character for character
 const srcFn = /function _hasOverheadFromRows\(rows, isClientPaidCol\) \{[\s\S]*?\n\}/.exec(reviewAction);
-const normalise = s => s.replace(/\s+/g, ' ').trim();
+const normalize = s => s.replace(/\s+/g, ' ').trim();
 const copyMatches = srcFn &&
-  normalise(srcFn[0]) === normalise(_hasOverheadFromRows.toString());
+  normalize(srcFn[0]) === normalize(_hasOverheadFromRows.toString());
 console.log('');
 console.log('  copy matches source exactly ............. ' + (copyMatches ? 'yes' : 'NO'));
 if (!copyMatches) {
@@ -364,11 +364,11 @@ if (!copyMatches) {
 }
 
 const CASES = [
-  ['one overhead traveller', [['REQ-1', 'overhead']], 1, 'normal'],
+  ['one overhead traveler', [['REQ-1', 'overhead']], 1, 'normal'],
   ['all client-paid', [['REQ-1', 'client']], 1, 'normal'],
   ['blank cell on a row', [['REQ-1', '']], 1, 'normal'],
   ['mixed: one of two overhead', [['REQ-1', 'client'], ['REQ-1', 'overhead']], 1, 'normal'],
-  ['NO traveller rows at all', [], 1, 'degraded'],
+  ['NO traveler rows at all', [], 1, 'degraded'],
   ['rows is null', null, 1, 'degraded'],
   ['Is_Client_Paid column missing', [['REQ-1', 'overhead']], undefined, 'degraded']
 ];
@@ -395,7 +395,7 @@ if (failOpen === 3) {
   console.log('');
   console.log('  The guard clause returns false — "no overhead" — for missing');
   console.log('  rows, null rows, and a missing column. False means skip FAS.');
-  console.log('  So a request whose traveller rows failed to write (the');
+  console.log('  So a request whose traveler rows failed to write (the');
   console.log('  partial-submission case, finding G-012) or whose');
   console.log('  Is_Client_Paid column was renamed (finding G-014) is');
   console.log('  approved WITHOUT the compliance review it requires.');

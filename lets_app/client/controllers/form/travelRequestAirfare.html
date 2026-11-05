@@ -23,7 +23,7 @@
  *   3. pre-fill the total, editable, with the breakdown visible
  *
  * Pricing every origin-destination combination eagerly would mean 8 sheet
- * scans for a DC-to-Chicago leg and would surface options the traveller would
+ * scans for a DC-to-Chicago leg and would surface options the traveler would
  * never accept. Confirming the origin first makes it 1.
  *
  * WHY A PROMOTED PREFERENCE BEATS A CHEAPER FARE
@@ -62,7 +62,7 @@
    * IATA carrier codes -> airline names.
    *
    * The award file's AIRLINE_ABBREV column is a two-character IATA code. I
-   * originally rendered it raw on the grounds that mislabelling a carrier is
+   * originally rendered it raw on the grounds that mislabeling a carrier is
    * worse than showing a code — but @clolry had to ask what WN and DL meant,
    * which is the answer: the codes are opaque to the people choosing between
    * options.
@@ -127,7 +127,7 @@
     AM: 'Aeromexico'
   };
 
-  /** Airline name for a code, or the code itself when unrecognised. */
+  /** Airline name for a code, or the code itself when unrecognized. */
   Controller._airlineName = function (code) {
     var key = String(code || '').trim().toUpperCase();
     if (!key) return '';
@@ -438,7 +438,7 @@
     }
 
     // The return leg. CPP fares are published ONE WAY, and the mileage field
-    // beside this one is labelled "round trip", so the intent is a total trip
+    // beside this one is labeled "round trip", so the intent is a total trip
     // cost — the journey home has to be priced too or every estimate is half.
     if (segments.length && originCode) {
       var lastLeg = segments[segments.length - 1];
@@ -541,7 +541,7 @@
         cache.originMatchedCity = res.matchedCity || '';
         cache.originRequestedCity = res.requestedCity || city;
 
-        // Only adopt the server's default when the traveller has not chosen.
+        // Only adopt the server's default when the traveler has not chosen.
         // Overwriting a deliberate choice on every repaint would be worse than
         // having no default at all.
         var t = state.getTraveler(travelerId);

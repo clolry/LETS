@@ -14,7 +14,7 @@
  * to decide which buttons to draw. Nothing gated the payload.
  *
  * Any signed-in user who knew a request ID received the submitter and all four
- * reviewers by name and email, and per traveller: employee ID, LCAT, security
+ * reviewers by name and email, and per traveler: employee ID, LCAT, security
  * clearance held, valid passport held, telework status, home commute distance
  * and parking cost — plus every attachment file ID, which
  * shareAttachmentsWithUsers would then grant anyone access to.
@@ -120,13 +120,13 @@ console.log('--- Request read authorization test suite ---\n');
 console.log('1. who may read a request');
 {
   // A travel request is not a public record. Unlike the HC directory — which
-  // is organisation-visible by design — an unrelated user is REFUSED, not
+  // is organization-visible by design — an unrelated user is REFUSED, not
   // served a redacted copy. A redacted copy would still confirm the request
   // exists and who is on it.
   const cases = [
     ['an admin', { admin: true }, true, 'admin'],
     ['the submitter', { email: 'sub@gsa.gov' }, true, 'submitter'],
-    ['a traveller on it', { email: 'trav1@gsa.gov' }, true, 'traveler'],
+    ['a traveler on it', { email: 'trav1@gsa.gov' }, true, 'traveler'],
     ['the current reviewer', { email: 'rev@gsa.gov' }, true, 'current-reviewer'],
     ['a named sector director', { email: 'sd@gsa.gov' }, true, 'named-reviewer'],
     ['a named BU reviewer', { email: 'bu@gsa.gov' }, true, 'named-reviewer'],
@@ -148,7 +148,7 @@ console.log('1. who may read a request');
   // idea what to do.
   const denied = access({ email: 'nobody@gsa.gov' });
   ok('the refusal names who CAN see it',
-     /submitter.*travellers.*reviewers.*administrators/.test(denied.reason), denied.reason);
+     /submitter.*travelers.*reviewers.*administrators/.test(denied.reason), denied.reason);
 }
 
 // ---------------------------------------------------------------------------
@@ -171,7 +171,7 @@ console.log('\n2. scope matching, including the hierarchy');
   ok('a reviewer scoped to FCB does NOT see an FCA0A request',
      !wrongOrg.allowed, wrongOrg);
 
-  // Prefix matching must not run backwards: scope FCA0A0B must not match a
+  // Prefix matching must not run backward: scope FCA0A0B must not match a
   // request from FCA0A.
   const narrower = access({ email: 'z@gsa.gov',
     ctx: { role: 'bu', scope: { type: 'bu', codes: ['FCA0A0B'], names: [] } } });
@@ -179,7 +179,7 @@ console.log('\n2. scope matching, including the hierarchy');
      !narrower.allowed, narrower);
 
   // A role of 'none' with an 'all' scope must not pass. getReviewerContext
-  // initialises scope before resolving the role, so this combination is
+  // initializes scope before resolving the role, so this combination is
   // reachable.
   const noRole = access({ email: 'z@gsa.gov',
     ctx: { role: 'none', scope: { type: 'all', codes: [], names: [] } } });
@@ -229,11 +229,11 @@ console.log('\n3. field reduction for callers who are entitled but not everythin
   const admin = sanitize('admin', 'a@gsa.gov');
   ok('an admin sees everything', admin[0].employeeId === '0010042');
 
-  // A TRAVELLER SEES THEIR OWN ROW IN FULL, and only theirs.
+  // A TRAVELER SEES THEIR OWN ROW IN FULL, and only theirs.
   const self = sanitize('traveler', 'trav1@gsa.gov');
-  ok('a traveller sees their own clearance',
+  ok('a traveler sees their own clearance',
      self[0].hasSecurityClearance === true && self[0].employeeId === '0010042');
-  ok('but NOT the other traveller\'s',
+  ok('but NOT the other traveler\'s',
      !('hasSecurityClearance' in self[1]) && !('employeeId' in self[1]),
      Object.keys(self[1]));
   ok('and the other row says it was redacted', Array.isArray(self[1]._redacted));
@@ -271,11 +271,11 @@ console.log('\n3b. a delegate can read what their principal can');
      !withDelegation('stranger@gsa.gov', 'cover@gsa.gov').allowed);
 
   // A delegate stands in for the current reviewer, so they need the full
-  // traveller detail — redacting it would mean approving blind.
+  // traveler detail — redacting it would mean approving blind.
   const t = load({ email: 'cover@gsa.gov' });
   const full = t.run('sanitizeTravelersForCaller(' + JSON.stringify(TRAV) +
                      ",'delegate','cover@gsa.gov')");
-  ok('a delegate sees full traveller detail',
+  ok('a delegate sees full traveler detail',
      full[0].hasSecurityClearance === true && full[0].normalCommuteDistance === 12,
      'they must be able to check what the decision depends on');
 
@@ -344,8 +344,8 @@ console.log('\n5. the gate is on BOTH paths in Review_Read');
      /errorResponse\(cachedAccess\.reason, 'FORBIDDEN'\)/.test(cachedBlock));
   ok('and logs the refusal', /logRequestAccessDenial/.test(cachedBlock));
   // The cached copy is the FULL envelope, so serving it as-is would hand a
-  // scoped reviewer another traveller's clearance.
-  ok('and re-sanitizes the cached travellers',
+  // scoped reviewer another traveler's clearance.
+  ok('and re-sanitizes the cached travelers',
      /sanitizeTravelersForCaller\(\s*cachedData\.travelers/.test(cachedBlock));
 
   const uncached = src.slice(src.indexOf('========== AUTHORIZATION =========='));
@@ -353,7 +353,7 @@ console.log('\n5. the gate is on BOTH paths in Review_Read');
   ok('refuses before building the envelope',
      uncached.indexOf('return errorResponse(access.reason') <
      uncached.indexOf('const envelope = successResponse'), 'order matters');
-  ok('and sanitizes travellers in the envelope',
+  ok('and sanitizes travelers in the envelope',
      /travelers: sanitizeTravelersForCaller\(travelers, access\.basis/.test(uncached));
 
   // accessBasis is surfaced so a bug report can distinguish "no access" from
@@ -402,7 +402,7 @@ console.log('\n6b. the attachment disclosure chain is closed');
 
   // Sliced to the END of the file, not to shareAttachmentsWithUsers —
   // getRequestAttachments appears AFTER it in source order, so the original
-  // slice was backwards and empty. A test that slices nothing asserts
+  // slice was backward and empty. A test that slices nothing asserts
   // nothing, and it reported two failures that looked like missing guards.
   const listStart = att.indexOf('function getRequestAttachments');
   const listBody = att.slice(listStart,
@@ -479,7 +479,7 @@ console.log('\n7. negative controls (the suite must be able to fail)');
   // It did not throw: Array.prototype.indexOf on an undefined receiver would,
   // but the rename left `REQUEST_TRAVELER_SENSITIVE` undefined only at the
   // point of use inside a closure that was never reached for that basis. A
-  // control that does not provoke the behaviour proves nothing, so this one
+  // control that does not provoke the behavior proves nothing, so this one
   // targets the branch directly.
   // Anchored on the line that OPENS the branch, which survived the delegate
   // being added to it. The previous anchor was the whole single-line

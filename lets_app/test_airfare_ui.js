@@ -4,7 +4,7 @@
  * WHAT THIS PROTECTS
  * ------------------
  * travelRequestAirfare.html pre-fills the "Estimated Cost" field from GSA City
- * Pair contract fares. The behaviours that matter are mostly about restraint:
+ * Pair contract fares. The behaviors that matter are mostly about restraint:
  *
  *   §3  A hand-typed figure is NEVER overwritten. The whole feature is a
  *       suggestion. Someone may have a quote, or know the contract fare is
@@ -25,7 +25,7 @@
  *       measured in the sandbox), and the traveler card repaints often.
  *
  * §2 pins the round-trip arithmetic. CPP fares are published ONE WAY, and the
- * mileage field beside this one is labelled "round trip", so the return
+ * mileage field beside this one is labeled "round trip", so the return
  * segment has to be priced or every estimate is half what it should be:
  * 112 + 112 = 224 for DCA-ORD.
  *
@@ -156,7 +156,7 @@ console.log('2. air mode loads, prices and pre-fills');
   ok('carrier shown as a name, not a code', wrap.innerHTML.indexOf('United')>-1, wrap.innerHTML.slice(0,400));
   ok('raw code not shown', wrap.innerHTML.indexOf('>UA<')===-1);
   ok('shows fare basis', wrap.innerHTML.indexOf('YCA')>-1);
-  ok('metro option labelled', wrap.innerHTML.indexOf('all airports')>-1 || wrap.innerHTML.indexOf('Washington, DC area')>-1);
+  ok('metro option labeled', wrap.innerHTML.indexOf('all airports')>-1 || wrap.innerHTML.indexOf('Washington, DC area')>-1);
 }
 
 console.log('3. a hand-typed figure is never overwritten');

@@ -19,7 +19,7 @@
  *
  *   request       submitter name/email, all four reviewer names and emails,
  *                 BLUF, justification, every cost figure
- *   travelers     per traveller: employee ID, name, email, LCAT, division
+ *   travelers     per traveler: employee ID, name, email, LCAT, division
  *                 director name and email, security clearance held, valid
  *                 passport held, full-time telework status, normal commute
  *                 distance, home parking cost, NFS receipt
@@ -44,7 +44,7 @@
  * a directory entry:
  *
  *   1. AUTHORIZATION. Most users have no business reading most requests at
- *      all. A directory is public within the organisation; a travel request
+ *      all. A directory is public within the organization; a travel request
  *      is not.
  *   2. FIELD REDUCTION for the cases where read access is legitimate but
  *      total disclosure is not.
@@ -52,7 +52,7 @@
  * WHO MAY READ A REQUEST
  * ----------------------
  *   the submitter          they wrote it
- *   a traveller on it      it is their trip, their clearance, their commute
+ *   a traveler on it      it is their trip, their clearance, their commute
  *   the current reviewer   they have to act on it
  *   any PRIOR reviewer     they already acted and may need to justify it
  *   a scoped reviewer      within their BU or sector, per getReviewerContext
@@ -71,7 +71,7 @@
  * load for no benefit.
  *
  * @param {Object} request a normalized request record
- * @param {Array<Object>} travelers its traveller rows
+ * @param {Array<Object>} travelers its traveler rows
  * @param {Array<Object>} approvalLog its approval log entries
  * @param {string} [email] defaults to the active user
  * @returns {{allowed: boolean, basis: string, depth: string, reason: string}}
@@ -114,8 +114,8 @@ function requestReadAccess(request, travelers, approvalLog, email) {
     return { allowed: true, basis: 'submitter', depth: 'full', reason: '' };
   }
 
-  // A TRAVELLER ON THE REQUEST. This matters more than it looks: the
-  // traveller rows hold THEIR security clearance, passport status, telework
+  // A TRAVELER ON THE REQUEST. This matters more than it looks: the
+  // traveler rows hold THEIR security clearance, passport status, telework
   // status and home commute. A person is entitled to see their own.
   var isTraveler = (travelers || []).some(function (t) {
     return lower(t.email) === who;
@@ -190,7 +190,7 @@ function requestReadAccess(request, travelers, approvalLog, email) {
       var scope = ctx.scope || {};
 
       if (scope.type === 'all' && ctx.role && ctx.role !== 'none') {
-        // OSO and equivalent: organisation-wide review authority.
+        // OSO and equivalent: organization-wide review authority.
         return { allowed: true, basis: 'reviewer-scope-all', depth: 'full', reason: '' };
       }
 
@@ -217,12 +217,12 @@ function requestReadAccess(request, travelers, approvalLog, email) {
   return {
     allowed: false, basis: 'none', depth: 'redacted',
     reason: 'You do not have access to this request. Only its submitter, its ' +
-            'travellers, its reviewers and administrators can view it.'
+            'travelers, its reviewers and administrators can view it.'
   };
 }
 
 /**
- * Fields stripped from a traveller row for a caller who is NOT that traveller.
+ * Fields stripped from a traveler row for a caller who is NOT that traveler.
  *
  * Reachable only by someone already entitled to read the request — a reviewer
  * or the submitter. They are still not entitled to everything.
@@ -251,7 +251,7 @@ var REQUEST_TRAVELER_SENSITIVE = [
 ];
 
 /**
- * Reduces traveller rows for the caller.
+ * Reduces traveler rows for the caller.
  *
  * @param {Array<Object>} travelers
  * @param {string} basis from requestReadAccess
@@ -272,7 +272,7 @@ function sanitizeTravelersForCaller(travelers, basis, email) {
   }
 
   return (travelers || []).map(function (t) {
-    // A traveller always sees their OWN row in full. It is their clearance,
+    // A traveler always sees their OWN row in full. It is their clearance,
     // their passport, their commute.
     if (String(t.email || '').toLowerCase() === who) return t;
 

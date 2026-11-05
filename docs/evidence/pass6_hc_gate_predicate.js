@@ -230,7 +230,7 @@ if (numericPasses === 3) {
   console.log('  "If HC emits a number, two of three allow-paths are already');
   console.log('  dead" does not hold. String(2) === \'2\', so a numeric 2 is');
   console.log('  accepted. The explicit String() coercion is exactly the');
-  console.log('  defence the claim says is missing.');
+  console.log('  defense the claim says is missing.');
   console.log('');
   console.log('  THE UNDERLYING RISK IS REAL, with a different trigger.');
   console.log('  Zero-padding, surrounding whitespace, and decimal');
@@ -412,7 +412,7 @@ const WRONG = /(?:emits?|emitted)\s+(?:a\s+)?numbers?/gi;
 // the claim withdrawn / quoting it as a correction.
 //
 // NOTE ON THIS REGEX, because an earlier version of it produced a false
-// positive. It must recognise a QUOTATION of the wrong claim inside a
+// positive. It must recognize a QUOTATION of the wrong claim inside a
 // correction block as corrected, not as stale — otherwise the act of
 // recording the withdrawal (convention 11: never renumber, always record
 // the re-rating with its reason) trips the very check that is supposed to

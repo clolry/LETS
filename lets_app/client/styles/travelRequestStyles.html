@@ -17,9 +17,9 @@
   --brand-green: #286D3B;
   --brand-red: #522032;
   --brand-lightBlue: #1B7CAC;
-  --brand-lightGrey: #F2F2F2;
-  --brand-mediumGrey: #BBBDBF;
-  --brand-darkGrey: #424143;
+  --brand-lightGray: #F2F2F2;
+  --brand-mediumGray: #BBBDBF;
+  --brand-darkGray: #424143;
   --brand-bg-light: #FFFFFF;
 }
 
@@ -156,7 +156,7 @@ body {
      reserved, and the two could disagree by any amount. */
   min-height: var(--travel-header-h, 52px);
   box-sizing: border-box;
-  /* Flex so .travel-header__content stays vertically centred when min-height
+  /* Flex so .travel-header__content stays vertically centered when min-height
      exceeds the content height; as a plain block it would sit at the top and
      leave a gap beneath. */
   display: flex;
@@ -869,7 +869,7 @@ body {
   border-radius: 3px;
 }
 
-/* Legacy: Country Other Input (keeping for backwards compat) */
+/* Legacy: Country Other Input (keeping for backward compat) */
 .country-other-input {
   display: flex;
   gap: 0.25rem;
@@ -4543,7 +4543,7 @@ textarea.focus-expand:focus::placeholder {
 .tc[data-disclosure-stage="4"] .tc__details-right.tc__reveal {
   /* Was 300px. This column holds the Role Justification textarea, which
      grows on focus (data-rows-focus="3") — so the ceiling cropped the very
-     field the traveller was typing into. See the note on .tc__stage above. */
+     field the traveler was typing into. See the note on .tc__stage above. */
   max-height: none;
   overflow: visible;
 }
@@ -6968,7 +6968,7 @@ textarea.focus-expand:focus::placeholder {
 /* ---- event picker -------------------------------------------------------
    Sits above the free-text event name. Most travel is ad-hoc, so this is an
    optional shortcut rather than a gate: forcing every trip through a
-   catalogue would mean a coordinator had to create an event before anyone
+   catalog would mean a coordinator had to create an event before anyone
    could file a one-off client visit. */
 
 .event-picker {
@@ -6984,7 +6984,7 @@ textarea.focus-expand:focus::placeholder {
 }
 
 /* Revealed only by choosing "Other". Amber rather than red: describing an
-   event nobody has catalogued is a normal thing to do, not an error. */
+   event nobody has cataloged is a normal thing to do, not an error. */
 .event-other {
   margin-bottom: 0.65rem;
   padding: 0.55rem 0.7rem;

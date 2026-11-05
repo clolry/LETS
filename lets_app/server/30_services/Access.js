@@ -1238,7 +1238,7 @@ function getReviewerContext(email, viewAs, sharedDb) {
   // list and the event screens.
   //
   // Their SCOPE is 'all', because reassigning a stuck request and resolving a
-  // proposal are organisation-wide jobs. A scoped coordinator could not do
+  // proposal are organization-wide jobs. A scoped coordinator could not do
   // the thing the role exists for.
   try {
     if (typeof isTravelCoordinator === 'function' &&
@@ -1482,7 +1482,7 @@ function requireTravelAdmin() {
  * WHY THIS ROLE EXISTS
  * --------------------
  * @clolry needs a coordinator who can reassign a reviewer when somebody is
- * out, and resolve the event proposals travellers raise. Both of those sat
+ * out, and resolve the event proposals travelers raise. Both of those sat
  * behind requireTravelAdmin, which also grants budget allocation editing, HR
  * roster editing, user role granting, and the HR data that was just
  * tier-restricted for PII.
@@ -1495,7 +1495,7 @@ function requireTravelAdmin() {
  * -------------------------
  *   reassign a reviewer on a stuck request
  *   resolve event proposals — promote, merge, reject
- *   define and edit catalogue events
+ *   define and edit catalog events
  *   see the admin console's request list
  *
  * WHAT THEY MAY NOT

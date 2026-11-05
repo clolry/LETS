@@ -11,7 +11,7 @@
  * the real exports rather than by reasoning about them.
  *
  * 1. Amount Approved, NOT Report Total. They differ on 37 of 182 rows by
- *    $4,569.93. Report Total is what the traveller CLAIMED; Amount Approved
+ *    $4,569.93. Report Total is what the traveler CLAIMED; Amount Approved
  *    is what GSA PAID. §2.
  *
  * 2. ONE EXPORT SPANS TWO FISCAL YEARS. @clolry: "budgeting all resets on
@@ -23,7 +23,7 @@
  *    either alone silently yields 1970 for half the data. §3.
  *
  * 4. MATCHING MUST NOT GUESS. Only ~45% match confidently. An auto-match on
- *    a guess attaches one traveller's $7,548 to another's trip. §5, §6.
+ *    a guess attaches one traveler's $7,548 to another's trip. §5, §6.
  *
  * Run: node lets_app/test_gogov_sync.js
  */
@@ -88,7 +88,7 @@ console.log('1. the LETS ID parser is tolerant of input, strict about output');
      'a preceding alphanumeric means it is part of a longer token');
 
   // THE WHOLE SOP RESTS ON THIS. @clolry asked how to instruct users to put
-  // the LETS ID into the Go.gov trip name. Three travellers already do it,
+  // the LETS ID into the Go.gov trip name. Three travelers already do it,
   // and each wrote it differently — rejecting any of those forms would
   // punish the people already cooperating.
   //
@@ -159,7 +159,7 @@ console.log('\n2. Amount Approved is the actual, never Report Total');
      parsed[0].amountApproved !== parsed[0].reportTotal);
 
   // The disallowed amount is derived and stored. Nobody asks for it until a
-  // traveller disputes a voucher, and then it is the only number that matters.
+  // traveler disputes a voucher, and then it is the only number that matters.
   ok('the disallowed amount is computed',
      parsed[0].disallowedAmount === 484.83, parsed[0].disallowedAmount);
 
@@ -223,7 +223,7 @@ console.log('\n3. fiscal years and the two date encodings');
 }
 
 // ---------------------------------------------------------------------------
-console.log('\n4. name normalisation across two incompatible formats');
+console.log('\n4. name normalization across two incompatible formats');
 {
   // The exports disagree about BOTH format and casing. Expenses write
   // 'Dolezal, Nathan K.'; requests write 'Jakenberg Almuete'. 71 of 182
@@ -232,7 +232,7 @@ console.log('\n4. name normalisation across two incompatible formats');
      G.normalizeName('Dolezal, Nathan K.') === 'NATHAN DOLEZAL');
   ok('"First Last" -> FIRST LAST',
      G.normalizeName('Jakenberg Almuete') === 'JAKENBERG ALMUETE');
-  ok('ALL CAPS normalises identically',
+  ok('ALL CAPS normalizes identically',
      G.normalizeName('CAMERON, CHERYL T.') === 'CHERYL CAMERON');
   ok('and the two formats meet',
      G.normalizeName('Hackley, Daniel R.') === G.normalizeName('Daniel Hackley'));
@@ -242,7 +242,7 @@ console.log('\n4. name normalisation across two incompatible formats');
   ok('a single token survives', G.normalizeName('Cher') === 'CHER');
 
   // Titles: punctuation and case must not block a match.
-  ok('titles normalise',
+  ok('titles normalize',
      G.normalizeTitle('ACT-IAC ImagineNation ELC 2025') ===
      G.normalizeTitle('act iac imaginenation elc 2025'));
 }
@@ -274,7 +274,7 @@ console.log('\n5. matching is tiered, and only confident tiers auto-apply');
   ok('and records the method as lets-id', t1.method === 'lets-id');
 
   // A cited ID that does not exist is a DIFFERENT problem from no ID: the
-  // traveller followed the convention and the request is missing.
+  // traveler followed the convention and the request is missing.
   const t1x = G.matchExpense(exp({ reportName: 'REQ-2026-9999 Ghost',
                                    extractedLetsId: 'REQ-2026-9999' }), requests);
   ok('a cited-but-missing ID is flagged for review', t1x.status === 'NEEDS_REVIEW');
@@ -286,13 +286,13 @@ console.log('\n5. matching is tiered, and only confident tiers auto-apply');
   ok('a Go.gov request ID auto-matches', t2.status === 'AUTO_MATCHED' &&
      t2.method === 'gogov-id', t2);
 
-  // TIER 3 — traveller + exact title. Holds ~70% of the time because Go.gov
+  // TIER 3 — traveler + exact title. Holds ~70% of the time because Go.gov
   // copies the request name onto the expense report.
   const t3 = G.matchExpense(exp({ reportName: 'NCMA World Congress' }), requests);
-  ok('traveller + exact title auto-matches',
+  ok('traveler + exact title auto-matches',
      t3.status === 'AUTO_MATCHED' && t3.method === 'name-title', t3);
 
-  // AMBIGUOUS — same traveller, same title, several times. Amount cannot
+  // AMBIGUOUS — same traveler, same title, several times. Amount cannot
   // break the tie: only 3% of title-matched pairs have equal amounts.
   const amb = G.matchExpense(exp({
     reportName: 'Trip from Washington to Omaha',
@@ -305,17 +305,17 @@ console.log('\n5. matching is tiered, and only confident tiers auto-apply');
   ok('each with a stated reason',
      amb.candidates.every(c => !!c.reason), amb.candidates);
   ok('and never a guessed match', amb.requestId === '',
-     'picking one would attach the wrong traveller\'s money to a trip');
+     'picking one would attach the wrong traveler\'s money to a trip');
   // The estimate is shown so the reviewer has something to judge on.
   ok('candidates carry the estimate for comparison',
      amb.candidates.every(c => typeof c.estimate === 'number'));
 
-  // TIER 4 — traveller + nearby end date. A voucher is filed AFTER the trip,
+  // TIER 4 — traveler + nearby end date. A voucher is filed AFTER the trip,
   // so a lag of up to a fortnight is normal.
   const t4 = G.matchExpense(exp({
     reportName: 'Some other title entirely', reportEndDate: '2026-10-20'
   }), requests);
-  ok('traveller + a date within 14 days auto-matches',
+  ok('traveler + a date within 14 days auto-matches',
      t4.status === 'AUTO_MATCHED' && t4.method === 'name-date', t4);
 
   // Outside the window it must NOT match.
@@ -325,11 +325,11 @@ console.log('\n5. matching is tiered, and only confident tiers auto-apply');
   ok('a date far outside the window does not auto-match',
      far.status === 'NEEDS_REVIEW', far.status);
 
-  // UNMATCHED — no request for this traveller at all. 32.6% of the real file.
+  // UNMATCHED — no request for this traveler at all. 32.6% of the real file.
   const un = G.matchExpense(exp({
     employeeName: 'Nobody, A.', employeeNameNormalized: 'A NOBODY'
   }), requests);
-  ok('an unknown traveller is UNMATCHED', un.status === 'UNMATCHED');
+  ok('an unknown traveler is UNMATCHED', un.status === 'UNMATCHED');
   ok('and the reason explains why it is normal',
      /predates/.test(un.note || ''), un.note);
 }
@@ -338,7 +338,7 @@ console.log('\n5. matching is tiered, and only confident tiers auto-apply');
 console.log('\n6. the batch summary measures SOP adoption');
 {
   // @clolry asked for the procedure. A convention nobody measures decays, so
-  // the adoption rate is reported every month and the travellers who did not
+  // the adoption rate is reported every month and the travelers who did not
   // follow it are NAMED — specific feedback rather than a scold.
   const requests = [{ requestId: 'REQ-2026-0001', gogovRequestId: '4QMN',
     tripName: 'NCMA', employeeNameNormalized: 'A B', endDate: '2026-10-17',
@@ -359,8 +359,8 @@ console.log('\n6. the batch summary measures SOP adoption');
   ok('and reported as a percentage', out.summary.letsIdAdoptionPct === 50,
      out.summary.letsIdAdoptionPct);
   ok('offenders are named, not just counted',
-     out.summary.missingLetsIdTravellers.join(',') === 'Smith, John',
-     out.summary.missingLetsIdTravellers);
+     out.summary.missingLetsIdTravelers.join(',') === 'Smith, John',
+     out.summary.missingLetsIdTravelers);
   ok('statuses are tallied', out.summary.autoMatched === 1);
   ok('disallowed is totalled across the batch',
      out.summary.totalDisallowed === 10);
@@ -424,7 +424,7 @@ console.log('\n7. mapping is PROPOSED against the real headers, never assumed');
 console.log('\n8. against the REAL export files, if they are present');
 {
   // The suite stays green without the reference files — they are large and
-  // contain real traveller names, so they may not be in every checkout. When
+  // contain real traveler names, so they may not be in every checkout. When
   // present, the measured numbers are asserted, because those numbers are the
   // basis for every design decision in this module.
   let req = null, exp = null;
@@ -458,7 +458,7 @@ console.log('\n8. against the REAL export files, if they are present');
     const s = out.summary;
 
     // These are the measured figures the design rests on. If they move a lot,
-    // the matcher's behaviour changed and the tiering needs rethinking.
+    // the matcher's behavior changed and the tiering needs rethinking.
     ok('auto-match rate is around 45%',
        s.autoMatched >= 225 && s.autoMatched <= 250, s.autoMatched);
     ok('about a third are unmatched',
@@ -482,7 +482,7 @@ console.log('\n8. against the REAL export files, if they are present');
     ok('disallowed amounts are non-trivial',
        s.totalDisallowed > 10000, s.totalDisallowed);
 
-    // No auto-match may cross a traveller boundary. This is the one error
+    // No auto-match may cross a traveler boundary. This is the one error
     // that would be both invisible and indefensible.
     const byId = {};
     lets.forEach(r => { byId[r.requestId] = r; });
@@ -494,13 +494,13 @@ console.log('\n8. against the REAL export files, if they are present');
     // This assertion FAILED when first written. A cited LETS ID was trusted on
     // its own, and three real expense reports were auto-matched to requests
     // belonging to different people — Brandon Maness's $1,922.96 landed on
-    // another traveller's request.
+    // another traveler's request.
     //
     // An explicit ID is the strongest signal available, which is precisely why
-    // a contradiction between it and the traveller name must stop the match
-    // rather than be resolved in the ID's favour. One mistyped digit moves
-    // money between travellers.
-    ok('no auto-match attaches a report to a different traveller',
+    // a contradiction between it and the traveler name must stop the match
+    // rather than be resolved in the ID's favor. One mistyped digit moves
+    // money between travelers.
+    ok('no auto-match attaches a report to a different traveler',
        crossed.length === 0,
        crossed.slice(0, 3).map(r => r.employeeName + ' -> ' + r.matchedRequestId));
   }
@@ -556,7 +556,7 @@ console.log('\n8b. generateRequestId agrees with the fiscal year it spends');
   ok('30 Sep 2027 is still FY2027', gen('2027-09-30T12:00:00Z', []) === 'L27-0001');
   ok('1 Oct 2027 rolls to FY2028', gen('2027-10-01T12:00:00Z', []) === 'L28-0001');
 
-  // Sequence behaviour.
+  // Sequence behavior.
   ok('increments from the highest, not the count',
      gen('2026-10-15T12:00:00Z', ['L27-0001', 'L27-0009']) === 'L27-0010',
      'count+1 would reuse L27-0003 after a deletion');

@@ -50,7 +50,7 @@ console.log('1. schema has somewhere to put them');
    'Primary_Justification','Traveler_Org_Codes'].forEach(c=>{
     ok('Requests has '+c, S.Requests.indexOf(c)>-1);
   });
-  // Per-traveller, because a consolidated request draws on several orgs.
+  // Per-traveler, because a consolidated request draws on several orgs.
   ok('Request_Travelers has Budget_Org_Code', S.Request_Travelers.indexOf('Budget_Org_Code')>-1);
   ok('Request_Travelers has Budget_Office_Code', S.Request_Travelers.indexOf('Budget_Office_Code')>-1);
   // Column order is load-bearing: writes are positional.
@@ -85,7 +85,7 @@ console.log('1. schema has somewhere to put them');
     'Actual_Source','Actual_Posted_At','Actual_Posted_By','Reconciliation_Status',
     'Reconciliation_Notes','Match_Method','Match_Confirmed_By',
     'Expense_Report_Name','Expense_Report_End_Date',
-    // The event catalogue link, appended after the reconciliation block for
+    // The event catalog link, appended after the reconciliation block for
     // the same positional reason: the eighteen positional readers index from
     // the left, so appending is invisible to them.
     'Event_ID','Event_Proposal_ID'];
@@ -116,7 +116,7 @@ console.log('1. schema has somewhere to put them');
   ok('every source-provenance column exists', spos.every(p=>p>-1),
      SOURCE_BLOCK.filter((c,i)=>spos[i]===-1));
   ok('they are contiguous', spos.every((p,i)=>i===0||p===spos[i-1]+1), spos);
-  ok('and sit after the event-catalogue link',
+  ok('and sit after the event-catalog link',
      spos[0]===S.Requests.indexOf('Event_Proposal_ID')+1, spos[0]);
 
   // The basis must be STORED, not inferred. A trip with no expense report yet
@@ -218,10 +218,10 @@ console.log('4. the form now collects what it renders');
 console.log('5. the dropdown shows both code forms');
 {
   const pg=fs.readFileSync('lets_app/client/pages/travelRequestPage.html','utf8');
-  ok('FCA labelled beside OMD', /value="OMD">FCA/.test(pg));
-  ok('FCB labelled beside IDV', /value="IDV">FCB/.test(pg));
-  ok('FCC labelled beside CM', /value="CM">FCC/.test(pg));
-  ok('FC labelled beside FO', /value="FO">FC/.test(pg));
+  ok('FCA labeled beside OMD', /value="OMD">FCA/.test(pg));
+  ok('FCB labeled beside IDV', /value="IDV">FCB/.test(pg));
+  ok('FCC labeled beside CM', /value="CM">FCC/.test(pg));
+  ok('FC labeled beside FO', /value="FO">FC/.test(pg));
   // The VALUE stays the BudgetConfig.js key — changing it would break
   // allocation lookups.
   ok('values remain office codes', /value="OMD"/.test(pg) && !/value="FCA"/.test(pg));
@@ -232,7 +232,7 @@ console.log('6. review reads the new fields back');
   const r=fs.readFileSync('lets_app/server/40_domain/Review_Read.js','utf8');
   ok('owningOffice read', /owningOffice: requestRow\[reqIndex\['Owning_Office'\]\]/.test(r));
   ok('travelerOrgCodes parsed to an array', /travelerOrgCodes: String\(/.test(r));
-  ok('per-traveller budget org read', /budgetOrgCode: travelersRows/.test(r));
+  ok('per-traveler budget org read', /budgetOrgCode: travelersRows/.test(r));
   // Old rows have no values. Falling back to the request's owning office
   // would show a reviewer a guess rather than a recorded fact.
   ok('no fallback to owning office', !/budgetOrgCode:.*owningOffice/.test(r));

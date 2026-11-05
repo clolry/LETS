@@ -79,7 +79,7 @@ console.log('2. the schema matches the row the server writes');
   // THE HIGHEST-VALUE ASSERTION HERE.
   //
   // Two readers resolve columns BY HEADER NAME while the writer is positional.
-  // A name the reader does not recognise does not throw — checkNpsEligibility
+  // A name the reader does not recognize does not throw — checkNpsEligibility
   // returns eligible:true for everyone, so the NPS prompt reappears forever,
   // and getRecentFeedback shows blanks in the admin view.
   //

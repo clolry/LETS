@@ -406,7 +406,7 @@ if (!exists(manifest)) {
   if (tableTotal === la.length && la.length !== 112) {
     console.log('    → Pass 1\'s TABLES ARE CORRECT. Only its prose subtotal is');
     console.log('      wrong. No file was missed during inventory; a number was');
-    console.log('      mistyped when summarising. This is the cheap correction.');
+    console.log('      mistyped when summarizing. This is the cheap correction.');
   }
 
   console.log('');
@@ -516,7 +516,7 @@ for (const [id, file, claim] of PASS5_CLAIMS) {
 }
 
 console.log('');
-console.log('  mis-labelled findings .................... ' + claimErrors);
+console.log('  mis-labeled findings .................... ' + claimErrors);
 if (claimErrors) {
   console.log('  Each one shifts remediation ownership, which is the single');
   console.log('  most decision-relevant column in the gap register. The');
@@ -575,7 +575,7 @@ if (integrityAttrs === 0 && cdnRefs > 0) {
   console.log('    untouched TRIP files, ' +
     (cdnByOwner['MODIFIED'] + cdnByOwner['LETS-ONLY']) +
     ' are in files LETS wrote or');
-  console.log('    modified. Pass 5 labelled S-24 "Yes" (inherited); the');
+  console.log('    modified. Pass 5 labeled S-24 "Yes" (inherited); the');
   console.log('    accurate label is "Partly" — LETS reproduced the pattern in');
   console.log('    its own new pages rather than only inheriting it.');
 }

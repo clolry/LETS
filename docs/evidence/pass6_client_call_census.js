@@ -16,7 +16,7 @@
  *     gated, 18 record-level-only, 12 with no check
  *
  * Those figures do not reconcile with each other. The four categories as
- * LABELLED sum to 63, but they are supposed to partition the 60 that
+ * LABELED sum to 63, but they are supposed to partition the 60 that
  * resolve, not all 63. And the tables beneath the labels contain different
  * numbers of rows than the labels claim — the role-context table says 4 and
  * lists 5; the no-check table says 12 and lists 13. Pass 6 item 2 requires

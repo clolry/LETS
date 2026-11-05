@@ -212,7 +212,7 @@ console.log('\n3. recurrence is INFERRED, and refuses to over-claim');
      /skipped year, not a change in how often/.test(skipped.restrictionNote || ''),
      skipped.restrictionNote);
 
-  // A GENUINELY BIENNIAL EVENT MUST STILL BE RECOGNISED. The fix must not
+  // A GENUINELY BIENNIAL EVENT MUST STILL BE RECOGNIZED. The fix must not
   // simply delete the concept — two occurrences four years apart, where the
   // skipped anniversaries were NOT restricted, really is a longer cycle.
   const trulyBiennial = infer([{ month: '2021-03', attendees: 10 },
@@ -305,7 +305,7 @@ console.log('\n4. zero and UNKNOWN are different answers');
      r.data.events.length === 10, r.data.events.length);
   ok('org breakdown is null at event level too',
      r.data.events.every(e => e.orgBreakdown === null));
-  ok('and the source is labelled "none"',
+  ok('and the source is labeled "none"',
      r.data.events.every(e => e.orgBreakdownSource === 'none'));
   ok('the summary counts events lacking org detail',
      r.data.summary.eventsWithoutOrgDetail === 10,
@@ -327,7 +327,7 @@ console.log('\n4b. the restriction is separated from real demand');
   // Attendance inside the window averages 5.2 against 17.9 outside it. I had
   // been reporting that as declining interest. It is a policy ceiling, and a
   // ceiling lifts — a DAC told "attendance is down 95%" plans for one
-  // traveller next May, which is the wrong plan.
+  // traveler next May, which is the wrong plan.
   const r = E.run('EventHistory.getEventHistory({ now: new Date("2026-08-15") })');
 
   const cgp = r.data.events.find(e => e.eventName === 'CGP Spring Conference');
@@ -351,14 +351,14 @@ console.log('\n4b. the restriction is separated from real demand');
   // rather than only the event. "1 attendee in May 2026" is not a
   // measurement of demand.
   const may26 = cgp.historical.find(o => o.eventMonth === '2026-05');
-  ok('an occurrence inside the window is labelled',
+  ok('an occurrence inside the window is labeled',
      may26.restriction === 'Administration travel restrictions', may26.restriction);
   const may24 = cgp.historical.find(o => o.eventMonth === '2024-05');
   ok('and one outside it is not', may24.restriction === null);
 
   // NCMA's July 2026 occurrence came back at 23 against 25 in 2024 — which is
   // how the window's end month was chosen. If the window swallowed it, that
-  // near-full attendance would be mislabelled as ban-suppressed.
+  // near-full attendance would be mislabeled as ban-suppressed.
   const ncma = r.data.events.find(e => e.eventName === 'NCMA World Congress');
   ok('July 2026 is OUTSIDE the window',
      ncma.historical.find(o => o.eventMonth === '2026-07').restriction === null,
@@ -434,7 +434,7 @@ console.log('\n5. the two lists are never summed');
   // The org breakdown now EXISTS, because LETS records it and the seed does not.
   ok('org breakdown appears once LETS has data', cgp.orgBreakdown !== null);
   ok('and is attributed to its source', cgp.orgBreakdownSource === 'lets-requests');
-  ok('counting one entry per traveller',
+  ok('counting one entry per traveler',
      cgp.orgBreakdown.FCA === 1 && cgp.orgBreakdown.FCB === 3,
      cgp.orgBreakdown);
   ok('the summary no longer counts this event as lacking detail',
@@ -503,7 +503,7 @@ console.log('\n6. request derivation refuses to count travel that did not happen
   });
   const fr = fallback.run('EventHistory.getEventHistory({ now: new Date("2026-08-15") })');
   const fe = fr.data.events.find(e => e.eventName === 'Owned Event');
-  ok('a blank traveller list falls back to the owning org',
+  ok('a blank traveler list falls back to the owning org',
      fe.orgBreakdown && fe.orgBreakdown.FCC === 1, fe.orgBreakdown);
 
   // Columns are resolved BY NAME. A reordered sheet must still work — LETS

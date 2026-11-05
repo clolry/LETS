@@ -23,11 +23,11 @@ Conventions carried from Deliverable 1:
 | Marker | Meaning |
 |---|---|
 | `[VERIFIED]` | Read from source or measured by a script in `docs/evidence/` |
-| `[INFERRED]` | A reasoned conclusion, labelled so you can disagree with the reasoning |
+| `[INFERRED]` | A reasoned conclusion, labeled so you can disagree with the reasoning |
 | `[CLAIMED]` | Asserted by project documentation, not confirmed in code |
 | `[UNKNOWN]` | Requires someone with live access |
 
-Ownership is stated for every component, because it decides who can authorise a change:
+Ownership is stated for every component, because it decides who can authorize a change:
 
 | Label | Meaning |
 |---|---|
@@ -269,11 +269,11 @@ All seven INHERITED. Six expose **zero** functions — they are pure constant de
 | `Validation.js` | 251 | 12 | A complete 12-function input-validation library with **zero adopters** (**G-033**) |
 | `DateTime.js` | 194 | — | Date parsing, formatting, fiscal-period maths |
 | `SheetHelpers.js` | 118 | — | Shared sheet-reading utilities |
-| `Locations.js` | 111 | — | Location string normalisation |
+| `Locations.js` | 111 | — | Location string normalization |
 | `Errors.js` | 103 | — | `logError` — appends to `Error_Log`. One of the four "ambient writers" |
 | `JsonSafe.js`, `Numbers.js` | 42 | — | Safe JSON parsing, number coercion |
 
-All INHERITED. **`Validation.js` is the single clearest piece of unrealised value in the codebase** — 251 lines of correct, documented guards, called from nowhere outside its own self-test `[VERIFIED]`, while an ad-hoc `_isValidEmail` helper has 21 call sites.
+All INHERITED. **`Validation.js` is the single clearest piece of unrealized value in the codebase** — 251 lines of correct, documented guards, called from nowhere outside its own self-test `[VERIFIED]`, while an ad-hoc `_isValidEmail` helper has 21 call sites.
 
 **`20_data` — 2 files, the data layers.** See §2.5 — this is where the two systems diverge.
 
@@ -377,7 +377,7 @@ That is encouraging rather than discouraging: the pattern to copy already exists
 | 5,970 | `styles/travelReviewStyles.html` | Review-screen CSS |
 | 5,055 | `styles/travelAdminStyles.html` | Admin-console CSS |
 | 3,961 | `controllers/admin/travelAdminController.html` | Admin console logic |
-| 3,305 | `controllers/form/travelRequestTravelers.html` | Traveller and cost entry on the intake form |
+| 3,305 | `controllers/form/travelRequestTravelers.html` | Traveler and cost entry on the intake form |
 | 3,147 | `controllers/admin/travelUsersController.html.html` | User and role administration — **and it never loads** (§2.4.4) |
 
 **Planning consequence:** any change to the review experience means working inside an 8,130-line single file. Pass 5 flagged this file and `travelRequestTravelers.html` as the two needing a targeted security review (**VT-26**) precisely because their size defeats casual reading.
@@ -582,7 +582,7 @@ Three Node test suites exist and **all three pass** `[VERIFIED]`:
 
 1. **Seventeen findings describe latent defects.** G-013, G-023, G-024, G-035–G-040, G-043, G-050–G-053, G-061, G-062, and G-016 itself all live in code nothing can invoke. Real, but not currently exploitable or triggerable.
 2. **Wiring it up activates all seventeen at once.** The collision in §2.5.2, the field mismatch in §2.5.3, the reconciliation defects, the count-based IDs — every one goes live the moment an entry point exists. **Wiring must not be treated as a small task because the modules look finished.**
-3. **It is cheaper to fix now than it will ever be again.** No production data in those tabs, no user depending on current behaviour, no migration. **This is the single most useful scheduling fact in the assessment** — and it argues for fixing the seventeen findings *before* wiring, not after.
+3. **It is cheaper to fix now than it will ever be again.** No production data in those tabs, no user depending on current behavior, no migration. **This is the single most useful scheduling fact in the assessment** — and it argues for fixing the seventeen findings *before* wiring, not after.
 
 ---
 
@@ -612,7 +612,7 @@ Three Node test suites exist and **all three pass** `[VERIFIED]`:
 2. **Failures are swallowed.** Each HC call in the site gate is wrapped in `try/catch` that warns and continues `[VERIFIED]` `Access.js:423, 434`. Failing closed is right; failing *silently and totally* is the hazard.
 3. **`getHCStaffingBundle` is itself unguarded** and returns the full personnel roster to any caller (**G-026**) `[VERIFIED]`.
 
-**And the data crossing this edge is trusted more than it is checked.** The gate tests two fields from each HC record, two lines apart, and they fail in opposite directions `[VERIFIED]` `Access.js:416-418`: `supervisoryStatus` is an **allowlist** (anything but `'2'` denies — so `'02'` or `' 2'` silently locks out a real supervisor), while `occupancyStatus` is a **denylist** (only `VACANT`/`OBLIGATED` deny — so a blank or unrecognised value **grants** access). That asymmetry is **G-074**.
+**And the data crossing this edge is trusted more than it is checked.** The gate tests two fields from each HC record, two lines apart, and they fail in opposite directions `[VERIFIED]` `Access.js:416-418`: `supervisoryStatus` is an **allowlist** (anything but `'2'` denies — so `'02'` or `' 2'` silently locks out a real supervisor), while `occupancyStatus` is a **denylist** (only `VACANT`/`OBLIGATED` deny — so a blank or unrecognized value **grants** access). That asymmetry is **G-074**.
 
 **VT-03** settles whether a library is attached and, critically, **the exact values it emits** — which is the input both the allowlist and the denylist need before either can be corrected.
 
@@ -660,7 +660,7 @@ Places where one fact is stated in more than one file, so a change must be made 
 |---|---|---|
 | The Tier-1 travel purpose list | `TripConfig.js`, a client array, and an `<option>` list — **three places** | **G-054** |
 | Per-diem tab names | `SHEET_NAMES` **and** 6 duplicate constants in four per-diem modules | **G-042** |
-| Fiscal quarter derivation | Two implementations, one mislabelled | **G-049** |
+| Fiscal quarter derivation | Two implementations, one mislabeled | **G-049** |
 
 ---
 

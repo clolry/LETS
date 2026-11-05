@@ -132,7 +132,7 @@ function initTravelEmailConfig() {
 //
 // @clolry confirmed Test_Submitters is EMPTY. So every sandbox submission has
 // been sending real notifications, and any Sector Director or BU Reviewer that
-// HC resolved received them. That is pre-existing inherited behaviour, not
+// HC resolved received them. That is pre-existing inherited behavior, not
 // something introduced by recent work, and it is why he declined to supply real
 // approver addresses for the routing work.
 //
@@ -438,7 +438,7 @@ function sendTravelEmail(options) {
 // Full workflow: SD → BU → FO → FAS (overhead travel, SD-level submitter)
 // Stage LABELS are resolved at call time from branding properties, not frozen
 // at file-evaluation time. The inherited labels were 'SD', 'BU' and 'AAS FO';
-// this organisation calls them SCD (Service Center Director), DAC (Deputy
+// this organization calls them SCD (Service Center Director), DAC (Deputy
 // Assistant Commissioner) and the ASD Travel & Events team.
 //
 // The stage IDs are unchanged — they are internal identifiers that STAGE_MAP
@@ -527,7 +527,7 @@ const EMAIL_CONTENT = {
       // Agency then SERVICE, not agency then office. @clolry: it "should say
       // FEDERAL ACQUISITION SERVICE rather than ASSISTED ACQUISITION
       // SERVICES" — and ASD, the office, would have been a third wrong
-      // answer. A footer names the level the reader recognises.
+      // answer. A footer names the level the reader recognizes.
       return _brand().agency + ' \u2022 ' + _brand().orgService;
     }
   },
@@ -763,8 +763,8 @@ const EMAIL_CONTENT = {
  *
  * TO UPDATE THE LOGO:
  * 1. Work from brand/ASD_mark_1002x636_blue_transparent.png - it is already
- *    keyed and recoloured. Downscale with an AREA-AVERAGE filter, not
- *    nearest-neighbour, or the antialiased edges will fringe.
+ *    keyed and recolored. Downscale with an AREA-AVERAGE filter, not
+ *    nearest-neighbor, or the antialiased edges will fringe.
  * 2. Keep it at 2x the rendered size. 240 px displayed means 480 px here.
  * 3. Base64-encode the PNG and replace the string below.
  *
@@ -892,7 +892,7 @@ function _clearTravelLogo() {
  *
  *   2. Earlier stages are only "complete" if they were VISITED. A request that
  *      skipped SCD because the submitter is DAC-level did not complete SCD
- *      review — it bypassed it. Those render as skipped (grey, dashed) rather
+ *      review — it bypassed it. Those render as skipped (gray, dashed) rather
  *      than as approved, because the four workflow variants mean "skipped" and
  *      "completed" are genuinely different states.
  *
@@ -1509,10 +1509,10 @@ function _describeRoutingDestination(reviewer, reviewLevel, status) {
  * Initial_Review_Level records where a request STARTED and never advances,
  * while Current_Reviewer_Name does. Pairing them meant a request past its
  * first stage showed the current reviewer against the stage it began at —
- * correct on submission, progressively wrong afterwards.
+ * correct on submission, progressively wrong afterward.
  *
  * Status advances with the request, so it is the better source. The review
- * level is kept only as a fallback for a status this does not recognise.
+ * level is kept only as a fallback for a status this does not recognize.
  *
  * Deliberately NOT reusing STAGE_MAP: that maps to progress-tracker stage
  * keys ('bu_review'), which are internal identifiers. These are the words a

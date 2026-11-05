@@ -20,11 +20,11 @@
  * PROMOTION_THRESHOLD times.
  *
  * Pure learning (use whatever was picked last) makes one accidental mis-click
- * a sticky default and changes behaviour with no explanation. Pure explicit
+ * a sticky default and changes behavior with no explanation. Pure explicit
  * preferences (a checkbox or a settings screen) are predictable but nobody
  * fills them in, so the feature goes unused. The threshold gets the
  * no-friction benefit without a single stray click becoming permanent, and
- * promoted preferences are LABELLED in the UI rather than silently
+ * promoted preferences are LABELED in the UI rather than silently
  * pre-selected — the user can always see why something was chosen for them.
  *
  * KEYED ON USER_ID

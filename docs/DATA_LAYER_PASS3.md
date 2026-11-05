@@ -161,7 +161,7 @@ So **reordering columns would not break the majority of reads.** What breaks is 
 | **15** | `PerDiemDoD.js:22-31` + `:605-623` | `DOD_PERDIEM_COL` maps names to fixed indices 0–8; reads `row[0]`…`row[5]` | **Absolute**, against a tab written by `DoDSync.js` | Rates read from wrong columns → **wrong per-diem figures in cost estimates** |
 | **16** | `PerDiemForeign.js:22-34` + `:721-739` | `FPD_COL` maps names to fixed indices 0–10 | **Absolute** | Wrong foreign rates |
 | **17** | `ForeignSync.js:627-630` | `data[i][0..3]` on `DOS_Sync_Tracker` | Absolute | Sync-state misread → re-sync or skipped sync |
-| **18** | **`FASTrackerSync.js:148-163`, `:233-239`** | Writes a 14-element positional array to **another organisation's spreadsheet**; reads status from **column M** (`row[12]`) | **Absolute, and outside this project's control** | Rows written into wrong FAS columns; decisions misread |
+| **18** | **`FASTrackerSync.js:148-163`, `:233-239`** | Writes a 14-element positional array to **another organization's spreadsheet**; reads status from **column M** (`row[12]`) | **Absolute, and outside this project's control** | Rows written into wrong FAS columns; decisions misread |
 
 **The summary for a non-programmer.** The code reads flexibly but writes rigidly. Inserting a column into `Requests`, `Request_Legs`, `Request_Travelers`, `Traveler_Leg_Costs`, `Approval_Log`, `Attachments`, `Error_Log`, or `Feedback` **will not cause an error message**. It will cause every subsequent new record to have its values written one column to the left or right of where they belong, producing a database where names appear in date fields and dollar amounts appear in comment fields. Existing rows stay correct, so the damage is invisible until someone notices new records look wrong.
 
@@ -185,7 +185,7 @@ if (flaggedCol === undefined) {
 
 - The live `Requests` tab will have **45 columns**, not 42, as soon as any Division Director reports a funding issue. A reader comparing the sheet to the schema will think three columns are undocumented extras. They are undocumented, but they are real and load-bearing.
 - A subsequent `setupTravelDatabase()` run writes only the 42 schema headers, leaving columns 43–45 with their headers intact (it writes a 42-wide range, so it does not clear them). Benign — but `createOrUpdateSheet` would be destructive if the schema ever shrank.
-- **There is a latent bug.** The first of the three uses `headers.length + 1` while the other two use `requestsSheet.getLastColumn() + 1` `[VERIFIED]` `:511` vs `:521,529`. These differ when the sheet has trailing columns beyond the cached header array. In the common path they agree; in a sheet with extra columns the first could overwrite an existing column's header. Inconsistent and worth normalising.
+- **There is a latent bug.** The first of the three uses `headers.length + 1` while the other two use `requestsSheet.getLastColumn() + 1` `[VERIFIED]` `:511` vs `:521,529`. These differ when the sheet has trailing columns beyond the cached header array. In the common path they agree; in a sheet with extra columns the first could overwrite an existing column's header. Inconsistent and worth normalizing.
 
 ---
 
@@ -264,7 +264,7 @@ erDiagram
 | **Any named ranges** | **None** | `[VERIFIED]` — zero `getRangeByName` |
 | **Any sheet protections** | **None created by code** | The only `addEditor` call grants a report requester edit on a *new export* file `Reporting.js:319` |
 
-The absence of data validation, named ranges, and protections means **the sheet has no defences of its own.** Everything depends on the application being the only writer, which §2.5 established is not the case.
+The absence of data validation, named ranges, and protections means **the sheet has no defenses of its own.** Everything depends on the application being the only writer, which §2.5 established is not the case.
 
 ---
 
@@ -447,11 +447,11 @@ GSA CONUS rates are **not** stored in a tab — they come live from `https://api
 
 `DRAFT`, `PENDING_SECTOR`, `PENDING_BU`, `PENDING_OSO`, `PENDING_FAS`, `Pending_DD_Confirmation`, `Pending_Correction`, `NEEDS_INFO_SECTOR`, `NEEDS_INFO_BU`, `NEEDS_INFO_OSO`, `APPROVED_GOGOV`, `COMPLETED`, `DENIED`, `CANCELLED`, `SUBMITTER_CANCELLED`
 
-**Two of these break the casing convention on purpose.** `Pending_DD_Confirmation` and `Pending_Correction` are TitleCase while the rest are ALL_CAPS. The code documents why: *"Pre-existing inconsistency; documented Option A in REFACTOR_PLAN. Option C (normalize to ALL_CAPS with a one-shot data migration) is deferred — see OPEN_QUESTIONS.md Q1."* `[VERIFIED]` `Status.js:17-21`. Both referenced documents are absent `[NOT FOUND]`. **Anyone writing a status comparison must match these two exactly** — a `.toUpperCase()` normalisation would silently stop matching live data.
+**Two of these break the casing convention on purpose.** `Pending_DD_Confirmation` and `Pending_Correction` are TitleCase while the rest are ALL_CAPS. The code documents why: *"Pre-existing inconsistency; documented Option A in REFACTOR_PLAN. Option C (normalize to ALL_CAPS with a one-shot data migration) is deferred — see OPEN_QUESTIONS.md Q1."* `[VERIFIED]` `Status.js:17-21`. Both referenced documents are absent `[NOT FOUND]`. **Anyone writing a status comparison must match these two exactly** — a `.toUpperCase()` normalization would silently stop matching live data.
 
 **Action types** `[VERIFIED]` `Status.js:38-68` — 22 values, mostly TitleCase (`Submitted`, `Sector_Approved`, `BU_Needs_Info`, `Edit_Overview`), with three deliberate ALL_CAPS exceptions (`ADMIN_REASSIGN`, `ADMIN_OVERRIDE`) and one TitleCase (`All_DD_Confirmed`). Plus one **literal string not in the enum at all**: `'Edit_SharedCosts'` written directly at `Review_Update.js:1706` `[VERIFIED]`. Minor, but it means `ACTION_TYPES` is not exhaustive.
 
-**Role types** `[VERIFIED]` `Users.js:20-27` — `admin`, `aas_fo_reviewer`, `fas_fo_reviewer`, `bu_reviewer`, `sector_override`, `approved_user`. Scope required for the latter two `:30`. These are the only six values `addTravelUser`/`setRoleActive` accept; a direct sheet edit can write anything, and an unrecognised `Role_Type` simply grants nothing (it fails every `roleType === …` test) — silent, not an error.
+**Role types** `[VERIFIED]` `Users.js:20-27` — `admin`, `aas_fo_reviewer`, `fas_fo_reviewer`, `bu_reviewer`, `sector_override`, `approved_user`. Scope required for the latter two `:30`. These are the only six values `addTravelUser`/`setRoleActive` accept; a direct sheet edit can write anything, and an unrecognized `Role_Type` simply grants nothing (it fails every `roleType === …` test) — silent, not an error.
 
 **Location types** `[VERIFIED]` `01_constants/Locations.js:8-14` — `conference`, `client-site`, `contractor-site`, `teb`, `other`. Validated on edit `Review_Update.js:215-218`. `client-site` and `contractor-site` require a site name `:17-20`.
 

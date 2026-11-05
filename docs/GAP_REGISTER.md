@@ -10,7 +10,7 @@ evidence_base: "docs/evidence/pass6_register_check.js, pass6_hc_gate_predicate.j
 
 # LETS Gap Register
 
-**Deliverable 6 of 10.** The prioritisation document. Its ordering is its product.
+**Deliverable 6 of 10.** The prioritization document. Its ordering is its product.
 
 ---
 
@@ -29,7 +29,7 @@ Every finding carries **both** a permanent `G-NNN` **and** a mutable `Rank`.
 
 > **`G-NNN` is not the current severity order, and the register must not be read as though it were.** The IDs were assigned in severity order when Pass 6 created them, so they *began* aligned. They are no longer: **G-048 has been re-rated from Medium to High** (§6.6.2), so it now sits at **rank 10** while its ID still falls in the Medium band. **Six findings have been added** as `G-069`…`G-074` and are interleaved by rank rather than appended by severity.
 >
-> **The two-column rule in action, most recently for `G-074`.** It was added at rank 32 beside the other `C3/R2` findings, which **shifted ranks 32–73 up by one** — 42 register rows and 41 rank citations in §6.8–§6.11, all moved mechanically. **No `G-NNN` changed.** That is the whole point of the separation: rank is the column that absorbs change, and `pass6_register_check.js` §[1] re-verifies that ranks still form a contiguous `1..n` sequence afterwards.
+> **The two-column rule in action, most recently for `G-074`.** It was added at rank 32 beside the other `C3/R2` findings, which **shifted ranks 32–73 up by one** — 42 register rows and 41 rank citations in §6.8–§6.11, all moved mechanically. **No `G-NNN` changed.** That is the whole point of the separation: rank is the column that absorbs change, and `pass6_register_check.js` §[1] re-verifies that ranks still form a contiguous `1..n` sequence afterward.
 >
 > This is deliberate. Renumbering on re-rate would invalidate every citation in nine other documents, which is a worse outcome than an ID that no longer matches its block.
 
@@ -49,7 +49,7 @@ Every finding carries **both** a permanent `G-NNN` **and** a mutable `Rank`.
 | **LETS** | LETS-original code | 25 |
 | **Shared** | LETS modified an inherited file, or reproduced an inherited pattern in new code | 5 |
 
-Ownership is derived mechanically by byte-comparison, not by judgement — `pass6_manifest_recount.js`.
+Ownership is derived mechanically by byte-comparison, not by judgment — `pass6_manifest_recount.js`.
 
 ---
 
@@ -87,8 +87,8 @@ Severity is **consequence × reachability**. Both axes are needed: a catastrophi
 |---|---|
 | **C4** | Unauthorized privilege escalation, or disclosure/alteration of PII, CUI, or financial records across the whole dataset |
 | **C3** | Unauthorized alteration or disclosure of a specific record; silent financial misstatement; loss of audit trail |
-| **C2** | Incorrect behaviour a user would notice, or data corruption requiring manual repair |
-| **C1** | Cosmetic, documentation, naming, or dead-code defect with no behavioural effect |
+| **C2** | Incorrect behavior a user would notice, or data corruption requiring manual repair |
+| **C1** | Cosmetic, documentation, naming, or dead-code defect with no behavioral effect |
 
 ### 6.1.2 Reachability — who can trigger it, as the system stands today
 
@@ -152,7 +152,7 @@ Severity is **consequence × reachability**. Both axes are needed: a catastrophi
 | 2 | **G-002** | **`bootstrapTravelAdmin` lets any authenticated user grant themselves `admin`** — writes both rows and clears the role cache so it takes effect at once | C4/R4 | TRIP | open | S-1 |
 | 3 | **G-004** | **Request disclosure chain.** `getRequestForReview` returns any request's full record (PII + probable CUI); `getRequestAttachments` yields its file IDs; `shareAttachmentsWithUsers` grants anyone access. IDs are sequential | C4/R3 | TRIP | **remediated** 2026-11-03 — §6.13 | S-2, S-16 |
 | 4 | **G-006** | **No `oauthScopes` declared.** The effective grant is inferred from API usage and includes full Drive and all spreadsheets. Nobody chose it; it widens silently as code is added | C4/R2 | TRIP | open | S-13 |
-| 5 | **G-003** | **The review-edit surface has no authorization.** 5 `update*` RPCs plus `reportDDFundingIssue` and `submitFundingCorrection` let any user rewrite itinerary, travellers, costs, `Grand_Total`, status and `Is_Client_Paid` on any request | C3/R4 | TRIP | **BLOCKED ON BD-3** | S-4, S-17 |
+| 5 | **G-003** | **The review-edit surface has no authorization.** 5 `update*` RPCs plus `reportDDFundingIssue` and `submitFundingCorrection` let any user rewrite itinerary, travelers, costs, `Grand_Total`, status and `Is_Client_Paid` on any request | C3/R4 | TRIP | **BLOCKED ON BD-3** | S-4, S-17 |
 | 6 | **G-005** | **`deleteTravelDraftFile` trashes any Drive file ID with no ownership check**; `uploadTravelDraftFile` has no size or MIME limit | C3/R3 | TRIP | open | S-3 |
 
 ### High — 19 findings
@@ -168,7 +168,7 @@ Severity is **consequence × reachability**. Both axes are needed: a catastrophi
 | 11 | **G-010** | **`verifyPhase7Routing` is unguarded and returns the complete role roster** — every admin, the AAS and FAS primaries and backups, with names and addresses. One call maps the entire authorization structure | C3/R4 | TRIP | open | S-25 |
 | 12 | **G-011** | **`?mode=budget` and `?mode=dd-confirm` page-servers have no role gate** beyond the site gate | C3/R4 | Shared | open | S-20, R-2 |
 | 13 | **G-012** | **`Request_ID` generation has no lock, so duplicate primary keys are possible; the 5-tab submission has no transaction, so partial failure leaves orphan rows.** Self-documented as deferred | C3/R4 | TRIP | open | D-4 |
-| 14 | **G-069** | **The client-paid override fails open.** The predicate deciding whether a request receives FAS Front Office review returns "no overhead" — which means *skip FAS* — for missing traveller rows, null rows, and a missing `Is_Client_Paid` column | C3/R4 | TRIP | **new** (§6.5) | D4 §4.3.5 |
+| 14 | **G-069** | **The client-paid override fails open.** The predicate deciding whether a request receives FAS Front Office review returns "no overhead" — which means *skip FAS* — for missing traveler rows, null rows, and a missing `Is_Client_Paid` column | C3/R4 | TRIP | **new** (§6.5) | D4 §4.3.5 |
 | 15 | **G-009** | **Authorization changes are audited by overwritable current-state columns.** `deleteRole` leaves no record at all; bulk request deletion records only to Cloud Logging. "Who had admin in March" is unanswerable | C3/R2 | TRIP | open | S-15 |
 | 16 | **G-014** | **18 order-dependent sheet access points, 8 of them positional write arrays.** Inserting a column silently corrupts every subsequent write | C3/R2 | TRIP | open | D-10 |
 | 17 | **G-018** | **An AAS FO reviewer submitting an all-client-paid request is auto-approved with zero review** | C3/R2 | TRIP | **BLOCKED ON BD-6** | R-A1 |
@@ -191,9 +191,9 @@ Severity is **consequence × reachability**. Both axes are needed: a catastrophi
 | 27 | **G-034** | **No CDN subresource integrity:** 34 external script and style references, zero `integrity=` attributes. A CDN compromise executes arbitrary JavaScript in every session | C4/R1 | Shared | open | S-24 |
 | 28 | **G-026** | `getHCStaffingBundle` returns the full personnel roster with no role check | C3/R4 | TRIP | open | R-8 |
 | 29 | **G-027** | **A role-table read can trigger a production write.** `selfHealCurrentUserEmail` patches `Travel_Users.Email` on a cache miss, rebinding a role set to a new address | C3/R4 | TRIP | open | S-5 |
-| 30 | **G-031** | `aas_fo_reviewer` carries `scope: 'all'` — organisation-wide visibility identical to admin for all filtering. The role name does not advertise this | C3/R2 | TRIP | **BLOCKED ON BD-2** | S-11 |
+| 30 | **G-031** | `aas_fo_reviewer` carries `scope: 'all'` — organization-wide visibility identical to admin for all filtering. The role name does not advertise this | C3/R2 | TRIP | **BLOCKED ON BD-2** | S-11 |
 | 31 | **G-032** | **`Is_Active` parsing treats only `false` / `'false'` as inactive.** Blank, `'no'`, `0` and typos all read as active, so a manual spreadsheet revocation may not revoke | C3/R2 | TRIP | open | S-14 |
-| 32 | **G-074** | **The site gate's occupancy check is a denylist, so a blank or unrecognised `occupancyStatus` grants access.** Sits two lines below an allowlist that fails closed — opposite defaults in one predicate | C3/R2 | TRIP | **new** (§6.5) | Pass 6 re-check |
+| 32 | **G-074** | **The site gate's occupancy check is a denylist, so a blank or unrecognized `occupancyStatus` grants access.** Sits two lines below an allowlist that fails closed — opposite defaults in one predicate | C3/R2 | TRIP | **new** (§6.5) | Pass 6 re-check |
 | 33 | **G-035** | **`RECONCILED` with blank actuals silently frees the entire commitment** | C3/R1 | LETS | open | R-B2 |
 | 34 | **G-036** | **`reconcileRequest` overwrites the approved estimate**, destroying the audit basis for variance | C3/R1 | LETS | open | R-B3 |
 | 35 | **G-037** | `LETS-` IDs are count-based: they collide under concurrency, reuse numbers after deletion, and are hardcoded to FY27 | C3/R1 | LETS | open | R-B5 |
@@ -212,7 +212,7 @@ Severity is **consequence × reachability**. Both axes are needed: a catastrophi
 | 48 | **G-049** | `'FY Quarter'` labels calendar quarters, not fiscal ones; duplicate implementations in two files | C2/R2 | TRIP | open | R-A4 |
 | 49 | **G-054** | The Tier-1 purpose list exists in three independent places — config, client array, and `<option>` markup | C2/R2 | Shared | open | R-C1 |
 | 50 | **G-055** | Tier thresholds ($10k IMM, $7k training) are user-declared, never computed from cost | C2/R2 | Shared | **BLOCKED ON BD-6** | R-C3 |
-| 51 | **G-056** | **Six real named GSA employees' addresses are embedded in routing-test fixtures with their role assignments labelled** | C2/R2 | TRIP | open | S-23 |
+| 51 | **G-056** | **Six real named GSA employees' addresses are embedded in routing-test fixtures with their role assignments labeled** | C2/R2 | TRIP | open | S-23 |
 | 52 | **G-024** | FAS tracker wiring is incomplete: the poller reads decisions and discards them, there is no `FAS_Tracker_Row_ID` column, and no trigger installer | C2/R1 | LETS | open | R-3 |
 | 53 | **G-039** | `setAsideType` and the three policy flags are collected and never read. Charging a trip to a specific set-aside pool is a design gap, not a wiring gap | C2/R1 | LETS | open | R-B12 |
 | 54 | **G-043** | `Travelers` and `Audit_Log` have schemas and no writer anywhere; `RequestService` builds exactly-shaped data it never persists | C2/R1 | LETS | open | D-8 |
@@ -311,11 +311,11 @@ Closing only the first would have left 2 and 3 as a working pair.
 
 ### What was built
 
-`30_services/RequestAccess.js`. Read access requires a **relationship** to the request — submitter, a traveller on it, the current reviewer, a named reviewer, a **prior** reviewer who already acted, a scoped reviewer whose BU or org prefix matches, or an admin. Everyone else is **refused**, not served a redacted copy: a redacted copy still confirms the request exists and who is on it.
+`30_services/RequestAccess.js`. Read access requires a **relationship** to the request — submitter, a traveler on it, the current reviewer, a named reviewer, a **prior** reviewer who already acted, a scoped reviewer whose BU or org prefix matches, or an admin. Everyone else is **refused**, not served a redacted copy: a redacted copy still confirms the request exists and who is on it.
 
-> **This is stricter than the HC bar, deliberately.** The HC directory is organisation-visible by design, so reduction was the right answer there. A travel request is not a public record, so refusal is.
+> **This is stricter than the HC bar, deliberately.** The HC directory is organization-visible by design, so reduction was the right answer there. A travel request is not a public record, so refusal is.
 
-Field reduction applies **within** the allowed set. A named reviewer who is not the current reviewer does not see another traveller's clearance, passport, commute or employee ID. The current reviewer does, because clearance bears on whether someone can attend a classified or foreign event and commute figures feed the local-travel calculation. **A traveller always sees their own row in full and nobody else's.**
+Field reduction applies **within** the allowed set. A named reviewer who is not the current reviewer does not see another traveler's clearance, passport, commute or employee ID. The current reviewer does, because clearance bears on whether someone can attend a classified or foreign event and commute figures feed the local-travel calculation. **A traveler always sees their own row in full and nobody else's.**
 
 ### Two things that would have failed silently
 
@@ -388,17 +388,17 @@ cd docs/evidence && for f in *.js; do echo "== $f"; node "$f"; done
 
 ### G-069 — the client-paid override fails open · High · C3/R4 · TRIP
 
-**What it is.** On `oso_approve`, the handler re-reads traveller rows and, if no traveller is overhead-funded, rewrites the outcome to `APPROVED_GOGOV` — **skipping FAS Front Office review entirely** `[VERIFIED]` `Review_Action.js:125-145`. So one predicate decides whether a request receives the review Executive Order 14222 requires.
+**What it is.** On `oso_approve`, the handler re-reads traveler rows and, if no traveler is overhead-funded, rewrites the outcome to `APPROVED_GOGOV` — **skipping FAS Front Office review entirely** `[VERIFIED]` `Review_Action.js:125-145`. So one predicate decides whether a request receives the review Executive Order 14222 requires.
 
 **The defect.** The predicate's guard clause returns `false` — meaning *no overhead*, meaning *skip FAS* — for three degraded inputs `[VERIFIED]`:
 
 | Input | Result |
 |---|---|
-| No traveller rows at all | **skips FAS** |
+| No traveler rows at all | **skips FAS** |
 | `rows` is null | **skips FAS** |
 | `Is_Client_Paid` column missing | **skips FAS** |
 
-**Why it is High and not Medium.** The two trigger conditions are **existing findings**, not hypotheticals: **G-012** (partial submission leaves a request with no traveller rows) and **G-014** (a renamed or reordered column). A request hit by either is approved without its compliance review.
+**Why it is High and not Medium.** The two trigger conditions are **existing findings**, not hypotheticals: **G-012** (partial submission leaves a request with no traveler rows) and **G-014** (a renamed or reordered column). A request hit by either is approved without its compliance review.
 
 **The asymmetry worth noting.** The *per-row* default on the same line — `!val` treats a blank cell as overhead — fails **closed** and is correct. The *collection-level* guard fails **open**. Same function, two lines apart, opposite defaults.
 
@@ -416,11 +416,11 @@ cd docs/evidence && for f in *.js; do echo "== $f"; node "$f"; done
 
 ### G-071 — DD confirmation self-confirms on a double blank · Low · C3/R3 · TRIP
 
-Division Director confirmation authorizes by comparing `ddEmail === currentUserEmail` after lower-casing both `[VERIFIED]` `Review_DDConfirm.js:330`. Executed across input classes, every case is correct **except one**: if a traveller row's `DD_Email` is blank **and** the session email is blank, `'' === ''` succeeds and the row confirms.
+Division Director confirmation authorizes by comparing `ddEmail === currentUserEmail` after lower-casing both `[VERIFIED]` `Review_DDConfirm.js:330`. Executed across input classes, every case is correct **except one**: if a traveler row's `DD_Email` is blank **and** the session email is blank, `'' === ''` succeeds and the row confirms.
 
 **Whether it is reachable is `[UNKNOWN]`.** `Review_DDConfirm.js:292` calls `.getEmail().toLowerCase()` with **no `|| ''` fallback**, while **13 other call sites in the codebase do guard against a blank email** `[VERIFIED]`. So the codebase elsewhere treats a blank session email as possible and here does not.
 
-**Worth one line of defence rather than an investigation** — `if (!currentUserEmail || !ddEmail) continue;` closes it regardless.
+**Worth one line of defense rather than an investigation** — `if (!currentUserEmail || !ddEmail) continue;` closes it regardless.
 
 **Detail:** `WORKFLOW_AND_BUSINESS_RULES.md` §4.4.2.
 
@@ -496,7 +496,7 @@ if (status === 'VACANT' || status === 'OBLIGATED') continue;   // DENYLIST
 
 **So a supervisor record with no occupancy data admits its holder**, as does any occupancy code the author did not anticipate, as does `VACANT` with a stray space.
 
-**The asymmetry is the point.** The field above it is an **allowlist** and fails **closed** — an unrecognised `supervisoryStatus` denies. Two checks, two lines apart, failing in opposite directions. Neither default is obviously wrong in isolation; together they mean **the gate is stricter about a value it understands than about a value it does not.**
+**The asymmetry is the point.** The field above it is an **allowlist** and fails **closed** — an unrecognized `supervisoryStatus` denies. Two checks, two lines apart, failing in opposite directions. Neither default is obviously wrong in isolation; together they mean **the gate is stricter about a value it understands than about a value it does not.**
 
 **Why C3/R2 and not higher.** It grants *site access* — passing the gate, not acquiring a role. A user admitted this way has no role row, so `getReviewerContext` resolves them to `role: 'none'` and the privileged consoles still refuse them. But site access is the precondition for the 412-function reachable surface (**G-001**), so it is not cosmetic. **R2** because it requires the HC bundle to contain a matching record for the caller — not something an arbitrary user controls.
 
@@ -521,7 +521,7 @@ if (status === 'VACANT' || status === 'OBLIGATED') continue;   // DENYLIST
 | **Why it is false** | The explicit `String()` coercion means `String(2) === '2'`. **A numeric `2` passes.** All six sites across the server tree coerce the same way — there is no bare `===` against the raw field anywhere `[VERIFIED]` |
 | **Why it is false twice** | *"Two of three allow-paths"* is also wrong: path 3 `_isBuLeadByTitle` `Access.js:864` never reads `supervisoryStatus` `[VERIFIED]`. A real type mismatch would disable **one** |
 
-**What actually fails** `[VERIFIED]`: `'02'`, `' 2'`, `'2 '`, `'2.0'`, `'two'` — zero-padded, whitespace-bearing, decimal-formatted text. The gate neither trims nor normalises. **These are the shapes a spreadsheet export or a text-formatted column produces**, so VT-03 keeps its twenty minutes and must record the exact distinct values with padding intact.
+**What actually fails** `[VERIFIED]`: `'02'`, `' 2'`, `'2 '`, `'2.0'`, `'two'` — zero-padded, whitespace-bearing, decimal-formatted text. The gate neither trims nor normalizes. **These are the shapes a spreadsheet export or a text-formatted column produces**, so VT-03 keeps its twenty minutes and must record the exact distinct values with padding intact.
 
 **Corrected in place:** `ADMINISTRATOR_GUIDE.md` §1.7.2, and `GAP_CONSOLIDATION_PASS6.md` §6.7.2/§6.7.3 with the withdrawal recorded at §6.7.4. **Left as written:** `SECURITY_AND_ACCESS_PASS5.md` V-38 — a dated working note, per the convention that pass documents are a record and not edited retroactively.
 
@@ -550,7 +550,7 @@ if (status === 'VACANT' || status === 'OBLIGATED') continue;   // DENYLIST
 
 **Why the consequence is C4 rather than C3.** All pushed `.js` files share one global scope `[VERIFIED]`. Pushing `lets_app/` and `reference_travel_app/` together puts **two complete copies of ~459 function names in one namespace**, where the later-loading definition silently wins. The result is not untidy; it is **unpredictable** — and it would be running under whatever credentials that project holds, against whatever spreadsheet it is bound to.
 
-It also **pushes another organisation's application code** into a project nobody has documented.
+It also **pushes another organization's application code** into a project nobody has documented.
 
 **Reachability stays R2** — it requires project access and a `clasp push` from the wrong directory. **C4/R2 is High.**
 
@@ -570,7 +570,7 @@ G-013, G-016, G-023, G-024, G-035, G-036, G-037, G-038, G-039, G-040, G-043, G-0
 
 All four LETS-original modules expose **zero** top-level functions and have **zero** inbound references `[VERIFIED]` — `pass6_component_map.js` §[5]. Apps Script exposes only top-level functions to the browser, so **no browser can call in and no server code calls in.**
 
-> **These seventeen are the cheapest fixes in the register, and that is the single most useful scheduling fact here.** There is no production data in the budget tabs, no user depending on current behaviour, and no migration. **They should be fixed *before* the subsystem is wired, not after** — wiring first means debugging a financial engine against live data, and wiring activates all seventeen simultaneously.
+> **These seventeen are the cheapest fixes in the register, and that is the single most useful scheduling fact here.** There is no production data in the budget tabs, no user depending on current behavior, and no migration. **They should be fixed *before* the subsystem is wired, not after** — wiring first means debugging a financial engine against live data, and wiring activates all seventeen simultaneously.
 
 ### 6.7.2 Five latent for other reasons
 
@@ -598,7 +598,7 @@ All four LETS-original modules expose **zero** top-level functions and have **ze
 | **G-023** | 21 | **BD-5** | Same decision — the FAS substring match cannot be fixed until the schema question settles |
 | **G-018** | 17 | **BD-6** | Is FO-reviewer self-approval on client-paid travel intended policy? |
 | **G-055** | 50 | **BD-6** | Should tier thresholds be computed from cost rather than self-declared? |
-| **G-031** | 30 | **BD-2** | Should `aas_fo_reviewer` see every request in the organisation? |
+| **G-031** | 30 | **BD-2** | Should `aas_fo_reviewer` see every request in the organization? |
 
 ### 6.8.1 The BD-3 pair is the most consequential
 

@@ -40,7 +40,7 @@ const ok = (n, c, x) => {
  *
  * Writes land in an in-memory sheet and are read back through the same
  * header-name resolution the real code uses, so the append-and-read-back
- * behaviour is exercised rather than asserted.
+ * behavior is exercised rather than asserted.
  */
 function load(opts) {
   opts = opts || {};
