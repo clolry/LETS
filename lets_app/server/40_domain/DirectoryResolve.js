@@ -45,6 +45,48 @@ function _str2_(v) {
 }
 
 /**
+ * Minimum gap between directory calls, in milliseconds.
+ *
+ * WHY PACE AT ALL. @clolry's sweep hit
+ *   'Quota exceeded ... Critical read requests (Contact and Profile Reads)
+ *    per minute per user'
+ * after roughly 100-125 successful lookups, eight runs in a row. Sprinting
+ * into a per-minute limit and then handling the failure is strictly worse
+ * than not exceeding it: every error costs a call that achieved nothing, and
+ * the recovery costs a 65-second wait.
+ *
+ * 650ms gives about 92 calls per minute, comfortably under the observed
+ * ceiling of roughly 100-125. Slower than necessary would waste the execution
+ * budget; faster re-enters the throttle.
+ *
+ * THE RESOLUTION PATH IS NOT THE ONLY CALLER. getEmailResolutionQueue makes
+ * up to three calls per position — full name, surname, then each surname
+ * component — so the same pacing applies there and matters more.
+ */
+var DIRECTORY_CALL_INTERVAL_MS = 650;
+
+/** When the last directory call was made, within this execution. */
+var _lastDirectoryCallAt_ = 0;
+
+/**
+ * Waits long enough that the next call stays under the per-minute quota.
+ *
+ * Module-level state rather than a parameter, because the pacing has to hold
+ * across every caller in one execution — resolveBatch, the resolution queue
+ * and verifyConstructedAddress all share one quota, and a per-caller
+ * budget would let three of them each stay under it while together exceeding
+ * it.
+ */
+function _paceDirectoryCall_() {
+  var now = Date.now();
+  var since = now - _lastDirectoryCallAt_;
+  if (_lastDirectoryCallAt_ && since < DIRECTORY_CALL_INTERVAL_MS) {
+    Utilities.sleep(DIRECTORY_CALL_INTERVAL_MS - since);
+  }
+  _lastDirectoryCallAt_ = Date.now();
+}
+
+/**
  * Searches the domain directory for one parsed name.
  *
  * Queries on 'Forename Surname' because searchDirectoryPeople takes a free
@@ -66,6 +108,11 @@ function _directorySearch_(parsed) {
   }
 
   var query = _str2_(parsed.query) || (parsed.first + ' ' + parsed.last);
+
+  // PACED. See DIRECTORY_CALL_INTERVAL_MS: the quota is per minute per user,
+  // and staying under it is cheaper than recovering from exceeding it.
+  _paceDirectoryCall_();
+
   var res;
   try {
     res = People.People.searchDirectoryPeople({
@@ -544,11 +591,21 @@ function resolveDirectoryEmails(opts) {
     var batch = DirectoryLookup.resolveBatch(bundle.data, _directorySearch_, {
       startIndex: start,
       verifyFn: verifyConstructedAddress,
-      maxLookups: parseInt(o.maxLookups, 10) || 400,
-      // Four minutes of a six-minute limit. The remainder is the write, the
-      // cache invalidation and the resume-index save, which must not be the
-      // things that get cut off.
-      deadlineMs: 240000,
+      // Lets resolveBatch wait out the quota window and RETRY the streak,
+      // rather than stopping and making @clolry the retry loop. Injected so
+      // the unit tests never actually sleep.
+      sleepFn: function (ms) { Utilities.sleep(ms); },
+      // Raised from 400. At 650ms per call the deadline binds long before a
+      // lookup cap does, and a cap below what the time allows just ends runs
+      // early for no reason.
+      maxLookups: parseInt(o.maxLookups, 10) || 2000,
+      // Four and a half minutes of a six-minute limit. The remainder is the
+      // write, the cache invalidation and the resume-index save, which must
+      // not be the things that get cut off.
+      //
+      // At 650ms per call this is roughly 400 lookups per execution — so a
+      // 564-position backlog is two runs, not eight.
+      deadlineMs: 270000,
       includeExisting: !!o.includeExisting
     });
 
@@ -748,9 +805,25 @@ function installDirectoryLookupTrigger() {
       ScriptApp.deleteTrigger(t);
     }
   });
-  ScriptApp.newTrigger('syncDirectoryEmails').timeBased().everyHours(1).create();
-  console.log('installDirectoryLookupTrigger: hourly. Remove it once the ' +
-              'sweep reports complete and new hires are rare.');
+  // EVERY 10 MINUTES for the initial backlog, not hourly.
+  //
+  // At 650ms per call and a 4.5-minute budget, one execution covers roughly
+  // 400 positions. A 564-position backlog is therefore two runs — twenty
+  // minutes unattended rather than eight manual runs, which is what @clolry
+  // actually did before this was fixed.
+  //
+  // Ten minutes also clears the per-minute quota between executions, so
+  // consecutive runs start with a full allowance instead of inheriting an
+  // exhausted one.
+  //
+  // Switch to hourly, or remove it, once the sweep reports complete: after
+  // that each run only picks up new hires and finishes in seconds.
+  ScriptApp.newTrigger('syncDirectoryEmails').timeBased()
+           .everyMinutes(10).create();
+  console.log('installDirectoryLookupTrigger: every 10 minutes.');
+  console.log('A 564-position backlog is about two runs. Check progress with ' +
+              'runDirectoryResolve() — when it reports complete:true and ' +
+              'unresolvedByError:0, remove this trigger or slow it to hourly.');
   return { success: true };
 }
 
@@ -824,6 +897,9 @@ function getEmailResolutionQueue(opts) {
     var examined = 0;
     var i = start;
     var deadline = Date.now() + 120000;
+    // Set when a lookup fails on quota. The page stops rather than reporting
+    // 'no candidate' for calls that never happened.
+    var out_quotaHit = false;
 
     for (; i < bundle.data.length && queue.length < limit; i++) {
       var p = bundle.data[i];
@@ -838,12 +914,30 @@ function getEmailResolutionQueue(opts) {
 
       var parsed = DirectoryLookup.parseName(p.employeeName);
       var candidates = [];
+      var searchFailed = false;
       try {
         candidates = _directorySearch_(parsed);
       } catch (e) {
+        // A QUOTA ERROR IS NOT 'NO CANDIDATES'.
+        //
+        // Swallowing it meant the queue reported 'no directory candidate
+        // shares this surname' for a call that never completed — which reads
+        // as a definitive finding and is the same conflation of refusal with
+        // error that the sweep had. Stop the page instead; an incomplete
+        // queue is honest, a wrong one is not.
+        searchFailed = true;
+        if (/[Qq]uota/.test(String(e.message))) {
+          out_quotaHit = true;
+        }
         candidates = [];
       }
       examined++;
+      if (searchFailed) {
+        if (out_quotaHit) break;
+        // A one-off failure for this name: skip the position rather than
+        // asserting anything about it.
+        continue;
+      }
 
       // If the automatic matcher WOULD resolve this, it does not belong in a
       // manual queue — the sweep will handle it.
@@ -956,7 +1050,14 @@ function getEmailResolutionQueue(opts) {
     return successResponse({
       queue: queue,
       nextIndex: i,
-      complete: i >= bundle.data.length,
+      complete: i >= bundle.data.length && !out_quotaHit,
+      quotaHit: out_quotaHit,
+      quotaNote: out_quotaHit
+        ? ('The directory quota was exhausted partway through this page, so ' +
+           'it is incomplete. Wait a minute and re-run from index ' + i + '. ' +
+           'No position was reported as having no candidate on the strength ' +
+           'of a failed call.')
+        : '',
       examined: examined,
       // The whole population, so the UI can show progress rather than just a
       // page of work.

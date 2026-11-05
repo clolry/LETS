@@ -157,6 +157,16 @@ var DirectoryLookup = (function () {
   var ERROR_STREAK_LIMIT = 8;
 
   /**
+   * How long the People API's per-minute quota takes to refill.
+   *
+   * The error is 'Quota exceeded for quota metric Critical read requests
+   * (Contact and Profile Reads) ... per minute per user'. Sixty seconds plus a
+   * five-second margin, because the window is not aligned to when we started
+   * counting.
+   */
+  var QUOTA_WINDOW_MS = 65000;
+
+  /**
    * Generational suffixes, recognised on either side of a comparison.
    *
    * Module scope rather than a local in parseName, because candidateMatches
@@ -1003,9 +1013,19 @@ var DirectoryLookup = (function () {
       // matching failure.
       errors: 0,
       errorSamples: [],
-      rateLimited: false
+      rateLimited: false,
+      // How many times this run waited out the quota window and continued.
+      // A non-zero value is the sweep working as intended, not a problem.
+      quotaWaits: 0
     };
     var consecutiveErrors = 0;
+    // Where the current error streak began, so a rate-limit stop can rewind
+    // to it instead of stepping over it.
+    var firstErrorIndex = -1;
+    var sleepFn = o.sleepFn || null;
+    // Position numbers whose LAST attempt was an error. Keyed rather than
+    // counted, so a successful retry removes one.
+    var erroredPositions = {};
 
     var list = positions || [];
     var i = start;
@@ -1037,14 +1057,34 @@ var DirectoryLookup = (function () {
 
       var r = resolveOne(p, searchFn, verifyFn);
       out.lookups++;
+
+      // RETRIES MUST CLEAR THE EARLIER FAILURE.
+      //
+      // `errors` counts ATTEMPTS that failed, which is the right number for
+      // diagnosing a throttle. It is the WRONG number for deciding whether
+      // the sweep is finished: a position that errored, waited out the quota
+      // and then resolved is done, and counting its first attempt against
+      // completion would make a fully successful run report itself
+      // incomplete — the same false signal as before, inverted.
+      //
+      // So unresolved-by-error is tracked per POSITION and cleared on a later
+      // outcome, whatever that outcome is.
+      var pnKey = _str_(p.positionNumber) || ('idx' + i);
+      if (r.method !== 'error') delete erroredPositions[pnKey];
+
       if (r.email) {
         out.resolved.push(r);
         consecutiveErrors = 0;
+        firstErrorIndex = -1;
       } else {
         out.refused.push(r);
         if (r.method === 'error') {
+          erroredPositions[pnKey] = true;
           out.errors++;
           consecutiveErrors++;
+          // Remember where the streak STARTED. This is the index the run must
+          // resume from — see the rewind below.
+          if (firstErrorIndex === -1) firstErrorIndex = i;
           // Keep the first few messages. @clolry's sweep reported 281 errors
           // and the log showed only '[error, 0 candidate(s)]' — the reason
           // was recorded per row and never surfaced, so the cause was
@@ -1054,48 +1094,99 @@ var DirectoryLookup = (function () {
           }
         } else {
           consecutiveErrors = 0;
+          firstErrorIndex = -1;
         }
       }
 
-      // STOP ON A RUN OF CONSECUTIVE ERRORS.
+      // A RUN OF CONSECUTIVE ERRORS MEANS THE QUOTA IS EXHAUSTED.
       //
-      // @clolry's first run: 113 resolved, then 281 errors in a row. Its
-      // second: 125 resolved, then 275. The pattern is a quota — roughly 120
-      // lookups per execution, after which every call fails.
+      // The quota is 'Critical read requests per minute per user', which
+      // refills every 60 seconds. So the right response is to WAIT, not to
+      // stop — and if there is no time left to wait, to resume from the FIRST
+      // error rather than past the last one.
       //
-      // Continuing through 275 doomed calls wastes the remainder of the
-      // budget and, worse, marks 275 positions as attempted so the run
-      // reports a failure rate that is really a throttle. Stopping early
-      // leaves them untried, which is honest and lets the next run reach
-      // them.
+      // THE BUG THIS REPLACES. The previous version did `i++; break;`, which
+      // set nextIndex PAST the final errored position. Those 8 people were
+      // never retried. @clolry's resume indices across eight runs —
+      // 280, 291, 313, 442, 450, 730, 740, 902 — each jump is a streak of
+      // people silently abandoned, roughly 130 of them, with no address and
+      // no further attempt. The sweep marched to the end of the roster
+      // reporting 'not complete' while permanently skipping the ones it
+      // failed on.
+      //
+      // Honest accounting was the intent and data loss was the effect. A
+      // resumable process must never advance its cursor past work it did not
+      // do.
       if (consecutiveErrors >= ERROR_STREAK_LIMIT) {
+        var rewindTo = (firstErrorIndex === -1) ? i : firstErrorIndex;
+
+        // Enough time left to wait out the quota window and keep going?
+        // sleepFn is injected so the tests do not actually sleep.
+        var msLeft = deadline - Date.now();
+        if (sleepFn && msLeft > QUOTA_WINDOW_MS + 30000) {
+          sleepFn(QUOTA_WINDOW_MS);
+          out.quotaWaits++;
+          consecutiveErrors = 0;
+          // Retry the whole streak, including the position just attempted.
+          // The for-loop's i++ would skip it otherwise.
+          i = rewindTo - 1;
+          firstErrorIndex = -1;
+          continue;
+        }
+
         out.stoppedBecause = consecutiveErrors + ' consecutive lookup ' +
-                             'errors — almost certainly a rate limit. ' +
-                             'Stopped rather than burning the remaining budget.';
+                             'errors (rate limit) and not enough time left to ' +
+                             'wait out the quota window. Resuming at ' +
+                             rewindTo + ' so none are skipped.';
         out.rateLimited = true;
-        i++;                       // this position was attempted
-        break;
+        // REWIND. Everything from the first error onward is untried as far as
+        // this run is concerned.
+        out.nextIndex = rewindTo;
+        // Everything from rewindTo onward is untried by this run, so its
+        // recorded errors must not count against completion — the next run
+        // will attempt them.
+        for (var k = rewindTo; k < list.length; k++) {
+          var lp = list[k];
+          if (lp) delete erroredPositions[_str_(lp.positionNumber) || ('idx' + k)];
+        }
+        return _finishBatch_(out, list, erroredPositions);
       }
     }
 
     out.nextIndex = i;
+    return _finishBatch_(out, list, erroredPositions);
+  }
 
-    // 'COMPLETE' MEANS EVERY POSITION WAS ATTEMPTED SUCCESSFULLY, not merely
-    // that the loop reached the end.
-    //
-    // @clolry's third run printed 'SWEEP COMPLETE' with 556 positions having
-    // errored across the three runs — two thirds of the roster still had no
-    // address. The flag meant 'end of list' and was read, reasonably, as
-    // 'done'. A resumable sweep whose completion signal ignores failures is
-    // worse than one with no signal.
-    out.reachedEnd = i >= list.length;
-    out.complete = out.reachedEnd && out.errors === 0;
+  /**
+   * Sets the completion flags. Shared by both exits from resolveBatch.
+   *
+   * 'COMPLETE' MEANS EVERY POSITION WAS ATTEMPTED SUCCESSFULLY, not merely
+   * that the loop reached the end.
+   *
+   * @clolry's third run printed 'SWEEP COMPLETE' with 556 positions having
+   * errored across three runs — two thirds of the roster still had no
+   * address. The flag meant 'end of list' and was read, reasonably, as
+   * 'done'. A resumable sweep whose completion signal ignores failures is
+   * worse than one with no signal.
+   *
+   * Factored out because the rate-limit path now returns early, and a second
+   * copy of this logic would eventually disagree with the first — in a
+   * function whose entire job is knowing whether there is more work.
+   */
+  function _finishBatch_(out, list, erroredPositions) {
+    var stillFailed = Object.keys(erroredPositions || {}).length;
+    out.unresolvedByError = stillFailed;
+    out.reachedEnd = out.nextIndex >= list.length;
+    // Completion turns on positions STILL failing, not on attempts that
+    // failed and were later retried.
+    out.complete = out.reachedEnd && stillFailed === 0;
     if (out.complete) {
-      out.stoppedBecause = 'finished';
-    } else if (out.reachedEnd && out.errors) {
-      out.stoppedBecause = 'reached the end of the roster, but ' + out.errors +
-                           ' lookup(s) failed and were not resolved. Re-run ' +
-                           'to retry them.';
+      out.stoppedBecause = out.quotaWaits
+        ? ('finished, after waiting out the quota ' + out.quotaWaits + ' time(s)')
+        : 'finished';
+    } else if (out.reachedEnd && stillFailed) {
+      out.stoppedBecause = 'reached the end of the roster, but ' + stillFailed +
+                           ' lookup(s) are still failing. Re-run to retry them.';
     }
     return out;
   }
@@ -1133,6 +1224,11 @@ var DirectoryLookup = (function () {
       // refused' when 281 of those were a rate limit, which reads as a
       // matching failure and is not one.
       errors: batch.errors || 0,
+      // Positions whose last attempt failed. `errors` counts attempts and is
+      // the throttle diagnostic; this is the one that says whether work
+      // remains.
+      unresolvedByError: batch.unresolvedByError || 0,
+      quotaWaits: batch.quotaWaits || 0,
       errorSamples: batch.errorSamples || [],
       rateLimited: !!batch.rateLimited,
       reachedEnd: !!batch.reachedEnd,
@@ -1140,13 +1236,16 @@ var DirectoryLookup = (function () {
       refusedByReason: byReason,
       complete: batch.complete,
       nextIndex: batch.nextIndex,
-      note: (batch.errors
-              ? ((batch.rateLimited
-                   ? 'STOPPED EARLY: '
-                   : 'WARNING: ') + batch.errors + ' lookup(s) FAILED rather ' +
-                 'than being refused — these are calls that did not complete, ' +
-                 'almost certainly a rate limit, and those positions still ' +
-                 'have no address. Re-run to retry them. ')
+      note: (batch.quotaWaits
+              ? ('Waited out the per-minute quota ' + batch.quotaWaits +
+                 ' time(s); those positions were retried, not skipped. ')
+              : '') +
+            (batch.unresolvedByError
+              ? ((batch.rateLimited ? 'STOPPED EARLY: ' : 'WARNING: ') +
+                 batch.unresolvedByError + ' position(s) are STILL failing — ' +
+                 'calls that did not complete, almost certainly the quota. ' +
+                 'They have NOT been skipped; re-run to retry them from index ' +
+                 batch.nextIndex + '. ')
               : '') +
             'Refusals are deliberate. ' + byReason.ambiguous + ' name(s) match ' +
             'more than one person in the directory, and choosing between them ' +

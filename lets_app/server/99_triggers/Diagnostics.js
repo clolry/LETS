@@ -1465,6 +1465,11 @@ function runDirectoryResolve() {
   var d = r.data;
   console.log('=== resolveDirectoryEmails ===');
   console.log('wrote ' + d.written + ' address(es)');
+  // The three numbers that matter, ahead of the payload: what was written,
+  // what is still failing, and whether the cursor moved backwards to retry.
+  console.log('still failing: ' + (d.summary.unresolvedByError || 0) +
+              '   quota waits: ' + (d.summary.quotaWaits || 0) +
+              '   resume at: ' + d.nextIndex);
   console.log(JSON.stringify(d.summary, null, 2));
 
   // COLLISIONS FIRST, because they are the only outcome here that leaves two
@@ -1533,6 +1538,10 @@ function runEmailResolutionQueue() {
   console.log('=== email resolution queue — NOTHING WAS WRITTEN ===');
   console.log(d.totalNeedingEmail + ' staffed position(s) still have no ' +
               'address. ' + d.overridesStored + ' already resolved by hand.');
+  if (d.quotaHit) {
+    console.log('');
+    console.log('!! ' + d.quotaNote);
+  }
   console.log('Examined ' + d.examined + ' position(s) for this page; ' +
               'next index ' + d.nextIndex + '.');
   console.log('');

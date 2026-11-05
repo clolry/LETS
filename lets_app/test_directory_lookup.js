@@ -1542,5 +1542,205 @@ console.log('\n23. GSA org suffixes are not all four characters');
      'the delimiter is space-hyphen-space');
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n24. a rate limit must never skip a position');
+{
+  // THE BUG THIS REPLACES, and it was mine, shipped in the commit I told
+  // @clolry to push.
+  //
+  // The previous version did `i++; break;` on an error streak, setting
+  // nextIndex PAST the final errored position. Those 8 people were never
+  // retried. @clolry's resume indices across eight runs — 280, 291, 313, 442,
+  // 450, 730, 740, 902 — each jump is a streak silently abandoned, roughly
+  // 130 people with no address and no further attempt, while the sweep
+  // marched to the end reporting 'not complete'.
+  //
+  // Honest accounting was the intent; data loss was the effect. A resumable
+  // process must never advance its cursor past work it did not do.
+  const mk = (n) => {
+    const r = [];
+    for (let i = 0; i < n; i++) {
+      r.push({ positionNumber: 'P' + i, employeeName: 'Person' + i + ',Test',
+               emailAddress: '', occupancyStatus: 'FILLED' });
+    }
+    return r;
+  };
+
+  // 5 succeed, then every call fails, and there is no sleepFn so it cannot
+  // wait out the window.
+  let n = 0;
+  const failAfter5 = () => {
+    n++;
+    if (n > 5) throw new Error('Quota exceeded for quota metric');
+    return [{ givenName: 'Test', familyName: 'Person' + (n - 1),
+              email: 't' + n + '@gsa.gov' }];
+  };
+  const b = D.resolveBatch(mk(40), failAfter5, {});
+
+  ok('it stops on the streak', b.rateLimited === true, b.stoppedBecause);
+  // THE ASSERTION THAT WOULD HAVE CAUGHT THE BUG.
+  ok('nextIndex REWINDS to the first error, not past the last',
+     b.nextIndex === 5,
+     'was 13 — eight people stepped over and never retried');
+  ok('and the message says so',
+     /so none are skipped/.test(b.stoppedBecause), b.stoppedBecause);
+
+  // UNTRIED WORK IS NOT A FAILURE. Everything from the rewind point onward
+  // will be attempted by the next run, so it must not count against
+  // completion — otherwise the sweep can never report success.
+  ok('positions after the rewind do not count as still-failing',
+     b.unresolvedByError === 0, b.unresolvedByError);
+  ok('but the attempt count is still reported for diagnosis',
+     b.errors === 8, b.errors);
+  ok('and it is not complete', b.complete === false);
+
+  // RESUMING FROM nextIndex MUST COVER EVERYONE. No gap, no repeat beyond
+  // the deliberate retry.
+  let n2 = 0;
+  const allOk = () => {
+    n2++;
+    return [{ givenName: 'Test', familyName: 'Person' + (n2 - 1),
+              email: 'x' + n2 + '@gsa.gov' }];
+  };
+  const roster = mk(40);
+  const rest = D.resolveBatch(roster, allOk, { startIndex: b.nextIndex });
+  const covered = b.resolved.concat(rest.resolved).map(r => r.positionNumber);
+  ok('the two runs together cover every position',
+     new Set(covered).size === 40, new Set(covered).size);
+  ok('and the second run completes', rest.complete === true, rest);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n25. waiting out the quota beats stopping');
+{
+  // The quota is 'Critical read requests per minute per user' — it refills
+  // every 60 seconds. Stopping and asking @clolry to re-run made him the
+  // retry loop, eight times. With time left in the execution the right move
+  // is to wait and retry the streak.
+  const mk = (n) => {
+    const r = [];
+    for (let i = 0; i < n; i++) {
+      r.push({ positionNumber: 'P' + i, employeeName: 'Person' + i + ',Test',
+               emailAddress: '', occupancyStatus: 'FILLED' });
+    }
+    return r;
+  };
+
+  let n = 0;
+  let slept = 0;
+  // Fails after 5 until the quota "refills" — i.e. until sleepFn is called.
+  const refills = () => {
+    n++;
+    if (n > 5 && slept === 0) throw new Error('Quota exceeded');
+    return [{ givenName: 'Test', familyName: 'Person' + ((n - 1) % 20),
+              email: 't' + n + '@gsa.gov' }];
+  };
+  const b = D.resolveBatch(mk(20), refills,
+                           { sleepFn: () => { slept++; }, deadlineMs: 600000 });
+
+  ok('it slept once rather than stopping', slept === 1 && b.quotaWaits === 1,
+     [slept, b.quotaWaits]);
+  ok('every position resolved', b.resolved.length === 20, b.resolved.length);
+
+  // THE RETRIED POSITIONS MUST NOT COUNT AS FAILURES. A position that errored,
+  // waited, and then resolved is DONE — counting its first attempt against
+  // completion would make a fully successful run report itself incomplete,
+  // which is the same false signal as before with the sign flipped.
+  ok('the retried positions no longer count as failing',
+     b.unresolvedByError === 0, b.unresolvedByError);
+  ok('so the run reports COMPLETE', b.complete === true, b.stoppedBecause);
+  ok('while still recording that 8 attempts failed', b.errors === 8, b.errors);
+  ok('and the reason names the waits',
+     /waiting out the quota 1 time/.test(b.stoppedBecause), b.stoppedBecause);
+
+  // THE RETRY MUST INCLUDE THE POSITION THAT TRIGGERED THE STOP. An
+  // off-by-one in the rewind would skip exactly one person per wait.
+  const ids = b.resolved.map(r => r.positionNumber);
+  ok('no position is missing from the result',
+     ['P5', 'P12', 'P13', 'P19'].every(x => ids.indexOf(x) > -1), ids);
+
+  // WITHOUT TIME TO WAIT it must still stop rather than sleep past the
+  // execution limit — Apps Script kills the run and the write never happens.
+  let slept2 = 0;
+  const b2 = D.resolveBatch(mk(40), () => { throw new Error('Quota exceeded'); },
+                            { sleepFn: () => { slept2++; }, deadlineMs: 1000 });
+  ok('it does not sleep when the deadline is near',
+     slept2 === 0 && b2.rateLimited === true, [slept2, b2.rateLimited]);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n26. the calls are paced to stay under the quota');
+{
+  // Sprinting into a per-minute limit and handling the failure is strictly
+  // worse than not exceeding it: every error is a call that achieved nothing,
+  // and recovery costs a 65-second wait. @clolry hit the ceiling after
+  // 100-125 lookups, eight runs running.
+  const resolve = fs.readFileSync('lets_app/server/40_domain/DirectoryResolve.js', 'utf8');
+
+  ok('there is a call interval',
+     /var DIRECTORY_CALL_INTERVAL_MS = 650;/.test(resolve));
+  ok('and every search is paced through it',
+     /_paceDirectoryCall_\(\);/.test(resolve) &&
+     resolve.indexOf('_paceDirectoryCall_();') <
+       resolve.indexOf('res = People.People.searchDirectoryPeople'),
+     'pacing after the call would do nothing');
+
+  // ONE SHARED BUDGET. resolveBatch, the resolution queue and
+  // verifyConstructedAddress all draw on the same per-user quota, so the
+  // pacing state has to be module-level — three callers each staying under
+  // the limit would together exceed it.
+  ok('the pacing state is shared across callers',
+     /var _lastDirectoryCallAt_ = 0;/.test(resolve),
+     'a per-caller budget would be exceeded in aggregate');
+
+  // 650ms is ~92 calls/minute, under the observed 100-125 ceiling.
+  ok('the interval implies fewer than 100 calls per minute',
+     60000 / 650 < 100, 60000 / 650);
+
+  // The deadline must leave room for the write and the resume-index save.
+  ok('the sweep deadline is under the 6-minute execution limit',
+     /deadlineMs: 270000,/.test(resolve), 'and above the old 240000');
+  ok('and it passes a sleepFn so the batch can wait out the quota',
+     /sleepFn: function \(ms\) \{ Utilities\.sleep\(ms\); \}/.test(resolve));
+
+  // THE QUEUE MUST NOT REPORT 'no candidate' FOR A FAILED CALL. That reads as
+  // a definitive finding and is the same refusal/error conflation the sweep
+  // had.
+  ok('a quota failure stops the queue rather than asserting no candidates',
+     /searchFailed = true;/.test(resolve) && /out_quotaHit = true;/.test(resolve),
+     'an incomplete queue is honest; a wrong one is not');
+  ok('and the response says the page is incomplete',
+     /quotaHit: out_quotaHit/.test(resolve) &&
+     /No position was reported as having no candidate/.test(resolve));
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n27. negative control for the skip bug');
+{
+  // The exact regression, reintroduced: advance past the last error instead of
+  // rewinding to the first. §24 must fail.
+  const src = fs.readFileSync('lets_app/server/30_services/DirectoryLookup.js', 'utf8');
+  const skipping = src.replace(
+    `        var rewindTo = (firstErrorIndex === -1) ? i : firstErrorIndex;`,
+    `        var rewindTo = i + 1;`);
+  ok('negative control patched the rewind', skipping !== src);
+  {
+    const mod = { exports: {} };
+    new Function('module', 'exports', skipping)(mod, mod.exports);
+    let n = 0;
+    const b = mod.exports.resolveBatch(
+      (() => { const r = []; for (let i = 0; i < 40; i++) {
+        r.push({ positionNumber: 'P' + i, employeeName: 'P' + i + ',T',
+                 emailAddress: '', occupancyStatus: 'FILLED' }); } return r; })(),
+      () => { n++; if (n > 5) throw new Error('Quota exceeded');
+              return [{ givenName: 'T', familyName: 'P' + (n - 1),
+                        email: 't' + n + '@gsa.gov' }]; },
+      {});
+    ok('a patched build skips the errored positions',
+       b.nextIndex > 5,
+       'so section 24 is real: nextIndex ' + b.nextIndex + ' abandons P5-P12');
+  }
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);
