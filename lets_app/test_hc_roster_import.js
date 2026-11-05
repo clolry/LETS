@@ -1817,5 +1817,85 @@ console.log('\n24. Eberle is counted — one seat per PERSON, not per FILLED row
   }
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n25. the preview reports ONE denominator, and names the fields it changes');
+{
+  // TWO DIFFERENT FILLED COUNTS IN ONE PREVIEW. @clolry's live run:
+  //
+  //   HEADCOUNT — the per-capita budget denominator
+  //     filled positions       821
+  //   NOTE: 815 of 1046 positions are FILLED. That is the number the
+  //         per-capita budget split divides by …
+  //
+  // Six apart, in one output, both claiming to be the denominator. The COUNTS
+  // block came from previewHeadcount, which counts ONE SEAT PER PERSON since
+  // d27e449; the note counted `occupancyStatus === 'FILLED'`, the rule
+  // d27e449 replaced. The six are the people whose only seat is OBLIGATED —
+  // Scott Eberle among them.
+  //
+  // The note was also the WRONG one: it understated the denominator, so every
+  // service center's share computed from it would have been slightly too
+  // large.
+  const sync = fs.readFileSync('lets_app/server/40_domain/HCRosterSync.js', 'utf8');
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '')
+                        .replace(/^\s*\/\/.*$/gm, '');
+  const code = strip(sync);
+
+  ok('the preview note uses headcountCountable, not a FILLED tally',
+     /HCRosterImport\.headcountCountable\(parsed\.rows\)/.test(code),
+     'the same function the budget split uses, so they cannot disagree');
+  ok('and no longer counts occupancyStatus === FILLED for the denominator',
+     !/if \(r\.occupancyStatus === 'FILLED'\) filled\+\+/.test(code),
+     'that was the pre-d27e449 rule and it dropped the obligated-only people');
+  ok('the note says one seat per PERSON',
+     /one seat per PERSON/.test(sync),
+     'otherwise a reader cannot tell why it differs from a FILLED count');
+  ok('and names the obligated-only people it counts',
+     /lonelyObligated/.test(code),
+     'six unexplained extra bodies in a denominator is worse than none');
+
+  // THE NUMBERS MUST ACTUALLY AGREE. previewHeadcount and the note both
+  // derive from headcountCountable now, so assert that on real data rather
+  // than trusting the source text.
+  const orgs = [
+    { orgCode: 'FC', parentOrgCode: '', orgLevel: 'AC' },
+    { orgCode: 'FCC', parentOrgCode: 'FC', orgLevel: 'DAC' },
+    { orgCode: 'FCC0C', parentOrgCode: 'FCC', orgLevel: 'SERVICE_CENTER' }
+  ];
+  const rows = [
+    // Eberle: obligated only. Counts once.
+    { positionNumber: 'P1', employeeId: 'E1', employeeName: 'Eberle,Scott M',
+      orgCode: 'FCC0C', occupancyStatus: 'OBLIGATED' },
+    { positionNumber: 'P2', employeeId: 'E2', employeeName: 'Other,Person',
+      orgCode: 'FCC0C', occupancyStatus: 'FILLED' },
+    { positionNumber: 'P3', employeeId: '', employeeName: '',
+      orgCode: 'FCC0C', occupancyStatus: 'VACANT' }
+  ];
+  const hc = R.previewHeadcount(rows, orgs);
+  const headcountFilled = Object.keys(hc)
+    .reduce((s, k) => s + hc[k].filled, 0);
+  const noteFilled = R.headcountCountable(rows).counted;
+  ok('previewHeadcount and headcountCountable agree on the denominator',
+     headcountFilled === noteFilled, { headcountFilled, noteFilled });
+  ok('and both include the obligated-only person',
+     noteFilled === 2,
+     'a raw FILLED tally would say 1 and drop Eberle');
+
+  // THE FIELD BREAKDOWN. '1046 change, 0 unchanged' is true and
+  // unreviewable — it reads identically whether every row gained an email
+  // address or every row's org code moved. The first is the expected result
+  // of switching sources; the second would rewrite the hierarchy and every
+  // per-capita share with it.
+  ok('the preview payload counts changes per FIELD',
+     /changedFields:/.test(code),
+     'a bare change count is a number somebody has to accept on faith');
+  ok('and the printed report lists them',
+     /fields changed, across those rows/.test(sync));
+  ok('and says which fields are expected to move versus alarming',
+     /A LARGE COUNT ON emailAddress IS THE EXPECTED RESULT/.test(sync) &&
+     /would be a different matter/.test(sync),
+     'the reader has to decide whether to apply it');
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);

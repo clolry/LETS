@@ -51,7 +51,7 @@ const GROUPS = [
                      n === 'hcLoadRealOrgCodes' || n === 'loadRealOrgCodes'
   },
   {
-    title: 'HR roster — the FAS HRLinks feed',
+    title: 'HR roster — the FC workforce report',
     note: 'The roster drives approval routing, supervisor-based site access ' +
           'and every per-capita budget figure. Run the diagnostic first if ' +
           'anything is unexpected: it reports which code version is actually ' +

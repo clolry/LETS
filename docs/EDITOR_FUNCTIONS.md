@@ -32,7 +32,7 @@ A new or rebuilt environment needs these, in sequence. `setupTravelDatabase` cre
 | `_bulkDeleteSmokeRequests(…)` | `lets_app/server/91_setup/Database.js` | 1193 | Find every Requests row whose Trip_Name starts with '[SMOKE]' and delete it |
 | `loadRealOrgCodes()` | `lets_app/server/91_setup/HCSeed.js` | 428 | Loads the 137 real org codes into HC_Orgs, REPLACING what is there. |
 
-## HR roster — the FAS HRLinks feed
+## HR roster — the FC workforce report
 
 The roster drives approval routing, supervisor-based site access and every per-capita budget figure. Run the diagnostic first if anything is unexpected: it reports which code version is actually deployed.
 
@@ -40,8 +40,8 @@ The roster drives approval routing, supervisor-based site access and every per-c
 |---|---|---:|---|
 | `diagnoseHrFeedSource()` | `lets_app/server/40_domain/HCRosterSync.js` | 128 | Reports which HR feed source this DEPLOYMENT is actually reading, and how |
 | `previewRosterImport(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 379 | Dry run: what importing the feed would change. |
-| `showServiceCenterHeadcount()` | `lets_app/server/40_domain/HCRosterSync.js` | 734 | The per-service-center headcount, as a readable table. |
-| `importRoster(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 916 | Applies the import. Destructive: replaces every row in HC_Positions. |
+| `showServiceCenterHeadcount()` | `lets_app/server/40_domain/HCRosterSync.js` | 772 | The per-service-center headcount, as a readable table. |
+| `importRoster(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 978 | Applies the import. Destructive: replaces every row in HC_Positions. |
 | `seedHCTestData(…)` | `lets_app/server/91_setup/HCSeed.js` | 708 | Seeds both HC tabs with FICTIONAL test data. |
 | `validateHCData()` | `lets_app/server/91_setup/HCSeed.js` | 916 | Read-only sanity check on whatever is currently in the HC tabs. |
 | `clearHCPositions(…)` | `lets_app/server/91_setup/HCSeed.js` | 1103 | Empties HC_Positions. Keeps HC_Orgs. |

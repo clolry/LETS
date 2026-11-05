@@ -539,6 +539,25 @@ function previewRosterImport(opts) {
         adds: diff.adds.length,
         changes: diff.changes.length,
         unchanged: diff.unchanged.length,
+        // WHICH FIELDS CHANGED, counted across every changed row.
+        //
+        // '1046 change, 0 unchanged' is a true statement and an unreviewable
+        // one: it reads identically whether every row gained an email address
+        // or every row's org code moved. The first is the expected result of
+        // switching data sources; the second would mean the roster is about
+        // to be rewritten wrongly, and the counts alone cannot tell them
+        // apart.
+        //
+        // @clolry saw exactly that line and had to decide whether to apply it.
+        changedFields: (function () {
+          var counts = {};
+          diff.changes.forEach(function (c) {
+            (c.fields || []).forEach(function (f) {
+              counts[f.field] = (counts[f.field] || 0) + 1;
+            });
+          });
+          return counts;
+        })(),
         deletes: diff.deletes.length,
         seedDeletes: diff.seedDeletes.length,
         currentPositions: existing.length,
@@ -632,6 +651,25 @@ function _logRosterPreview_(p) {
   L.push('  remove, fictional      ' + c.seedDeletes);
   L.push('  remove, NOT test data  ' + c.deletes +
          (c.deletes ? '   <-- CHECK THIS' : ''));
+
+  // WHICH FIELDS, in descending order. Without this the change count is a
+  // number somebody has to accept on faith.
+  var cf = c.changedFields || {};
+  var cfKeys = Object.keys(cf).sort(function (a, b) { return cf[b] - cf[a]; });
+  if (cfKeys.length) {
+    L.push('');
+    L.push('  fields changed, across those rows:');
+    cfKeys.forEach(function (k) {
+      L.push('    ' + k.padEnd(26) + String(cf[k]).padStart(5));
+    });
+    L.push('');
+    L.push('  A LARGE COUNT ON emailAddress IS THE EXPECTED RESULT of moving');
+    L.push('  from the old FAS feed, which carried no email column at all, to');
+    L.push('  the FC workforce report, which does. A large count on orgCode or');
+    L.push('  reportsToPositionNumber would be a different matter — that would');
+    L.push('  mean the hierarchy is about to be rewritten, and every per-capita');
+    L.push('  share with it.');
+  }
   L.push('');
 
   if (p.emailCoverage) {
@@ -888,14 +926,38 @@ function _rosterPreviewNotes_(parsed, diff, existing) {
     notes.push(parsed.duplicatePeople.note);
   }
 
-  var filled = 0;
-  parsed.rows.forEach(function (r) {
-    if (r.occupancyStatus === 'FILLED') filled++;
-  });
-  notes.push(filled + ' of ' + parsed.rows.length + ' positions are FILLED. ' +
-             'That is the number the per-capita budget split divides by — ' +
-             'vacant seats do not travel, so every service center\'s share ' +
-             'will move when this is applied.');
+  // THE DENOMINATOR IS ONE SEAT PER PERSON, not a count of FILLED rows.
+  //
+  // This note used to count `occupancyStatus === 'FILLED'` and claim the
+  // result was "the number the per-capita budget split divides by". It was
+  // not, and the same output proved it: the COUNTS block above reported 821
+  // from previewHeadcount while this line reported 815, six apart, in one
+  // preview. @clolry read both.
+  //
+  // The six are the people whose only seat is OBLIGATED — Scott Eberle among
+  // them. d27e449 made the headcount count them once each, because they are
+  // real employees who travel and have no other row to be counted at. This
+  // note kept the pre-d27e449 rule, so it contradicted the figure above it
+  // and understated the denominator by six.
+  //
+  // Counted from the same headcount the budget actually uses, so the two
+  // cannot disagree again.
+  var countable = HCRosterImport.headcountCountable(parsed.rows);
+  var denominator = countable.counted;
+  notes.push(denominator + ' of ' + parsed.rows.length + ' positions count ' +
+             'toward the per-capita split — one seat per PERSON, so somebody ' +
+             'holding both a temp promotion and their permanent obligated ' +
+             'seat is counted once. Vacant seats do not travel. Every ' +
+             'service center\'s share will move when this is applied.');
+  if (countable.lonelyObligated.length) {
+    notes.push(countable.lonelyObligated.length + ' person(s) hold ONLY an ' +
+               'OBLIGATED seat and are counted there, because they have no ' +
+               'other row to be counted at: ' +
+               countable.lonelyObligated.slice(0, 6).map(function (x) {
+                 return (x.employeeName || '?') + ' (' + (x.orgCode || '?') + ')';
+               }).join(', ') +
+               (countable.lonelyObligated.length > 6 ? ', …' : '') + '.');
+  }
 
   if (!existing.length) {
     notes.push('HC_Positions is currently empty, so nothing will be removed.');
