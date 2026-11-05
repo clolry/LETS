@@ -592,8 +592,6 @@
       if (!container) return;
 
       var stages = [
-        // 'Supervisor' is not a configurable label — see stageLabels().
-        { key: 'supervisor', label: 'Supervisor', cssClass: 'pending', status: 'PENDING_SUPERVISOR' },
         { key: 'sector', label: 'Sector', cssClass: 'pending', status: 'PENDING_SECTOR' },
         { key: 'bu', label: 'BU', cssClass: 'pending', status: 'PENDING_BU' },
         { key: 'oso', label: _L().fo, cssClass: 'oso', status: 'PENDING_OSO' },
@@ -953,12 +951,10 @@
 
     _getStatusDisplay(status) {
       var map = {
-        'PENDING_SUPERVISOR': { label: 'Supervisor Review', class: 'pending' },
         'PENDING_SECTOR': { label: _L().sector + ' Review', class: 'pending' },
         'PENDING_BU': { label: _L().bu + ' Review', class: 'pending' },
         'PENDING_OSO': { label: _L().fo + ' Review', class: 'pending-oso' },
         'PENDING_FAS': { label: 'FAS Review', class: 'pending-oso' },
-        'NEEDS_INFO_SUPERVISOR': { label: 'Needs Info', class: 'needs-info' },
         'NEEDS_INFO_SECTOR': { label: 'Needs Info', class: 'needs-info' },
         'NEEDS_INFO_BU': { label: 'Needs Info', class: 'needs-info' },
         'NEEDS_INFO_OSO': { label: 'Needs Info', class: 'needs-info' },
@@ -1059,7 +1055,6 @@
           { key: 'pending', label: 'Pending' }
         ]},
         { items: [
-          { key: 'PENDING_SUPERVISOR', label: 'Supervisor' },
           { key: 'PENDING_SECTOR', label: 'Sector' },
           { key: 'PENDING_BU', label: 'BU' },
           { key: 'PENDING_OSO', label: _L().fo },
@@ -1761,7 +1756,6 @@
       var isClientPaid = data.allClientPaid === true;
 
       var stages = [
-        { status: 'PENDING_SUPERVISOR', label: 'Supervisor Review' },
         { status: 'PENDING_SECTOR', label: _L().sector + ' Review' },
         { status: 'PENDING_BU', label: _L().bu + ' Review' },
         { status: 'PENDING_OSO', label: _L().fo + ' Review' }
@@ -1769,8 +1763,8 @@
       if (!isClientPaid) stages.push({ status: 'PENDING_FAS', label: 'FAS Review' });
 
       var statusOrder = isClientPaid
-        ? ['PENDING_SUPERVISOR', 'PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'APPROVED_GOGOV', 'COMPLETED']
-        : ['PENDING_SUPERVISOR', 'PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS', 'APPROVED_GOGOV', 'COMPLETED'];
+        ? ['PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'APPROVED_GOGOV', 'COMPLETED']
+        : ['PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS', 'APPROVED_GOGOV', 'COMPLETED'];
       var currentIdx = statusOrder.indexOf(currentStatus);
 
       var html = '<div class="slidein__timeline-title">Approval Timeline</div>';

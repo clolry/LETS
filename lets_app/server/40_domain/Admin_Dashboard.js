@@ -166,8 +166,6 @@ function debugReviewerPerf(targetEmail) {
   }
 
   var stageMap = {
-    [ACTION_TYPES.SUPERVISOR_APPROVED]: STATUS_CODES.PENDING_SUPERVISOR,
-    [ACTION_TYPES.SUPERVISOR_NEEDS_INFO]: STATUS_CODES.PENDING_SUPERVISOR,
     [ACTION_TYPES.SECTOR_APPROVED]: STATUS_CODES.PENDING_SECTOR, [ACTION_TYPES.SECTOR_NEEDS_INFO]: STATUS_CODES.PENDING_SECTOR,
     [ACTION_TYPES.BU_APPROVED]: STATUS_CODES.PENDING_BU, [ACTION_TYPES.BU_NEEDS_INFO]: STATUS_CODES.PENDING_BU,
     [ACTION_TYPES.OSO_APPROVED]: STATUS_CODES.PENDING_OSO, [ACTION_TYPES.OSO_NEEDS_INFO]: STATUS_CODES.PENDING_OSO
@@ -393,19 +391,11 @@ function getAdminDashboard(userEmail, period, customStart, customEnd) {
     var yourReviews = [];
     var stalledCandidates = [];
     var deniedCount = 0, cancelledCount = 0;
-    var pipelineCounts = { supervisor: 0, sector: 0, bu: 0, oso: 0, fas: 0,
-                           ddConfirm: 0, approved: 0, completed: 0 };
+    var pipelineCounts = { sector: 0, bu: 0, oso: 0, fas: 0, ddConfirm: 0, approved: 0, completed: 0 };
 
-    // PENDING_SUPERVISOR MUST BE IN BOTH LISTS. Omitting it from
-    // pendingStatuses would hide the first stage from every admin count, and
-    // omitting it from stalledStatuses would mean a request stuck with a
-    // supervisor for a month never appears in the stalled report — the one
-    // place somebody looks for a request nobody is acting on.
-    var pendingStatuses = [STATUS_CODES.PENDING_SUPERVISOR, STATUS_CODES.PENDING_SECTOR,
-                           STATUS_CODES.PENDING_BU, STATUS_CODES.PENDING_OSO, STATUS_CODES.PENDING_FAS];
-    var stalledStatuses = pendingStatuses.concat([
-                           STATUS_CODES.NEEDS_INFO_SUPERVISOR, STATUS_CODES.NEEDS_INFO_SECTOR,
-                           STATUS_CODES.NEEDS_INFO_BU, STATUS_CODES.NEEDS_INFO_OSO]);
+    var pendingStatuses = [STATUS_CODES.PENDING_SECTOR, STATUS_CODES.PENDING_BU, STATUS_CODES.PENDING_OSO, STATUS_CODES.PENDING_FAS];
+    var stalledStatuses = [STATUS_CODES.PENDING_SECTOR, STATUS_CODES.PENDING_BU, STATUS_CODES.PENDING_OSO, STATUS_CODES.PENDING_FAS,
+                           STATUS_CODES.NEEDS_INFO_SECTOR, STATUS_CODES.NEEDS_INFO_BU, STATUS_CODES.NEEDS_INFO_OSO];
 
     // ── Stats (skip computation if cached) ──
     var needsStats = !cachedStats;
@@ -518,14 +508,14 @@ function getAdminDashboard(userEmail, period, customStart, customEnd) {
       });
 
       stats = {
-        pending: { supervisor: 0, sector: 0, bu: 0, oso: 0, fas: 0 },
-        avgReviewTime: { supervisor: 0, sector: 0, bu: 0, oso: 0, overall: 0 },
+        pending: { sector: 0, bu: 0, oso: 0, fas: 0 },
+        avgReviewTime: { sector: 0, bu: 0, oso: 0, overall: 0 },
         travelTypes: {},
         volume: { thisWeek: 0, thisMonth: 0, lastMonth: 0 },
         approvalRate: 0, totalRequests: 0,
         totals: { approved: 0, denied: 0, cancelled: 0 },
         avgApprovalTime: 0, avgLeadTime: 0,
-        approvalTimeByStage: { supervisor: 0, sector: 0, bu: 0, oso: 0, fas: 0 },
+        approvalTimeByStage: { sector: 0, bu: 0, oso: 0, fas: 0 },
         spendByBU: seededSpendByBU, spendBySector: spendBySector,
         // Funding-type split — populated alongside spendByBU during the
         // per-request traversal below. Each traveler's subtotal is
@@ -616,8 +606,7 @@ function getAdminDashboard(userEmail, period, customStart, customEnd) {
       });
 
       // Pipeline (shared — used by both action center and stats)
-      if (status === STATUS_CODES.PENDING_SUPERVISOR) pipelineCounts.supervisor++;
-      else if (status === STATUS_CODES.PENDING_SECTOR) pipelineCounts.sector++;
+      if (status === STATUS_CODES.PENDING_SECTOR) pipelineCounts.sector++;
       else if (status === STATUS_CODES.PENDING_BU) pipelineCounts.bu++;
       else if (status === STATUS_CODES.PENDING_OSO) pipelineCounts.oso++;
       else if (status === STATUS_CODES.PENDING_FAS) pipelineCounts.fas++;
@@ -627,8 +616,7 @@ function getAdminDashboard(userEmail, period, customStart, customEnd) {
 
       // ── Stats computations (only if not cached) ──
       if (needsStats) {
-        if (status === STATUS_CODES.PENDING_SUPERVISOR) stats.pending.supervisor++;
-        else if (status === STATUS_CODES.PENDING_SECTOR) stats.pending.sector++;
+        if (status === STATUS_CODES.PENDING_SECTOR) stats.pending.sector++;
         else if (status === STATUS_CODES.PENDING_BU) stats.pending.bu++;
         else if (status === STATUS_CODES.PENDING_OSO) stats.pending.oso++;
         else if (status === STATUS_CODES.PENDING_FAS) stats.pending.fas++;
@@ -768,7 +756,7 @@ function getAdminDashboard(userEmail, period, customStart, customEnd) {
           });
         }
 
-        var supervisorTimes = [], sectorTimes = [], buTimes = [], osoTimes = [], fasTimes = [];
+        var sectorTimes = [], buTimes = [], osoTimes = [], fasTimes = [];
         var totalApprovalTimes = [];
         var reviewerMap = {};
 
@@ -864,7 +852,6 @@ function getAdminDashboard(userEmail, period, customStart, customEnd) {
               var reviewCompleted = nextTime >= periodStart && nextTime <= periodEnd;
 
               if (days > 0 && days < 90 && reviewCompleted) {
-                if (entry.newStatus === STATUS_CODES.PENDING_SUPERVISOR && next.prevStatus === STATUS_CODES.PENDING_SUPERVISOR) supervisorTimes.push(days);
                 if (entry.newStatus === STATUS_CODES.PENDING_SECTOR && next.prevStatus === STATUS_CODES.PENDING_SECTOR) sectorTimes.push(days);
                 if (entry.newStatus === STATUS_CODES.PENDING_BU && next.prevStatus === STATUS_CODES.PENDING_BU) buTimes.push(days);
                 if (entry.newStatus === STATUS_CODES.PENDING_OSO && next.prevStatus === STATUS_CODES.PENDING_OSO) osoTimes.push(days);
@@ -917,8 +904,6 @@ function getAdminDashboard(userEmail, period, customStart, customEnd) {
                 reviewerMap[emailKey].reviewedCount++;
 
                 var stageMap = {
-                  [ACTION_TYPES.SUPERVISOR_APPROVED]: STATUS_CODES.PENDING_SUPERVISOR,
-                  [ACTION_TYPES.SUPERVISOR_NEEDS_INFO]: STATUS_CODES.PENDING_SUPERVISOR,
                   [ACTION_TYPES.SECTOR_APPROVED]: STATUS_CODES.PENDING_SECTOR, [ACTION_TYPES.SECTOR_NEEDS_INFO]: STATUS_CODES.PENDING_SECTOR,
                   [ACTION_TYPES.BU_APPROVED]: STATUS_CODES.PENDING_BU, [ACTION_TYPES.BU_NEEDS_INFO]: STATUS_CODES.PENDING_BU,
                   [ACTION_TYPES.OSO_APPROVED]: STATUS_CODES.PENDING_OSO, [ACTION_TYPES.OSO_NEEDS_INFO]: STATUS_CODES.PENDING_OSO,
@@ -949,16 +934,11 @@ function getAdminDashboard(userEmail, period, customStart, customEnd) {
         // 46-minute same-day BU review (0.032d) renders as "46m" instead
         // of rounding to 0 and disappearing. Mirrors the reviewer
         // dashboard's Time per Stage fix.
-        stats.avgReviewTime.supervisor = avg(supervisorTimes);
         stats.avgReviewTime.sector = avg(sectorTimes);
         stats.avgReviewTime.bu = avg(buTimes);
         stats.avgReviewTime.oso = avg(osoTimes);
-        // SUPERVISOR TIME IS IN THE OVERALL AVERAGE. Leaving it out would make
-        // the headline review time LOOK BETTER after adding a stage, which is
-        // the most misleading possible direction for that number to move.
-        stats.avgReviewTime.overall = avg(supervisorTimes.concat(sectorTimes, buTimes, osoTimes, fasTimes));
+        stats.avgReviewTime.overall = avg(sectorTimes.concat(buTimes, osoTimes, fasTimes));
         stats.avgApprovalTime = avg(totalApprovalTimes);
-        stats.approvalTimeByStage.supervisor = avg(supervisorTimes);
         stats.approvalTimeByStage.sector = avg(sectorTimes);
         stats.approvalTimeByStage.bu = avg(buTimes);
         stats.approvalTimeByStage.oso = avg(osoTimes);

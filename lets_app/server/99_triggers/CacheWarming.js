@@ -328,14 +328,12 @@ function _checkSheetNamesAdoption() {
 function _verifyStatusActionAdoption() {
   var expectedStatuses = {
     DRAFT: 'DRAFT',
-    PENDING_SUPERVISOR: 'PENDING_SUPERVISOR',
     PENDING_SECTOR: 'PENDING_SECTOR',
     PENDING_BU: 'PENDING_BU',
     PENDING_OSO: 'PENDING_OSO',
     PENDING_FAS: 'PENDING_FAS',
     PENDING_DD_CONFIRMATION: 'Pending_DD_Confirmation',
     PENDING_CORRECTION: 'Pending_Correction',
-    NEEDS_INFO_SUPERVISOR: 'NEEDS_INFO_SUPERVISOR',
     NEEDS_INFO_SECTOR: 'NEEDS_INFO_SECTOR',
     NEEDS_INFO_BU: 'NEEDS_INFO_BU',
     NEEDS_INFO_OSO: 'NEEDS_INFO_OSO',
@@ -349,8 +347,6 @@ function _verifyStatusActionAdoption() {
     SUBMITTED: 'Submitted',
     RESUBMITTED: 'Resubmitted',
     SUBMITTER_CANCELLED: 'Submitter_Cancelled',
-    SUPERVISOR_APPROVED: 'Supervisor_Approved',
-    SUPERVISOR_NEEDS_INFO: 'Supervisor_Needs_Info',
     SECTOR_APPROVED: 'Sector_Approved',
     SECTOR_NEEDS_INFO: 'Sector_Needs_Info',
     BU_APPROVED: 'BU_Approved',

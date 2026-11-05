@@ -9,20 +9,6 @@ const STATUS_CODES = {
   DRAFT: 'DRAFT',
 
   // Pending statuses
-  //
-  // PENDING_SUPERVISOR IS THE FIRST STAGE, and it is newer than the rest.
-  // @clolry: "AAS built TRIP to have requests submitted by a director but our
-  // Chief of Staff wants individual employees to submit requests on their own
-  // (and route through their supervisor/director/SCD, etc)."
-  //
-  // The inherited chain started at the Service Center Director because a
-  // director was the submitter. With 866 of 1,046 positions non-supervisory,
-  // the submitter is now usually somebody with a supervisor above them, and
-  // that supervisor reviews first.
-  //
-  // ADDED, NOT SUBSTITUTED. @clolry: "Supervisor does not replace SCD." The
-  // chain is supervisor -> SCD -> DAC -> ASD T&E -> FAS.
-  PENDING_SUPERVISOR: 'PENDING_SUPERVISOR',
   PENDING_SECTOR: 'PENDING_SECTOR',
   PENDING_BU: 'PENDING_BU',
   PENDING_OSO: 'PENDING_OSO',
@@ -37,7 +23,6 @@ const STATUS_CODES = {
   PENDING_CORRECTION: 'Pending_Correction',
 
   // Needs info statuses
-  NEEDS_INFO_SUPERVISOR: 'NEEDS_INFO_SUPERVISOR',
   NEEDS_INFO_SECTOR: 'NEEDS_INFO_SECTOR',
   NEEDS_INFO_BU: 'NEEDS_INFO_BU',
   NEEDS_INFO_OSO: 'NEEDS_INFO_OSO',
@@ -54,8 +39,6 @@ const ACTION_TYPES = {
   SUBMITTED: 'Submitted',
   RESUBMITTED: 'Resubmitted',
   SUBMITTER_CANCELLED: 'Submitter_Cancelled',
-  SUPERVISOR_APPROVED: 'Supervisor_Approved',
-  SUPERVISOR_NEEDS_INFO: 'Supervisor_Needs_Info',
   SECTOR_APPROVED: 'Sector_Approved',
   SECTOR_NEEDS_INFO: 'Sector_Needs_Info',
   BU_APPROVED: 'BU_Approved',
@@ -86,7 +69,6 @@ const ACTION_TYPES = {
 
 const STATUS_GROUPS = {
   PENDING: [
-    STATUS_CODES.PENDING_SUPERVISOR,
     STATUS_CODES.PENDING_SECTOR,
     STATUS_CODES.PENDING_BU,
     STATUS_CODES.PENDING_OSO,
@@ -95,7 +77,6 @@ const STATUS_GROUPS = {
     STATUS_CODES.PENDING_CORRECTION
   ],
   NEEDS_INFO: [
-    STATUS_CODES.NEEDS_INFO_SUPERVISOR,
     STATUS_CODES.NEEDS_INFO_SECTOR,
     STATUS_CODES.NEEDS_INFO_BU,
     STATUS_CODES.NEEDS_INFO_OSO

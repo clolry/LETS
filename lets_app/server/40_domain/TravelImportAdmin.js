@@ -511,27 +511,7 @@ var TravelImportAdmin = (function () {
       if (!reqSheet) return errorResponse(SHEET_NAMES.REQUESTS + ' tab not found.');
       var reqHeaders = TRAVEL_SHEET_SCHEMAS[SHEET_NAMES.REQUESTS];
 
-      // THE TRAVELER ROW IS NOT OPTIONAL. @clolry: "none of the planned or
-      // actual costs are being applied to the service center allocations and
-      // spend table."
-      //
-      // BudgetDashboard.spendByServiceCenter reads Request_Travelers and ONLY
-      // that sheet, because a request carries one Owning_Office while a
-      // consolidated conference request holds travelers from several DACs.
-      // Writing a Requests row and no traveler row makes a trip invisible to
-      // the per-center table by construction.
-      //
-      // Both importers had this gap. BudgetBackfill.js:451 did not.
-      var travSheet = db.sheet(SHEET_NAMES.REQUEST_TRAVELERS);
-      var travHeaders = TRAVEL_SHEET_SCHEMAS[SHEET_NAMES.REQUEST_TRAVELERS];
-      if (!travSheet) {
-        return errorResponse(SHEET_NAMES.REQUEST_TRAVELERS + ' tab not found. ' +
-          'Run setupTravelDatabase() first — without it the import would ' +
-          'write trips that never appear in the per-service-center table.');
-      }
-
       var newRows = [];
-      var travRows = [];
       var updates = [];   // {sheetRow, changes}
       var logRows = [];
       var created = [];
@@ -672,31 +652,6 @@ var TravelImportAdmin = (function () {
         };
         newRows.push(reqHeaders.map(function (h) { return h in rec ? rec[h] : ''; }));
 
-        // ONE TRAVELER PER ROW. The Go.gov request export is one row per
-        // traveler per trip, so there is no split to make — the subtotal is
-        // the whole estimate on that row.
-        //
-        // THE SUBTOTAL IS THE ESTIMATE, not the actual. spendByServiceCenter
-        // scales it by the request's Actual_Total/Grand_Total ratio for
-        // completed trips, so putting an actual here would double-apply the
-        // reconciliation.
-        var tRec = {
-          'Request_ID': requestId,
-          'Traveler_ID': requestId + '-T1',
-          'Employee_ID': r.employeeId,
-          'Employee_Name': r.employeeName,
-          'Org_Code': r.orgCode,
-          'Subtotal': r.estimateAmount,
-          'Budget_Org_Code': r.orgCode,
-          'Budget_Office_Code': r.officeCode,
-          'Role_Justification': 'Imported from ' + batch.sourceLabel +
-            ' (batch ' + id + ', source row ' + r.sourceRow + '). One traveler ' +
-            'per source row, so the subtotal is the whole estimate.'
-        };
-        travRows.push(travHeaders.map(function (h) {
-          return h in tRec ? tRec[h] : '';
-        }));
-
         logRows.push({
           'Log_ID': 'LOG-IMP-' + now.getTime() + '-' + created.length,
           'Request_ID': requestId,
@@ -731,13 +686,6 @@ var TravelImportAdmin = (function () {
         reqSheet.getRange(reqSheet.getLastRow() + 1, 1, newRows.length, reqHeaders.length)
           .setValues(newRows);
       }
-      // THE TRAVELER ROWS, in the same execution. A Requests row without its
-      // traveler row is a trip the per-service-center table cannot see, so a
-      // failure between the two writes is worse than one before either.
-      if (travRows.length) {
-        travSheet.getRange(travSheet.getLastRow() + 1, 1, travRows.length,
-                           travHeaders.length).setValues(travRows);
-      }
       updates.forEach(function (u) {
         try {
           db.updateRowByIndex(SHEET_NAMES.REQUESTS, u.sheetRow, u.changes);
@@ -767,11 +715,7 @@ var TravelImportAdmin = (function () {
         'Committed_By': actor.email
       });
 
-      // REQUEST_TRAVELERS included: the per-center table reads it, so a stale
-      // cache there shows the old figures for up to ten minutes and looks
-      // exactly like the import having failed.
-      [SHEET_NAMES.REQUESTS, SHEET_NAMES.REQUEST_TRAVELERS,
-       SHEET_NAMES.APPROVAL_LOG,
+      [SHEET_NAMES.REQUESTS, SHEET_NAMES.APPROVAL_LOG,
        SHEET_NAMES.TRAVEL_IMPORTS, SHEET_NAMES.IMPORT_BATCHES].forEach(function (n) {
         try { db.invalidate(n); } catch (e) { /* cache only */ }
       });
@@ -783,7 +727,6 @@ var TravelImportAdmin = (function () {
         batchId: id,
         created: created,
         requestsCreated: newRows.length,
-        travelerRows: travRows.length,
         requestsUpdated: updates.length,
         // Echoed so the UI can STATE it rather than the administrator having
         // to trust that nothing was emailed.

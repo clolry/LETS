@@ -114,14 +114,9 @@ window.TravelUtils = (function() {
 
     // Status groupings
     STATUS: {
-      // MIRRORS STATUS_GROUPS in server/01_constants/Status.js. The client
-      // cannot import it, so the two are maintained together — and a status
-      // missing from this copy is invisible rather than broken: isPending()
-      // returns false, the portal shows no "with X" line, and the request
-      // looks finished.
-      NEEDS_INFO: ['NEEDS_INFO_SUPERVISOR', 'NEEDS_INFO_SECTOR', 'NEEDS_INFO_BU', 'NEEDS_INFO_OSO'],
+      NEEDS_INFO: ['NEEDS_INFO_SECTOR', 'NEEDS_INFO_BU', 'NEEDS_INFO_OSO'],
       TERMINAL: ['APPROVED', 'APPROVED_GOGOV', 'COMPLETED', 'DENIED', 'CANCELLED', 'SUBMITTER_CANCELLED'],
-      PENDING: ['PENDING_SUPERVISOR', 'PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS']
+      PENDING: ['PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS']
     },
 
     // Location types that require site name
@@ -356,12 +351,6 @@ window.TravelUtils = (function() {
     const fo = (b.foLabel || 'ASD Travel & Events') + ' review';
 
     const STATUS_STAGES = {
-      // The first stage. 'Supervisor' is deliberately not a branding
-      // property: SCD and DAC are this org's names for roles the inherited
-      // code called SD and BU, but every workgroup has supervisors and
-      // renaming the relationship itself would invite a label its own staff
-      // do not use.
-      PENDING_SUPERVISOR: 'supervisor review',
       PENDING_SECTOR: sector,
       PENDING_BU: bu,
       PENDING_OSO: fo,
@@ -369,7 +358,6 @@ window.TravelUtils = (function() {
       PENDING_DD_CONFIRMATION: 'Division Director confirmation',
       PENDING_CORRECTION: 'correction by the submitter',
       NEEDS_INFO: 'more information from the submitter',
-      NEEDS_INFO_SUPERVISOR: 'more information from the submitter',
       NEEDS_INFO_SECTOR: 'more information from the submitter',
       NEEDS_INFO_BU: 'more information from the submitter',
       NEEDS_INFO_OSO: 'more information from the submitter'
@@ -379,7 +367,6 @@ window.TravelUtils = (function() {
 
     // Keys are STORED Initial_Review_Level values and must not change.
     const LEVEL_LABELS = {
-      'Supervisor': 'supervisor review',
       'Sector': sector,
       'BU': bu,
       'OSO': fo,
@@ -407,10 +394,6 @@ window.TravelUtils = (function() {
   function stageLabels() {
     const b = (typeof window !== 'undefined' && window._letsBranding) || {};
     return {
-      // Not configurable, for the same reason as FAS below but in the other
-      // direction: every workgroup has supervisors, and the word names the
-      // relationship rather than this org's title for a role.
-      supervisor: 'Supervisor',
       sector: b.sectorLabel || 'SCD',
       bu: b.buLabel || 'DAC',
       fo: b.foLabel || 'ASD Travel & Events',

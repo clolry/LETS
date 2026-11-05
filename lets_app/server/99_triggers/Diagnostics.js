@@ -26,10 +26,6 @@
  *   diagAccess()       who currently has access, and by which path
  *   diagAirportPrefs() stored preferences and the promotion threshold
  *   diagTriggers()     installed triggers, and whether their handlers exist
- *   diagDatabase()     every tab's row count, and whether the CACHE agrees.
- *                      START HERE when two people see different numbers, or
- *                      when something reports "Requests sheet not found" —
- *                      which does NOT mean the tab is missing
  *   diagServiceCenterDirectors()  who the 22 service centers' directors are,
  *                      and what a sector_override row would currently grant
  *
@@ -42,20 +38,12 @@
  * EDITOR RUNNERS, at the foot of this file. Wrappers for functions that take
  * arguments, which the Run button cannot supply:
  *
- *   runRosterPreview()        preview the HR roster import   writes nothing
- *   runRosterImport()         apply it                       WRITES
- *   runLiabilityLogImport()   preview + apply the FY27 log    WRITES
- *   clearTravelDBCache()      clear + re-warm cached tabs    cache only
+ *   runRosterPreview()     preview the HR roster import      writes nothing
+ *   runRosterImport()      apply it                          WRITES
  *   runBudgetDashboard()   print the FY27 budget payload     writes nothing
  *
- * runRosterImport and runLiabilityLogImport are the two that write, and they
- * are the exception to the rule at the end of this header; the reason is in
- * the comment above each.
- *
- * Both print the full preview BEFORE writing, so the protection a token gives
- * is intact — the plan is on screen above the write either way. What the
- * wrapper removes is the need to paste a token into a scratch function,
- * which the Run dropdown cannot do because it passes no arguments.
+ * runRosterImport is the only one that writes, and it is the exception to the
+ * rule at the end of this header; the reason is in the comment above it.
  *
  * runDirectoryPreview and runDirectoryResolve are GONE. They drove a
  * name-matching sweep that inferred email addresses from the domain
@@ -103,7 +91,6 @@ function diagAll() {
   console.log('LETS DIAGNOSTICS — ' + new Date().toISOString());
   console.log('================================================================');
   diagEnvironment();
-  diagDatabase();
   diagCityPairs();
   diagHcData();
   diagAirportPrefs();
@@ -276,224 +263,6 @@ function diagEnvironment() {
 
   } catch (error) {
     console.log('diagEnvironment FAILED: ' + error.message);
-  }
-}
-
-/**
- * What is actually in the database, tab by tab, and what the cache thinks.
- *
- * WHY THIS EXISTS
- * ---------------
- * @clolry: "Ozel built a way to import FY27 travel that has already been
- * requested or completed. He shows that the numbers on the budget page have
- * adjusted; however, I do not. I've reloaded the page multiple times
- * including a hard open-apple-R. Admin portal is giving me an error in the
- * bottom right corner 'Error Requests sheet not found'."
- *
- * Two people looking at the same deployment saw different numbers, and the
- * error message they were given actively points the wrong way.
- *
- * 'REQUESTS SHEET NOT FOUND' DOES NOT MEAN THE TAB IS MISSING.
- * TravelDB._readFromSheet returns `{ headers: [], rows: [] }` when a sheet is
- * absent OR when it has fewer than two rows, and seven call sites turn empty
- * headers into that message. So it means "the Requests tab has no data rows"
- * — a different problem with a different fix, and somebody acting on the
- * literal wording would go and re-run setupTravelDatabase, which creates tabs
- * and would change nothing.
- *
- * THREE THINGS CAN PRODUCE THE SAME SYMPTOM, and only live numbers separate
- * them:
- *
- *   1. The tab genuinely has no rows — nothing was imported, or it was
- *      imported to a different spreadsheet.
- *   2. The tab has rows and the CACHE holds an empty result. TravelDB.warmCache
- *      runs every five minutes and deliberately caches `{ rows: [] }` for an
- *      empty sheet so reads do not fall through — correct on its own, and it
- *      means a warm that lands before a write pins "empty" for 600 seconds.
- *      A browser reload cannot clear it. That is why hard-reloading did not
- *      help, and why one person can see data a moment after another cannot.
- *   3. Two people are reading two different spreadsheets, because
- *      TRAVEL_DB_SPREADSHEET_ID is a Script Property and a version-pinned
- *      deployment can serve older code than /dev does.
- *
- * So this prints the SPREADSHEET and the DEPLOYMENT alongside the counts.
- * Without those, a row count is not evidence of anything.
- *
- * READ-ONLY, and it reads the SPREADSHEET DIRECTLY rather than through
- * TravelDB — the whole point is to compare the sheet against the cache, so
- * going through the cache would hide the disagreement being looked for.
- *
- * @editor
- */
-function diagDatabase() {
-  console.log('');
-  console.log('--- DATABASE: SHEET vs CACHE ---');
-
-  if (!TRAVEL_DB_SPREADSHEET_ID) {
-    console.log('TRAVEL_DB_SPREADSHEET_ID is unset. Nothing can be read.');
-    return { success: false };
-  }
-
-  try {
-    var ss = SpreadsheetApp.openById(TRAVEL_DB_SPREADSHEET_ID);
-    console.log('spreadsheet: "' + ss.getName() + '"');
-    console.log('  id:        ' + TRAVEL_DB_SPREADSHEET_ID);
-    console.log('  url:       ' + ss.getUrl());
-    console.log('');
-    console.log('IF THIS IS NOT THE WORKBOOK YOU EXPECT, nothing below matters.');
-    console.log('Two people reading two different spreadsheets is the first thing');
-    console.log('to rule out when they disagree about what the data says.');
-    console.log('');
-
-    // The tabs whose emptiness produces 'sheet not found', plus the ones the
-    // importer writes.
-    var WATCH = [
-      SHEET_NAMES.REQUESTS, SHEET_NAMES.REQUEST_TRAVELERS,
-      SHEET_NAMES.REQUEST_LEGS, SHEET_NAMES.APPROVAL_LOG,
-      SHEET_NAMES.TRAVEL_USERS, SHEET_NAMES.TRAVEL_USER_ROLES,
-      SHEET_NAMES.HC_POSITIONS, SHEET_NAMES.HC_ORGS,
-      SHEET_NAMES.TRAVEL_IMPORTS, SHEET_NAMES.IMPORT_BATCHES,
-      SHEET_NAMES.BUDGET_ALLOCATIONS
-    ];
-
-    var cache = CacheService.getScriptCache();
-    var disagreements = [];
-    var missing = [];
-
-    console.log('tab                        sheet rows   cache   agree?');
-    WATCH.forEach(function (name) {
-      if (!name) return;
-      var sheet = ss.getSheetByName(name);
-      if (!sheet) {
-        missing.push(name);
-        console.log('  ' + name.padEnd(26) + 'TAB MISSING');
-        return;
-      }
-      var sheetRows = Math.max(0, sheet.getLastRow() - 1);
-
-      // The cache key format TravelDB uses. Read directly rather than through
-      // TravelDB.readSheet, which would populate the cache and destroy the
-      // evidence.
-      var cachedRows = null;
-      try {
-        var raw = cache.get('tdb_' + name);
-        if (raw === null) {
-          // Chunked entries carry a manifest instead.
-          var man = cache.get('tdb_' + name + '_chunks');
-          if (man !== null) cachedRows = 'chunked(' + man + ')';
-        } else {
-          var parsed = JSON.parse(raw);
-          cachedRows = (parsed && parsed.rows) ? parsed.rows.length : 0;
-        }
-      } catch (ce) {
-        cachedRows = 'unreadable';
-      }
-
-      var agree = (cachedRows === null) ? '(not cached)'
-                : (cachedRows === sheetRows ? 'yes' : '*** NO ***');
-      if (agree.indexOf('NO') > -1) {
-        disagreements.push(name + ': sheet ' + sheetRows + ', cache ' + cachedRows);
-      }
-      console.log('  ' + name.padEnd(26) +
-                  String(sheetRows).padStart(5) + '        ' +
-                  String(cachedRows === null ? '-' : cachedRows).padStart(5) +
-                  '   ' + agree);
-    });
-
-    console.log('');
-
-    // THE SPECIFIC ANSWER TO THE ERROR @clolry SAW.
-    var reqSheet = ss.getSheetByName(SHEET_NAMES.REQUESTS);
-    var reqRows = reqSheet ? Math.max(0, reqSheet.getLastRow() - 1) : -1;
-    if (!reqSheet) {
-      console.log('"Requests sheet not found" IS LITERAL HERE: the tab does not');
-      console.log('exist. Run setupTravelDatabase().');
-    } else if (reqRows === 0) {
-      console.log('"Requests sheet not found" MEANS THE TAB IS EMPTY — it exists and');
-      console.log('has 0 data rows. setupTravelDatabase will not help; the data was');
-      console.log('never written, or was written to a different spreadsheet.');
-    } else {
-      console.log('The Requests tab has ' + reqRows + ' data row(s), so any "Requests');
-      console.log('sheet not found" error is a CACHE holding an empty result, not a');
-      console.log('missing tab. Run clearTravelDBCache() to clear it.');
-    }
-
-    if (disagreements.length) {
-      console.log('');
-      console.log('CACHE DISAGREES WITH THE SHEET on ' + disagreements.length + ' tab(s):');
-      disagreements.forEach(function (d) { console.log('  ' + d); });
-      console.log('A browser reload cannot fix this — the cache is server-side and');
-      console.log('shared across all users, which is also why two people can see');
-      console.log('different numbers at the same moment. Run clearTravelDBCache().');
-    }
-
-    if (missing.length) {
-      console.log('');
-      console.log('TABS MISSING (' + missing.length + '): ' + missing.join(', '));
-      console.log('Run setupTravelDatabase() — it is idempotent.');
-    }
-
-    return {
-      success: true, spreadsheetName: ss.getName(),
-      requestRows: reqRows, disagreements: disagreements, missingTabs: missing
-    };
-  } catch (error) {
-    console.log('diagDatabase FAILED: ' + error.message);
-    return { success: false, error: error.message };
-  }
-}
-
-/**
- * Clears every TravelDB cache entry, so the next read comes from the sheet.
- *
- * THE FIX FOR A CACHE THAT HOLDS AN EMPTY RESULT. TravelDB.warmCache caches
- * `{ rows: [] }` for a sheet with no data rows — deliberately, so reads do
- * not fall through to the spreadsheet on every call — and that entry lives
- * 600 seconds. A warm that lands between "tab created" and "rows written"
- * therefore pins "empty" for ten minutes, and every caller reports
- * "Requests sheet not found" for the duration.
- *
- * A BROWSER RELOAD CANNOT CLEAR IT. CacheService is server-side and shared
- * across every user of the script, which is also why two people can see
- * different numbers within the same minute: whoever reads first after the
- * entry expires repopulates it from the sheet.
- *
- * Safe to run at any time. It deletes nothing but cache entries; the next
- * read repopulates from the spreadsheet.
- *
- * @editor
- */
-function clearTravelDBCache() {
-  console.log('');
-  console.log('--- CLEARING THE TravelDB CACHE ---');
-  try {
-    // ONE TravelDB INSTANCE, and invalidate() is an instance method that also
-    // RE-WARMS from the sheet. That is what is wanted here: clearing without
-    // re-reading would leave the next page load to repopulate, and if two
-    // loads raced, one of them could re-cache a stale read.
-    var db = new TravelDB();
-    var cleared = [];
-    var names = TDB_WARM_SHEETS.slice();
-    // The budget page reads these too, and they are not in the warm list — so
-    // a stale entry for one of them would survive a "clear everything".
-    [SHEET_NAMES.TRAVEL_IMPORTS, SHEET_NAMES.IMPORT_BATCHES,
-     SHEET_NAMES.BUDGET_ALLOCATIONS, SHEET_NAMES.REQUEST_LEGS,
-     SHEET_NAMES.HC_POSITIONS, SHEET_NAMES.HC_ORGS].forEach(function (n) {
-      if (n && names.indexOf(n) === -1) names.push(n);
-    });
-    names.forEach(function (name) {
-      try { db.invalidate(name); cleared.push(name); }
-      catch (e) { console.log('  ' + name + ': ' + e.message); }
-    });
-    console.log('cleared: ' + cleared.join(', '));
-    console.log('');
-    console.log('The next read of each repopulates from the spreadsheet. Reload the');
-    console.log('page you were looking at — the data it serves is now whatever the');
-    console.log('sheet actually holds.');
-    return { success: true, cleared: cleared };
-  } catch (error) {
-    console.log('clearTravelDBCache FAILED: ' + error.message);
-    return { success: false, error: error.message };
   }
 }
 
@@ -2046,77 +1815,6 @@ function runClearHCPositions() {
   console.log(JSON.stringify({
     success: r.success, removed: r.removed, error: r.error, message: r.message
   }, null, 2));
-}
-
-/**
- * Preview the FY27 travel log import, then APPLY it. WRITES DATA.
- *
- * WHY THIS WRAPPER EXISTS
- * -----------------------
- * @clolry: "how do I run the importLiabilityLog with the token argument"
- *
- * He cannot, from the Run dropdown — the editor passes no arguments, so a
- * function taking a token is unrunnable there. The token exists so a commit
- * cannot apply a plan nobody read, and that protection is worth keeping; what
- * is not worth keeping is making him paste a token into a scratch function to
- * get past it.
- *
- * So this runs the preview, prints it, and passes the token straight through.
- * The protection is unchanged — the plan is still printed in full above the
- * write, and it is still the preview's own token.
- *
- * Mirrors runRosterImport, which solves the same problem for the roster.
- *
- * WHAT IT REFUSES
- * ---------------
- * Nothing to import, and nothing else. There is no equivalent of the roster
- * importer's delete-refusal because this import never removes a row: an
- * absent log row leaves its Requests row alone. A trip that was cancelled
- * shows up as a CANCELLED status, not a deletion.
- *
- * IT DOES NOT REFUSE ON BLOCKED ROWS. A blocked row imports nothing and is
- * listed; the other rows are still real travel and still belong in the
- * budget. Refusing the whole batch over one unattributable traveler would
- * leave every figure wrong rather than one figure missing.
- *
- * @editor
- */
-function runLiabilityLogImport() {
-  var p = previewLiabilityLogImport();
-  if (!p || p.success !== true) {
-    console.log('PREVIEW FAILED — nothing imported.');
-    return p;
-  }
-
-  if (!p.inserts && !p.updates) {
-    console.log('');
-    console.log('NOTHING TO DO: ' + p.unchanged + ' trip(s) already match LETS' +
-                (p.blocked ? ', and ' + p.blocked + ' are blocked (see above)' : '') +
-                '. Nothing was written.');
-    return p;
-  }
-
-  if (p.blocked) {
-    console.log('');
-    console.log('NOTE: ' + p.blocked + ' row(s) are BLOCKED and will import ' +
-                'nothing. The rest still import — see the list above for what ' +
-                'to fix in the sheet, then run this again to pick them up.');
-  }
-
-  console.log('');
-  console.log('--- applying ---');
-  var r = importLiabilityLog(p.token);
-  console.log(JSON.stringify(r, null, 2));
-
-  if (r && r.success && r.data && r.data.keyFailures &&
-      r.data.keyFailures.length) {
-    console.log('');
-    console.log('*** ' + r.data.keyFailures.length + ' KEY WRITE(S) FAILED ***');
-    console.log('Those rows have no LETS_Key in the log sheet, so the next run ' +
-                'will import them AGAIN as duplicates. This account needs EDIT ' +
-                'access to the log spreadsheet. Fix that before re-running.');
-  }
-  return r;
 }
 
 /**

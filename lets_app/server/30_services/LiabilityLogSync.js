@@ -257,56 +257,17 @@ var LiabilityLogSync = (function () {
    *
    * @returns {{fiscalYear: string, basis: string}}
    */
-  function fiscalYearFor(row, logFiscalYear) {
+  function fiscalYearFor(row) {
     var approved = _dateOnly_(row.voucherApproved);
     if (approved) {
       return { fiscalYear: fiscalYearOf(approved), basis: 'VOUCHER_APPROVED' };
     }
-
-    // NOT YET APPROVED: THE SHEET'S OWN YEAR, NOT THE TRAVEL DATE.
-    //
-    // This used to fall back to the travel end date, and that dropped seven
-    // real trips. @clolry's first import reported 23 of 30 rows in scope and
-    // an actual of $22,649.75 against the $30,245.55 he was reconciling to —
-    // a $7,595.80 gap that was entirely the seven excluded rows.
-    //
-    // The excluded rows are trips that TRAVELED in September (FY26) and whose
-    // vouchers are not yet approved. The end-date proxy put them in FY26, the
-    // FY27 filter dropped them, and the dashboard then reported a number that
-    // was internally consistent and wrong.
-    //
-    // @clolry's rule, twice now: "100% of the entries on the spreadsheet
-    // should be loaded as FY27 travel." A trip on the FY27 travel log is FY27
-    // travel. The sheet is maintained per fiscal year and its name says which
-    // one; that is a stated fact about the data, where the travel date is an
-    // inference from it.
-    //
-    // WHY THE PROXY WAS WRONG IN PRINCIPLE, not just in outcome. The event
-    // that decides the year — voucher approval — has not happened, so no date
-    // on the row can predict it. Choosing the travel end date dressed a guess
-    // as a derivation, and the guess was systematically wrong in one
-    // direction: September travel approved in October is the common case at a
-    // year boundary, which is exactly when it matters.
-    //
-    // THE BASIS IS STILL RECORDED. A row attributed this way reads
-    // PROVISIONAL_NOT_YET_APPROVED, and because every run re-evaluates it,
-    // the trip moves to its real year the morning after approval — which for
-    // these seven will be FY27 anyway.
-    //
-    // THE CALLER SUPPLIES THE YEAR. Hard-coding 'FY27' would quietly
-    // misattribute every row the day somebody opens a Travel FY28 tab, and
-    // this function would be the last place anyone looked.
-    var fy = _str_(logFiscalYear);
-    if (fy) {
-      return { fiscalYear: fy, basis: 'PROVISIONAL_NOT_YET_APPROVED' };
-    }
-
-    // No year given. The travel end date is the only remaining proxy — kept
-    // so a caller that does not know the sheet's year still gets an answer
-    // rather than an empty one, and labeled so it is not mistaken for fact.
+    // Not yet approved. The travel end date is the only proxy available, and
+    // it is wrong for anything traveling near a year boundary — which is
+    // precisely why it is labeled rather than trusted.
     var end = _dateOnly_(row.endDate);
     if (end) {
-      return { fiscalYear: fiscalYearOf(end), basis: 'PROVISIONAL_FROM_TRAVEL_DATE' };
+      return { fiscalYear: fiscalYearOf(end), basis: 'PROVISIONAL_NOT_YET_APPROVED' };
     }
     return { fiscalYear: '', basis: 'UNKNOWN' };
   }
@@ -417,7 +378,7 @@ var LiabilityLogSync = (function () {
    * @param {number} rowNumber  1-based sheet row, for error messages
    * @returns {Object|null} null for a row that is not a trip at all
    */
-  function interpretRow(cells, mapped, rosterIndex, rowNumber, logFiscalYear) {
+  function interpretRow(cells, mapped, rosterIndex, rowNumber) {
     var idx = mapped.index;
     var get = function (field) {
       return (field in idx) ? cells[idx[field]] : '';
@@ -431,7 +392,7 @@ var LiabilityLogSync = (function () {
     if (!_str_(row.lastName) && !_str_(row.firstName)) return null;
 
     var org = resolveOrgCode(row, rosterIndex);
-    var fy = fiscalYearFor(row, logFiscalYear);
+    var fy = fiscalYearFor(row);
     var status = statusFor(row);
     var estimate = _num_(row.estimatedCost);
     var actual = _num_(row.voucherCost);
@@ -469,16 +430,9 @@ var LiabilityLogSync = (function () {
     }
 
     if (fy.basis === 'PROVISIONAL_NOT_YET_APPROVED') {
-      warnings.push('The expense report has not been approved yet, so this ' +
-                    'is attributed to ' + fy.fiscalYear + ' because that is ' +
-                    'the year of the log it came from. It is confirmed by the ' +
-                    'approval date on a later run.');
-    }
-    if (fy.basis === 'PROVISIONAL_FROM_TRAVEL_DATE') {
-      warnings.push('The expense report has not been approved yet AND no ' +
-                    'fiscal year was supplied for the log, so the year is ' +
-                    'guessed from the travel end date. That is wrong for ' +
-                    'anything traveling near a year boundary.');
+      warnings.push('The expense report has not been approved yet, so the ' +
+                    'fiscal year is provisional — taken from the travel end ' +
+                    'date. It corrects itself once the voucher is approved.');
     }
 
     return {
@@ -538,7 +492,7 @@ var LiabilityLogSync = (function () {
    * @param {Array} positions       HC bundle, for the blank-org fallback
    * @returns {Object}
    */
-  function parseSheet(values, positions, logFiscalYear) {
+  function parseSheet(values, positions) {
     var out = {
       trips: [], skipped: 0, headerProblems: [],
       keyColumn: -1, columnCount: 0
@@ -565,7 +519,7 @@ var LiabilityLogSync = (function () {
     var rosterIndex = buildRosterIndex(positions);
 
     for (var r = 1; r < values.length; r++) {
-      var trip = interpretRow(values[r], mapped, rosterIndex, r + 1, logFiscalYear);
+      var trip = interpretRow(values[r], mapped, rosterIndex, r + 1);
       if (!trip) { out.skipped++; continue; }
       trip.existingKey = (mapped.keyColumn > -1)
         ? _str_(values[r][mapped.keyColumn]) : '';

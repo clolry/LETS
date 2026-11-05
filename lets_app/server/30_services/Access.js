@@ -518,35 +518,17 @@ function _buildBuCodeToNameMap() {
  * Top-level access gate for the entire TRIP site. doGet() calls this for every
  * mode and serves the access-blocked page if it returns false.
  *
- * Allow if ANY of:
- *   1. the user has an active role in Travel_User_Roles
- *      (admin / aas_fo_reviewer / fas_fo_reviewer / bu_reviewer /
- *       sector_override / approved_user)
- *   2. HC staffing shows them in a supervisory position (any code except 8)
- *      whose seat is occupied
- *   3. their HC office title identifies them as a BU-level lead (Client
- *      Executive / Chief of Staff and their deputies). These leads carry no
- *      role row and may have a non-supervisory code, but getReviewerContext
- *      already hands them a BU-scoped dashboard, so the gate must match
- *   4. they are ON THE ROSTER at all, in an occupied seat with an address
- *
- * PATH 4 IS NEW AND IS THE WIDEST BY FAR — 866 of 1,046 positions are
- * non-supervisory. @clolry: "all employees across the entire org are going to
- * need access to the system... our Chief of Staff wants individual employees
- * to submit requests on their own."
- *
- * It grants much less than it appears to. Admission to the site is not
- * admission to anything in particular: getReviewerContext returns role 'none'
- * with isReviewer false, so the reviewer dashboard refuses them; HCPrivacy
- * returns the PUBLIC field set with no employee ID, grade, duty address or
- * email; and the portal shows their own requests. The grant is "may file a
- * travel request and see mine".
- *
- * PATHS 2, 3 AND 4 ARE ALL HR-DRIVEN and all gated by
- * HC_SUPERVISOR_ACCESS_ENABLED. Setting it to 'false' now closes all three,
- * which is a wider blast radius than before and the right one: a bad roster
- * import is exactly when every HR-derived grant should go off, not only the
- * supervisor ones.
+ * Allow if EITHER:
+ *   - the user has any active role in Travel_User_Roles
+ *     (admin / aas_fo_reviewer / fas_fo_reviewer / bu_reviewer /
+ *      sector_override / approved_user), OR
+ *   - HC staffing shows them in a filled supervisor position
+ *     (supervisoryStatus === '2', occupancy NOT vacant/obligated), OR
+ *   - HC office title identifies them as a BU-level lead (Client Executive /
+ *     Chief of Staff and their deputies) in a filled seat. These leads carry
+ *     no role row and may have a non-'2' supervisoryStatus, but
+ *     getReviewerContext already hands them a BU-scoped reviewer dashboard —
+ *     so the site gate must admit them too (_isBuLeadByTitle).
  *
  * Inputs are already cached upstream (_getUnifiedRolesForEmail uses
  * CacheService; HC.hcGetBundle is cached at the library level), so this is
@@ -572,27 +554,15 @@ function canAccessTrip(email) {
     console.warn('canAccessTrip: unified-roles check failed: ' + e.message);
   }
 
-  // Paths 2, 3 AND 4 are HR-driven: they grant access with no row in
+  // Paths 2 and 3 are HR-driven: they grant access with no row in
   // Travel_User_Roles and no admin-console visibility (G-008). The kill switch
   // below exists because a roster import can widen access without any LETS
-  // change — setting HC_SUPERVISOR_ACCESS_ENABLED to 'false' closes all three
+  // change — setting HC_SUPERVISOR_ACCESS_ENABLED to 'false' closes both paths
   // without a deploy, leaving the explicit role table as the only way in.
-  //
-  // THE SWITCH NOW REACHES FURTHER THAN ITS NAME SUGGESTS, and that is
-  // deliberate. Path 4 admits every employee on the roster, so flipping this
-  // locks out ~1,040 people rather than ~180 — and that is the correct
-  // behavior for the situation it exists for. A bad roster import is exactly
-  // when an administrator wants every HR-derived grant off, not only the
-  // supervisory ones.
-  //
-  // The property is NOT renamed. It is read from live Script Properties, so a
-  // rename needs the property set before the deploy lands or the switch
-  // silently reverts to its default — which is ENABLED, the opposite of what
-  // somebody reaching for a kill switch wants.
   //
   // Defaults to ENABLED. The previous workgroup relied on these paths, and
   // defaulting to closed would lock out every supervisor the moment a real
-  // roster lands — and now every employee too.
+  // roster lands.
   if (!isHcDerivedAccessEnabled()) {
     _logAccessDecision_(emailLower, 'DENIED', 'disabled', {
       detail: 'HC-derived access paths are disabled by HC_SUPERVISOR_ACCESS_ENABLED'
@@ -658,67 +628,8 @@ function canAccessTrip(email) {
     console.warn('canAccessTrip: bu-lead-by-title check failed: ' + e.message);
   }
 
-  // 4. ANY EMPLOYEE ON THE ROSTER → allow.
-  //
-  // @clolry: "all employees across the entire org are going to need access to
-  // the system. AAS built TRIP to have requests submitted by a director but
-  // our Chief of Staff wants individual employees to submit requests on their
-  // own (and route through their supervisor/director/SCD, etc). I'm concerned
-  // that this shift hasn't been included in the design."
-  //
-  // It had not been. Paths 1-3 admit role-holders, supervisors and BU leads —
-  // 180 of 1,046 positions. The other 866 were DENIED at the line below, so
-  // the people the system now expects to file their own requests could not
-  // reach it at all.
-  //
-  // WHY THIS IS A SMALLER GRANT THAN IT LOOKS. Being admitted to the site is
-  // not being given anything to look at:
-  //
-  //   getReviewerContext returns role 'none' with isReviewer false, so the
-  //   reviewer dashboard refuses them (ReviewerDashboard.js:36)
-  //   HCPrivacy returns the PUBLIC field set — no employee ID, no grade, no
-  //   duty address, no email
-  //   the portal shows their OWN requests, which is the point
-  //
-  // So this grants "may file a travel request and see mine", which is what
-  // every employee needs and nothing more.
-  //
-  // MATCHED ON AN OCCUPIED SEAT WITH AN ADDRESS, not on mere presence in the
-  // roster. A vacant seat has nobody to admit, and a row with no address
-  // cannot match a signed-in user anyway — Email_Address is the join.
-  //
-  // GATED BY THE SAME KILL SWITCH as paths 2 and 3, which is why it sits
-  // below that check rather than beside path 1. HC_SUPERVISOR_ACCESS_ENABLED
-  // set to 'false' now closes all three HR-driven paths, leaving the explicit
-  // role table as the only way in — a wider blast radius than before, and the
-  // right one: a bad roster import is exactly when an administrator wants
-  // every HR-derived grant off, not merely the supervisor ones.
-  try {
-    var allBundle = HC.hcGetBundle();
-    if (allBundle && allBundle.success && allBundle.data) {
-      var all = allBundle.data;
-      for (var e = 0; e < all.length; e++) {
-        var emp = all[e];
-        if (!emp || !emp.emailAddress) continue;
-        if (String(emp.emailAddress).toLowerCase() !== emailLower) continue;
-        if (!isHcSeatOccupied(emp)) continue;
-        _logAccessDecision_(emailLower, 'GRANTED', 'hc-employee', {
-          positionNumber: emp.positionNumber,
-          officeTitle: emp.officeTitle,
-          orgCode: emp.orgCode,
-          detail: 'On the HR roster, occupancy ' +
-                  String(emp.occupancyStatus || '').toUpperCase() +
-                  '. Submitter access only — no reviewer role.'
-        });
-        return true;
-      }
-    }
-  } catch (e) {
-    console.warn('canAccessTrip: HC employee check failed: ' + e.message);
-  }
-
   _logAccessDecision_(emailLower, 'DENIED', 'none', {
-    detail: 'No role row, and not on the HR roster in an occupied seat'
+    detail: 'No role row, no HC supervisor position, no BU-lead title'
   });
   return false;
 }
@@ -1099,23 +1010,12 @@ function diagnoseTripAccess(email) {
         });
       }
       if (out.hcPositions.length === 0) {
-        out.diagnosis.push('No HC position found for this email, so NO HR-driven ' +
-          'allow-path applies — not the supervisor path, not the BU-lead path, ' +
-          'and not the employee path. This is the usual reason a real person is ' +
-          'denied: their roster row carries a different address, or none.');
+        out.diagnosis.push('No HC position found for this email (so the supervisor allow-path does not apply).');
       } else {
         out.hcPositions.forEach(function(h) {
           if (!h.grantsAccess) {
-            // A ROW THAT DOES NOT GRANT *SUPERVISOR* ACCESS MAY STILL GRANT
-            // EMPLOYEE ACCESS. Saying only "does NOT grant access" was true
-            // when there were three paths and is now misleading: a
-            // non-supervisory employee in an occupied seat is admitted by
-            // path 4, and a reader of this line would conclude otherwise.
-            out.diagnosis.push('HC position "' + h.officeTitle + '" does not grant ' +
-              'SUPERVISOR access (supervisoryStatus=' + h.supervisoryStatus +
-              ', occupancy=' + h.occupancyStatus + '; needs a code other than 8 ' +
-              'and an occupied seat). It may still grant EMPLOYEE access — see ' +
-              'the verdict below.');
+            out.diagnosis.push('HC position "' + h.officeTitle + '" does NOT grant access (supervisoryStatus=' +
+              h.supervisoryStatus + ', occupancy=' + h.occupancyStatus + '; needs supervisoryStatus=2 and a filled seat).');
           }
         });
       }
@@ -1137,45 +1037,14 @@ function diagnoseTripAccess(email) {
     out.diagnosis.push('bu-lead-by-title error: ' + e5.message);
   }
 
-  // --- 6. Employee path (every occupied roster seat) ---
-  //
-  // Reported SEPARATELY from the supervisor path even though both read the
-  // same bundle, because the two answer different questions and an admin
-  // asking "why can this person get in" needs to know WHICH path admitted
-  // them. A single "HC grants access" line would make a non-supervisory
-  // employee look like a supervisor.
-  try {
-    out.employeePath = { onRoster: false, occupiedSeat: false, positionNumber: '' };
-    (out.hcPositions || []).forEach(function (h) {
-      out.employeePath.onRoster = true;
-      var occ = String(h.occupancyStatus || '').toUpperCase();
-      if (occ !== 'VACANT') {
-        out.employeePath.occupiedSeat = true;
-        if (!out.employeePath.positionNumber) {
-          out.employeePath.positionNumber = h.positionNumber || '';
-        }
-      }
-    });
-    if (out.employeePath.occupiedSeat) {
-      out.diagnosis.push('On the HR roster in an occupied seat (position ' +
-        (out.employeePath.positionNumber || '?') + ') — grants EMPLOYEE access: ' +
-        'may file a travel request and see their own. No reviewer dashboard, ' +
-        'and HCPrivacy returns the public field set only.');
-    }
-  } catch (e6) {
-    out.diagnosis.push('employee-path error: ' + e6.message);
-  }
-
-  // --- 7. Final verdict ---
+  // --- 6. Final verdict ---
   out.allowed = canAccessTrip(emailLower);
   if (out.allowed && out.diagnosis.length === 0) {
-    out.diagnosis.push('ALLOWED — an active role, a supervisory HC position, a ' +
-      'BU-lead title, or an occupied seat on the HR roster.');
+    out.diagnosis.push('ALLOWED — user has an effective role, a qualifying HC supervisor position, or a BU-lead title.');
   } else if (out.allowed) {
     out.diagnosis.unshift('ALLOWED (despite notes below).');
   } else if (out.diagnosis.length === 0) {
-    out.diagnosis.push('DENIED — no active role, and no HC position at all for ' +
-      'this address. Check that the roster carries this exact email.');
+    out.diagnosis.push('DENIED — no active role, no qualifying HC supervisor position, and no BU-lead title.');
   }
 
   console.log('diagnoseTripAccess(' + emailLower + ') => ' + (out.allowed ? 'ALLOW' : 'DENY'));
@@ -1703,50 +1572,6 @@ function getReviewerContext(email, viewAs, sharedDb) {
     console.error('getReviewerContext: sd check error: ' + e.message);
   }
 
-  // Priority 5: SUPERVISOR. The lowest-priority reviewer role, checked last
-  // so anyone who is also an SCD, a DAC reviewer or the FO gets their wider
-  // context instead — those scopes already include everything a supervisor
-  // would see.
-  //
-  // THE SCOPE IS THEIR OWN ORG CODE, AND ONLY THAT. A supervisor is not a
-  // service-center reviewer: they review the people they supervise, which is
-  // the org code they sit in. Granting them the center's scope would let
-  // every supervisor read every request in their center — around a dozen
-  // orgs' worth — which is a far wider grant than the role implies and
-  // nobody asked for.
-  //
-  // WHY THIS IS NEEDED AT ALL, given that the dashboard's "your reviews"
-  // list keys off Current_Reviewer_Email rather than on role: without
-  // isReviewer the dashboard refuses the caller outright
-  // (ReviewerDashboard.js:36), so a supervisor with a request assigned to
-  // them could not open the page that holds it.
-  try {
-    var bundle = HC.hcGetBundle();
-    if (bundle && bundle.success && bundle.data) {
-      var positions = bundle.data;
-      for (var si = 0; si < positions.length; si++) {
-        var sp = positions[si];
-        if (!sp || !sp.emailAddress) continue;
-        if (String(sp.emailAddress).toLowerCase() !== resolvedEmail.toLowerCase()) continue;
-        if (!isHcSupervisoryCode(sp.supervisoryStatus)) continue;
-        if (!isHcSeatOccupied(sp)) continue;
-        var ownOrg = String(sp.orgCode || '').toUpperCase();
-        if (!ownOrg) continue;
-
-        ctx.role = 'supervisor';
-        // type 'org' rather than 'sector': a different shape, because the
-        // comparison is an exact org-code match rather than a walk to the
-        // service-center level. _isRequestInUserScope handles it explicitly.
-        ctx.scope = { type: 'org', codes: [ownOrg], names: [] };
-        ctx.label = 'Supervisor · ' + ownOrg;
-        ctx.isReviewer = true;
-        return ctx;
-      }
-    }
-  } catch (e) {
-    console.error('getReviewerContext: supervisor check error: ' + e.message);
-  }
-
   return ctx;
 }
 
@@ -2017,10 +1842,8 @@ function requireTravelCoordinator() {
  */
 var REQUEST_EDITABLE_STATUSES = [
   STATUS_CODES.DRAFT,
-  STATUS_CODES.PENDING_SUPERVISOR, STATUS_CODES.PENDING_SECTOR,
-  STATUS_CODES.PENDING_BU, STATUS_CODES.PENDING_OSO, STATUS_CODES.PENDING_FAS,
-  STATUS_CODES.NEEDS_INFO_SUPERVISOR, STATUS_CODES.NEEDS_INFO_SECTOR,
-  STATUS_CODES.NEEDS_INFO_BU, STATUS_CODES.NEEDS_INFO_OSO
+  STATUS_CODES.PENDING_SECTOR, STATUS_CODES.PENDING_BU, STATUS_CODES.PENDING_OSO, STATUS_CODES.PENDING_FAS,
+  STATUS_CODES.NEEDS_INFO_SECTOR, STATUS_CODES.NEEDS_INFO_BU, STATUS_CODES.NEEDS_INFO_OSO
 ];
 
 /**
@@ -2110,24 +1933,6 @@ function _isRequestInUserScope(request, ctx) {
       // codes from isSectorDirector, so both sides must speak that
       // vocabulary — see orgCodeInScope.
       return orgCodeInScope(canonical, ctx.scope.codes || []);
-    }
-    if (ctx.scope.type === 'org') {
-      // A SUPERVISOR'S SCOPE IS AN EXACT ORG MATCH, not a walk.
-      //
-      // Deliberately narrower than 'sector'. A supervisor reviews the people
-      // they supervise — the org code they sit in — and walking upward or
-      // matching a prefix would hand them their whole service center, around
-      // a dozen orgs' worth of other people's travel.
-      //
-      // That matters because this function also gates READ access to a
-      // request (:1989), not only the dashboard list. Getting it wrong here
-      // is a privacy widening, not a cosmetic one.
-      var codes = ctx.scope.codes || [];
-      var own = String(canonical || '').toUpperCase();
-      for (var oi = 0; oi < codes.length; oi++) {
-        if (String(codes[oi]).toUpperCase() === own) return true;
-      }
-      return false;
     }
     return false;
   }

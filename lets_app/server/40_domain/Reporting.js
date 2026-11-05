@@ -476,15 +476,9 @@ function _reportReviewerPerformance(db, config) {
     ACTION_TYPES.SECTOR_NEEDS_INFO, ACTION_TYPES.BU_NEEDS_INFO, ACTION_TYPES.OSO_NEEDS_INFO,
     ACTION_TYPES.DENIED
   ];
-  var needsInfoActions = [ACTION_TYPES.SUPERVISOR_NEEDS_INFO, ACTION_TYPES.SECTOR_NEEDS_INFO,
-                          ACTION_TYPES.BU_NEEDS_INFO, ACTION_TYPES.OSO_NEEDS_INFO];
+  var needsInfoActions = [ACTION_TYPES.SECTOR_NEEDS_INFO, ACTION_TYPES.BU_NEEDS_INFO, ACTION_TYPES.OSO_NEEDS_INFO];
 
-  // Maps an ACTION back to the stage it was taken AT, for per-stage timing.
-  // Without the supervisor entries, time spent at the first stage is
-  // attributed to nothing and the reported total is shorter than reality.
   var stageMap = {
-    [ACTION_TYPES.SUPERVISOR_APPROVED]: STATUS_CODES.PENDING_SUPERVISOR,
-    [ACTION_TYPES.SUPERVISOR_NEEDS_INFO]: STATUS_CODES.PENDING_SUPERVISOR,
     [ACTION_TYPES.SECTOR_APPROVED]: STATUS_CODES.PENDING_SECTOR, [ACTION_TYPES.SECTOR_NEEDS_INFO]: STATUS_CODES.PENDING_SECTOR,
     [ACTION_TYPES.BU_APPROVED]: STATUS_CODES.PENDING_BU, [ACTION_TYPES.BU_NEEDS_INFO]: STATUS_CODES.PENDING_BU,
     [ACTION_TYPES.OSO_APPROVED]: STATUS_CODES.PENDING_OSO, [ACTION_TYPES.OSO_NEEDS_INFO]: STATUS_CODES.PENDING_OSO
@@ -601,7 +595,7 @@ function _reportMonthlySummary(db, config) {
   var detailRows = [];
 
   // Pipeline snapshot (always current)
-  var pipeline = { supervisor: 0, sector: 0, bu: 0, oso: 0, fas: 0 };
+  var pipeline = { sector: 0, bu: 0, oso: 0, fas: 0 };
 
   for (var i = 0; i < requestRows.length; i++) {
     var row = requestRows[i];
@@ -612,8 +606,7 @@ function _reportMonthlySummary(db, config) {
     var submittedAt = row[rIdx['Submitted_At']];
 
     // Pipeline counts (always current)
-    if (status === STATUS_CODES.PENDING_SUPERVISOR) pipeline.supervisor++;
-    else if (status === STATUS_CODES.PENDING_SECTOR) pipeline.sector++;
+    if (status === STATUS_CODES.PENDING_SECTOR) pipeline.sector++;
     else if (status === STATUS_CODES.PENDING_BU) pipeline.bu++;
     else if (status === STATUS_CODES.PENDING_OSO) pipeline.oso++;
     else if (status === STATUS_CODES.PENDING_FAS) pipeline.fas++;
@@ -1358,12 +1351,7 @@ function _reportStageTiming(db, config) {
     if (completionTime < dateRange.start || completionTime > dateRange.end) return;
 
     // Calculate per-stage dwell times
-    // Keyed on status, and a status absent from this object is SILENTLY
-    // DROPPED by the hasOwnProperty guard below — so omitting the supervisor
-    // stage would shorten every reported cycle time by however long the first
-    // review took, with nothing to show it had happened.
-    var stageTimes = { PENDING_SUPERVISOR: 0, PENDING_SECTOR: 0,
-                       PENDING_BU: 0, PENDING_OSO: 0, PENDING_FAS: 0 };
+    var stageTimes = { PENDING_SECTOR: 0, PENDING_BU: 0, PENDING_OSO: 0, PENDING_FAS: 0 };
 
     for (var k = 0; k < logs.length - 1; k++) {
       var entryTime = new Date(logs[k].timestamp);
@@ -1378,7 +1366,6 @@ function _reportStageTiming(db, config) {
       }
     }
 
-    var supervisorDays = Math.round(stageTimes.PENDING_SUPERVISOR * 10) / 10;
     var sectorDays = Math.round(stageTimes.PENDING_SECTOR * 10) / 10;
     var buDays = Math.round(stageTimes.PENDING_BU * 10) / 10;
     var foDays = Math.round(stageTimes.PENDING_OSO * 10) / 10;

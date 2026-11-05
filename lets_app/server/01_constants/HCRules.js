@@ -255,86 +255,6 @@ function hcSupervisoryCodeCensus(positions) {
   return out;
 }
 
-/**
- * The supervisor of a given org code: the most senior supervisory person in it.
- *
- * @clolry: "Supervisor is the highest grade != 8 in the same org code as the
- * requestor."
- *
- * WHY THE ORG CODE AND NOT THE REPORTS-TO CHAIN
- * ---------------------------------------------
- * HC_Positions carries Reports_To_Position_Number, and walking it is the
- * obvious implementation. @clolry chose the org code instead, and the reason
- * holds up: the chain is only as good as that column, which is a second field
- * HR must maintain correctly for every one of 1,046 rows. The org code is the
- * field the whole rest of this system already depends on — the per-capita
- * split, the SCD lookup and the budget attribution all key on it, so an error
- * in it is visible in four places rather than silent in one.
- *
- * A reports-to walk also fails differently and worse: a vacant supervisory
- * seat in the chain terminates the walk, so the request routes to nobody. An
- * org-code search simply picks the next most senior person who is actually
- * there.
- *
- * PURE. Takes the position list, returns a position. No HC call, no sheet
- * read — so the rule can be tested against the awkward shapes (a lone
- * employee, a tie, an org where the only supervisor is the requestor) without
- * a spreadsheet.
- *
- * EXCLUDES THE REQUESTOR. @clolry: "yes, supervisor submission goes to the
- * next approver." A supervisor filing their own request must not approve it,
- * which matches the three skip rules determineInitialRouting already applies
- * at the SCD, DAC and FO stages. Returning their own seat here would create a
- * stage that approves itself — the one failure mode an approval chain cannot
- * tolerate.
- *
- * AN ORG WITH NO OTHER SUPERVISOR RETURNS NULL, and the caller cascades to the
- * SCD stage. That is correct rather than a gap: a one-person org, or an org
- * whose only supervisor is the person asking, has no supervisor review to do.
- *
- * @param {Array} positions HC bundle records
- * @param {string} orgCode the submitter's own org code
- * @param {string} [excludeEmail] the requestor, who cannot approve themselves
- * @returns {Object|null} the position record, or null
- */
-function findHcSupervisorForOrg(positions, orgCode, excludeEmail) {
-  var want = String(orgCode || '').trim().toUpperCase();
-  if (!want) return null;
-  var skip = String(excludeEmail || '').trim().toLowerCase();
-
-  var best = null;
-  var all = positions || [];
-
-  for (var i = 0; i < all.length; i++) {
-    var p = all[i];
-    if (!p) continue;
-    if (String(p.orgCode || '').trim().toUpperCase() !== want) continue;
-    if (!isHcSupervisoryCode(p.supervisoryStatus)) continue;
-    // Must be a real person with an address — there is nobody to route to
-    // otherwise, and a stage assigned to an empty email strands the request.
-    if (!isHcPositionReachable(p)) continue;
-    if (skip && String(p.emailAddress || '').toLowerCase() === skip) continue;
-
-    // HIGHEST GRADE WINS, deterministically. Taking the first match would
-    // make the answer depend on bundle order, so re-importing the roster
-    // could change who approves a given employee's travel.
-    //
-    // TIES BROKEN ON POSITION NUMBER, not left to chance. Two supervisors at
-    // the same grade in the same org is a real possibility, and "whichever
-    // the loop saw first" is not an answer anybody could explain to the
-    // person whose request went to the wrong one.
-    if (!best) { best = p; continue; }
-    var byGrade = compareHcGrade(p.grade, best.grade);
-    if (byGrade > 0) { best = p; continue; }
-    if (byGrade === 0 &&
-        String(p.positionNumber) < String(best.positionNumber)) {
-      best = p;
-    }
-  }
-
-  return best;
-}
-
 // Node/CommonJS export for the test suites. Inert in Apps Script, where these
 // are plain globals.
 if (typeof module !== 'undefined' && module.exports) {
@@ -345,7 +265,6 @@ if (typeof module !== 'undefined' && module.exports) {
     isHcSeatOccupied: isHcSeatOccupied,
     isHcPositionReachable: isHcPositionReachable,
     compareHcGrade: compareHcGrade,
-    hcSupervisoryCodeCensus: hcSupervisoryCodeCensus,
-    findHcSupervisorForOrg: findHcSupervisorForOrg
+    hcSupervisoryCodeCensus: hcSupervisoryCodeCensus
   };
 }

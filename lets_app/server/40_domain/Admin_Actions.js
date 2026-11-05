@@ -39,16 +39,9 @@ function adminOverrideStatus(requestId, newStatus, reason) {
       throw new Error('Request ID, new status, and reason are required');
     }
 
-    // The statuses an admin may force a request into. PENDING_SUPERVISOR and
-    // NEEDS_INFO_SUPERVISOR are included: without them an admin could move a
-    // request to any stage EXCEPT the first, which is the one most likely to
-    // need it — a request that routed past a supervisor because the roster was
-    // wrong has to be sendable back.
     const validStatuses = [
-      STATUS_CODES.PENDING_SUPERVISOR, STATUS_CODES.PENDING_SECTOR,
-      STATUS_CODES.PENDING_BU, STATUS_CODES.PENDING_OSO, STATUS_CODES.PENDING_FAS,
-      STATUS_CODES.NEEDS_INFO_SUPERVISOR, STATUS_CODES.NEEDS_INFO_SECTOR,
-      STATUS_CODES.NEEDS_INFO_BU, STATUS_CODES.NEEDS_INFO_OSO,
+      STATUS_CODES.PENDING_SECTOR, STATUS_CODES.PENDING_BU, STATUS_CODES.PENDING_OSO, STATUS_CODES.PENDING_FAS,
+      STATUS_CODES.NEEDS_INFO_SECTOR, STATUS_CODES.NEEDS_INFO_BU, STATUS_CODES.NEEDS_INFO_OSO,
       STATUS_CODES.APPROVED_GOGOV, STATUS_CODES.COMPLETED, STATUS_CODES.DENIED, STATUS_CODES.CANCELLED
     ];
 

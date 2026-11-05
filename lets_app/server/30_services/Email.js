@@ -72,7 +72,6 @@ const EMAIL_STYLES = {
  * Used for progress tracker highlighting
  */
 const STAGE_MAP = {
-  'Supervisor': 'supervisor_review',
   'Sector': 'sector_review',
   'BU': 'bu_review',
   'OSO': 'oso_review',
@@ -436,7 +435,7 @@ function sendTravelEmail(options) {
 /**
  * Workflow stages for the progress tracker
  */
-// Full workflow: Supervisor → SCD → DAC → FO → FAS (overhead travel)
+// Full workflow: SD → BU → FO → FAS (overhead travel, SD-level submitter)
 // Stage LABELS are resolved at call time from branding properties, not frozen
 // at file-evaluation time. The inherited labels were 'SD', 'BU' and 'AAS FO';
 // this organization calls them SCD (Service Center Director), DAC (Deputy
@@ -448,13 +447,6 @@ function sendTravelEmail(options) {
 function _stageLabel(id) {
   switch (id) {
     case 'submitted': return 'Submitted';
-    // NOT a branding property. SCD and DAC are this organization's names for
-    // roles the inherited code called SD and BU, so those are configurable.
-    // 'Supervisor' is the generic word for the relationship itself — every
-    // workgroup that adopts this has supervisors, and making it configurable
-    // would invite somebody to rename it to something their own staff do not
-    // use.
-    case 'supervisor_review': return 'Supervisor';
     case 'sector_review': return getReviewLabelSector();
     case 'bu_review': return getReviewLabelBU();
     case 'oso_review': return getOrgFOLabel();
@@ -467,41 +459,24 @@ function _stages(ids) {
   return ids.map(function (id) { return { id: id, label: _stageLabel(id) }; });
 }
 
-// Full: Supervisor → SCD → DAC → ASD Travel & Events → FAS
-//
-// THE SUPERVISOR STAGE IS SHOWN TO EVERY SUBMITTER, including the ones who
-// skip it. @clolry: every employee now submits their own request and it routes
-// through their supervisor first.
-//
-// A progress tracker that omitted the stage for a director would be
-// technically accurate and practically confusing: two people comparing their
-// emails would see different chains for the same process. The tracker already
-// greys out stages that are not current, so a skipped stage reads as
-// "not needed for mine" rather than as a missing step.
-//
-// THAT IS A JUDGMENT ABOUT A PICTURE, NOT ABOUT ROUTING. The chain a request
-// actually walks is decided by determineInitialRouting, and nothing here
-// affects it.
+// Full: SCD → DAC → ASD Travel & Events → FAS
 function getWorkflowStagesFull() {
-  return _stages(['submitted', 'supervisor_review', 'sector_review',
-                  'bu_review', 'oso_review', 'fas_submission']);
+  return _stages(['submitted', 'sector_review', 'bu_review', 'oso_review', 'fas_submission']);
 }
 
 // No SCD (DAC-level submitter)
 function getWorkflowStagesNoSector() {
-  return _stages(['submitted', 'supervisor_review', 'bu_review',
-                  'oso_review', 'fas_submission']);
+  return _stages(['submitted', 'bu_review', 'oso_review', 'fas_submission']);
 }
 
 // No FAS (client-paid travel)
 function getWorkflowStagesNoFas() {
-  return _stages(['submitted', 'supervisor_review', 'sector_review',
-                  'bu_review', 'oso_review']);
+  return _stages(['submitted', 'sector_review', 'bu_review', 'oso_review']);
 }
 
 // Neither (client-paid, DAC-level submitter)
 function getWorkflowStagesMinimal() {
-  return _stages(['submitted', 'supervisor_review', 'bu_review', 'oso_review']);
+  return _stages(['submitted', 'bu_review', 'oso_review']);
 }
 
 // ============================================================================
@@ -645,12 +620,6 @@ const EMAIL_CONTENT = {
       attendees: 'Attendee(s)'
     },
     stageNames: {
-      // Spelled out rather than abbreviated. 'SD' and 'BU' are internal
-      // shorthand that a submitter has no way to decode, and an email saying
-      // "SUP Review Approved" would read as a typo. The abbreviations below
-      // are pre-existing and left alone; a new stage does not need to inherit
-      // a convention that was already a problem.
-      Supervisor: 'Supervisor',
       Sector: 'SD',
       BU: 'BU',
       OSO: '{{foLabel}}',
@@ -1471,20 +1440,7 @@ function _buildStageCcList(params) {
 
   var stage = (params.stage || '').toUpperCase();
 
-  // Progressive: add reviewers up to and including the current stage.
-  //
-  // SUPERVISOR IS THE FIRST STAGE and carries nobody but the travelers. The
-  // request has not reached the SCD yet, so CCing them would notify an
-  // approver about a request they have not been asked to look at — and a
-  // stream of those is how a reviewer learns to filter the mailbox that
-  // later carries their real queue.
-  //
-  // The supervisor's own address is added from SUPERVISOR onward rather than
-  // only at their own stage, because they are part of the chain from then on
-  // — the same progressive rule the SCD and DAC already follow.
-  if (stage === 'SUPERVISOR' || stage === 'SECTOR' || stage === 'BU' || stage === 'OSO') {
-    addIfValid(params.supervisorEmail);
-  }
+  // Progressive: add reviewers up to and including the current stage
   if (stage === 'SECTOR' || stage === 'BU' || stage === 'OSO') {
     addIfValid(params.sectorDirectorEmail);
   }
@@ -1573,14 +1529,6 @@ function _describeRoutingDestination(reviewer, reviewLevel, status) {
  */
 function describeReviewStage(status, reviewLevel) {
   var STATUS_STAGES = {
-    // KEPT IN STEP WITH travelUtils.html's copy, which test_routing_visibility
-    // §5 asserts by comparing key sets — one map feeds email, the other the
-    // portal card, and a submitter seeing different wording in each would
-    // reasonably think they were different things.
-    //
-    // Not a branding property: every workgroup has supervisors, and the word
-    // names the relationship rather than this org's title for a role.
-    PENDING_SUPERVISOR: 'supervisor review',
     PENDING_SECTOR: getReviewLabelSector() + ' review',
     PENDING_BU: getReviewLabelBU() + ' review',
     PENDING_OSO: getOrgFOLabel() + ' review',
@@ -1588,7 +1536,6 @@ function describeReviewStage(status, reviewLevel) {
     PENDING_DD_CONFIRMATION: 'Division Director confirmation',
     PENDING_CORRECTION: 'correction by the submitter',
     NEEDS_INFO: 'more information from the submitter',
-    NEEDS_INFO_SUPERVISOR: 'more information from the submitter',
     NEEDS_INFO_SECTOR: 'more information from the submitter',
     NEEDS_INFO_BU: 'more information from the submitter',
     NEEDS_INFO_OSO: 'more information from the submitter'
@@ -1603,7 +1550,6 @@ function describeReviewStage(status, reviewLevel) {
   // 'AAS FO' in particular is data, not a label, and renaming it would need a
   // migration. The VALUES are configurable labels.
   var LEVEL_LABELS = {
-    'Supervisor': 'supervisor review',
     'Sector': getReviewLabelSector() + ' review',
     'BU': getReviewLabelBU() + ' review',
     'OSO': getOrgFOLabel() + ' review',

@@ -63,14 +63,12 @@ function getReviewerDashboard(period, customStart, customEnd, viewAs) {
     var startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
     var pendingStatuses = [
-      STATUS_CODES.PENDING_SUPERVISOR,
       STATUS_CODES.PENDING_SECTOR,
       STATUS_CODES.PENDING_BU,
       STATUS_CODES.PENDING_OSO,
       STATUS_CODES.PENDING_FAS
     ];
     var stalledStatuses = pendingStatuses.concat([
-      STATUS_CODES.NEEDS_INFO_SUPERVISOR,
       STATUS_CODES.NEEDS_INFO_SECTOR,
       STATUS_CODES.NEEDS_INFO_BU,
       STATUS_CODES.NEEDS_INFO_OSO
@@ -81,8 +79,7 @@ function getReviewerDashboard(period, customStart, customEnd, viewAs) {
     var yourReviews = [];
     var stalled = [];
     var deniedCount = 0, cancelledCount = 0;
-    var pipelineCounts = { supervisor: 0, sector: 0, bu: 0, oso: 0, fas: 0,
-                           ddConfirm: 0, approved: 0, completed: 0 };
+    var pipelineCounts = { sector: 0, bu: 0, oso: 0, fas: 0, ddConfirm: 0, approved: 0, completed: 0 };
 
     var requests = [];
     var sectorCodeSet = {}, buCodeSet = {}, divisionCodeSet = {};
@@ -102,13 +99,6 @@ function getReviewerDashboard(period, customStart, customEnd, viewAs) {
     if (scopeType === 'sector' && ctx.scope.codes) {
       ctx.scope.codes.forEach(function(c) { allowedSectorCodesUpper[String(c).toUpperCase()] = true; });
     }
-    // A supervisor's own org code, matched exactly rather than walked. See
-    // the note in _isRequestInUserScope: widening this would hand every
-    // supervisor their whole service center.
-    var allowedOrgCodesUpper = {};
-    if (scopeType === 'org' && ctx.scope.codes) {
-      ctx.scope.codes.forEach(function(c) { allowedOrgCodesUpper[String(c).toUpperCase()] = true; });
-    }
 
     function _orgBelongsToScope(orgCode) {
       if (!orgCode) return false;
@@ -125,9 +115,6 @@ function getReviewerDashboard(period, customStart, customEnd, viewAs) {
         // would never compare equal and the reviewer would see nothing.
         var sec = _resolveServiceCenterCode(canonical);
         return !!(sec && allowedSectorCodesUpper[sec]);
-      }
-      if (scopeType === 'org') {
-        return !!allowedOrgCodesUpper[String(canonical).toUpperCase()];
       }
       return false;
     }
@@ -181,8 +168,7 @@ function getReviewerDashboard(period, customStart, customEnd, viewAs) {
       }
 
       // Pipeline counts (in scope)
-      if (status === STATUS_CODES.PENDING_SUPERVISOR) pipelineCounts.supervisor++;
-      else if (status === STATUS_CODES.PENDING_SECTOR) pipelineCounts.sector++;
+      if (status === STATUS_CODES.PENDING_SECTOR) pipelineCounts.sector++;
       else if (status === STATUS_CODES.PENDING_BU) pipelineCounts.bu++;
       else if (status === STATUS_CODES.PENDING_OSO) pipelineCounts.oso++;
       else if (status === STATUS_CODES.PENDING_FAS) pipelineCounts.fas++;
@@ -548,8 +534,7 @@ function _computeReviewerMetrics(rows, headerIndex, scopeChecker, ctx, win, db, 
 
   // Determine the "your stage" status to count for the user's queue
   var myStageStatus = null;
-  if (ctx.role === 'supervisor') myStageStatus = STATUS_CODES.PENDING_SUPERVISOR;
-  else if (ctx.role === 'sector') myStageStatus = STATUS_CODES.PENDING_SECTOR;
+  if (ctx.role === 'sector') myStageStatus = STATUS_CODES.PENDING_SECTOR;
   else if (ctx.role === 'bu') myStageStatus = STATUS_CODES.PENDING_BU;
   else if (ctx.role === 'oso') myStageStatus = STATUS_CODES.PENDING_OSO;
 
@@ -672,7 +657,7 @@ function _computeReviewerMetrics(rows, headerIndex, scopeChecker, ctx, win, db, 
   }
 
   // ── Approval time by stage (from Approval_Log, scoped to in-period decisions) ──
-  var approvalTimeByStage = { supervisor: 0, sector: 0, bu: 0, oso: 0, fas: 0 };
+  var approvalTimeByStage = { sector: 0, bu: 0, oso: 0, fas: 0 };
   var avgApprovalTime = 0;
 
   try {
@@ -693,7 +678,7 @@ function _computeReviewerMetrics(rows, headerIndex, scopeChecker, ctx, win, db, 
         });
       }
 
-      var supervisorTimes = [], sectorTimes = [], buTimes = [], osoTimes = [], fasTimes = [];
+      var sectorTimes = [], buTimes = [], osoTimes = [], fasTimes = [];
       var totalApprovalTimes = [];
 
       var reqIds = Object.keys(requestLogs);
@@ -716,7 +701,6 @@ function _computeReviewerMetrics(rows, headerIndex, scopeChecker, ctx, win, db, 
             var days = businessDaysBetween(entryTime, nextTime);
             var reviewCompleted = nextTime >= win.start && nextTime <= win.end;
             if (days > 0 && days < 90 && reviewCompleted) {
-              if (entry.newStatus === STATUS_CODES.PENDING_SUPERVISOR && next.prevStatus === STATUS_CODES.PENDING_SUPERVISOR) supervisorTimes.push(days);
               if (entry.newStatus === STATUS_CODES.PENDING_SECTOR && next.prevStatus === STATUS_CODES.PENDING_SECTOR) sectorTimes.push(days);
               if (entry.newStatus === STATUS_CODES.PENDING_BU && next.prevStatus === STATUS_CODES.PENDING_BU) buTimes.push(days);
               if (entry.newStatus === STATUS_CODES.PENDING_OSO && next.prevStatus === STATUS_CODES.PENDING_OSO) osoTimes.push(days);
@@ -738,7 +722,6 @@ function _computeReviewerMetrics(rows, headerIndex, scopeChecker, ctx, win, db, 
       // and Math.round(0.032 * 10) / 10 = 0, which would render as
       // "no data" even though a review happened.
       var avg = function(arr) { return arr.length > 0 ? arr.reduce(function(a, b) { return a + b; }, 0) / arr.length : 0; };
-      approvalTimeByStage.supervisor = avg(supervisorTimes);
       approvalTimeByStage.sector = avg(sectorTimes);
       approvalTimeByStage.bu = avg(buTimes);
       approvalTimeByStage.oso = avg(osoTimes);
@@ -818,20 +801,6 @@ function _orgInUserScope(orgCode, ctx, orgToBU, orgToCurrentOrgCode) {
     // comparison speak the same vocabulary. They previously agreed only
     // because both were truncating.
     return orgCodeInScope(canonical, ctx.scope.codes || []);
-  }
-
-  if (ctx.scope.type === 'org') {
-    // A supervisor's scope: their own org code, matched exactly. See the
-    // longer note on the matching branch in Access.js _isRequestInUserScope —
-    // widening this to a walk would give every supervisor their whole
-    // service center.
-    var ownCanonical = (orgToCurrentOrgCode && orgToCurrentOrgCode[orgCode]) || orgCode;
-    var ownUpper = String(ownCanonical || '').toUpperCase();
-    var scopeCodes = ctx.scope.codes || [];
-    for (var oj = 0; oj < scopeCodes.length; oj++) {
-      if (String(scopeCodes[oj]).toUpperCase() === ownUpper) return true;
-    }
-    return false;
   }
 
   return false;
