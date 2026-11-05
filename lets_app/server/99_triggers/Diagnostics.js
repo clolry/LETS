@@ -30,10 +30,12 @@
  *                      START HERE when two people see different numbers, or
  *                      when something reports "Requests sheet not found" —
  *                      which does NOT mean the tab is missing
+
  *   diagServiceCenters()  the per-service-center allocation table on its own,
  *                      compactly. runBudgetDashboard's output is truncated by
  *                      Apps Script before it reaches this block, so this is
  *                      the only way to see it
+
  *   diagServiceCenterDirectors()  who the 22 service centers' directors are,
  *                      and what a sector_override row would currently grant
  *
