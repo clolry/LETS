@@ -449,27 +449,48 @@ console.log('\n7. the key write-back, and the order it happens in');
 }
 
 // ---------------------------------------------------------------------------
-console.log('\n8. the fiscal-year filter, and why it is a filter');
+console.log('\n8. there is NO fiscal-year filter, and the year is still reported');
 {
   const src = fs.readFileSync(SERVER + '40_domain/LiabilityLogAdmin.js', 'utf8');
   const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '')
                         .replace(/^\s*\/\/.*$/gm, '');
   const code = strip(src);
 
-  // THE BUDGET DASHBOARD DOES NOT FILTER BY FISCAL YEAR. It reads every
-  // Requests row and buckets on Status, so a FY26 trip imported here would
-  // appear as current-year spend. Same class of error as BudgetBackfill's
-  // guard, and the same remedy: exclude at import time.
-  ok('rows outside the fiscal year are excluded, not imported',
-     /outOfFiscalYear\.push\(t\)/.test(code));
-  ok('and counted in the preview so the exclusion is visible',
-     /outside /.test(src),
-     'a silently dropped row is indistinguishable from a parse failure');
-  ok('the reason is recorded',
-     /does NOT filter by fiscal year/.test(src));
+  // @clolry: "Everything in that sheet is FY27, no need to filter."
+  //
+  // THE FILTER COST TWO ROUND TRIPS AND $7,595.80. His first import reported
+  // "outside FY27  7" with an actual of $22,649.75 against the $30,245.55 he
+  // reconciles to, and the arithmetic settles it: 22,649.75 + 7,595.80 =
+  // 30,245.55 exactly. Those seven are rows with APPROVED vouchers dated in
+  // September — FY26 by the column-S rule — carrying real money.
+  //
+  // WHY A FILTER WAS WRONG FOR THIS SOURCE. The guard it was modeled on,
+  // BudgetBackfill.js:163, defends a form where a human types a date and a
+  // year outside the current one is almost always a typo. This source is a
+  // sheet maintained per fiscal year whose NAME states which one. Re-deriving
+  // the year from a date column and rejecting rows that disagree substitutes
+  // an inference for a fact already known.
+  ok('every row is imported — no year filter',
+     /out\.trips = parsed\.trips;/.test(code) &&
+     !/outOfFiscalYear/.test(code),
+     'the sheet is the authority on its own year');
 
-  // Requests has NO Fiscal_Year column, which is why this has to be a filter
-  // rather than a stored field somebody could query later.
+  // THE YEAR IS STILL COMPUTED AND STILL REPORTED. Removing the filter must
+  // not remove the signal: the basis spread is now the only thing that would
+  // show LIABILITY_LOG_TAB pointing at the wrong sheet, which is the failure
+  // the filter used to catch.
+  ok('the preview prints which year each row resolves to',
+     /fiscal year each row resolves to/.test(src),
+     'otherwise nothing would reveal a wrongly-pointed tab');
+  ok('and names rows whose APPROVED voucher falls outside the year',
+     /APPROVED voucher dated outside/.test(src),
+     'a few at a year boundary is normal; most of the sheet is a wrong tab');
+  ok('while saying plainly that they ARE imported',
+     /They ARE imported/.test(src),
+     'the earlier version excluded them and that was the defect');
+
+  // Requests has NO Fiscal_Year column, so the year cannot be stored and
+  // queried later — which is why it goes in Primary_Justification instead.
   const schemas = (() => {
     const ctx = vm.createContext({ console: { log() {} }, JSON, Object, String, Number, Array });
     vm.runInContext(fs.readFileSync(SERVER + '01_constants/Sheets.js', 'utf8'), ctx);
@@ -477,7 +498,11 @@ console.log('\n8. the fiscal-year filter, and why it is a filter');
   })();
   ok('Requests genuinely has no Fiscal_Year column',
      schemas.indexOf('Fiscal_Year') === -1,
-     'so the year cannot be stored and filtered on later');
+     'so the year cannot be stored and queried later');
+  ok('which is why the year and its basis go in Primary_Justification',
+     /fiscal year ' \+ t\.fiscalYear \+/.test(code) &&
+     /on basis ' \+ t\.fiscalYearBasis/.test(code),
+     '"which year did this hit" has an answer and somebody will ask it');
   ok('and the identity column it DOES have is used for the key',
      schemas.indexOf('Gogov_Request_ID') > -1 &&
      /'Gogov_Request_ID': key/.test(code));

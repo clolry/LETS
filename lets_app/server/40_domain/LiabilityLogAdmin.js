@@ -93,7 +93,7 @@ var LiabilityLogAdmin = (function () {
     var out = {
       ok: false, problems: [], source: null,
       trips: [], plan: null, fiscalYear: '', skipped: 0,
-      outOfFiscalYear: [], keyColumn: -1, columnCount: 0
+      keyColumn: -1, columnCount: 0
     };
 
     var source = getLiabilityLogSource();
@@ -164,26 +164,49 @@ var LiabilityLogAdmin = (function () {
       return out;
     }
 
-    // THE FILTER STAYS, and it now excludes far less.
+    // NO FISCAL-YEAR FILTER. EVERY ROW ON THE SHEET IS IMPORTED.
     //
-    // It is still needed: the budget dashboard does NOT filter by fiscal year
-    // — it reads every Requests row and buckets on Status — so a genuinely
-    // FY26 trip would appear as current-year spend. Same class of error as
-    // the guard in BudgetBackfill.js:163.
+    // @clolry: "Everything in that sheet is FY27, no need to filter."
     //
-    // What changed is which rows reach it. Only a row with an APPROVED
-    // voucher dated outside the year is now excluded, and that is a hard fact
-    // about when the money was liquidated rather than a guess from a travel
-    // date. An unapproved row carries the log's own year and passes.
-    var inYear = [];
-    parsed.trips.forEach(function (t) {
-      if (fy && t.fiscalYear && t.fiscalYear !== fy) {
-        out.outOfFiscalYear.push(t);
-        return;
-      }
-      inYear.push(t);
-    });
-    out.trips = inYear;
+    // THE FILTER COST TWO ROUND TRIPS AND $7,595.80, so the reasoning is
+    // recorded rather than left as a one-line removal.
+    //
+    // His first import reported "outside FY27  7" and an actual of
+    // $22,649.75 against the $30,245.55 he reconciles to. The arithmetic
+    // settles what those seven were: 22,649.75 + 7,595.80 = 30,245.55
+    // exactly. They are rows with APPROVED vouchers whose approval date falls
+    // in September — FY26 by the column-S rule — and they carry real money.
+    //
+    // I MISDIAGNOSED THEM ONCE. My first fix attributed UNAPPROVED rows to
+    // the log's year, which is correct on @clolry's stated rule and could not
+    // possibly have moved this total: a row with no approved voucher has no
+    // actual to add. That change stands on its own merits and was not the
+    // cause of this gap.
+    //
+    // WHY A FILTER WAS WRONG FOR THIS SOURCE AT ALL. The guard it was modeled
+    // on — BudgetBackfill.js:163 — defends a form where somebody types a date
+    // by hand, and a year outside the current one is almost always a typo.
+    // This source is a sheet maintained per fiscal year whose NAME states
+    // which one. Re-deriving the year from a date column and then rejecting
+    // rows that disagree substitutes an inference for a fact that is already
+    // known.
+    //
+    // THE YEAR IS STILL DECIDED AND STILL RECORDED, on every row, in
+    // Primary_Justification. A September approval still reads FY26 on its
+    // basis, because that is when the money was liquidated — and that is
+    // worth keeping even when it no longer gates the import, because the
+    // question "which year did this actually hit" has an answer and somebody
+    // will eventually ask it.
+    //
+    // WHAT PROTECTS THE DASHBOARD NOW. Nothing in this importer, and that is
+    // a deliberate trade @clolry made. The budget dashboard reads every
+    // Requests row and buckets on Status without filtering by year, so a
+    // genuinely FY26 sheet imported here would show as current-year spend.
+    // The defence is that the SOURCE is per-year: LIABILITY_LOG_TAB names the
+    // sheet, and pointing it at an FY26 tab is a deliberate act. The preview
+    // reports the basis spread below so a mismatch is visible before it is
+    // applied.
+    out.trips = parsed.trips;
 
     // What is already in LETS from a previous run, keyed on the written-back
     // LETS_Key. Gogov_Request_ID is the source-identity column every importer
@@ -247,34 +270,53 @@ var LiabilityLogAdmin = (function () {
     L.push('');
 
     L.push('COUNTS');
-    L.push('  data rows found        ' + (p.trips.length + p.outOfFiscalYear.length));
+    L.push('  data rows found        ' + p.trips.length);
     L.push('  skipped, not a trip    ' + p.skipped);
-    L.push('  outside ' + (p.fiscalYear || 'FY') + '              ' + p.outOfFiscalYear.length);
-    L.push('  -> in scope            ' + p.trips.length);
+    L.push('  -> importing           ' + p.trips.length +
+           '   (every row; no fiscal-year filter)');
 
-    // EVERY EXCLUDED ROW IS NAMED, WITH THE DATE THAT EXCLUDED IT.
+    // THE YEAR EACH ROW RESOLVES TO, AND ON WHAT BASIS.
     //
-    // A bare count is what cost an afternoon. @clolry's first import reported
-    // "outside FY27  7" and an actual of $22,649.75 against the $30,245.55 he
-    // expected — and the count gave no way to see that the seven were
-    // unapproved September trips the travel-date proxy had put in FY26.
+    // NOTHING IS EXCLUDED ANY MORE — @clolry: "Everything in that sheet is
+    // FY27, no need to filter." But the year is still computed, and the
+    // spread is printed because it is the only remaining signal that the
+    // SHEET is the year it claims to be.
     //
-    // A row dropped silently is indistinguishable from a row that failed to
-    // parse, and both look like the importer being broken.
-    if (p.outOfFiscalYear.length) {
+    // A row reading FY26 by VOUCHER_APPROVED is money that was liquidated
+    // before 1 October. On an FY27 sheet that is either a date typo or a
+    // deliberate inclusion, and both are worth seeing before applying. A
+    // handful is normal at a year boundary; a majority would mean
+    // LIABILITY_LOG_TAB is pointed at the wrong sheet, which is the failure
+    // the filter used to catch and now nothing does.
+    var byYear = {};
+    p.trips.forEach(function (t) {
+      var k = (t.fiscalYear || '(none)') + '  by ' + t.fiscalYearBasis;
+      byYear[k] = (byYear[k] || 0) + 1;
+    });
+    L.push('');
+    L.push('  fiscal year each row resolves to:');
+    Object.keys(byYear).sort().forEach(function (k) {
+      L.push('    ' + String(byYear[k]).padStart(4) + '  ' + k);
+    });
+
+    var offYear = p.trips.filter(function (t) {
+      return p.fiscalYear && t.fiscalYear && t.fiscalYear !== p.fiscalYear &&
+             t.fiscalYearBasis === 'VOUCHER_APPROVED';
+    });
+    if (offYear.length) {
       L.push('');
-      L.push('  EXCLUDED — not ' + (p.fiscalYear || 'the configured year') + ':');
-      p.outOfFiscalYear.forEach(function (t) {
-        L.push('    row ' + t.sheetRow + '  ' + t.travelerName.padEnd(28) +
-               t.fiscalYear + '  by ' + t.fiscalYearBasis);
-        L.push('        voucher approved ' + (t.voucherApproved || '(none)') +
-               ', travel ' + (t.startDate || '?') + ' to ' + (t.endDate || '?') +
-               ', actual $' +
+      L.push('  ' + offYear.length + ' row(s) have an APPROVED voucher dated outside ' +
+             (p.fiscalYear || 'the configured year') + '.');
+      L.push('  They ARE imported — the sheet is the authority on its own year —');
+      L.push('  but the approval date says the money moved in a different one:');
+      offYear.slice(0, 12).forEach(function (t) {
+        L.push('    row ' + t.sheetRow + '  ' + t.travelerName.padEnd(26) +
+               'approved ' + t.voucherApproved + ' (' + t.fiscalYear + ')' +
+               '  actual $' +
                (t.actualCost === null ? '0.00' : _round2_(t.actualCost).toFixed(2)));
       });
-      L.push('    A row with an APPROVED voucher dated outside the year is');
-      L.push('    correctly excluded — that is when the money was liquidated.');
-      L.push('    Anything else here is worth questioning.');
+      L.push('  A few at a year boundary is normal. Most of the sheet would');
+      L.push('  mean LIABILITY_LOG_TAB points at the wrong year.');
     }
     L.push('');
 
@@ -822,7 +864,7 @@ function previewLiabilityLogImport() {
     success: true, token: token,
     inserts: p.plan.inserts.length, updates: p.plan.updates.length,
     unchanged: p.plan.unchanged.length, blocked: p.plan.blocked.length,
-    outOfFiscalYear: p.outOfFiscalYear.length, fiscalYear: p.fiscalYear
+    fiscalYear: p.fiscalYear
   };
 }
 
