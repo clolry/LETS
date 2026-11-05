@@ -1149,5 +1149,98 @@ console.log('\n17. an indistinguishable list is labelled, not ranked');
      /address another way/.test(fn), fn.slice(0, 200));
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n18. a compound surname is the same person');
+{
+  // @clolry: "Andrea's information is correct but her email omits her maiden
+  // name." Roster 'Heller,Andrea A'; directory 'Andrea Azarcon Heller' at
+  // andrea.azarcon@gsa.gov. HR and Workspace have each shortened a double
+  // surname differently.
+  ok('a compound surname splits into components',
+     D.surnameTokens('Azarcon Heller').join(',') ===
+       'AZARCONHELLER,AZARCON,HELLER',
+     D.surnameTokens('Azarcon Heller'));
+  ok('a hyphenated one yields the joined form first',
+     D.surnameTokens('Mbeki-Lawson')[0] === 'MBEKILAWSON',
+     'HR and the directory disagree about hyphens, so both forms are needed');
+
+  ok('Heller is a component of Azarcon Heller',
+     D.surnameComponentMatches('Heller', 'Azarcon Heller'));
+  ok('and the reverse direction holds',
+     D.surnameComponentMatches('Azarcon Heller', 'Heller'));
+
+  // WHOLE TOKENS. Without this the rule becomes the substring matching the
+  // module exists to refuse.
+  ok('Berg is NOT a component of Bergman',
+     !D.surnameComponentMatches('Berg', 'Bergman'),
+     'a prefix match would make this fuzzy');
+  ok('Hell is NOT a component of Heller',
+     !D.surnameComponentMatches('Hell', 'Heller'));
+
+  // THREE INDEPENDENT CONDITIONS, not one looser comparison. Any two are
+  // satisfiable by coincidence.
+  const andrea = [{ givenName: 'Andrea', familyName: 'Azarcon Heller - FCA0D',
+                    email: 'andrea.azarcon@gsa.gov' }];
+  const picked = D.pickMatch(D.parseName('Heller,Andrea A'), andrea, 'FCA0DB');
+  ok('Andrea resolves automatically', picked.email === 'andrea.azarcon@gsa.gov',
+     picked);
+  ok('as a compound-surname match', picked.method === 'compound-surname',
+     picked.method);
+
+  // CONFIDENCE IS 'inferred', NOT 'exact'. The surnames genuinely differ, and
+  // a later reader asking "why does Andrea Heller have Andrea Azarcon's
+  // address" deserves to find an inference labelled as one.
+  ok('and its confidence is inferred, not exact',
+     picked.confidence === 'inferred', picked.confidence);
+
+  // A DIFFERENT FORENAME MUST REFUSE. The surname component alone is weak.
+  ok('a different forename refuses',
+     D.pickMatch(D.parseName('Heller,Barbara A'), andrea, 'FCA0DB').email === '',
+     'Barbara Heller is not Andrea Azarcon Heller');
+
+  // NO MAILBOX CORROBORATION MUST REFUSE. 'Smith' and 'Smith Jones' share a
+  // component and a forename by coincidence often enough.
+  ok('a shared component without mailbox corroboration refuses',
+     D.pickMatch(D.parseName('Smith,John'),
+                 [{ givenName: 'John', familyName: 'Smith Jones - FC',
+                    email: 'jj.sjones@gsa.gov' }], 'FC').email === '',
+     'the mailbox is the third condition and it is doing work here');
+  ok('but WITH corroboration it resolves',
+     D.pickMatch(D.parseName('Smith,John'),
+                 [{ givenName: 'John', familyName: 'Smith Jones - FC',
+                    email: 'john.jones@gsa.gov' }], 'FC').method ===
+       'compound-surname');
+
+  // TWO COMPOUND CANDIDATES IS A HUMAN'S DECISION.
+  ok('two compound candidates refuse',
+     D.pickMatch(D.parseName('Heller,Andrea A'), [
+       { givenName: 'Andrea', familyName: 'Azarcon Heller - FCA0D',
+         email: 'andrea.azarcon@gsa.gov' },
+       { givenName: 'Andrea', familyName: 'Heller Smith - FD',
+         email: 'andrea.smith@gsa.gov' }
+     ], 'FCA0DB').email === '');
+
+  // AN EXACT SURNAME ALWAYS WINS over a compound one.
+  const both = D.pickMatch(D.parseName('Heller,Andrea A'), [
+    { givenName: 'Andrea', familyName: 'Azarcon Heller - FD',
+      email: 'andrea.azarcon@gsa.gov' },
+    { givenName: 'Andrea', familyName: 'Heller - FCA0D',
+      email: 'andrea.heller@gsa.gov' }
+  ], 'FCA0DB');
+  ok('an exact surname outranks a compound one',
+     both.email === 'andrea.heller@gsa.gov', both);
+
+  // And she appears in the SUGGESTIONS with a reason naming the cause,
+  // rather than only on a weak email hint.
+  const sug = D.suggestCandidates(D.parseName('Heller,Andrea A'), andrea,
+                                  'FCA0DB');
+  ok('a compound candidate is suggested with its own reason',
+     sug.length === 1 && sug[0].reason === 'compound-surname', sug);
+  ok('and a Bergman is still not suggested for a Berg',
+     D.suggestCandidates(D.parseName('Berg,Hans'),
+                         [{ givenName: 'Hans', familyName: 'Bergman - FC',
+                            email: 'h@gsa.gov' }], 'FC').length === 0);
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);

@@ -180,6 +180,62 @@ var DirectoryLookup = (function () {
     return _str_(v).toUpperCase().replace(/[^A-Z]/g, '');
   }
 
+  /**
+   * The parts of a surname, for compound-surname comparison.
+   *
+   * 'Azarcon Heller' -> ['AZARCON', 'HELLER']
+   * 'Mbeki-Lawson'   -> ['MBEKILAWSON', 'MBEKI', 'LAWSON']
+   *
+   * A hyphenated name yields its JOINED form as well as its parts, because
+   * the directory and HR disagree about whether to hyphenate and both forms
+   * occur. The joined form is listed first so an exact match is preferred.
+   */
+  function surnameTokens(v) {
+    var base = stripNameSuffix(splitDirectorySuffix(v).name);
+    var out = [];
+    var joined = nameKey(base);
+    if (joined) out.push(joined);
+    base.split(/[\s\-]+/).forEach(function (part) {
+      var k = nameKey(part);
+      if (k && out.indexOf(k) === -1) out.push(k);
+    });
+    return out;
+  }
+
+  /**
+   * Is the roster surname one COMPONENT of the directory surname, or vice
+   * versa?
+   *
+   * @clolry: "Andrea's information is correct but her email omits her maiden
+   * name." The roster has 'Heller,Andrea A'; the directory has 'Andrea Azarcon
+   * Heller' at andrea.azarcon@gsa.gov. 'Heller' is a whole token of 'Azarcon
+   * Heller', and the two records are the same person under a compound
+   * surname that HR and Workspace have each shortened differently.
+   *
+   * WHOLE TOKENS ONLY, in both directions. 'Heller' matches 'Azarcon Heller';
+   * 'Hell' does not. Without that, 'Berg' would match 'Bergman' and this
+   * becomes the substring matching the module exists to refuse.
+   *
+   * THIS IS WEAKER THAN AN EXACT SURNAME MATCH and is never sufficient on its
+   * own — pickMatch requires an exact forename AND the mailbox to corroborate
+   * AND a unique candidate before acting on it. Two unrelated people named
+   * 'Smith' and 'Smith Jones' would satisfy this predicate, which is exactly
+   * why it is only one of four conditions.
+   *
+   * @param {string} rosterSurname
+   * @param {string} directorySurname
+   * @returns {boolean}
+   */
+  function surnameComponentMatches(rosterSurname, directorySurname) {
+    var a = surnameTokens(rosterSurname);
+    var b = surnameTokens(directorySurname);
+    if (!a.length || !b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (b.indexOf(a[i]) > -1) return true;
+    }
+    return false;
+  }
+
   /** The local part of an address, split on its separators. */
   function emailTokens(email) {
     var local = _str_(email).toLowerCase().split('@')[0];
@@ -226,20 +282,32 @@ var DirectoryLookup = (function () {
    * @param {string} email
    * @returns {boolean}
    */
-  function emailConfirmsName(parsed, email) {
+  function emailConfirmsName(parsed, email, directorySurname) {
     if (!parsed) return false;
     var first = nameKey(parsed.first);
-    var last = nameKey(stripNameSuffix(parsed.last));
-    if (!first || !last) return false;
+    if (!first) return false;
+
+    // Surname tokens from the roster AND, when supplied, from the directory
+    // name. Andrea's mailbox is andrea.azarcon — 'azarcon' is a token of her
+    // directory surname 'Azarcon Heller' but appears nowhere in the roster's
+    // 'Heller'. Without the directory side the mailbox cannot corroborate a
+    // compound surname at all, which is the case @clolry raised.
+    var surnames = surnameTokens(stripNameSuffix(parsed.last));
+    if (directorySurname) {
+      surnameTokens(directorySurname).forEach(function (t) {
+        if (surnames.indexOf(t) === -1) surnames.push(t);
+      });
+    }
+    if (!surnames.length) return false;
 
     var keys = emailTokens(email).map(nameKey);
     var hasFirst = false;
-    var hasLast = false;
+    var hasSurname = false;
     keys.forEach(function (k) {
       if (k === first) hasFirst = true;
-      if (k === last) hasLast = true;
+      if (surnames.indexOf(k) > -1) hasSurname = true;
     });
-    return hasFirst && hasLast;
+    return hasFirst && hasSurname;
   }
 
   /**
@@ -462,7 +530,11 @@ var DirectoryLookup = (function () {
       // A second copy of that logic would disagree with this one eventually.
       resolvedGiven: given,
       resolvedFamily: family,
-      surnameMatches: !!lastOk
+      surnameMatches: !!lastOk,
+      // WEAKER than surnameMatches: the roster surname is a component of the
+      // directory surname, or vice versa. Never sufficient alone.
+      surnameComponentMatches: surnameComponentMatches(parsed.last, family),
+      forenameMatches: !!firstOk
     };
   }
 
@@ -566,11 +638,34 @@ var DirectoryLookup = (function () {
       // resolve a wholly different person whose address happens to contain
       // two matching tokens.
       var confirmed = [];
+      var compound = [];
       list.forEach(function (c) {
-        if (!emailConfirmsName(parsed, c.email)) return;
         var cm = candidateMatches(parsed, c);
-        if (!cm.surnameMatches) return;
-        confirmed.push(c);
+        if (!emailConfirmsName(parsed, c.email, cm.resolvedFamily)) return;
+
+        if (cm.surnameMatches) {
+          confirmed.push(c);
+          return;
+        }
+
+        // A COMPOUND SURNAME, which needs all three of:
+        //   - the forename matching exactly
+        //   - the roster surname being a whole COMPONENT of the directory
+        //     surname, or vice versa
+        //   - the mailbox carrying the forename and a surname token
+        //
+        // @clolry: "Andrea's information is correct but her email omits her
+        // maiden name." Roster 'Heller,Andrea A'; directory 'Andrea Azarcon
+        // Heller' at andrea.azarcon@gsa.gov.
+        //
+        // Three independent conditions, not one looser comparison. Any two
+        // of them are satisfiable by coincidence — a 'Smith' and a 'Smith
+        // Jones' share a surname component, and plenty of people share a
+        // forename — but a mailbox provisioned from the HR record AND an
+        // exact forename AND a shared surname token is the same person.
+        if (cm.forenameMatches && cm.surnameComponentMatches) {
+          compound.push(c);
+        }
       });
 
       if (confirmed.length === 1) {
@@ -578,6 +673,25 @@ var DirectoryLookup = (function () {
           email: _str_(confirmed[0].email).toLowerCase(),
           method: 'email-confirms-name',
           confidence: 'exact',
+          returnedCount: list.length,
+          matchedCount: 0,
+          candidateCount: list.length,
+          reason: ''
+        };
+      }
+
+      // Only when it is the ONLY compound candidate AND no exact-surname
+      // candidate exists. If an exact surname matched, that one wins and this
+      // never runs; if two compounds qualify, a human decides.
+      if (!confirmed.length && compound.length === 1) {
+        return {
+          email: _str_(compound[0].email).toLowerCase(),
+          method: 'compound-surname',
+          // NOT 'exact'. The surnames genuinely differ, and a later reader
+          // asking "why does Andrea Heller have Andrea Azarcon's address"
+          // deserves to find this labelled as an inference rather than a
+          // certainty.
+          confidence: 'inferred',
           returnedCount: list.length,
           matchedCount: 0,
           candidateCount: list.length,
@@ -916,7 +1030,22 @@ var DirectoryLookup = (function () {
 
       var candLast = nameKey(family);
       var candFirst = nameKey(given);
-      if (!candLast || candLast !== rosterLast) return;   // surname is the anchor
+      if (!candLast) return;
+
+      // THE SURNAME IS THE ANCHOR, but a COMPONENT of it counts.
+      //
+      // 'Heller' against a directory 'Azarcon Heller' is the same person with
+      // a compound surname — @clolry: "Andrea's information is correct but her
+      // email omits her maiden name." Requiring the whole surname to match
+      // would have excluded her from the suggestions entirely, which is how
+      // she came to be offered only because of the email hint.
+      //
+      // Still whole tokens: 'Heller' matches 'Azarcon Heller', 'Hell' does
+      // not, and 'Berg' does not match 'Bergman'.
+      var exactSurname = (candLast === rosterLast);
+      if (!exactSurname && !surnameComponentMatches(parsed.last, family)) {
+        return;
+      }
 
       var reason = 'same-surname';
       var rank = 3;
@@ -929,6 +1058,15 @@ var DirectoryLookup = (function () {
       if (emailConfirmsName(parsed, email)) {
         reason = 'email-confirms-name';
         rank = -1;
+      }
+
+      // A compound-surname candidate with an exact forename is strong: HR and
+      // Workspace shortening a double surname differently is common, and the
+      // forename still agrees exactly.
+      if (!exactSurname && rosterFirst && candFirst &&
+          rosterFirst === candFirst) {
+        reason = 'compound-surname';
+        rank = 0;
       }
 
       if (rank > 0 && rosterFirst && candFirst) {
@@ -1013,6 +1151,8 @@ var DirectoryLookup = (function () {
     suggestCandidates: suggestCandidates,
     nameKey: nameKey,
     stripNameSuffix: stripNameSuffix,
+    surnameTokens: surnameTokens,
+    surnameComponentMatches: surnameComponentMatches,
     emailTokens: emailTokens,
     emailConfirmsName: emailConfirmsName,
     splitDirectorySuffix: splitDirectorySuffix,

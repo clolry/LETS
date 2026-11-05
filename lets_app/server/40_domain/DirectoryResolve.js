@@ -720,6 +720,31 @@ function getEmailResolutionQueue(opts) {
         } catch (e2) {
           broader = candidates;
         }
+
+        // STILL NOTHING: try each COMPONENT of a compound surname.
+        //
+        // 'Holycross-Simmons,Megan N' returned no candidate at all, and a
+        // query for the whole hyphenated surname is why. The directory may
+        // hold her as 'Megan Simmons' or 'Megan Holycross' — HR and Workspace
+        // disagree about compound surnames constantly, which is the same
+        // disagreement behind Andrea Azarcon Heller.
+        //
+        // Only reached when the full surname found nothing, and every result
+        // still goes to a human. The automatic path never sees these.
+        if (!broader.length) {
+          var parts = DirectoryLookup.surnameTokens(parsed.last);
+          for (var pi = 0; pi < parts.length && !broader.length; pi++) {
+            // Skip the joined form, already tried as the full surname, and
+            // anything too short to be a useful query.
+            if (parts[pi].length < 4) continue;
+            try {
+              var partHits = _directorySearch_({
+                first: '', last: parts[pi], query: parts[pi]
+              });
+              if (partHits.length) broader = partHits;
+            } catch (e3) { /* try the next part */ }
+          }
+        }
       }
 
       var suggestions = DirectoryLookup.suggestCandidates(
