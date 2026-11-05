@@ -207,13 +207,27 @@ function previewDirectoryEmails(opts) {
     });
 
     var summary = DirectoryLookup.summarise(batch);
+    // NOTHING WAS WRITTEN, so the pre-batch bundle is the current roster and
+    // counting from it is correct here — unlike in the sweep, where the same
+    // count must come from a fresh read.
+    var stillNeedingEmail = DirectoryLookup.countNeedingEmail(
+      bundle.data, readEmailOverrides());
+
     return successResponse({
       summary: summary,
       resolved: batch.resolved.slice(0, 100),
       refused: batch.refused.slice(0, 100),
       nextIndex: batch.nextIndex,
-      complete: batch.complete,
-      note: 'Nothing was written. ' + summary.note
+      // NAMED batchComplete, NOT complete. This is a preview: it writes
+      // nothing, so it cannot finish the work and must not offer a field that
+      // reads as though it had. 'complete' meaning 'the loop reached the end
+      // of the list' is the ambiguity that produced three false-completion
+      // reports in the sweep, and the name was most of the problem.
+      batchComplete: batch.complete,
+      stillNeedingEmail: stillNeedingEmail,
+      note: 'Nothing was written. ' + stillNeedingEmail + ' staffed ' +
+            'position(s) have no address; this preview cannot change that. ' +
+            summary.note
     });
   } catch (e) {
     console.error('previewDirectoryEmails failed: ' + e.message);
@@ -585,8 +599,18 @@ function resolveDirectoryEmails(opts) {
     }
 
     var o = opts || {};
-    var start = parseInt(o.startIndex, 10);
-    if (isNaN(start)) start = _directoryResumeIndex_();
+    var requested = parseInt(o.startIndex, 10);
+    // A CURSOR AT OR PAST THE END MEANS WRAP, NOT DONE.
+    //
+    // The stored index sat at 1046 against a 1046-position roster, so the
+    // batch loop never executed: zero lookups, zero errors, reachedEnd true.
+    // Eight runs reported success and wrote nothing while ~218 staffed
+    // positions had no address. resolveStartIndex is the single place that
+    // decides this, and it is unit-tested.
+    var start = isNaN(requested)
+      ? DirectoryLookup.resolveStartIndex(_directoryResumeIndex_(),
+                                          bundle.data.length)
+      : DirectoryLookup.resolveStartIndex(requested, bundle.data.length);
 
     var batch = DirectoryLookup.resolveBatch(bundle.data, _directorySearch_, {
       startIndex: start,
@@ -714,20 +738,69 @@ function resolveDirectoryEmails(opts) {
       try { HC.hcCacheInvalidateAll(); } catch (e) { /* non-fatal */ }
     }
 
+    // ========================================================================
+    // IS THE SWEEP ACTUALLY FINISHED?
+    // ========================================================================
+    //
+    // COUNTED FROM A FRESH ROSTER READ, NOT FROM `bundle`. The caches were
+    // invalidated above, so this re-read sees the addresses this run just
+    // wrote; `bundle` predates them and would report every one of them as
+    // still missing.
+    //
+    // The count is the same predicate the resolution queue reports, which is
+    // the number that stayed accurate throughout — DirectoryLookup
+    // .positionNeedsEmail, one definition, so the two surfaces cannot
+    // disagree about whether there is work left.
+    var stillNeedingEmail = null;
+    try {
+      var after = HC.hcGetBundle();
+      if (after.success) {
+        stillNeedingEmail = DirectoryLookup.countNeedingEmail(
+          after.data, readEmailOverrides());
+      }
+    } catch (e) {
+      // Left null deliberately. sweepOutcome refuses to report completion on
+      // an unknown count, which costs a redundant run and cannot produce a
+      // false 'done'.
+      console.warn('Could not re-read the roster to check what remains: ' +
+                   e.message);
+    }
+
+    var outcome = DirectoryLookup.sweepOutcome({
+      stillNeedingEmail: stillNeedingEmail,
+      rosterLength: bundle.data.length,
+      batch: batch
+    });
+
     // Saved AFTER the write, so a failure mid-write re-runs the same slice
     // rather than skipping it. Re-resolving a position that already has an
     // address is harmless; skipping one leaves someone unable to sign in.
-    _setDirectoryResumeIndex_(batch.complete ? 0 : batch.nextIndex);
+    //
+    // The index comes from the OUTCOME, not from batch.complete: when the
+    // batch reached the end of the roster with work still outstanding, the
+    // cursor must go back to 0 so the next run picks up the gaps behind it
+    // instead of parking at the end and no-opping forever.
+    _setDirectoryResumeIndex_(outcome.resumeIndex);
 
     var summary = DirectoryLookup.summarise(batch);
+    // The claim is checkable against something real. 'complete: true' with no
+    // number beside it is what @clolry was handed eight times.
+    summary.stillNeedingEmail = outcome.stillNeedingEmail;
+    summary.complete = outcome.complete;
+    summary.batchReachedEnd = !!batch.reachedEnd;
+
     console.log('=== resolveDirectoryEmails ===');
     console.log('lookups ' + summary.lookups + ', resolved ' + summary.resolved +
                 ', written ' + written + ', refused ' + summary.refused +
                 ', skipped ' + summary.skipped);
     console.log('refusals: ' + JSON.stringify(summary.refusedByReason));
-    console.log(batch.complete
-      ? 'sweep complete; resume index reset'
-      : ('stopped: ' + batch.stoppedBecause + '; resume at ' + batch.nextIndex));
+    console.log('still needing an address: ' +
+                (outcome.countKnown ? outcome.stillNeedingEmail : 'UNKNOWN'));
+    console.log(outcome.complete
+      ? 'SWEEP COMPLETE — ' + outcome.reason + '; resume index reset'
+      : ('NOT COMPLETE — ' + outcome.reason +
+         ' (batch: ' + (batch.stoppedBecause || 'ran to the end') +
+         '); resume at ' + outcome.resumeIndex));
 
     return successResponse({
       summary: summary,
@@ -737,13 +810,24 @@ function resolveDirectoryEmails(opts) {
       // non-zero one is two people being handed one identity and needs a
       // human.
       collisions: batch.collisions || [],
-      nextIndex: batch.complete ? 0 : batch.nextIndex,
-      complete: batch.complete,
+      nextIndex: outcome.resumeIndex,
+      // DERIVED FROM THE WORK REMAINING, never from the cursor. See
+      // DirectoryLookup.sweepOutcome for the three false-completion bugs this
+      // replaces.
+      complete: outcome.complete,
+      stillNeedingEmail: outcome.stillNeedingEmail,
+      completionReason: outcome.reason,
+      // Kept separately, because 'this execution ran to the end of the list'
+      // is still worth knowing — it just is not completion.
+      batchComplete: !!batch.complete,
       stoppedBecause: batch.stoppedBecause,
       refused: batch.refused.slice(0, 100)
     }, 'Wrote ' + written + ' email address(es). ' + summary.refused +
        ' position(s) refused — ' + summary.refusedByReason.ambiguous +
-       ' because the name matches more than one person.');
+       ' because the name matches more than one person. ' +
+       (outcome.countKnown
+         ? (outcome.stillNeedingEmail + ' position(s) still have no address.')
+         : 'The number still without an address could not be checked.'));
   } catch (e) {
     console.error('resolveDirectoryEmails failed: ' + e.message);
     return errorResponse('Directory resolution failed: ' + e.message);
@@ -822,8 +906,12 @@ function installDirectoryLookupTrigger() {
            .everyMinutes(10).create();
   console.log('installDirectoryLookupTrigger: every 10 minutes.');
   console.log('A 564-position backlog is about two runs. Check progress with ' +
-              'runDirectoryResolve() — when it reports complete:true and ' +
-              'unresolvedByError:0, remove this trigger or slow it to hourly.');
+              'runDirectoryResolve() — it reports stillNeedingEmail, and ' +
+              'complete:true means that number is zero. Remove this trigger ' +
+              'or slow it to hourly once it is.');
+  console.log('A run that reaches the end of the roster with work left now ' +
+              'wraps its cursor to 0, so an unattended trigger closes the ' +
+              'gaps instead of parking at the end and logging success.');
   return { success: true };
 }
 
@@ -903,12 +991,10 @@ function getEmailResolutionQueue(opts) {
 
     for (; i < bundle.data.length && queue.length < limit; i++) {
       var p = bundle.data[i];
-      if (!p || p.occupancyStatus === 'VACANT') continue;
-      if (!p.employeeName) continue;
-      // Already has an address, from the feed or a previous resolution.
-      if (p.emailAddress) continue;
-      // Already decided by an admin, even if the roster has not caught up.
-      if (overrides[p.positionNumber]) continue;
+      // ONE DEFINITION of 'still needs an address', shared with the sweep's
+      // completion check. Inlined here previously, which is how the sweep came
+      // to claim done while this count said 564.
+      if (!DirectoryLookup.positionNeedsEmail(p, overrides)) continue;
 
       if (Date.now() > deadline) break;
 
@@ -1060,11 +1146,9 @@ function getEmailResolutionQueue(opts) {
         : '',
       examined: examined,
       // The whole population, so the UI can show progress rather than just a
-      // page of work.
-      totalNeedingEmail: bundle.data.filter(function (x) {
-        return x && x.occupancyStatus !== 'VACANT' && x.employeeName &&
-               !x.emailAddress && !overrides[x.positionNumber];
-      }).length,
+      // page of work. Same counter the sweep's completion turns on.
+      totalNeedingEmail: DirectoryLookup.countNeedingEmail(bundle.data,
+                                                           overrides),
       overridesStored: Object.keys(overrides).length
     });
   } catch (e) {

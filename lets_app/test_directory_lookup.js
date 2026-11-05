@@ -467,8 +467,13 @@ console.log('\n7. the network layer is guarded and separated');
 
   // The resume index must be saved AFTER the write, so a mid-write failure
   // re-runs the slice rather than skipping it.
+  //
+  // ANCHORED ON THE CALL, NOT ON ITS ARGUMENT. This assertion previously
+  // matched '_setDirectoryResumeIndex_(batch.complete', so it broke the
+  // moment the argument changed — the third time in this project an assertion
+  // anchored on an incidental detail rather than on the thing under test.
   const writeAt = resolve.indexOf('written++');
-  const saveAt = resolve.indexOf('_setDirectoryResumeIndex_(batch.complete');
+  const saveAt = resolve.indexOf('_setDirectoryResumeIndex_(');
   ok('the resume index is saved after the write, not before',
      writeAt > -1 && saveAt > writeAt,
      'saving first would skip a slice on failure and leave people unable to ' +
@@ -1739,6 +1744,306 @@ console.log('\n27. negative control for the skip bug');
     ok('a patched build skips the errored positions',
        b.nextIndex > 5,
        'so section 24 is real: nextIndex ' + b.nextIndex + ' abandons P5-P12');
+  }
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n28. completion is derived from the work, not from the cursor');
+{
+  // THE THIRD FALSE-COMPLETION BUG, and the one that cost the most.
+  //
+  // 9:36 PM  — runEmailResolutionQueue reported 564 staffed positions with no
+  //            address.
+  // Eight sweeps wrote 346 addresses (76+0+3+86+0+94+1+86), so ~218 people
+  // still had none.
+  // 10:03 PM — runDirectoryResolve reported 'lookups: 0, complete: true'.
+  //
+  // The stored cursor sat at 1046 against a 1046-position roster, so the
+  // batch loop never executed: zero lookups, zero errors, reachedEnd true,
+  // and the caller read that as done. It did nothing and declared victory.
+  //
+  // Two earlier fixes each addressed a different symptom of the same cause —
+  // `complete` derived from WHERE THE CURSOR SAT rather than from WHETHER
+  // ANYONE STILL NEEDED AN ADDRESS — so this section pins the DERIVATION, not
+  // the third symptom.
+
+  const mk = (n, withEmail) => {
+    const r = [];
+    for (let i = 0; i < n; i++) {
+      r.push({ positionNumber: 'P' + i, employeeName: 'Person' + i + ',Test',
+               emailAddress: withEmail ? ('p' + i + '@gsa.gov') : '',
+               occupancyStatus: 'FILLED' });
+    }
+    return r;
+  };
+
+  // --- the predicate, which is the one number that stayed accurate ---------
+  ok('a staffed position with no address needs one',
+     D.positionNeedsEmail({ positionNumber: 'P1', employeeName: 'A,B',
+                            emailAddress: '', occupancyStatus: 'FILLED' }));
+  ok('a vacant seat does not', !D.positionNeedsEmail(
+     { positionNumber: 'P1', employeeName: '', occupancyStatus: 'VACANT' }));
+  ok('nor does one that already has an address', !D.positionNeedsEmail(
+     { positionNumber: 'P1', employeeName: 'A,B',
+       emailAddress: 'a@gsa.gov', occupancyStatus: 'FILLED' }));
+  ok('nor one with no occupant name', !D.positionNeedsEmail(
+     { positionNumber: 'P1', employeeName: '', occupancyStatus: 'FILLED' }));
+
+  // AN ADMIN'S RECORDED DECISION SETTLES THE POSITION, including a deliberate
+  // 'no mailbox' record. Without this the three nicknames and the contractors
+  // would keep the sweep permanently incomplete, and a completion signal that
+  // can never be true is as useless as one that is always true.
+  ok('an override settles it even with no address on the roster',
+     !D.positionNeedsEmail(
+       { positionNumber: 'P1', employeeName: 'A,B', emailAddress: '',
+         occupancyStatus: 'FILLED' }, { P1: { email: '' } }));
+
+  ok('the count is the number of outstanding positions',
+     D.countNeedingEmail(mk(10)) === 10, D.countNeedingEmail(mk(10)));
+  ok('and zero when every one has an address',
+     D.countNeedingEmail(mk(10, true)) === 0);
+
+  // --- a cursor at or past the end WRAPS ------------------------------------
+  ok('a cursor at the roster length wraps to 0',
+     D.resolveStartIndex(1046, 1046) === 0,
+     'this is the exact no-op: 1046 of 1046, zero lookups, complete:true');
+  // Reachable by a second route: the roster SHRINKS when positions are
+  // removed, so a cursor saved against 1046 rows is past the end of a 900-row
+  // roster without any sweep having finished.
+  ok('a cursor past the end wraps too', D.resolveStartIndex(1046, 900) === 0,
+     'a shrunken roster reaches this without any sweep completing');
+  ok('a mid-roster cursor is left alone', D.resolveStartIndex(450, 1046) === 450);
+  ok('a negative or unparseable cursor is 0',
+     D.resolveStartIndex(-5, 1046) === 0 && D.resolveStartIndex('x', 1046) === 0);
+  ok('an empty roster is 0 rather than NaN',
+     D.resolveStartIndex(10, 0) === 0);
+
+  // THE NO-OP ITSELF. With the cursor at the end the batch does nothing, and
+  // every signal it reports looks like success.
+  const noop = D.resolveBatch(mk(1046), () => { throw new Error('unreachable'); },
+                              { startIndex: 1046 });
+  ok('a batch started at the end performs no lookups', noop.lookups === 0);
+  ok('and reports reachedEnd with no errors',
+     noop.reachedEnd === true && noop.errors === 0);
+  ok('and batch.complete is TRUE — which is why it cannot be the signal',
+     noop.complete === true,
+     'the loop finished; nobody got an address. Those are different facts');
+
+  // --- the derivation --------------------------------------------------------
+  // THE #3 REGRESSION ASSERTION. Same batch as above — reachedEnd, zero
+  // errors, complete:true — but 218 people still have no address.
+  const wrapped = D.sweepOutcome({
+    stillNeedingEmail: 218, rosterLength: 1046, batch: noop
+  });
+  ok('218 outstanding is NOT complete, whatever the batch says',
+     wrapped.complete === false, wrapped);
+  ok('and the cursor wraps to 0 so the next run picks up the gaps',
+     wrapped.resumeIndex === 0,
+     'parking at 1046 is what made the gaps permanently unreachable');
+  ok('and the reason names the number',
+     /218 staffed position\(s\) still have no address/.test(wrapped.reason),
+     wrapped.reason);
+
+  const done = D.sweepOutcome({
+    stillNeedingEmail: 0, rosterLength: 1046, batch: noop
+  });
+  ok('zero outstanding IS complete', done.complete === true, done);
+  ok('and resets the cursor', done.resumeIndex === 0);
+
+  // COMPLETION DOES NOT REQUIRE THE BATCH TO HAVE FINISHED EITHER. If the
+  // last outstanding position was resolved mid-roster, the work is done even
+  // though the loop stopped early — the inverse of the bug, and it must not
+  // be fixed by swapping one proxy for another.
+  const midRoster = D.sweepOutcome({
+    stillNeedingEmail: 0, rosterLength: 1046,
+    batch: { complete: false, reachedEnd: false, nextIndex: 450 }
+  });
+  ok('work finished mid-roster is complete', midRoster.complete === true,
+     midRoster);
+
+  // A MID-ROSTER STOP WITH WORK LEFT RESUMES WHERE IT STOPPED, not at 0.
+  // resolveBatch has already rewound nextIndex to the first error of any
+  // streak it could not retry, so that index is the one to trust.
+  const stopped = D.sweepOutcome({
+    stillNeedingEmail: 100, rosterLength: 1046,
+    batch: { complete: false, reachedEnd: false, nextIndex: 450 }
+  });
+  ok('a mid-roster stop resumes from nextIndex', stopped.resumeIndex === 450,
+     stopped);
+  ok('and is not complete', stopped.complete === false);
+
+  // AN UNKNOWN COUNT IS NOT COMPLETION. If the roster could not be re-read
+  // the caller passes null, and failing closed costs one redundant run where
+  // failing open is this entire bug.
+  const unknown = D.sweepOutcome({
+    stillNeedingEmail: null, rosterLength: 1046, batch: noop
+  });
+  ok('an unknown count refuses to report complete',
+     unknown.complete === false && unknown.countKnown === false, unknown);
+  ok('and says why', /could not be re-read/.test(unknown.reason),
+     unknown.reason);
+
+  // --- the caller is wired to all of it -------------------------------------
+  // COMMENTS STRIPPED. Fifth occurrence of this trap in the project: the
+  // prose below these lines explains the bug using the very strings being
+  // asserted on, and a naive grep reads the explanation as the code.
+  const resolve = fs.readFileSync(
+    'lets_app/server/40_domain/DirectoryResolve.js', 'utf8');
+  const code = resolve.replace(/\/\*[\s\S]*?\*\//g, '')
+                      .replace(/^\s*\/\/.*$/gm, '');
+  const sweep = code.slice(code.indexOf('function resolveDirectoryEmails'),
+                           code.indexOf('function _directoryResumeIndex_'));
+
+  ok('the stored cursor goes through resolveStartIndex',
+     /DirectoryLookup\.resolveStartIndex\(_directoryResumeIndex_\(\)/.test(sweep),
+     'otherwise a cursor at the end no-ops again');
+  ok('an explicit startIndex is bounds-checked too',
+     /DirectoryLookup\.resolveStartIndex\(requested/.test(sweep),
+     'a hand-run startIndex past the end would no-op just as silently');
+
+  ok('completion comes from sweepOutcome',
+     /DirectoryLookup\.sweepOutcome\(\{/.test(sweep) &&
+     /complete: outcome\.complete/.test(sweep), sweep.slice(0, 200));
+  ok('and NOT from batch.complete',
+     !/complete: batch\.complete/.test(sweep),
+     'that is the bug, by name');
+  ok('nor from reachedEnd',
+     !/complete: batch\.reachedEnd/.test(sweep) &&
+     !/complete: reachedEnd/.test(sweep));
+
+  // THE FRESH READ. The pre-write bundle still shows everything this run just
+  // wrote as missing, so counting from it would undercount completion and the
+  // sweep could never report done.
+  ok('the remaining count comes from a FRESH roster read',
+     /var after = HC\.hcGetBundle\(\);/.test(sweep) &&
+     /countNeedingEmail\(\s*\n?\s*after\.data/.test(sweep),
+     'the caches are invalidated above; the stale bundle would undercount');
+  ok('and the fresh read happens after the cache invalidation',
+     sweep.indexOf('HC.hcCacheInvalidateAll();') <
+       sweep.indexOf('var after = HC.hcGetBundle();'),
+     'reading before the invalidation returns the pre-write cache');
+
+  ok('the resume index comes from the outcome',
+     /_setDirectoryResumeIndex_\(outcome\.resumeIndex\)/.test(sweep));
+  ok('the response carries the number the claim rests on',
+     /stillNeedingEmail: outcome\.stillNeedingEmail/.test(sweep) &&
+     /completionReason: outcome\.reason/.test(sweep),
+     'complete:true with no number beside it was printed eight times');
+  ok('and the log line prints it',
+     /still needing an address: /.test(sweep), sweep.slice(0, 200));
+
+  // ONE DEFINITION of 'needs an address'. The queue's count was the accurate
+  // one throughout, and the sweep disagreeing with it is what let #3 survive
+  // two fixes.
+  const queue = code.slice(code.indexOf('function getEmailResolutionQueue'),
+                           code.indexOf('function saveEmailOverride'));
+  ok('the queue uses the shared predicate',
+     /DirectoryLookup\.positionNeedsEmail\(p, overrides\)/.test(queue),
+     'two inlined copies is how the two surfaces came to disagree');
+  ok('and the shared counter for its total',
+     /DirectoryLookup\.countNeedingEmail\(bundle\.data/.test(queue));
+
+  // THE PREVIEW MUST NOT OFFER A 'complete' FIELD AT ALL. It writes nothing,
+  // so it cannot finish the work, and a field named 'complete' carrying
+  // 'the loop reached the end of the list' is the ambiguity that produced
+  // three false reports in the sweep. The name was most of the problem.
+  const preview = code.slice(code.indexOf('function previewDirectoryEmails'),
+                             code.indexOf('function verifyConstructedAddress'));
+  ok('the preview exposes batchComplete rather than complete',
+     /batchComplete: batch\.complete/.test(preview) &&
+     !/\bcomplete: batch\.complete/.test(preview), preview.slice(-400));
+  ok('and reports what is still outstanding',
+     /stillNeedingEmail: stillNeedingEmail/.test(preview));
+
+  // The editor wrapper must lead with the number, not the flag.
+  const diagSrc = fs.readFileSync(
+    'lets_app/server/99_triggers/Diagnostics.js', 'utf8');
+  const wrap = diagSrc.slice(diagSrc.indexOf('function runDirectoryResolve'),
+                             diagSrc.indexOf('function runEmailResolutionQueue'));
+  ok('runDirectoryResolve prints what is still outstanding',
+     /STILL NEEDING AN ADDRESS: /.test(wrap), wrap.slice(0, 300));
+  ok('and distinguishes an unknown count from zero',
+     /UNKNOWN/.test(wrap),
+     'a blank would read as none remaining');
+  ok('and prints the completion reason rather than a bare flag',
+     /d\.completionReason/.test(wrap));
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n29. negative controls for the false-completion bug');
+{
+  const src = fs.readFileSync(
+    'lets_app/server/30_services/DirectoryLookup.js', 'utf8');
+  const load = (text) => {
+    const mod = { exports: {} };
+    new Function('module', 'exports', text)(mod, mod.exports);
+    return mod.exports;
+  };
+  const noop = (M) => M.resolveBatch(
+    [{ positionNumber: 'P0', employeeName: 'A,B', emailAddress: '',
+       occupancyStatus: 'FILLED' }],
+    () => { throw new Error('unreachable'); }, { startIndex: 1 });
+
+  // CONTROL 1: derive completion from the batch again — symptom #3 exactly.
+  {
+    const patched = src.replace(
+      '    var complete = countKnown && remaining === 0;',
+      '    var complete = !!batch.complete;');
+    ok('control 1 patched the derivation', patched !== src);
+    const M = load(patched);
+    const out = M.sweepOutcome({
+      stillNeedingEmail: 218, rosterLength: 1046, batch: noop(M)
+    });
+    ok('a batch-derived build reports COMPLETE with 218 outstanding',
+       out.complete === true,
+       'so §28 is real: this is the 10:03 PM run that wrote nothing');
+  }
+
+  // CONTROL 2: let the cursor sit at the end instead of wrapping.
+  {
+    const patched = src.replace(
+      '    if (n >= len) return 0;\n    return n;',
+      '    return n;');
+    ok('control 2 patched the wrap', patched !== src);
+    const M = load(patched);
+    ok('an unwrapped cursor stays parked at the roster length',
+       M.resolveStartIndex(1046, 1046) === 1046,
+       'and every subsequent run performs zero lookups');
+  }
+
+  // CONTROL 3: reset the cursor only on batch completion, so a run that
+  // reaches the end with work left parks there. This is the bookkeeping half
+  // of the bug, and it is what made the gaps PERMANENT rather than merely
+  // unreported.
+  {
+    const patched = src.replace(
+      '    } else if (batch.reachedEnd) {\n      resumeIndex = 0;',
+      '    } else if (false) {\n      resumeIndex = 0;');
+    ok('control 3 patched the wrap-on-end', patched !== src);
+    const M = load(patched);
+    const out = M.sweepOutcome({
+      stillNeedingEmail: 218, rosterLength: 1046,
+      batch: { complete: true, reachedEnd: true, nextIndex: 1046 }
+    });
+    ok('a build without the wrap parks the cursor at the end',
+       out.resumeIndex === 1046,
+       'the next run starts at 1046, does nothing, and the 218 are stranded');
+  }
+
+  // CONTROL 4: treat an unknown count as complete. Failing open here would
+  // reintroduce the bug through a transient read failure.
+  {
+    const patched = src.replace(
+      '    var complete = countKnown && remaining === 0;',
+      '    var complete = !countKnown || remaining === 0;');
+    ok('control 4 patched the unknown-count rule', patched !== src);
+    const M = load(patched);
+    const out = M.sweepOutcome({
+      stillNeedingEmail: null, rosterLength: 1046, batch: noop(M)
+    });
+    ok('failing open reports complete on an unknown count',
+       out.complete === true,
+       'which is a false done produced by a dropped read');
   }
 }
 

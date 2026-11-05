@@ -1465,8 +1465,14 @@ function runDirectoryResolve() {
   var d = r.data;
   console.log('=== resolveDirectoryEmails ===');
   console.log('wrote ' + d.written + ' address(es)');
-  // The three numbers that matter, ahead of the payload: what was written,
-  // what is still failing, and whether the cursor moved backwards to retry.
+  // STILL NEEDING AN ADDRESS LEADS, because that is the number completion is
+  // derived from and the one every earlier version of this output omitted.
+  // 'complete: true' on its own was printed to @clolry eight times while ~218
+  // staffed positions had no mailbox.
+  console.log('STILL NEEDING AN ADDRESS: ' +
+              (d.stillNeedingEmail === null || d.stillNeedingEmail === undefined
+                ? 'UNKNOWN — the roster could not be re-read'
+                : d.stillNeedingEmail));
   console.log('still failing: ' + (d.summary.unresolvedByError || 0) +
               '   quota waits: ' + (d.summary.quotaWaits || 0) +
               '   resume at: ' + d.nextIndex);
@@ -1500,14 +1506,24 @@ function runDirectoryResolve() {
 
   if (!d.complete) {
     console.log('');
-    console.log('NOT COMPLETE — run this again to continue from position ' +
-                d.nextIndex + '. Or install the hourly trigger: ' +
-                'installDirectoryLookupTrigger() in ' +
-                '40_domain/DirectoryResolve.js.');
+    console.log('NOT COMPLETE — ' + d.completionReason);
+    console.log('Run this again to continue from position ' + d.nextIndex +
+                '. Or install the trigger: installDirectoryLookupTrigger() ' +
+                'in 40_domain/DirectoryResolve.js.');
+    if (d.batchComplete) {
+      // This execution ran to the end of the roster and there is STILL work.
+      // Saying so explicitly, because the cursor reaching the end used to BE
+      // the completion signal and reading this line as a contradiction is the
+      // mistake to prevent.
+      console.log('This pass reached the end of the roster, so the cursor ' +
+                  'has wrapped to 0: the remaining gaps are behind it, and ' +
+                  'the next run picks them up.');
+    }
   } else {
     console.log('');
-    console.log('SWEEP COMPLETE. Run runEmailResolutionQueue() in this file ' +
-                'for the positions that still need a human decision.');
+    console.log('SWEEP COMPLETE — every staffed position has an address. ' +
+                'Run runEmailResolutionQueue() in this file for anyone who ' +
+                'still needs a human decision.');
   }
 }
 

@@ -1160,8 +1160,20 @@ var DirectoryLookup = (function () {
   /**
    * Sets the completion flags. Shared by both exits from resolveBatch.
    *
-   * 'COMPLETE' MEANS EVERY POSITION WAS ATTEMPTED SUCCESSFULLY, not merely
-   * that the loop reached the end.
+   * SCOPE: `out.complete` IS A STATEMENT ABOUT THIS EXECUTION ONLY — the loop
+   * reached the end of the list and no position was left in an error state.
+   * It is NOT the answer to "does anyone still have no address", and a caller
+   * that reports it as sweep completion is reintroducing the bug. Use
+   * sweepOutcome.
+   *
+   * The distinction is not academic. A batch started at the end of the roster
+   * executes no loop body at all and arrives here with reachedEnd true and
+   * zero errors, so this sets complete true — correctly, for what it means.
+   * That exact value was reported to @clolry as 'SWEEP COMPLETE' while ~218
+   * staffed positions had no mailbox.
+   *
+   * 'COMPLETE' HERE MEANS EVERY POSITION THIS RUN TOUCHED WAS ATTEMPTED
+   * SUCCESSFULLY, not merely that the loop reached the end.
    *
    * @clolry's third run printed 'SWEEP COMPLETE' with 556 positions having
    * errored across three runs — two thirds of the roster still had no
@@ -1189,6 +1201,182 @@ var DirectoryLookup = (function () {
                            ' lookup(s) are still failing. Re-run to retry them.';
     }
     return out;
+  }
+
+  // ==========================================================================
+  // THE COMPLETION DECISION
+  // ==========================================================================
+  //
+  // WHY THESE THREE FUNCTIONS ARE HERE AND NOT IN DirectoryResolve.js
+  // -----------------------------------------------------------------
+  // The sweep has reported false completion to @clolry three times, by three
+  // different routes, and all three shared one cause:
+  //
+  //   `complete` was derived from WHERE THE CURSOR SAT, never from WHETHER
+  //   ANYONE STILL NEEDED AN ADDRESS. Those two coincide only by accident.
+  //
+  // The symptoms, in the order they appeared:
+  //
+  //   1. 'the loop reached the end of the list' — so a run that errored on 281
+  //      positions reported done.
+  //   2. a position that errored, waited out the quota and then resolved was
+  //      still counted against completion, so a fully successful run reported
+  //      itself incomplete.
+  //   3. the stored resume index was parked at 1046, the roster length, so the
+  //      next run's loop never executed at all: zero lookups, zero errors,
+  //      reachedEnd true, complete true. It did nothing and declared victory
+  //      while ~218 of 823 staffed positions had no address.
+  //
+  // Each was fixed in isolation and a fourth route appeared. So the decision
+  // itself lives here, pure and injectable, where it can be tested without
+  // SpreadsheetApp, HC or PropertiesService — and where there is exactly one
+  // copy of it.
+  //
+  // THE RULE: completion is a fact about the ROSTER, not about the loop.
+
+  /**
+   * Does this position still need an email address?
+   *
+   * THE SINGLE DEFINITION. getEmailResolutionQueue's "N staffed positions
+   * still have no address" count has been accurate throughout the whole
+   * episode, and it is this predicate. Everything that asks the question must
+   * ask it the same way, or two surfaces will disagree about whether the work
+   * is done — which is how #3 survived two fixes.
+   *
+   * @param {Object} position  an HC bundle record
+   * @param {Object} [overrides]  by position number, from HC_Email_Overrides.
+   *        An admin's recorded decision — including a deliberate 'no mailbox'
+   *        record — settles the position even when the roster has not caught
+   *        up, so it is not outstanding work.
+   * @returns {boolean}
+   */
+  function positionNeedsEmail(position, overrides) {
+    var p = position;
+    if (!p) return false;
+    if (_str_(p.occupancyStatus).toUpperCase() === 'VACANT') return false;
+    if (!_str_(p.employeeName)) return false;
+    if (_str_(p.emailAddress)) return false;
+    if (overrides && overrides[p.positionNumber]) return false;
+    return true;
+  }
+
+  /** How many positions still need an address. The number to trust. */
+  function countNeedingEmail(positions, overrides) {
+    var n = 0;
+    (positions || []).forEach(function (p) {
+      if (positionNeedsEmail(p, overrides)) n++;
+    });
+    return n;
+  }
+
+  /**
+   * Where the next run should start, given a stored cursor.
+   *
+   * A CURSOR AT OR PAST THE END MEANS 'WRAP', NOT 'DONE'. This is symptom #3
+   * directly: with the cursor at 1046 and a roster of 1046, resolveBatch's
+   * loop body never ran, so it reported reachedEnd with no errors and the
+   * caller read that as success — eight times, costing @clolry eight manual
+   * runs for nothing.
+   *
+   * Reachable by a second route too: the roster SHRINKS when positions are
+   * removed, so a cursor saved against 1046 rows can be past the end of a
+   * 900-row roster without any sweep having finished.
+   *
+   * @param {number} stored
+   * @param {number} rosterLength
+   * @returns {number}
+   */
+  function resolveStartIndex(stored, rosterLength) {
+    var n = parseInt(stored, 10);
+    var len = parseInt(rosterLength, 10);
+    if (isNaN(n) || n < 0) return 0;
+    if (isNaN(len) || len <= 0) return 0;
+    if (n >= len) return 0;
+    return n;
+  }
+
+  /**
+   * Decides whether the sweep is finished, and what cursor to store.
+   *
+   * DERIVED FROM THE WORK REMAINING. `batch.complete` is a statement about one
+   * execution — it reached the end of the list without a position left in an
+   * error state — and that is a useful thing to know, but it is NOT the
+   * question "does anyone still have no address". Only the second question
+   * matters to the caller, and only the second one may be called complete.
+   *
+   * stillNeedingEmail MUST BE COUNTED FROM A FRESH ROSTER READ, after the
+   * write. The pre-write bundle would still show every address this run just
+   * wrote as missing, so it would undercount completion and the sweep would
+   * never report done.
+   *
+   * AN UNKNOWN COUNT IS NOT COMPLETION. If the caller could not re-read the
+   * roster it passes null, and this refuses to claim the sweep is finished.
+   * Failing closed costs a redundant run; failing open is the bug this whole
+   * block exists to stop.
+   *
+   * @param {Object} o { stillNeedingEmail, rosterLength, batch }
+   * @returns {{complete: boolean, resumeIndex: number,
+   *            stillNeedingEmail: (number|null), countKnown: boolean,
+   *            reason: string}}
+   */
+  function sweepOutcome(o) {
+    var opt = o || {};
+    var batch = opt.batch || {};
+    var raw = opt.stillNeedingEmail;
+    var remaining = (raw === null || raw === undefined || raw === '')
+      ? NaN : parseInt(raw, 10);
+    var countKnown = !isNaN(remaining) && remaining >= 0;
+
+    var complete = countKnown && remaining === 0;
+
+    // WHERE TO RESUME.
+    //
+    //   complete                 0, and the next run is a cheap no-op sweep
+    //                            that picks up new hires.
+    //   reached the end, but
+    //   work remains             0 — WRAP TO THE TOP. The gaps are behind the
+    //                            cursor: the pre-fix sweep abandoned streaks
+    //                            of positions it errored on, and parking at
+    //                            the end is what made them unreachable. This
+    //                            is the line that turns symptom #3 from a
+    //                            permanent dead end into a self-healing one.
+    //   stopped mid-roster       batch.nextIndex, which resolveBatch has
+    //                            already rewound to the first error of any
+    //                            streak it could not retry.
+    var resumeIndex;
+    if (complete) {
+      resumeIndex = 0;
+    } else if (batch.reachedEnd) {
+      resumeIndex = 0;
+    } else {
+      var nx = parseInt(batch.nextIndex, 10);
+      resumeIndex = (isNaN(nx) || nx < 0) ? 0 : nx;
+    }
+
+    var reason;
+    if (complete) {
+      reason = 'every staffed position has an address';
+    } else if (!countKnown) {
+      reason = 'the roster could not be re-read after the write, so the ' +
+               'number of positions still needing an address is unknown. ' +
+               'Reporting incomplete rather than guessing; re-run.';
+    } else if (batch.reachedEnd) {
+      reason = remaining + ' staffed position(s) still have no address after ' +
+               'reaching the end of the roster. Resuming from 0 to pick up ' +
+               'the ones this pass could not resolve.';
+    } else {
+      reason = remaining + ' staffed position(s) still have no address; the ' +
+               'sweep stopped at ' + resumeIndex + ' before the end of the ' +
+               'roster.';
+    }
+
+    return {
+      complete: complete,
+      resumeIndex: resumeIndex,
+      stillNeedingEmail: countKnown ? remaining : null,
+      countKnown: countKnown,
+      reason: reason
+    };
   }
 
   /**
@@ -1482,6 +1670,12 @@ var DirectoryLookup = (function () {
     pickMatch: pickMatch,
     resolveOne: resolveOne,
     resolveBatch: resolveBatch,
+    // The completion decision, pure and injectable — see the block above
+    // sweepOutcome for the three false-completion bugs these replace.
+    positionNeedsEmail: positionNeedsEmail,
+    countNeedingEmail: countNeedingEmail,
+    resolveStartIndex: resolveStartIndex,
+    sweepOutcome: sweepOutcome,
     summarise: summarise
   };
 })();
