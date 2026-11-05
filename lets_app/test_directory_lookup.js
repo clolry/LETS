@@ -801,5 +801,59 @@ console.log('\n12. the refusal reports what the directory actually returned');
      /No directory entry found/.test(notFound.reason), notFound);
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n13. the deployed build can be identified from its behaviour');
+{
+  // @clolry has now run previewDirectoryEmails three times and received
+  // byte-identical output across two commits that each changed the matching
+  // logic. Identical output after a behavioural change means the code under
+  // test did not change — but nothing in the result distinguishes "the fix
+  // did not work" from "the fix is not running".
+  //
+  // That ambiguity cost three round trips here, and two earlier on the HR
+  // feed tab name before diagnoseHrFeedSource existed. Anything whose only
+  // observable is a count needs a build marker.
+  const resolve = fs.readFileSync('lets_app/server/40_domain/DirectoryResolve.js', 'utf8');
+  ok('there is a build diagnostic',
+     /function diagnoseDirectoryBuild\(\)/.test(resolve));
+
+  const diag = resolve.slice(resolve.indexOf('function diagnoseDirectoryBuild'),
+                             resolve.indexOf('function diagnoseDirectoryMatch'));
+
+  // IT MUST ASSERT BEHAVIOUR, NOT A VERSION STRING. A string can be bumped
+  // in a commit whose behaviour never ships; running the real matcher against
+  // the real candidate shape cannot be.
+  ok('it runs the matcher rather than reading a version constant',
+     /candidateMatches\(parsed, live\)/.test(diag) &&
+     /pickMatch\(parsed, \[live\]\)/.test(diag),
+     'a version marker can be bumped without the fix shipping');
+  ok('it uses the literal candidate from the live diagnostic',
+     /familyName: 'Hale - FC'/.test(diag),
+     'a synthetic fixture would not prove this defect is fixed');
+
+  // IT MUST ALSO CHECK STRICTNESS. A build that resolved everything by
+  // loosening the comparison would pass every other check and be far worse
+  // than one that resolves nothing.
+  ok('it verifies a nickname is still refused',
+     /a nickname is still REFUSED/.test(diag),
+     'resolving everything is worse than resolving nothing');
+  ok('and that an ambiguous pair is still refused',
+     /two namesakes in one org still REFUSED/.test(diag));
+
+  // The failure message has to say what to DO. "Checks failed" sends someone
+  // looking for a code bug that is not there.
+  ok('a failure names a stale deployment as the cause',
+     /RUNNING AN OLDER BUILD/.test(diag));
+  ok('and a pass redirects to the data',
+     /the cause is in the data rather than/.test(diag),
+     'otherwise a passing build with failing lookups has no next step');
+
+  ok('it makes no network call',
+     !/_directorySearch_|searchDirectoryPeople/.test(diag),
+     'it must be runnable when the People service is unavailable');
+  ok('and writes nothing',
+     !/setValue|appendRow|clearContent|setProperty/.test(diag));
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);

@@ -169,6 +169,158 @@ function previewDirectoryEmails(opts) {
 }
 
 /**
+ * Reports which build of the directory matcher is deployed.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * @clolry has now run previewDirectoryEmails three times and received
+ * byte-identical output — 50 lookups, 0 resolved, 46 noMatch, the same ten
+ * names — across two commits that each changed the matching logic. Identical
+ * output after a behavioural change means the code under test did not change,
+ * and nothing in the result distinguishes "the fix did not work" from "the fix
+ * is not running".
+ *
+ * That ambiguity has now cost three round trips on this feature alone, and it
+ * cost two earlier on the HR feed tab name before diagnoseHrFeedSource was
+ * added for exactly the same reason. The lesson generalises: anything whose
+ * only observable is a count needs a version marker.
+ *
+ * The markers below are ASSERTIONS ABOUT BEHAVIOUR, not a version string.
+ * A string can be bumped without the behaviour shipping; these run the real
+ * matcher against the real candidate shape from @clolry's diagnostic, so a
+ * PASS means that specific defect is genuinely fixed in the running build.
+ *
+ * Reads nothing, writes nothing, makes no network call. Safe at any time.
+ *
+ * @returns {Object}
+ * @editor
+ */
+function diagnoseDirectoryBuild() {
+  var checks = [];
+
+  function check(name, actual, expected, why) {
+    var pass = String(actual) === String(expected);
+    checks.push({ check: name, pass: pass, got: actual, want: expected, why: why });
+  }
+
+  // 1. The GSA org suffix on a family name. This is the defect that caused 46
+  //    of 50 refusals.
+  try {
+    var split = DirectoryLookup.splitDirectorySuffix('Hale - FC');
+    check('org suffix stripped from surname', split.name, 'Hale',
+          'GSA appends " - FC" to familyName; without stripping it, EVERY ' +
+          'candidate fails the surname comparison');
+    check('org token extracted', split.org, 'FC',
+          'used as a tie-break between namesakes in different portfolios');
+  } catch (e) {
+    checks.push({ check: 'splitDirectorySuffix exists', pass: false,
+                  got: e.message, want: 'a function',
+                  why: 'THIS BUILD PREDATES THE FIX — the function is absent' });
+  }
+
+  // 2. End to end against the exact candidate from the live diagnostic.
+  try {
+    var parsed = DirectoryLookup.parseName('Hale,Lawrence C');
+    var live = {
+      givenName: 'Lawrence', familyName: 'Hale - FC', middleName: '',
+      displayName: 'Lawrence Hale - FC', email: 'lawrence.hale@gsa.gov'
+    };
+    var m = DirectoryLookup.candidateMatches(parsed, live);
+    check('live candidate matches', m.matches, 'true',
+          'this is the literal candidate the directory returned for ' +
+          'Lawrence Hale');
+
+    var picked = DirectoryLookup.pickMatch(parsed, [live]);
+    check('live candidate resolves', picked.email, 'lawrence.hale@gsa.gov',
+          'if this fails, the sweep will still refuse every GSA entry');
+  } catch (e) {
+    checks.push({ check: 'end-to-end match', pass: false, got: e.message,
+                  want: 'resolved', why: 'unexpected error' });
+  }
+
+  // 3. The displayName fallback, from the commit before.
+  try {
+    var dn = DirectoryLookup.pickMatch(
+      DirectoryLookup.parseName('Hale,Lawrence C'),
+      [{ givenName: '', familyName: '', displayName: 'Lawrence Hale',
+         email: 'l@gsa.gov' }]);
+    check('displayName fallback works', dn.email, 'l@gsa.gov',
+          'the People API leaves givenName/familyName empty on many entries');
+  } catch (e) {
+    checks.push({ check: 'displayName fallback', pass: false, got: e.message,
+                  want: 'l@gsa.gov', why: 'unexpected error' });
+  }
+
+  // 4. Separate returned/matched counts — the field that contradicted itself
+  //    in the live log.
+  try {
+    var nm = DirectoryLookup.pickMatch(
+      DirectoryLookup.parseName('Smith,Michael'),
+      [{ givenName: 'Mike', familyName: 'Smith', email: 'm@gsa.gov' }]);
+    check('returned count is reported', nm.returnedCount, '1',
+          'the log read "0 candidate(s)" while the reason said 1 was ' +
+          'returned; those are different bugs');
+  } catch (e) {
+    checks.push({ check: 'returnedCount', pass: false, got: e.message,
+                  want: '1', why: 'unexpected error' });
+  }
+
+  // 5. Strictness must be intact. A build that resolved everything by
+  //    loosening the comparison would pass 1-4 and be far worse than one that
+  //    resolves nothing.
+  try {
+    var nick = DirectoryLookup.pickMatch(
+      DirectoryLookup.parseName('Smith,Michael'),
+      [{ givenName: 'Mike', familyName: 'Smith - FC', email: 'm@gsa.gov' }]);
+    check('a nickname is still REFUSED', nick.email, '',
+          'resolving this would grant LETS access to the wrong person');
+
+    var amb = DirectoryLookup.pickMatch(
+      DirectoryLookup.parseName('Smith,Michael'),
+      [{ givenName: 'Michael', familyName: 'Smith - FC', email: 'a@gsa.gov' },
+       { givenName: 'Michael', familyName: 'Smith - FC', email: 'b@gsa.gov' }],
+      'FCA0B');
+    check('two namesakes in one org still REFUSED', amb.method, 'ambiguous',
+          'the org tie-break must leave exactly one survivor, not pick the ' +
+          'first');
+  } catch (e) {
+    checks.push({ check: 'strictness', pass: false, got: e.message,
+                  want: 'refused', why: 'unexpected error' });
+  }
+
+  var failed = checks.filter(function (c) { return !c.pass; });
+
+  console.log('=== diagnoseDirectoryBuild ===');
+  checks.forEach(function (c) {
+    console.log((c.pass ? '  PASS  ' : '  FAIL  ') + c.check);
+    if (!c.pass) {
+      console.log('          got ' + JSON.stringify(c.got) +
+                  ', want ' + JSON.stringify(c.want));
+      console.log('          ' + c.why);
+    }
+  });
+  console.log('');
+
+  if (failed.length) {
+    console.log(failed.length + ' of ' + checks.length + ' checks FAILED.');
+    console.log('');
+    console.log('THIS DEPLOYMENT IS RUNNING AN OLDER BUILD of ' +
+                'DirectoryLookup.js. The matching fixes are not present, so ' +
+                'previewDirectoryEmails will keep returning the same ' +
+                'refusals no matter how many times it is run.');
+    console.log('Deploy the current sandbox branch, then re-run this.');
+  } else {
+    console.log('All ' + checks.length + ' checks passed — the current ' +
+                'matcher IS deployed. If previewDirectoryEmails still ' +
+                'refuses everything, the cause is in the data rather than ' +
+                'the code: run diagnoseDirectoryMatch() to see what the ' +
+                'directory returned.');
+  }
+
+  return { ok: failed.length === 0, checks: checks };
+}
+
+/**
  * Prints the RAW directory response for one name.
  *
  * WHY THIS EXISTS
