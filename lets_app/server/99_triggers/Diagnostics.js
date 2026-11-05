@@ -26,6 +26,8 @@
  *   diagAccess()       who currently has access, and by which path
  *   diagAirportPrefs() stored preferences and the promotion threshold
  *   diagTriggers()     installed triggers, and whether their handlers exist
+ *   diagServiceCentreDirectors()  who the 22 service centres' directors are,
+ *                      and what a sector_override row would currently grant
  *
  *   diagDutyStationAirports()   which HC duty stations resolve to an airport
  *   diagUnresolvedCityNames()   and what GSA calls the ones that do not
@@ -94,6 +96,7 @@ function diagAll() {
   diagFasTrackerHeader();
   diagTriggers();
   diagAccess();
+  diagServiceCentreDirectors();
   console.log('================================================================');
   console.log('END OF DIAGNOSTICS');
   console.log('================================================================');
@@ -1157,6 +1160,327 @@ function diagAccess() {
 
   } catch (error) {
     console.log('diagAccess FAILED: ' + error.message);
+  }
+}
+
+/**
+ * Who the Service Center Directors actually are, and who holds a sector scope.
+ *
+ * ADMIN ONLY. Enumerates named people and the access each would hold.
+ * Read-only: no sheet write, no property write, no behaviour change.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * Five call sites identify a Service Center Director by matching officeTitle
+ * against the string 'sector director'. That title does not exist in this
+ * organisation — @clolry: "We don't call them Sector Directors, we call them
+ * Service Center Directors" — so all five find NOBODY, silently:
+ *
+ *   Access.js:132    _findSectorDirectorPosition, which routing depends on
+ *   Access.js:984    isSectorDirector, which decides the reviewer role
+ *   Admin_Dashboard.js:774  the reviewer-performance table
+ *   Users.js:1841    the cascade when a sector_override holder is deactivated
+ *   travelUsersController.html:392  the Users page's scope derivation
+ *
+ * The consequence today is that findSectorDirector returns null for every
+ * submission, determineInitialRouting takes its "no SD found" branch
+ * (Submission.js:110) and every request starts at the DAC stage instead.
+ * Nothing errors. The service-centre review stage simply never happens.
+ *
+ * WHY A DIAGNOSTIC BEFORE A FIX
+ * -----------------------------
+ * The correct rule is documented — a Service Center Director is the
+ * supervisory person whose own Dept ID is one of the 22 SERVICE_CENTER org
+ * codes (Sheets.js:598, HCSeed.js:366) — but applying it raises three
+ * questions that only the live roster can answer:
+ *
+ *   1. Does every service centre have exactly one such person? @clolry
+ *      believes so. If any has two, the current code would return whichever
+ *      came first in bundle order, which is nondeterministic across imports
+ *      — so that has to be known rather than assumed.
+ *   2. Does every one of them have an email? Without it Access.js:98 returns
+ *      null and routing cascades anyway, so the fix would change nothing for
+ *      that centre.
+ *   3. Which titles do they actually hold? Recorded so the next reader can
+ *      see why a title match was the wrong instrument, rather than taking it
+ *      on trust.
+ *
+ * THE GRADE CHECK IS REPORTED, NOT APPLIED. All five call sites additionally
+ * require grade '15'. @clolry: "I don't know why we would need to check the
+ * grade." I agree it looks like a proxy for seniority that the org level
+ * already states — and an SES director would fail it, since HCData normalises
+ * SES to 'SES' rather than a number. This prints what the check WOULD exclude
+ * so the decision rests on names rather than on reasoning.
+ *
+ * @editor
+ */
+function diagServiceCentreDirectors() {
+  try {
+    var _who = Session.getActiveUser().getEmail() || '';
+    if (!_who || typeof isTravelAdmin !== 'function' || !isTravelAdmin(_who)) {
+      console.warn('diagServiceCentreDirectors: refused non-admin caller ' +
+                   (_who || '(none)'));
+      return { success: false, error: 'Administrator access is required.' };
+    }
+  } catch (e) {
+    return { success: false, error: 'Could not determine the active user.' };
+  }
+
+  console.log('');
+  console.log('--- SERVICE CENTRE DIRECTORS ---');
+
+  try {
+    var bundle = HC.hcGetBundle();
+    if (!bundle || !bundle.success) {
+      console.log('hcGetBundle FAILED: ' + ((bundle && bundle.error) || '?'));
+      return { success: false };
+    }
+    var orgs = HC.hcGetOrgHierarchy() || [];
+    if (!orgs.length) {
+      console.log('HC_Orgs is empty. Run loadRealOrgCodes() first — without ' +
+                  'the hierarchy there is no SERVICE_CENTER level to match.');
+      return { success: false };
+    }
+
+    var byCode = {};
+    orgs.forEach(function (o) {
+      byCode[String(o.orgCode || '').toUpperCase()] = o;
+    });
+
+    // The 22, from the STORED Org_Level rather than from code length.
+    //
+    // @clolry reads the code positionally: 1st digit sub-agency, 2nd
+    // portfolio, 3rd office, 4th sub-office, 5th service centre, 6th
+    // division, 7th branch. On today's data that is consistent with
+    // Org_Level — every SERVICE_CENTER row is 5 characters and no 5-character
+    // row is anything else.
+    //
+    // Org_Level is still what this reads, for two reasons. Depth varies by
+    // branch: FCA has no 4-character sub-office level while FCB and FCC do,
+    // so FCA0A sits two levels deep and FCBAA three. And a person ABOVE a
+    // service centre — at FCA, or FC itself — has no service centre at all,
+    // which a truncation rule cannot express and the stored walk reports as
+    // ''. That distinction is already load-bearing in the per-capita budget
+    // split, which buckets those people as isAboveServiceCentre.
+    var scCodes = orgs.filter(function (o) {
+      return String(o.orgLevel || '').toUpperCase() === 'SERVICE_CENTER';
+    }).map(function (o) { return String(o.orgCode).toUpperCase(); }).sort();
+
+    console.log('service centres in HC_Orgs: ' + scCodes.length +
+                ' (expected 22)');
+    console.log('');
+
+    // Candidates per centre: a SUPERVISORY person whose own org code IS the
+    // centre's code. Somebody in FCA0BAA belongs to a branch; somebody
+    // sitting directly at FCA0B is at the service-centre level.
+    var positions = bundle.data || [];
+    var byCentre = {};
+    scCodes.forEach(function (c) { byCentre[c] = []; });
+
+    positions.forEach(function (p) {
+      if (!p) return;
+      var code = String(p.orgCode || '').toUpperCase();
+      if (!(code in byCentre)) return;
+      if (String(p.supervisoryStatus) !== '2') return;
+      byCentre[code].push(p);
+    });
+
+    var counts = { none: 0, one: 0, many: 0 };
+    var noEmail = [];
+    var wouldFailGrade = [];
+    var titles = {};
+
+    scCodes.forEach(function (code) {
+      var found = byCentre[code];
+      var orgName = String((byCode[code] || {}).division || '');
+      var label = code + '  ' + orgName;
+
+      if (!found.length) {
+        counts.none++;
+        console.log('  [NONE] ' + label);
+        // A centre with no supervisory person at its own code is not
+        // necessarily an error — the seat may be vacant, or the director may
+        // sit one level up. Both are worth seeing.
+        return;
+      }
+      if (found.length === 1) counts.one++;
+      else counts.many++;
+
+      console.log('  [' + (found.length === 1 ? ' 1 ' : found.length + '!') +
+                  '] ' + label);
+      found.forEach(function (p) {
+        var occ = String(p.occupancyStatus || '').toUpperCase();
+        var gradeNote = (String(p.grade) === '15') ? '' : '   <- grade is ' +
+          JSON.stringify(String(p.grade)) + ', so the current grade check ' +
+          'would REJECT this person';
+        if (String(p.grade) !== '15') {
+          wouldFailGrade.push(code + ' ' + p.employeeName + ' grade ' + p.grade);
+        }
+        if (!p.emailAddress) noEmail.push(code + ' ' + p.employeeName);
+        titles[String(p.officeTitle || '(blank)')] =
+          (titles[String(p.officeTitle || '(blank)')] || 0) + 1;
+
+        console.log('         ' + (p.employeeName || '(vacant)') +
+                    '   ' + (p.emailAddress || '*** NO EMAIL ***') +
+                    '   ' + occ);
+        console.log('         title: ' + JSON.stringify(String(p.officeTitle || '')) +
+                    '   grade: ' + JSON.stringify(String(p.grade)) + gradeNote);
+      });
+    });
+
+    console.log('');
+    console.log('centres with exactly one supervisory person: ' + counts.one);
+    console.log('centres with more than one:                  ' + counts.many +
+                (counts.many ? '   <- these need a tie-break rule' : ''));
+    console.log('centres with none at their own code:         ' + counts.none);
+
+    // THE TITLE EVIDENCE. Printed because the whole defect is that five call
+    // sites match a title string, and the honest way to retire that approach
+    // is to show what the titles actually say.
+    console.log('');
+    console.log('--- the titles these people actually hold ---');
+    var titleKeys = Object.keys(titles).sort(function (a, b) {
+      return titles[b] - titles[a];
+    });
+    titleKeys.forEach(function (t) {
+      console.log('  ' + titles[t] + 'x  ' + JSON.stringify(t));
+    });
+    var anySectorDirector = titleKeys.filter(function (t) {
+      return t.toLowerCase().indexOf('sector director') > -1;
+    });
+    console.log('  titles containing "sector director": ' +
+                anySectorDirector.length +
+                (anySectorDirector.length === 0
+                  ? '   <- which is why all five call sites find nobody'
+                  : '   ' + JSON.stringify(anySectorDirector)));
+
+    if (noEmail.length) {
+      console.log('');
+      console.log('NO EMAIL (' + noEmail.length + ') — Access.js:98 returns ' +
+                  'null without one, so routing would cascade past these ' +
+                  'centres even after the title fix:');
+      noEmail.forEach(function (x) { console.log('  ' + x); });
+    }
+
+    if (wouldFailGrade.length) {
+      console.log('');
+      console.log('THE GRADE CHECK WOULD EXCLUDE ' + wouldFailGrade.length +
+                  ' of these people:');
+      wouldFailGrade.forEach(function (x) { console.log('  ' + x); });
+      console.log('  All five call sites require grade "15". @clolry: "I ' +
+                  'don\'t know why we would need to check the grade." Note ' +
+                  'that an SES director normalises to "SES", not a number, ' +
+                  'so the check rejects them too.');
+    }
+
+    // ------------------------------------------------------------------
+    // WHAT A sector_override ROW WOULD CURRENTLY GRANT
+    // ------------------------------------------------------------------
+    //
+    // Travel_User_Roles.Scope stores a sector NAME for sector_override
+    // (Access.js:274-277), and isSectorDirector converts that name back to
+    // codes by taking substring(0, 4) of every org whose Sector matches
+    // (Access.js:964).
+    //
+    // Two things make that wider than it looks on this org:
+    //
+    //   HC_Orgs.Sector is 'ASD' on all 137 rows (HCSeed.js:351), so one name
+    //   matches everything; and the 4-character truncation of a 5-character
+    //   service-centre code yields FCA0 / FCB0 / FCC0, which are not org
+    //   codes at all — the '0' is a filler, not a level.
+    //
+    // The scope matchers then compare substring(0, 4) of a request's org code
+    // against that set, and 'FC'.substring(0, 4) is 'FC', which is in it. So
+    // the resolved set covers the entire organisation.
+    //
+    // @clolry is not aware of any sector_override rows, which would make this
+    // latent. Latent is worth confirming rather than assuming, so this counts
+    // them.
+    console.log('');
+    console.log('--- sector_override rows, and what they would resolve to ---');
+    try {
+      var roleData = _getUnifiedRoleData();
+      var rolesByEmail = (roleData && roleData.rolesByEmail) || {};
+      var overrides = [];
+      Object.keys(rolesByEmail).forEach(function (em) {
+        (rolesByEmail[em] || []).forEach(function (r) {
+          if (r.roleType === 'sector_override') {
+            overrides.push({ email: em, scope: r.scope });
+          }
+        });
+      });
+
+      console.log('active sector_override rows: ' + overrides.length);
+
+      if (!overrides.length) {
+        console.log('  None. The over-grant below is LATENT — it would appear ' +
+                    'the first time one is granted, not now.');
+      }
+      overrides.forEach(function (o) {
+        console.log('  ' + o.email + '  scope ' + JSON.stringify(o.scope));
+      });
+
+      // The resolution, run for real on whatever scope values exist — plus
+      // 'ASD' regardless, because that is the only value the Users page can
+      // currently offer and is therefore what the next grant would use.
+      var toTest = overrides.map(function (o) { return o.scope; });
+      if (toTest.indexOf('ASD') === -1) toTest.push('ASD');
+
+      var distinctSectors = {};
+      orgs.forEach(function (o) {
+        if (o.sector) distinctSectors[o.sector] = (distinctSectors[o.sector] || 0) + 1;
+      });
+      console.log('');
+      console.log('HC_Orgs.Sector distinct values:');
+      Object.keys(distinctSectors).forEach(function (s) {
+        console.log('  ' + JSON.stringify(s) + ' on ' + distinctSectors[s] +
+                    ' of ' + orgs.length + ' rows' +
+                    (distinctSectors[s] === orgs.length
+                      ? '   <- one value for every org, so one name matches all'
+                      : ''));
+      });
+
+      toTest.forEach(function (scopeName) {
+        var codes = [];
+        orgs.forEach(function (o) {
+          if (String(o.sector || '') !== String(scopeName)) return;
+          var resolved = String(o.orgCode).substring(0, 4).toUpperCase();
+          if (resolved && codes.indexOf(resolved) === -1) codes.push(resolved);
+        });
+        codes.sort();
+
+        // How many org codes a request could carry and still be in scope,
+        // under the same substring(0, 4) test the dashboards apply.
+        var allowed = {};
+        codes.forEach(function (c) { allowed[c] = true; });
+        var reachable = orgs.filter(function (o) {
+          return allowed[String(o.orgCode).substring(0, 4).toUpperCase()];
+        }).length;
+
+        console.log('');
+        console.log('scope ' + JSON.stringify(scopeName) + ' resolves to ' +
+                    codes.length + ' code(s): ' + codes.join(', '));
+        var fake = codes.filter(function (c) { return !byCode[c]; });
+        if (fake.length) {
+          console.log('  of which NOT REAL org codes: ' + fake.join(', ') +
+                      '   (a 4-char truncation of a 5-char service centre)');
+        }
+        console.log('  org codes a request could carry and still match: ' +
+                    reachable + ' of ' + orgs.length +
+                    (reachable === orgs.length
+                      ? '   <- ORGANISATION-WIDE, not one service centre'
+                      : ''));
+      });
+    } catch (e) {
+      console.log('  could not read the role table: ' + e.message);
+    }
+
+    console.log('');
+    console.log('Nothing was changed. This is a read-only report.');
+    return { success: true };
+  } catch (error) {
+    console.log('diagServiceCentreDirectors FAILED: ' + error.message);
+    return { success: false, error: error.message };
   }
 }
 
