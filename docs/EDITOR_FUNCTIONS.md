@@ -158,7 +158,7 @@ Simulations do not submit anything. The FAS tracker test functions DO write a ro
 | `_verifyAllPropsKeys()` | `lets_app/server/00_config/Props.js` | 810 | Verify every key in PROPS_KEYS resolves either to a set property OR a |
 | `initTravelEmailConfig()` | `lets_app/server/30_services/Email.js` | 114 | Initialize travel email configuration. Delegates to Props.js |
 | `debugReviewerPerf(…)` | `lets_app/server/40_domain/Admin_Dashboard.js` | 143 | Diagnostic: per-action breakdown for a single reviewer email. |
-| `previewLiabilityLogImport()` | `lets_app/server/40_domain/LiabilityLogAdmin.js` | 705 | Dry run: what importing @clolry's FY27 travel log would do. |
+| `previewLiabilityLogImport()` | `lets_app/server/40_domain/LiabilityLogAdmin.js` | 799 | Dry run: what importing @clolry's FY27 travel log would do. |
 
 ---
 

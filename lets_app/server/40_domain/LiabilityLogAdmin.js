@@ -144,7 +144,17 @@ var LiabilityLogAdmin = (function () {
                         'Organization cannot be attributed: ' + e.message);
     }
 
-    var parsed = LiabilityLogSync.parseSheet(values, positions);
+    // THE SHEET'S FISCAL YEAR, RESOLVED BEFORE PARSING.
+    //
+    // It has to be known first because an unapproved trip is attributed to
+    // it: @clolry's rule is that a trip on the FY27 log is FY27 travel, and
+    // the travel-date proxy this replaces dropped seven real trips worth
+    // $7,595.80 on his first import.
+    var fy = _str_(o.fiscalYear) ||
+             ((typeof LETS_CONFIG !== 'undefined' && LETS_CONFIG.fiscalYear) || '');
+    out.fiscalYear = fy;
+
+    var parsed = LiabilityLogSync.parseSheet(values, positions, fy);
     out.keyColumn = parsed.keyColumn;
     out.columnCount = parsed.columnCount;
     out.skipped = parsed.skipped;
@@ -154,17 +164,17 @@ var LiabilityLogAdmin = (function () {
       return out;
     }
 
-    // WHICH FISCAL YEAR THIS IMPORT IS FOR.
+    // THE FILTER STAYS, and it now excludes far less.
     //
-    // Filtered rather than imported-and-ignored, because the budget dashboard
-    // does NOT filter by fiscal year — it reads every Requests row and
-    // buckets on Status. A FY26 trip imported here would appear in the FY27
-    // dashboard as current-year spend, which is the same class of error as
-    // the backfill guard in BudgetBackfill.js:163.
-    var fy = _str_(o.fiscalYear) ||
-             ((typeof LETS_CONFIG !== 'undefined' && LETS_CONFIG.fiscalYear) || '');
-    out.fiscalYear = fy;
-
+    // It is still needed: the budget dashboard does NOT filter by fiscal year
+    // — it reads every Requests row and buckets on Status — so a genuinely
+    // FY26 trip would appear as current-year spend. Same class of error as
+    // the guard in BudgetBackfill.js:163.
+    //
+    // What changed is which rows reach it. Only a row with an APPROVED
+    // voucher dated outside the year is now excluded, and that is a hard fact
+    // about when the money was liquidated rather than a guess from a travel
+    // date. An unapproved row carries the log's own year and passes.
     var inYear = [];
     parsed.trips.forEach(function (t) {
       if (fy && t.fiscalYear && t.fiscalYear !== fy) {
@@ -241,6 +251,31 @@ var LiabilityLogAdmin = (function () {
     L.push('  skipped, not a trip    ' + p.skipped);
     L.push('  outside ' + (p.fiscalYear || 'FY') + '              ' + p.outOfFiscalYear.length);
     L.push('  -> in scope            ' + p.trips.length);
+
+    // EVERY EXCLUDED ROW IS NAMED, WITH THE DATE THAT EXCLUDED IT.
+    //
+    // A bare count is what cost an afternoon. @clolry's first import reported
+    // "outside FY27  7" and an actual of $22,649.75 against the $30,245.55 he
+    // expected — and the count gave no way to see that the seven were
+    // unapproved September trips the travel-date proxy had put in FY26.
+    //
+    // A row dropped silently is indistinguishable from a row that failed to
+    // parse, and both look like the importer being broken.
+    if (p.outOfFiscalYear.length) {
+      L.push('');
+      L.push('  EXCLUDED — not ' + (p.fiscalYear || 'the configured year') + ':');
+      p.outOfFiscalYear.forEach(function (t) {
+        L.push('    row ' + t.sheetRow + '  ' + t.travelerName.padEnd(28) +
+               t.fiscalYear + '  by ' + t.fiscalYearBasis);
+        L.push('        voucher approved ' + (t.voucherApproved || '(none)') +
+               ', travel ' + (t.startDate || '?') + ' to ' + (t.endDate || '?') +
+               ', actual $' +
+               (t.actualCost === null ? '0.00' : _round2_(t.actualCost).toFixed(2)));
+      });
+      L.push('    A row with an APPROVED voucher dated outside the year is');
+      L.push('    correctly excluded — that is when the money was liquidated.');
+      L.push('    Anything else here is worth questioning.');
+    }
     L.push('');
 
     L.push('WHAT THIS WOULD WRITE TO Requests');
@@ -421,6 +456,43 @@ var LiabilityLogAdmin = (function () {
       }
     }
 
+    // WHICH REQUESTS ALREADY HAVE A TRAVELER ROW.
+    //
+    // @clolry's second run reported travelerRows: 0 with updated: 23 — the 23
+    // trips already existed, so every row took the UPDATE path and no
+    // traveler row was ever created. The per-service-center table stayed
+    // empty for exactly that reason, and I flagged the risk in the previous
+    // commit without fixing it.
+    //
+    // An update must therefore BACKFILL a missing traveler row. Rows imported
+    // before the traveler write existed would otherwise be invisible to the
+    // per-center table forever, and the only remedy would be deleting and
+    // re-importing — which is the kind of instruction that gets ignored and
+    // then looks like a broken feature.
+    //
+    // KEYED ON REQUEST_ID, so a row that already has travelers is left alone.
+    // Appending a second one would double that trip in every per-center
+    // figure.
+    var hasTraveler = {};
+    try {
+      var tData = db.readSheet(SHEET_NAMES.REQUEST_TRAVELERS);
+      if (tData && tData.headers.length && ('Request_ID' in tData.headerIndex)) {
+        var tc = tData.headerIndex['Request_ID'];
+        tData.rows.forEach(function (row) {
+          var id = _str_(row[tc]);
+          if (id) hasTraveler[id] = true;
+        });
+      }
+    } catch (e) {
+      // Reported rather than swallowed: without this map the backfill below
+      // cannot tell a missing traveler row from an existing one, and guessing
+      // either way is worse than saying so.
+      console.warn('LiabilityLogAdmin: could not read ' +
+                   SHEET_NAMES.REQUEST_TRAVELERS + ', so missing traveler ' +
+                   'rows will NOT be backfilled: ' + e.message);
+      hasTraveler = null;
+    }
+
     var nextSeq = _nextLogSeq_(db, now);
     var seqUsed = 0;
     var newRows = [];
@@ -428,6 +500,7 @@ var LiabilityLogAdmin = (function () {
     var keyWrites = [];     // { row, key }
     var updates = [];       // { sheetRow, changes }
     var created = [];
+    var backfilled = 0;     // traveler rows added to pre-existing requests
 
     /**
      * The one traveler row for a trip.
@@ -586,6 +659,20 @@ var LiabilityLogAdmin = (function () {
       }
       updates.push({ requestId: u.requestId, changes: changes,
                      changeList: u.changes });
+
+      // BACKFILL THE MISSING TRAVELER ROW. See hasTraveler above: a trip
+      // imported before the traveler write existed has none, and without one
+      // it is invisible to the per-service-center table.
+      //
+      // `hasTraveler === null` means the sheet could not be read, and in that
+      // case nothing is appended — a duplicate traveler row would double the
+      // trip in every per-center figure, which is worse than leaving it
+      // missing for one more run.
+      if (hasTraveler && !hasTraveler[u.requestId]) {
+        travRows.push(travelerRecord(t, u.requestId, uOffice));
+        hasTraveler[u.requestId] = true;
+        backfilled++;
+      }
     });
 
     // WRITE THE REQUESTS ROWS FIRST, then the keys.
@@ -640,6 +727,10 @@ var LiabilityLogAdmin = (function () {
     return successResponse({
       created: created.length,
       travelerRows: travRows.length,
+      // Reported separately so a run that only backfills does not look like a
+      // run that did nothing. @clolry's second import read "travelerRows: 0,
+      // updated: 23" and the table stayed empty with no explanation on screen.
+      travelerRowsBackfilled: backfilled,
       updated: updates.length,
       unchanged: p.plan.unchanged.length,
       blocked: p.plan.blocked.length,
@@ -649,6 +740,9 @@ var LiabilityLogAdmin = (function () {
       fiscalYear: p.fiscalYear,
       rows: created
     }, 'Imported ' + created.length + ' trip(s) and updated ' + updates.length +
+       '. ' + travRows.length + ' traveler row(s) written' +
+       (backfilled ? ' (' + backfilled + ' backfilled onto trips imported ' +
+                     'before traveler rows were written)' : '') +
        '. ' + keysWritten + ' key(s) written back to the log sheet.' +
        (keyFailures.length
          ? ' ' + keyFailures.length + ' key write(s) FAILED — those rows will ' +

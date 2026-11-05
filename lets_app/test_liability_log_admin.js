@@ -155,22 +155,55 @@ console.log('\n2. the fiscal year comes from column S, and nothing else');
      L.fiscalYearOf('2026-09-30') === 'FY26',
      'one day apart, a different fiscal year, $1,563.83');
 
-  // A ROW WITH NO APPROVED VOUCHER IS IMPORTED AND LABELED, not withheld.
-  // The year comes from the travel end date and is marked provisional;
-  // because the import is re-runnable, it corrects itself after approval.
+  // A ROW WITH NO APPROVED VOUCHER TAKES THE LOG'S OWN YEAR.
+  //
+  // THIS WAS THE $7,595.80 BUG. The fallback used to be the travel end date,
+  // which put September travel in FY26, the FY27 filter dropped it, and
+  // @clolry's import came to $22,649.75 against the $30,245.55 he was
+  // reconciling to — 23 of 30 rows, the other seven excluded.
+  //
+  // @clolry, twice: "100% of the entries on the spreadsheet should be loaded
+  // as FY27 travel." A trip on the FY27 log is FY27 travel. The sheet is
+  // maintained per fiscal year and its name states which; the travel date is
+  // an inference from that, and it was systematically wrong in one direction —
+  // September travel approved in October is the common case at a year
+  // boundary, which is exactly when it matters.
   const pending = CALHOUN.slice();
   pending[18] = '';          // no voucher approved
   pending[17] = '';          // and no actual
-  const tp = L.parseSheet([HEADERS, pending], []).trips[0];
+  const tp = L.parseSheet([HEADERS, pending], [], 'FY27').trips[0];
   ok('a trip with no approved voucher is still imported',
      tp.problems.length === 0, tp.problems);
-  ok('and its year is marked PROVISIONAL',
+  ok('and takes the LOG\'s year, not the travel date\'s',
+     tp.fiscalYear === 'FY27',
+     'its travel ended 2026-09-24, which is FY26 — the old rule dropped it');
+  ok('and the basis records that it is provisional',
      tp.fiscalYearBasis === 'PROVISIONAL_NOT_YET_APPROVED', tp.fiscalYearBasis);
-  ok('and a warning says it corrects itself',
-     tp.warnings.some(w => /corrects itself/.test(w)), tp.warnings);
+  ok('and a warning says the approval date confirms it later',
+     tp.warnings.some(w => /confirmed by the approval date/.test(w)), tp.warnings);
   ok('its status is APPROVED_GOGOV, not COMPLETED',
      tp.status === 'APPROVED_GOGOV',
      'no voucher paid means the travel is authorized, not reconciled');
+
+  // AN APPROVED VOUCHER STILL DECIDES, and still overrides the log's year. A
+  // genuine FY26 liquidation must read FY26 even on an FY27 sheet — that is a
+  // hard fact about when money left, not a guess.
+  const fy26 = CALHOUN.slice();
+  fy26[18] = '9/15/2026';
+  const t26 = L.parseSheet([HEADERS, fy26], [], 'FY27').trips[0];
+  ok('an approved voucher dated in FY26 still reads FY26',
+     t26.fiscalYear === 'FY26' && t26.fiscalYearBasis === 'VOUCHER_APPROVED',
+     'the log year is a fallback, never an override');
+
+  // WITH NO YEAR SUPPLIED the travel date is the only proxy left, and it is
+  // labeled differently so the two cases are not confused.
+  const noYear = L.parseSheet([HEADERS, pending], []).trips[0];
+  ok('with no log year, the travel date is used and labeled as such',
+     noYear.fiscalYearBasis === 'PROVISIONAL_FROM_TRAVEL_DATE',
+     'a caller that does not know the year still gets an answer');
+  ok('and the warning says it is a guess',
+     noYear.warnings.some(w => /guessed from the travel end date/.test(w)),
+     noYear.warnings);
 }
 
 // ---------------------------------------------------------------------------
@@ -522,6 +555,61 @@ console.log('\n9. the editor can actually run it');
   ok('and it is named run..., not diag...',
      !/function diagLiabilityLog/.test(code),
      'a diag* that writes would make the family promise untrue');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n10. an update backfills a missing traveler row');
+{
+  // @clolry's second run: "travelerRows: 0, updated: 23" and the
+  // per-service-center table still empty.
+  //
+  // The 23 trips already existed, so every row took the UPDATE path — which
+  // created no traveler row. I added the traveler write to the INSERT path
+  // only, flagged the gap in the commit message, and did not fix it. The
+  // table had nothing to read for a second run in a row.
+  //
+  // A row imported before the traveler write existed would otherwise be
+  // invisible to that table forever, and the only remedy would be "delete
+  // and re-import" — an instruction that gets ignored and then looks like a
+  // broken feature.
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '')
+                        .replace(/^\s*\/\/.*$/gm, '');
+  const src = fs.readFileSync(SERVER + '40_domain/LiabilityLogAdmin.js', 'utf8');
+  const code = strip(src);
+
+  ok('the update path can append a traveler row',
+     /travRows\.push\(travelerRecord\(t, u\.requestId, uOffice\)\)/.test(code),
+     'the insert path alone leaves pre-existing rows invisible');
+
+  // KEYED ON EXISTING TRAVELER ROWS, so a trip that already has one is left
+  // alone. Appending a second would DOUBLE that trip in every per-center
+  // figure — a worse outcome than the empty table being fixed.
+  ok('it first reads which requests already have travelers',
+     /hasTraveler/.test(code) &&
+     /db\.readSheet\(SHEET_NAMES\.REQUEST_TRAVELERS\)/.test(code));
+  ok('and skips a request that already has one',
+     /!hasTraveler\[u\.requestId\]/.test(code),
+     'a duplicate traveler row doubles the trip in the per-center table');
+  ok('and marks it so two log rows for one request cannot both append',
+     /hasTraveler\[u\.requestId\] = true/.test(code));
+
+  // IF THE TRAVELER SHEET CANNOT BE READ, nothing is appended. Guessing would
+  // risk the duplicate, and one more run with a missing row is recoverable
+  // while a double-counted trip is not obvious.
+  ok('an unreadable traveler sheet disables the backfill rather than guessing',
+     /hasTraveler = null/.test(code) &&
+     /hasTraveler && !hasTraveler\[u\.requestId\]/.test(code),
+     'a duplicate is harder to notice than a gap');
+  ok('and says so rather than failing silently',
+     /will NOT be backfilled/.test(src));
+
+  // REPORTED SEPARATELY, so a run that only backfills does not read as a run
+  // that did nothing — which is exactly how the broken run looked.
+  ok('backfilled rows are counted in the result',
+     /travelerRowsBackfilled: backfilled/.test(code));
+  ok('and named in the message',
+     /backfilled onto trips imported/.test(src),
+     '"travelerRows: 0, updated: 23" explained nothing');
 }
 
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
