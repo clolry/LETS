@@ -1,9 +1,33 @@
 # Handoff — directory sweep completion is derived from the wrong thing
 
-**Status:** one bug open, diagnosed, not fixed. Everything else from this
-session is pushed and working.
+> **RESOLVED, AND THE WHOLE SUBSYSTEM IS NOW OBSOLETE.**
+>
+> **The bug is fixed** in `80bec3b`: completion is derived from a fresh count
+> of positions still needing an address, never from the resume cursor. A run
+> that reaches the end of the roster with work outstanding now wraps its
+> cursor to 0 instead of parking there. `test_directory_lookup.js` §28–29
+> cover it, with four negative controls.
+>
+> **The subsystem it fixes should now be deleted.** @clolry moved the roster
+> to the FC workforce report, which carries an `Employee Email` column —
+> coverage measured at **821 of 821 named rows, zero blank, zero malformed**.
+> The directory lookup existed only because the old FAS HRLinks feed had 33
+> columns and no address. ~5,100 lines across `30_services/DirectoryLookup.js`,
+> `40_domain/DirectoryResolve.js` and `test_directory_lookup.js`, plus the
+> People API scope in `appsscript.json`.
+>
+> Keep `HC_Email_Overrides` and `saveEmailOverride`: it is the only way to
+> correct one person's address that survives the daily import.
+>
+> **The reasoning below is still worth reading** — the three false-completion
+> symptoms and their shared cause are the clearest example in this project of
+> fixing symptoms instead of naming the cause, and SESSION_STATE.md carries
+> it forward as a standing lesson.
 
-**Branch:** `sandbox` @ `cb9dd12`, pushed, clean tree, 38 suites pass.
+**Status:** fixed in `80bec3b`. Subsystem obsolete; see above.
+
+**Branch when written:** `sandbox` @ `cb9dd12`, 38 suites. Now at `6414596`,
+40 suites.
 
 ---
 

@@ -200,7 +200,7 @@ function isHcPositionReachable(position) {
  * above 15 — there are 7 ES rows on the live roster and a DAC is one of them.
  *
  * A NON-NUMERIC, NON-SES GRADE SORTS LOWEST rather than throwing. 'VT-03' is
- * a real value in this data. Sorting it last is a judgement, and the honest
+ * a real value in this data. Sorting it last is a judgment, and the honest
  * one: an unparseable grade is not evidence of seniority.
  *
  * @param {*} a

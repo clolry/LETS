@@ -1,175 +1,435 @@
-# Session state — 2026-11-05
+# Session state — 2026-11-05 (late)
 
 ```sh
 for f in lets_app/test_*.js orgchart_app/test_*.js; do node "$f" >/dev/null || echo "FAIL $f"; done
 node scripts/gen-editor-functions.js --check
 ```
 
-## §0 RESUME HERE — the existing-travel importer is built and NOT COMMITTED
-
-**Everything is on disk in the working tree. Nothing is lost by shutting down.**
-
-Last commit is `e60ac64` (the UI defect fixes, pushed). On top of it sit **18
-uncommitted files** implementing the FY27 workbook importer. State as of
-stopping:
-
-```
-36 test suites pass        (245 assertions in the new one)
-all shell guards pass      (except the pre-existing .claspignore one, §0.3)
-nothing committed
-nothing browser-verified
-```
-
-### §0.1 First commands tomorrow
-
-```sh
-cd ~/Documents/Projects/LETS
-git status --short                  # expect 14 modified, 5 untracked
-for f in lets_app/test_*.js orgchart_app/test_*.js; do node "$f" || echo "FAIL $f"; done
-
-# The measured test fixture lives in /tmp and IS LOST on reboot. §21 of
-# test_travel_import.js will SKIP until you regenerate it. One command:
-python3 scripts/workbook_to_fixture.py
-node lets_app/test_travel_import.js   # §21 now runs: expect 28 requests, 10 expenses
-```
-
-That script is **committed** (`scripts/workbook_to_fixture.py`), so the only
-thing reboot costs is one command.
-
-### §0.2 What is uncommitted, and what each file is for
-
-| File | New? | What |
-|---|---|---|
-| `server/30_services/TravelImport.js` | **new** | The engine. Mapping, parse, scope, validate, diff, preview. No spreadsheet calls — that is what makes it testable |
-| `server/40_domain/TravelImportAdmin.js` | **new** | Writes + 7 admin-guarded entrypoints: preview / commit / rollback / history |
-| `test_travel_import.js` | **new** | 245 assertions, 23 sections, 6 negative controls |
-| `scripts/workbook_to_fixture.py` | **new** | Regenerates the `/tmp` fixture §21 needs |
-| `docs/DEPLOYMENT_TRAVEL_IMPORT.md` | **new** | How to deploy, run, and undo. **§0 of it is the thing to tell Chiquita** |
-| `server/01_constants/Sheets.js` | mod | `Travel_Imports` (42 cols) + `Import_Batches` (27 cols) |
-| `server/40_domain/BudgetDashboard.js` | mod | A reconciled `Actual_Total` now beats the estimate; the payload reports the split |
-| `client/pages/travelBudgetDashboardPage.html` | mod | 4-step import wizard, batch history, rollback |
-| `test_budget_dashboard.js` | mod | §6b — reconciled vs estimated actuals, and the blank-is-not-zero trap |
-| `docs/DATA_DICTIONARY.md` | mod | §3.5.1c — the full schema reasoning |
-| `docs/README.md` | mod | Three route-by-question entries |
-| `.github/workflows/verify.yml` | mod | 1 test step + 6 guards, each negative-controlled |
-| `.gitignore` | mod | The workbook — 1,900 real names — is now ignored |
-| `lets_app/.claspignore` | mod | The two new test suites |
-| 4 shell scripts | mod | **mode-only** `100644→100755`, from a previous session |
-
-### §0.3 Three things that need a decision, not more work
-
-1. **Commit it.** I did not commit; AGENTS.md requires asking. One commit or
-   four (schemas → engine+tests → UI → docs) — your call.
-2. **`.claspignore` still fails CI.** Pre-existing, from before this work. The
-   bare `test_*.js` glob is not a filename, so the stale-entry guard rejects
-   it. One line to delete; every suite is already listed by name above it.
-3. **Browser verification is still outstanding**, now for two increments — the
-   UI fixes (which you verified) and this importer (which nobody has run).
-
-### §0.4 The one finding to carry into the next conversation
-
-**LETS will not match Chiquita's variance column, deliberately.** Hers is
-computed from Report Total (what the traveler claimed); LETS uses Amount
-Approved (what GSA paid). Across her 20 matched rows: hers **−$326.93**, true
-**−$1,491.32**, gap **$1,164.39** — exactly the disallowed amount. You already
-ruled on this during the Go.gov work. **She should be told before the two
-diverge in a meeting.** Every import batch records `Variance_Basis` so the
-question has an answer on the record.
+40 suites, 18 verify.yml guards, 87 editor functions. Branch `sandbox`, level
+with `origin/sandbox` at `6414596`. Clean tree, nothing uncommitted.
 
 ---
 
-## Where things stand (older context, still true)
+## §0 RESUME HERE
 
-Branch `sandbox`, level with `origin/sandbox` at `e60ac64`.
+Everything described below is committed and pushed. The HR roster, the
+Service Center Director resolution and the per-capita headcount are all
+correct against live data and confirmed by @clolry's own runs.
 
-`origin/main` is behind sandbox and will need a PR eventually.
+### §0.1 The next piece of work, and it is a design change
 
-```sh
-for f in lets_app/test_*.js orgchart_app/test_*.js; do node "$f" || echo "FAIL $f"; done
-```
+**Every ASD employee needs to submit their own travel request, routing through
+their supervisor.** @clolry: "AAS built TRIP to have requests submitted by a
+director but our Chief of Staff wants individual employees to submit requests
+on their own (and route through their supervisor/director/SCD, etc). I'm
+concerned that this shift hasn't been included in the design."
 
-## One bug open
+He is right that it has not been. Two gaps, and the second is larger than it
+looks:
 
-**The directory email sweep reports false completion.** Full writeup in
-`docs/handoff/03-directory-sweep-completion.md` — read that before touching
-`DirectoryResolve.js`.
+**1. 866 of 1,046 positions cannot sign in at all.** `canAccessTrip`
+(`30_services/Access.js:540`) has exactly three allow paths: a
+`Travel_User_Roles` row, a supervisory HC position, or a BU-lead title. A
+non-supervisory employee with no role row is DENIED at `Access.js:631`. There
+are 3 rows in `Travel_Users`.
 
+**2. There is no supervisor stage in the workflow.** The chain is
+`Sector → BU → OSO → FAS`, and `determineInitialRouting`
+(`40_domain/Submission.js:85`) goes straight to the Service Center Director.
 
-Short version: `complete` is derived from where the resume cursor sits rather
-than from whether anyone still needs an address. The cursor is parked at 1046
-(the roster length), so `runDirectoryResolve` does nothing and reports success.
-**Roughly 218 of 823 staffed positions still have no email.**
+Decisions @clolry has already made on this:
 
-I fixed this symptom twice already, by two other routes, without naming the
-shared cause. Fix the derivation, not the third symptom.
+- **Supervisor = the highest-grade person with `Supv Lvl != 8` in the SAME org
+  code as the requestor.** Not the reports-to chain — so it does not depend on
+  `Reports_To_Position_Number` being accurate.
+- **The supervisor stage does NOT replace the SCD stage.** New chain:
+  `supervisor → SCD → DAC → ASD T&E → FAS`.
+- **A supervisor submitting their own request skips to the next approver**,
+  matching the existing "you cannot review your own request" rules.
 
-**2. Browser verification.** The UI defect fixes ARE verified (2026-11-04).
-The workbook importer is not — no live import has run.
+What this needs, for scoping: a new `PENDING_SUPERVISOR` status, two new
+actions in `Review_Action.js` (`supervisor_approve`, `supervisor_needs_info`),
+status-group membership in `01_constants/Status.js`, a stage label in
+`travelUtils.html:343` (`describeReviewStage`), and an access path for the 866. `PENDING_SECTOR`
+appears 87 times across 26 files — that is the blast radius to expect for a
+new stage.
 
-**3. `setupTravelDatabase()` needs running** to create the new tabs:
-`Feedback`, `Historical_Events`, `Budget_Allocations`, `Expense_Imports`, and
-now `Travel_Imports` + `Import_Batches`. Until then those features fail with
-"tab not found". Safe to re-run — `createOrUpdateSheet` is idempotent.
+### §0.2 Smaller things that are ready to do
 
-Immediate unblock, no code: run `resolveDirectoryEmails({startIndex: 0})` from
-a scratch function. Twice covers the backlog.
+- **Delete the directory email lookup.** ~5,100 lines across
+  `30_services/DirectoryLookup.js`, `40_domain/DirectoryResolve.js` and
+  `test_directory_lookup.js`, plus the People API scope in `appsscript.json`.
+  It existed only because the old HR feed had no email column. The new feed's
+  coverage is **821 of 821 named rows, zero blank, zero malformed** —
+  @clolry's own `diagnoseHrFeedSource()` run. Keep `HC_Email_Overrides` and
+  `saveEmailOverride`: it is the only way to correct one person's address that
+  survives the daily import.
+- **The 22-row per-capita table is computed and rendered nowhere.**
+  `BudgetDashboard.js:1059` puts `serviceCenters` in the payload;
+  `travelBudgetDashboardPage.html` reads `d.offices` (4 DACs) and never
+  touches it. The only way to see the 22 centers today is
+  `showServiceCenterHeadcount()` in the editor.
+- **`setupTravelDatabase()` still needs running** to create `Feedback`,
+  `Historical_Events`, `Budget_Allocations`, `Expense_Imports`,
+  `Travel_Imports` and `Import_Batches`. Idempotent; safe to re-run.
 
-**Do not install `installDirectoryLookupTrigger()` yet** — every 10 minutes it
-would do nothing and log success.
+---
 
-## What landed today, all verified against live data
+## The HR roster: source, vocabulary, and what each column decides
 
-**FY27 budget model is correct and live.** @clolry's agreed set-asides, 30
-lines, $552,500. Discretionary: OMD $61,587.50, IDV $306,700.00, CM
-$76,212.50, FO $0.00 — $444,500 total, matching his Travel Summary tab.
+**The source changed.** @clolry: "I was able to get access to a completely
+different data source. It's specific to FC only (and doesn't have the rest of
+FAS) and it includes all of the information we need - including an email
+address!"
 
-The $48k FC senior advisor is `FUNDED_FROM_RELEASES` at $0 after the Chief of
-Staff declined to charge the DACs. `SetAsideRelease.js` records releases from
-cancelled Q1 events; nothing released yet.
+Script Properties `FC_WF_Data_Report` and `FC_WF_Tab` are set and live:
+spreadsheet `1dvljU6a3dG1jyDkowb9_3XlT3K3pPfzJnTLvDOZHC0o`, tab
+**`Employee Roster`**, 1,047 rows × 46 columns. `FAS_HRLinks_Feed` and
+`FAS_HRLinks_Feed_Tab` are deleted and nothing reads them.
 
-**Per-capita service-center split works off the real roster.** 817 filled
-positions, 22 service centers, foots to $444,500 exactly by largest-remainder.
-Keyed on org code throughout — `FCBAB` and `FCBBA` are both "Acquisition
-Service Center 1", so a name-keyed roll-up would merge six centers into three.
+The workbook has six other tabs that LETS does not read: `Joiners`,
+`Separations`, `Reassignments`, `Career Ladder Due`, `Security Clearance`,
+`Email Listing-by geographical Zone`.
 
-`showServiceCenterHeadcount()` in `40_domain/HCRosterSync.js` prints the table.
+### The two vocabularies, measured — not assumed
 
-**The real HR roster is imported.** 1,046 ASD positions from the FAS HRLinks
-feed, scoped to `FC` — the feed is 4,274 rows across all five FAS portfolios,
-and importing it would have granted LETS access to several hundred supervisors
-outside ASD. 16 fictional seed positions and @clolry's 8 test rows removed.
+`diagnoseHrFeedSource()` prints both. These are the values that decide site
+access and the budget denominator, so they are recorded here verbatim.
 
-**Directory email lookup resolves 46 of 50.** The matching logic is sound; see
-the handoff for the method table and the deliberate refusals. Three nicknames
-need @clolry — Kittrell→Kim, Cayo→Win, Schollaert→Charley — and `Hall,Joseph C`
-is unresolvable from three disagreeing sources.
+**`Supv Lvl`**, with the feed's own description column beside it:
+
+| code | n | description |
+|---|---|---|
+| 2 | 167 | Supervisor or Manager |
+| 4 | 6 | Supervisor (CSRA) |
+| 5 | 1 | Management Official (CSRA) |
+| 7 | 6 | Team Leader |
+| 8 | 866 | Non-Supervisory |
+
+**Anything except 8 is a supervisor.** @clolry ruled on this. The rule lives
+once, in `01_constants/HCRules.js`, written as a **deny-list** — "is this not
+8" rather than "is this one of 2/4/5/7" — so a code HR adds later cannot
+silently lock a supervisor out. The cost is that an unknown code grants
+access; `diagHcData` prints a code census and
+`HCAdmin.validateHCPosition` warns, so that is visible rather than inferred.
+
+**`Position Status Type`:**
+
+| value | n | normalizes to |
+|---|---|---|
+| APPROVED | 804 | FILLED (the NAME decides whether anyone is in it) |
+| VACANT | 207 | VACANT |
+| OBLIGATED | 19 | OBLIGATED |
+| TEMP PROMOTION | 11 | FILLED |
+| TEMPORARY | 5 | FILLED |
+
+**None of APPROVED, TEMP PROMOTION or TEMPORARY contains `FILL` or
+`ENCUMBER`**, so under the old substring rules all 820 reached FILLED through
+a *fallback* rather than a match. The answer came out roughly right, which is
+worse than wrong: the per-capita denominator was a guess on 78% of the roster
+and nothing said so. Now matched explicitly against `OCCUPANCY_VOCABULARY`,
+with `isKnownOccupancy` reporting match-versus-absorbed.
+
+### The column mapping, and the four that were judgment calls
+
+| LETS field | column | note |
+|---|---|---|
+| positionNumber | `Employee Position Number` | was `Position#` |
+| employeeName | `Name` | |
+| emailAddress | `Employee Email` | **authoritative** — @clolry: "definitive and without question" |
+| orgCode | `Dept ID` | NOT `Dept. ID 2 Letter` |
+| supervisoryStatus | `Supv Lvl` | NOT `Supervisor Level Desc.` |
+| occupancyStatus | `Position Status Type` | |
+| grade | `Grade` + `PP` | was the `PP-Series-Grd` composite |
+| reportsTo | `Reports to\nPosition\nNumber` | NOT the supervisor name or email |
+
+**`Dept ID`, not `Dept. ID 2 Letter`.** The two-letter column is a portfolio
+abbreviation; reading it as the org code would collapse the whole roster into
+one bucket and make all 22 per-capita shares identical — precise-looking and
+meaningless. Same class of error as `POI` on the old feed.
+
+**`Employee Email`, not `Reports to Supervisor Email`.** The latter is the
+boss's address on the employee's row. Mapping it would hand every person their
+supervisor's identity, against the exact field the access gate matches on.
+
+**Headers arrive with EMBEDDED NEWLINES** — the sheet wraps them inside the
+cell, so `Employee\nID`, `Reports to\nPosition\nNumber`, `Occ\nSeries`.
+`_norm_` collapsing whitespace is load-bearing, not cosmetic: without it four
+fields fail to map silently.
+
+**Pay columns stay unmapped and are asserted so** — `Base Pay`,
+`Local Adjust`, `Total Pay`, `Step`, `SCD Leave`. Salary is not travel data.
+
+**One `Record Date` (11/01/2026), 1,046 distinct position numbers, zero
+duplicates.** If that sheet ever carries two snapshot dates, every position
+appears twice and `validateRow` blocks the lot — correctly, since a duplicate
+key makes one of two real people invisible.
+
+---
+
+## Service Center Directors — resolved, and confirmed live
+
+**21 of 22 centers route to a real person.** @clolry's
+`diagServiceCenterDirectors()` run, 12:29 PM.
+
+### What was wrong
+
+Five call sites identified an SCD by matching `officeTitle` against the string
+`'sector director'`. @clolry: "We don't call them Sector Directors, we call
+them Service Center Directors." **No position in this organization carries
+that title** — the live title census confirms zero.
+
+So `findSectorDirector` returned null for every submission,
+`determineInitialRouting` took its "no SD found" branch, and every request in
+LETS started at the DAC stage with `Sector_Director_Name` blank. Nothing
+errored; the SCD review stage simply never happened.
+
+### The rule now
+
+The most senior supervisory person whose own `Dept ID` sits at
+`Org_Level = SERVICE_CENTER`, read through `HC.orgAncestorAtLevel`:
+
+- **level, never length** — see the truncation note below
+- **supervisory = `Supv Lvl != 8`** (`isHcSupervisoryCode`)
+- **the seat must hold a person** (`isHcSeatOccupied` — only VACANT means
+  nobody)
+- **reachable, i.e. has an address** (`isHcPositionReachable`)
+- **highest grade breaks a tie** (`compareHcGrade`, SES above every number)
+
+The **grade-15 requirement is gone**. @clolry: "I don't know why we would need
+to check the grade." Measured, it rejected only vacant seats and a grade-14
+acting lead — and it would reject an SES director outright, since an SES grade
+normalizes to `ES`.
+
+### The three centers with more than one candidate
+
+| center | resolution |
+|---|---|
+| FCA0E | 3 candidates; 2 are VACANT → Irvin, Kristen T |
+| FCC0B | 2 candidates; 1 is VACANT → Stewart, Kyra |
+| FCC0C | 3 candidates → **Eberle, Scott M, from an OBLIGATED seat**, over a FILLED grade-14 Lead |
+
+**FCB0B routes nowhere, correctly** — its one supervisory seat is vacant, so
+it cascades to the DAC.
+
+**FCA0A → Wynings, Taylor S**, who the old `=== '2'` rule could not see. His
+title is "Chief of Staff", which independently grants BU-lead access, so he
+appears at two routing stages and can approve his own request. @clolry: "Having
+Taylor approve his own requests is ok because eventually when he makes a
+reservation in Go.gov it will route to his supervisor (Jack Tekus) for
+approval." **Settled, deliberately.**
+
+---
+
+## Findings that must not be relearned
+
+### An OBLIGATED seat holds a real person
+
+The roster's own vocabulary reads like an absence and is not one. @clolry,
+twice: "Scott Eberle is acting as the supervisor for FCC0C."
+
+**19 OBLIGATED rows against 11 TEMP PROMOTION rows.** If every obligated seat
+were the permanent half of a temp-promotion pair those counts would match.
+They do not, so at least eight people hold ONLY an obligated row and have no
+other row to be found at.
+
+I got this wrong twice, in two layers, one commit apart:
+
+1. **The headcount** counted `occupancyStatus === 'FILLED'` only, so Eberle was
+   counted zero times — and `duplicatePeople` could not report it, because it
+   returns early for anyone holding fewer than two positions.
+2. **The SCD lookup and the access gate** excluded OBLIGATED, which I justified
+   as "the occupant is working elsewhere, so THAT row is where they sign in."
+   True of the eleven paired people. False of everyone else.
+
+**The second one named the WRONG director, not none** — FCC0C resolved to a
+grade-14 "Lead" because Eberle was filtered out before the grade tie-break
+ran. A plausible name appeared, so nothing looked broken. The retired grade-15
+check had been masking it by rejecting the Lead too.
+
+The two rules now differ only in what they ask:
+
+| | question | OBLIGATED |
+|---|---|---|
+| `isHcSeatOccupied` | is there a person in this seat? | **yes** |
+| `hcCountableByPerson` | which ONE seat represents this person? | prefer the other one |
+
+Both headers say why. Sharing a single "is this seat real" predicate is the
+obvious-looking simplification that would break one of them.
+
+### A 4-character sector code was inherited, not derived
+
+About a dozen sites computed a sector as `orgCode.substring(0, 4)`. That was
+correct for the previous workgroup — `OrgLookup.js:118` records
+`QFAA = Army's Sector 1`, where four characters WAS the sector — and it was
+carried over without re-deriving against this org.
+
+Here a service center is **five** characters, so `FCA0` is not an org code at
+all; the `0` is a filler, not a level. The 22 centers collapsed into 6
+buckets, three named for codes that do not exist.
+
+**Lengthening it to 5 would not have fixed it.** 130 of 137 codes agree with a
+5-char truncation; the other seven are `FC`, `FCA`, `FCB`, `FCC`, `FCBA`,
+`FCBB`, `FCCA` — everyone at or above an office. Truncation hands those people
+their own code as their service center. The stored walk returns `''`, which is
+the truth: they have none, and they route from the DAC stage. Depth also
+varies by branch — FCA has no sub-office level while FCB and FCC do, so FCA0A
+is two levels deep and FCBAA three.
+
+**The two defects concealed each other.** Fixing the title match alone would
+have made it worse: a correct SCD returns `FCA0B` while the dashboards still
+computed `FCA0`, the two never compare equal, and the director reaches an
+empty queue that reads as "no requests yet."
+
+### The `sector_override` over-grant is latent
+
+`active sector_override rows: 0`, so nothing is wrong today. It would appear
+the first time one is granted.
+
+`HC_Orgs.Sector` is `'ASD'` on **all 137 rows**, so a single scope name
+matches the whole organization. Scope `"ASD"` resolves to 137 of 137 org
+codes. The scope *matchers* are fixed (`orgCodeInScope` walks the hierarchy),
+but the **scope VALUE** is still a sector NAME, and that name is useless as a
+discriminator here. If `sector_override` is ever to be used, `Scope` should
+hold a `SERVICE_CENTER` code and the Users page should offer the 22 centers
+rather than one meaningless "ASD".
+
+### A completion signal must be derived from the work, not from a cursor
+
+The directory sweep reported false completion three times, by three routes,
+each fixed in isolation before the shared cause was named: `complete` came
+from WHERE THE CURSOR SAT, never from whether anyone still needed an address.
+The third symptom — cursor parked at 1046 of 1046 — cost @clolry eight manual
+runs that did nothing and logged success. Fixed in `80bec3b` by deriving
+completion from a fresh count of outstanding work.
+
+### A guard must assert the thing, not a proxy for it
+
+Four occurrences now, and the newest is the clearest:
+
+- **`.length` is not evidence of printing.** `diagServiceCenterDirectors`
+  computed two report sections and printed neither. My first test accepted
+  `unresolved.length` as a read — but that is the `if` guard above the
+  `forEach`, so deleting the `forEach` still passed. Tightened to require
+  `forEach`/`join`/`map`.
+- **Strip comments before asserting on source text.** Six occurrences. A
+  file's own explanation of why it does not do X satisfies a naive grep for X.
+- **Negative controls break silently when their patch target moves.** Anchor
+  on code the change under test must touch, not on a comment or a variable
+  name.
+- **Count-threshold guards do not bite.** `grep -c ... -lt 5` passed when a
+  fifth entry point was added and any single guard deleted.
+
+### A scripted multi-part edit can half-apply
+
+The missing report sections were caused by a Python edit that applied its
+first replacement, raised on a later anchor, and never wrote the file. An
+unused variable is not a JS error and no test read that output, so nothing
+failed. **Re-read the result of every scripted edit.**
+
+### @clolry's live output has caught more than any test
+
+The eight Halls, the org suffix on surnames, OBLIGATED meaning a temp
+promotion, the FCC0C wrong-director, the two unprinted report sections. **Ask
+for a real run before building the next layer on an assumption.**
+
+### Other standing traps
+
+**`grep` treats several repo files as binary** because they contain `✓`/`⚠`
+and this container has no UTF-8 locale. Output-consuming greps need `-a` or
+the guard silently passes. `test_branding.js` §7c enforces this; two guards
+had been dead for exactly this reason.
+
+**Go.gov truncates trip names at exactly 40 characters.** So the LETS ID goes
+at the FRONT. This is the whole basis of the SOP.
+
+**`Amount Approved`, never `Report Total`.** They differ on 51 of 274 rows by
+$6,009.34.
+
+**An ID match must still verify the traveler.** The test asserting this FAILED
+when first written — Brandon Maness's $1,922.96 landed on another traveler's
+request.
+
+---
 
 ## Known-good numbers, for checking a regression against
 
 | | |
 |---|---|
 | ASD discretionary | $444,500.00 |
-| Filled positions | 817 of 1,046 |
+| Roster positions | 1,046 |
+| Named rows (people) | 821 |
+| Email coverage | 821 of 821 — zero gaps |
 | Service centers | 22 |
+| Centers routing to a real person | 21 of 22 (FCB0B vacant) |
 | Org codes in `HC_Orgs` | 137 |
-| Staffed positions needing an email | ~218 remaining of 564 |
-| FY27 travel log rows | 30, all FY27 by voucher-approval date |
+| Supervisory positions (`!= 8`) | 180 of 1,046 |
+| Non-supervisory | 866 |
+| OBLIGATED rows | 19 |
+| TEMP PROMOTION rows | 11 |
+| Directors from an OBLIGATED seat | 1 (Eberle, FCC0C) |
+| FY27 travel log rows | 30 |
+
+---
+
+## Decisions @clolry made, so they are settled
+
+**On the roster and identification:**
+
+- Anything except `Supv Lvl` 8 is a supervisor; 8 is not.
+- A Service Center Director is identified by `Org_Level`, never by title.
+- No grade check on the SCD lookup. Grade breaks ties only.
+- Two supervisors in one workgroup → the higher grade wins.
+- Eberle is included in the FCC0C headcount, and is its approver.
+- **American spelling everywhere, including identifiers.** "please NEVER use
+  the brittish spelling."
+
+**On routing and access:**
+
+- Every employee submits their own request; it routes through their
+  supervisor.
+- Supervisor = highest grade `!= 8` in the same org code.
+- The supervisor stage is additional, not a replacement for the SCD stage.
+- A supervisor's own request goes to the next approver.
+- Taylor Wynings approving his own request is acceptable — Go.gov routes it to
+  Jack Tekus afterward.
+
+**Older, still binding:**
+
+- Reuse the `BACKFILL` marker rather than a new status for imports.
+- Actuals trip-level only; estimates keep their category breakdown.
+- Budget figures readable by all, writable by admins — "we're trying to
+  develop transparency."
+- Org attribution comes from LETS, never Go.gov's `Org Level 3`.
+- Fiscal year is 1 October – 30 September.
+- Eventually all five FAS portfolios; for now ASD/FC only.
+
+---
 
 ## Still waiting on @clolry
 
-- **Three nickname decisions** via `runEmailResolutionQueue()`. Each prints a
-  pre-filled `saveEmailOverride(...)`; they persist in `HC_Email_Overrides`
-  through every future import.
-- **`Hall,Joseph C`** — does that account exist? Feed says `FCA0BAA`, directory
-  says nothing, manual org chart says `joe.hall@gsa.gov` which he could not
-  resolve.
-- **Whether `FCA0EA` is contractor-heavy.** Five of six unresolvable names were
-  in that one service center, which is unlikely to be chance.
+- **Nothing is blocking.** The three nickname decisions and the
+  `Hall,Joseph C` question are **void** — the new feed carries every address,
+  so there is nothing to resolve by hand.
+- **Whether `FCA0EA` is contractor-heavy** was a directory-lookup question and
+  no longer matters.
+- **Does Chiquita keep maintaining her workbook**, or does LETS become the
+  source of truth after the first import? The importer supports repeated runs
+  either way; the answer decides whether anyone keeps reconciling two sets of
+  numbers.
+- **She should be told that LETS will not match her variance column**, before
+  the two diverge in a meeting. Hers is computed from Report Total (claimed),
+  LETS uses Amount Approved (paid). Across her 20 matched rows: hers
+  −$326.93, true −$1,491.32, gap $1,164.39 — exactly the disallowed amount.
+  Every batch records `Variance_Basis` so the question has an answer on the
+  record.
+
+---
 
 ## Not started
 
-**The Org Code ledger**, which @clolry asked for and is the next substantial
-piece of work. His specification, verbatim in intent:
+**The Org Code ledger**, the next substantial piece after routing. @clolry's
+specification:
 
 > Columns for Org Code, Trips, Estimated $, Actual $, Pending $, Total
 > Committed, Allocated Budget, Remaining Budget, Budget Health (colored bar).
@@ -178,7 +438,7 @@ piece of work. His specification, verbatim in intent:
 > three dollar columns. Filterable by all orgs / FC / FCA etc., searchable by
 > org code or traveler.
 
-Decisions he already made:
+Decisions already made:
 
 - Estimated/Actual/Pending as three columns; estimates retained after actuals
   arrive.
@@ -191,33 +451,16 @@ Decisions he already made:
   already does this correctly; reuse it.
 
 **The daily liability-log pull.** `LiabilityLogSync.js` parses and plans but
-has no sheet read or trigger. `LIABILITY_LOG_SHEET_ID` is set. @clolry approved
-writing a `LETS_Key` column back to his sheet for idempotency — the log's own
-`Document Number` is empty on 29 of 30 rows.
+has no sheet read or trigger. `LIABILITY_LOG_SHEET_ID` is set. @clolry
+approved writing a `LETS_Key` column back to his sheet for idempotency — the
+log's own `Document Number` is empty on 29 of 30 rows.
 
-**Five `sector director` call sites** still match a title that does not exist
-in this organization, so all five find nobody. Should use `Org_Level ===
-'SERVICE_CENTER'`.
+**Event set-asides**, asked for three sessions ago. Nothing blocks it now that
+the dashboard knows real balances.
 
-## Process notes worth carrying forward
+**Org chart web app** (`orgchart_app/`) — built, never rendered.
 
-**A completion signal must be derived from the work, not from a cursor.** Three
-false-completion bugs in one evening, each fixed in isolation. The pattern
-cost @clolry eight manual runs.
-
-**Strip comments before asserting on source text.** Four occurrences now —
-`test_markup_integrity`, `test_page_markup`, `test_hc_roster_import`,
-`test_directory_lookup` §7. A file's own explanation of why it does not do X
-satisfies a naive grep for X.
-
-**Negative controls break silently when their patch target moves.** Three
-occurrences, all anchored on a comment or a renamed variable. Anchor on code
-that the change under test must touch.
-
-**@clolry's live output has caught things no test did** — the eight Halls, the
-org suffix on surnames, `OBLIGATED` meaning a temp promotion, five "missing"
-people who autocompleted instantly in his email client. Ask for a real run
-before building the next layer on an assumption.
+---
 
 ## Reference files — LOCAL ONLY, never commit
 
@@ -225,222 +468,77 @@ before building the next layer on an assumption.
 liability log. Gitignored by pattern; `test_hc_roster_import.js` §7 fails the
 build if any server file references that directory.
 
-The May staffing plan (`Copy of ASD Staffing Plan 5-12-26.xlsx`) is **stale and
-must not be read** — it puts Melissa Mould in the wrong org, and every
+The May staffing plan (`Copy of ASD Staffing Plan 5-12-26.xlsx`) is **stale
+and must not be read** — it puts Melissa Mould in the wrong org, and every
 per-capita figure derived from it was wrong. The roster comes from the
-`FAS_HRLinks_Feed` property and nothing else.
-
-Gitignored, and verified absent from all history via
-`git log --all -- 'reference_excel_files/*'`:
+`FC_WF_Data_Report` property and nothing else, and
+`getFcWorkforceFeedSource()` returns an ERROR rather than a default precisely
+because every available fallback is a stale roster.
 
 | file | contents |
 |---|---|
-| `report_12947.xls` | 182 expense rows, first sample |
+| `report_12947.xls` | 182 expense rows |
 | `Expense Report (Sept-Nov).xls` | 522 rows, 391 real traveler names + employee IDs |
 | `Travel requests (Sept - Nov).xls` | 565 rows, 415 real names |
-| `Copy of ASD Staffing Plan 5-12-26.xlsx` | 806 named ASD staff, 132 org codes |
+| `Copy of ASD Staffing Plan 5-12-26.xlsx` | **STALE** — 806 named staff |
+| `_Expense Report Calculations File for LETS.xlsx` | Chiquita's workbook, 8 tabs, ~1,900 names |
 
-The two `FY23 *.xlsx` files were already tracked and contain no names.
-
-`test_gogov_sync.js` §8 reads `/tmp/opencode/req.json` and `exp.json` and
-SKIPS cleanly when absent, so a fresh checkout passes. To restore them:
+`test_gogov_sync.js` §8 and `test_travel_import.js` §21 read fixtures from
+`/tmp` and SKIP cleanly when absent, so a fresh checkout passes. §21's fixture
+regenerates with one command:
 
 ```sh
-pip install --break-system-packages --target=/tmp/opencode/pylibs xlrd openpyxl
-# then the xlrd dump used in this session — see the §8 comment
+python3 scripts/workbook_to_fixture.py    # expect 28 requests, 10 expenses
 ```
 
-## What is built, and what is not
+---
 
-**Done and committed:**
-
-- Budget KPIs reading live data (`40_domain/BudgetDashboard.js`)
-- Admin allocations, append-only and versioned (`40_domain/BudgetAdmin.js`)
-- Existing-travel import, trip-level (`40_domain/BudgetBackfill.js`)
-- Event attendance history (`30_services/EventHistory.js`)
-- Go.gov parser + matcher (`30_services/GogovSync.js`) — **no UI, not reachable**
-- Org chart web app (`orgchart_app/`) — **never rendered**
-
-**Next, in the order agreed:**
-
-1. **Roster importer** — 806 people from the staffing plan. Position number as
-   key, org from `Office Symbol`, resolving through the existing 137-code
-   hierarchy. Must flag rather than silently resolve: 6 duplicate position
-   numbers, 2 cells holding two PNs (`'90020413\n90003677'`), 8 PNs that read
-   as floats (`90034839.0`).
-2. **Expense filter** — roster match plus a learned Go.gov Employee ID
-   crosswalk. Unmatched rows must stay visible with a dollar total.
-3. **Request importer** — 565 Go.gov requests, same filter, created as
-   `BACKFILL:` carrying `Gogov_Request_ID`.
-4. **Reconciliation review screen** — for the ~55% needing a human.
-5. **Event set-asides** — asked for two sessions ago, still not built. Nothing
-   blocks it now that the dashboard knows real balances.
-
-## Findings that must not be relearned
-
-**Go.gov truncates trip names at exactly 40 characters.** 79 request names are
-exactly 40, zero are longer. So the LETS ID goes at the FRONT of the name —
-a suffix gets truncated away on precisely the long-title trips most likely to
-be expensive. This is the whole basis of the SOP.
-
-**The request ID is now `L27-0001`**, 8 characters, fiscal-year prefixed.
-Legacy `REQ-2026-0001` rows stay valid for ever — the validator guards a
-lookup, so rejecting them would make existing requests unfindable. The short
-form is matched MORE strictly than the legacy one: `L27` is three characters
-that can occur by accident, and a loose pattern matched `Order L270001-A`
-against 1,087 real titles. See DATA_DICTIONARY §3.2.4.
-
-**`Amount Approved`, never `Report Total`.** They differ on 37 of 182 rows by
-$4,569.93. Report Total is what the traveler claimed; Amount Approved is what
-GSA paid.
-
-**One monthly export spans two fiscal years.** $537,451.15 FY2026 and
-$269,890.88 FY2027 in the 522-row file. Every row is bucketed on its own date.
-
-**Two date encodings in one file set.** `Report End Date` is TEXT
-`YYYY-MM-DD`; `Submit Date` and the request dates are Excel serials.
-
-**An ID match must still verify the traveler.** The test asserting this FAILED
-when first written: a cited LETS ID was trusted alone, and three real expense
-reports were auto-matched to other people's requests — Brandon Maness's
-$1,922.96 landed on another traveler's request. One mistyped digit moves money
-between travelers.
-
-**91 unmatched expense rows share a surname with someone on the roster**
-(`Miller, Aurelio H.` vs roster `Miller,Anthony C`). They are different people
-and correctly excluded. First-name-exact is the right rule; a fuzzy matcher
-would attribute another office's spend to ASD.
-
-**`grep` treats several repo files as binary** because they contain `✓`/`⚠` and
-this container has no UTF-8 locale. Output-consuming greps need `-a` or they
-print "binary file matches" and the guard silently passes. `test_branding.js`
-§7c now enforces this. Two guards had been dead for exactly this reason.
-
-**Count-threshold guards do not bite.** The HCAdmin guard used
-`grep -c ... -lt 5`; adding a fifth entry point meant deleting any single
-guard still passed. Per-function body extraction replaced it.
-
-## Decisions @clolry made, so they are settled
-
-- Reuse the `BACKFILL` marker rather than a new `IMPORTED_PLANNED` status —
-  "I just want to add the requests without having them go through the approval
-  process again because they're already approved."
-- Mapping UI, not a hardcoded parser.
-- Actuals trip-level only; estimates keep their category breakdown.
-- Budget figures readable by all users, writable by admins only —
-  "we're trying to develop transparency."
-- Org attribution comes from LETS, never from Go.gov's `Org Level 3` (which is
-  `F` for every row).
-- Event history stays blank rather than zero where org detail was never
-  recorded.
-- Fiscal year is 1 October – 30 September.
-
-## Existing-travel import — built 2026-11-04, NOT COMMITTED
-
-See **§0** at the top for the resume steps and the file inventory. This section
-is the detail behind it.
-
-@clolry asked for a repeatable FY27 importer using Chiquita's workbook
-(`_Expense Report Calculations File for LETS.xlsx`, 8 tabs). Scope chosen:
-**FY27 only, ASD employees only** — 28 requests ($46,196.19) and 10 expense
-reports ($16,863.62) out of 1,024 and 274 source rows.
-
-Full detail in `docs/DEPLOYMENT_TRAVEL_IMPORT.md`. The three things worth
-knowing without opening it:
-
-1. **LETS will not match Chiquita's variance column, deliberately.** Hers is
-   computed from Report Total (claimed); LETS uses Amount Approved (paid).
-   Across her 20 matched rows: hers −$326.93, true −$1,491.32, gap $1,164.39
-   — exactly the disallowed amount. @clolry already ruled on this. **She
-   should be told before the two diverge in a meeting.**
-2. **Reuses `GogovSync.js`, which was completely unwired before this.** Its
-   matcher had zero callers through four commits. It now runs for real.
-3. **Not browser-verified.** 36 suites and all guards pass; no live import has
-   run. First run should be a preview against a copy of the Travel DB.
-
-### The three measured findings that shaped it
-
-Each of these is why something in the code looks over-engineered. All three
-came from parsing the real file, not from reasoning about it.
-
-| Finding | What it would have cost |
-|---|---|
-| **A naive fiscal-year filter attaches money to the wrong trip.** Udaya Patnaik's report ends 2026-10-02 (FY2027, in scope); its request `4GNF` starts 2026-09-30 (FY2026, not imported). Filtering the match pool leaves `4NFL` — a different trip three weeks later — as the only title match. | $1,176.10 posted against the wrong trip, `4GNF` unreconciled forever, both figures looking fine. **So: what is imported is scoped; what is matched against is not.** |
-| **7 of 1,024 source IDs are stored as numbers.** `4946` reads back `'4946.0'`. | Those seven re-import as NEW requests on every run, consuming a DAC's budget again each time — the exact duplicate-prevention failure the feature exists to avoid. |
-| **The obvious expense key collides on 2 of 274 rows.** Stacy Buechele filed two `Trip from WIL to WAS` reports ending the same day, $198.60 and $1,602.06, both real. | A merged key drops $198.60 and the totals still look plausible. |
-
-### Deferred, and NOT fixed
+## Deferred, with reasons — not forgotten
 
 | # | Item | Why deferred |
 |---|---|---|
-| 7 | **`GogovSync.toDateString` mis-parses a string serial** — `'46356'` → `'46356-01-01'` (the year 46356). `TravelImport.toDateString` resolves it before delegating, so the importer is safe, but the monthly reconciliation path shares that function and would silently drop a row out of scope. | Widening it touches behavior pinned by `test_gogov_sync.js` §3 and shared with the reconciliation path — blast radius beyond this feature. |
-| 8 | **`docs/evidence/verify_city_dropdown_fix.js` throws** (`Cannot read properties of undefined (reading 'mie')`). Verified failing at `e60ac64`, i.e. **before** this work. Not wired into CI, so nothing catches it. | Pre-existing and unrelated. Needs whoever wrote the per-diem fix. |
-| 9 | **The import is single-source.** `Source_System` is a column and the mapping is a profile, so a second source is a remap rather than a rewrite — but only `gogov-workbook` has been built and measured. | No second source exists yet (YAGNI). |
-| 10 | **One traveler needs manual matching every run** (Patnaik — three requests share his name and title). Correct behavior, not a defect, but it recurs until a LETS ID appears in the trip name. | Needs the SOP convention to be adopted, which is a people problem rather than a code one. |
+| 1 | **`travelPortalStyles` sets `overflow: hidden` on bare `html`/`body`** (lines 137, 144). Root cause of the budget page's scroll lock; the fix applied was a per-page scroller. Any future page including this stylesheet hits the same trap. | Fixing it means touching the portal, which works. |
+| 2 | **Collapse-by-`max-height` loses its expand animation.** `max-height` cannot transition to `none`. The fix that keeps both is `grid-template-rows: 0fr → 1fr`, needing each panel wrapped in a grid container. | A real layout change; needs a browser to verify. |
+| 3 | **Fixed-bar offsets track the TOKEN, not the rendered height.** Under text-only zoom a bar can outgrow its token and content slides under. Real fix is `position: sticky`. | Needs browser verification. |
+| 4 | **`controllers/form/travelRequestController.html:1225` hardcodes `fixedHeaderHeight = 52`** — the CSS magic number, now in JS where the token cannot reach it. | One line, but needs a browser to confirm the scroll lands. |
+| 5 | **`.oc-modal` is defined twice** — `travelAdminStyles.html:5431` and inline in `travelBudgetDashboardPage.html:42`. | Pre-existing, documented decision. |
+| 6 | **`GogovSync.toDateString` mis-parses a string serial** — `'46356'` → year 46356. `TravelImport` resolves it before delegating, so the importer is safe, but the monthly reconciliation path shares that function and would silently drop a row out of scope. | Widening it touches behavior pinned by `test_gogov_sync.js` §3. |
+| 7 | **`docs/evidence/verify_city_dropdown_fix.js` throws.** Pre-existing, not wired into CI. | Needs whoever wrote the per-diem fix. |
+| 8 | **One traveler needs manual matching every run** (Patnaik — three requests share his name and title). Correct behavior; recurs until a LETS ID appears in the trip name. | A people problem, not a code one. |
+| 9 | **No edit or delete for an imported travel row.** Mistakes need fixing in the spreadsheet. | @clolry was asked and has not said whether it matters. |
+| 10 | **`getBudgetDashboard` and `getTravelEventHistory` are unguarded**, consistent with the transparency decision. | Worth a second look if DAC balances become sensitive. |
 
-## Still unanswered
+`gh` cannot file these as issues — `GITHUB_TOKEN` is invalid in this
+environment. **This is a handoff note, not a tracker.**
 
-- Should the roster importer create LETS user accounts, or only positions?
-- No edit or delete for an imported travel row — mistakes need fixing in the
-  spreadsheet. @clolry was asked whether that matters and has not said.
-- `getBudgetDashboard` and `getTravelEventHistory` are unguarded, consistent
-  with the transparency decision. Worth a second look if DAC balances ever
-  become sensitive.
-- **Does Chiquita keep maintaining the workbook, or does LETS become the
-  source of truth after the first import?** The importer supports repeated
-  incremental runs either way, but the answer decides whether anyone needs to
-  keep reconciling the two.
+---
 
-## Tracked follow-up from the 2026-11-04 UI defect fix
+## What is built
 
-@clolry reported three things: CSS printing at the top of New Request and
-Admin, the FY27 budget page not scrolling, and panels cropping on zoom. All
-three are fixed and guarded by `test_markup_integrity.js` (8 sections, 4 of
-them regression guards with negative controls recorded in the session
-transcript). **The items below were deliberately deferred and are NOT fixed.**
+**Committed and live:**
 
-`gh` could not file these as issues — `GITHUB_TOKEN` is invalid in this
-environment (`gh auth status` → "The token in GITHUB_TOKEN is invalid"). They
-are recorded here so they are not lost, but **this is a handoff note, not a
-tracker**. They should be moved to GitHub issues once `gh` is authorized.
+- HR roster import from the FC workforce report (`30_services/HCRosterImport.js`,
+  `40_domain/HCRosterSync.js`)
+- Service Center Director resolution by org level (`30_services/Access.js`,
+  `01_constants/HCRules.js`)
+- Per-capita service-center headcount, one seat per person
+  (`20_data/HCData.js`)
+- FY27 budget model, allocations, KPIs (`40_domain/BudgetDashboard.js`,
+  `BudgetAdmin.js`)
+- Existing-travel import with preview/commit/rollback
+  (`30_services/TravelImport.js`, `40_domain/TravelImportAdmin.js`) —
+  **not browser-verified; no live import has run**
+- Go.gov parser + matcher (`30_services/GogovSync.js`)
+- Event attendance history (`30_services/EventHistory.js`)
+- Directory email lookup (`30_services/DirectoryLookup.js`) — **obsolete,
+  delete it**
 
-| # | Deferred item | Why it was deferred |
+**Diagnostics worth knowing about**, all read-only, all admin-guarded:
+
+| function | file | what it answers |
 |---|---|---|
-| 1 | **`travelPortalStyles` sets `overflow: hidden` on BARE `html`/`body`** (lines 135, 140). This is the root cause of the budget page's scroll lock; the fix applied was a per-page scroller, not this. Any future page that includes this stylesheet hits the same trap — it has already caught one. Scope the rules to the portal shell. | Fixing it means touching the portal, which works. A narrow fix was the lower-risk call for a reported defect. |
-| 2 | **Collapse-by-`max-height` loses its expand animation.** The crop fixes set `max-height: none` on the open states of `.tc__stage`, `.action-detail`, `.review-traveler-row__body` and `.tc__reveal`. `max-height` cannot transition to `none`, so the *expand* slide is gone (opacity/transform still animate; collapse still slides). The fix that keeps both is `grid-template-rows: 0fr → 1fr`, which needs each panel wrapped in a grid container. | A real layout change inside the traveler cards, and not one to make without a browser to verify it in. |
-| 3 | **Fixed-bar offsets track the TOKEN, not the bar's rendered height.** `--travel-header-h` / `--review-infobar-h` in `tokens.html` removed the drift between a bar's declared height and the offset compensating for it. The bars now use `min-height`, so under text-only zoom or a raised default font size they can still outgrow the token and content slides under by the difference. The real fix is `position: sticky` instead of fixed-plus-offset. | Per-page layout change; needs browser verification. |
-| 4 | **`travelRequestController.html:1225` hardcodes `const fixedHeaderHeight = 52`** for its scroll-to-step offset. Same magic number as the CSS, now in JS where the token cannot reach it. Should read the rendered header height, or the custom property. | Out of scope of the reported defects; one-line change but needs a browser to confirm the scroll lands correctly. |
-| 5 | **The `.oc-modal` shell is defined twice** — `travelAdminStyles.html:5412` and inline in `travelBudgetDashboardPage.html:42`. The existing comment already flags this as deliberate-for-now. It is now also the thing whose duplicated prose caused the Admin parse failure. Worth consolidating. | Pre-existing, documented decision. Not a defect. |
-| 6 | **`.claspignore` has a pre-existing broken entry that fails an existing CI guard** — see the section below. Not caused by this change. | Needs @clolry's intent. |
-
-### A pre-existing CI failure, found while verifying — not caused by this change
-
-`lets_app/.claspignore` carries an **uncommitted** block (present in the
-working tree before this session; `git diff` attributes it to no commit) which
-ends with a bare glob:
-
-```
-# Remaining test scripts
-test_*.js
-```
-
-The existing verify.yml guard *"every test file is excluded from the clasp
-push"* has a stale-entry half that reads each `test_*.js` line and asserts the
-named file exists. A literal glob is not a filename, so it reports:
-
-```
-::error::A .claspignore lists test files that no longer exist: lets_app/test_*.js
-```
-
-**This fails CI today, independently of anything in this change.** Verified by
-reverting `.claspignore` to `HEAD` plus only the new
-`test_markup_integrity.js` line — the guard passes. Two options, and @clolry
-should pick:
-
-- **Drop the glob block.** Every suite is already listed by name above it, so
-  the glob is redundant and the guard keeps its stale-entry check.
-- **Keep the glob and teach the guard to skip glob patterns.** Weakens the
-  check slightly: a renamed suite would then no longer be reported.
-
-The new suite was added by name, consistent with the existing convention.
-
+| `diagServiceCenterDirectors()` | `99_triggers/Diagnostics.js` | who each center routes to, and why |
+| `diagnoseHrFeedSource()` | `40_domain/HCRosterSync.js` | the feed's columns, vocabularies, email coverage |
+| `diagAll()` | `99_triggers/Diagnostics.js` | everything, including the code census |
+| `showServiceCenterHeadcount()` | `40_domain/HCRosterSync.js` | the 22-row per-capita table |
+| `previewRosterImport()` | `40_domain/HCRosterSync.js` | what an import would change, before it changes it |
