@@ -180,6 +180,68 @@ var DirectoryLookup = (function () {
     return _str_(v).toUpperCase().replace(/[^A-Z]/g, '');
   }
 
+  /** The local part of an address, split on its separators. */
+  function emailTokens(email) {
+    var local = _str_(email).toLowerCase().split('@')[0];
+    return local.split(/[._+\-]/).filter(Boolean);
+  }
+
+  /**
+   * Does the mailbox itself confirm the roster's legal name?
+   *
+   * THE SIGNAL @clolry's QUEUE OUTPUT REVEALED. Five entries looked like
+   * nicknames and were not ambiguous at all:
+   *
+   *   roster 'Tekus Jr,John J'    directory 'Jack Tekus'    john.tekus@gsa.gov
+   *   roster 'Freeman,Richard D'  directory 'Rick Freeman'  richard.freeman@gsa.gov
+   *   roster 'Cecchi,Anthony N'   directory 'Tony Cecchi'   anthony.cecchi@gsa.gov
+   *   roster 'Irvin,Kristen T'    directory 'Kristi Irvin'  kristen.irvin@gsa.gov
+   *   roster 'Sangoi,Darshak N'   directory 'Darshak Sangoi' darshak.sangoi@gsa.gov
+   *
+   * The DISPLAY NAME is the nickname. The MAILBOX is the legal name, because
+   * GSA provisions firstname.lastname from the HR record — the same record the
+   * roster comes from. So when the local part contains the roster's forename
+   * AND surname as whole tokens, that is not a resemblance between two
+   * strings; it is the same source name expressed twice.
+   *
+   * WHOLE TOKENS, NOT SUBSTRINGS. 'dan.hall' must not confirm 'Danielle
+   * Hall', and 'rob.ert' must not confirm 'Robert'. Splitting on the
+   * separators GSA actually uses and comparing complete tokens is what keeps
+   * this from degrading into the fuzzy matching the module refuses.
+   *
+   * BOTH NAMES REQUIRED. The surname alone is 'email-hint', which is weak —
+   * every Hall in the directory has 'hall' in their address. The forename
+   * alone is weaker still. Only both together identify a person.
+   *
+   * This correctly does NOT fire for the four genuine nickname cases, where
+   * the mailbox uses the nickname too:
+   *   'Kittrell,Angela K'   -> kim.kittrell       (kim is not angela)
+   *   'Cayo,Nguyen B'       -> win.cayo           (win is not nguyen)
+   *   'Schollaert,Charles F'-> charley.schollaert (charley is not charles)
+   *   'Heller,Andrea A'     -> andrea.azarcon     (azarcon is not heller)
+   * Those stay with a human, which is right — only @clolry knows Angela goes
+   * by Kim.
+   *
+   * @param {Object} parsed from parseName
+   * @param {string} email
+   * @returns {boolean}
+   */
+  function emailConfirmsName(parsed, email) {
+    if (!parsed) return false;
+    var first = nameKey(parsed.first);
+    var last = nameKey(stripNameSuffix(parsed.last));
+    if (!first || !last) return false;
+
+    var keys = emailTokens(email).map(nameKey);
+    var hasFirst = false;
+    var hasLast = false;
+    keys.forEach(function (k) {
+      if (k === first) hasFirst = true;
+      if (k === last) hasLast = true;
+    });
+    return hasFirst && hasLast;
+  }
+
   /**
    * Splits a GSA directory name from its trailing org suffix.
    *
@@ -394,7 +456,13 @@ var DirectoryLookup = (function () {
     return {
       matches: !!(lastOk && firstOk),
       middleAgrees: middleAgrees,
-      directoryOrg: candidateOrg
+      directoryOrg: candidateOrg,
+      // Surfaced so pickMatch and suggestCandidates can test the surname
+      // without repeating the suffix/org-suffix/displayName resolution above.
+      // A second copy of that logic would disagree with this one eventually.
+      resolvedGiven: given,
+      resolvedFamily: family,
+      surnameMatches: !!lastOk
     };
   }
 
@@ -475,6 +543,48 @@ var DirectoryLookup = (function () {
     none.matchedCount = matched.length;
 
     if (!matched.length) {
+      // BEFORE REFUSING: does a mailbox confirm the roster's legal name?
+      //
+      // @clolry's queue output showed five entries that looked like nicknames
+      // and were not ambiguous at all:
+      //
+      //   roster 'Freeman,Richard D'  directory 'Rick Freeman'
+      //                               richard.freeman@gsa.gov
+      //
+      // The display name is the nickname; the MAILBOX is the legal name,
+      // because GSA provisions firstname.lastname from the HR record — the
+      // same record the roster comes from. That is not a resemblance between
+      // two strings, it is one source name expressed twice, and refusing it
+      // sends an administrator to confirm something the data already states.
+      //
+      // Requires BOTH names as WHOLE TOKENS (see emailConfirmsName), and
+      // requires exactly ONE such candidate. Two addresses both confirming
+      // the same person would mean the directory holds duplicates, which is a
+      // human's problem rather than a tie to break.
+      //
+      // The surname must still match the directory name, so this cannot
+      // resolve a wholly different person whose address happens to contain
+      // two matching tokens.
+      var confirmed = [];
+      list.forEach(function (c) {
+        if (!emailConfirmsName(parsed, c.email)) return;
+        var cm = candidateMatches(parsed, c);
+        if (!cm.surnameMatches) return;
+        confirmed.push(c);
+      });
+
+      if (confirmed.length === 1) {
+        return {
+          email: _str_(confirmed[0].email).toLowerCase(),
+          method: 'email-confirms-name',
+          confidence: 'exact',
+          returnedCount: list.length,
+          matchedCount: 0,
+          candidateCount: list.length,
+          reason: ''
+        };
+      }
+
       // WHAT THE DIRECTORY ACTUALLY SENT, in the refusal itself.
       //
       // The previous message said only that N entries were returned and none
@@ -811,7 +921,17 @@ var DirectoryLookup = (function () {
       var reason = 'same-surname';
       var rank = 3;
 
-      if (rosterFirst && candFirst) {
+      // THE MAILBOX CONFIRMING THE LEGAL NAME outranks every resemblance,
+      // because it is the only signal here that comes from the HR record
+      // rather than from two strings looking alike. pickMatch now resolves
+      // these automatically, so a suggestion of this kind should be rare —
+      // but when it appears it belongs at the top.
+      if (emailConfirmsName(parsed, email)) {
+        reason = 'email-confirms-name';
+        rank = -1;
+      }
+
+      if (rank > 0 && rosterFirst && candFirst) {
         if (rosterFirst.charAt(0) === candFirst.charAt(0)) {
           reason = 'initial';
           rank = 0;
@@ -822,12 +942,14 @@ var DirectoryLookup = (function () {
           rank = 0;
         }
       }
-      // The mailbox naming the right family is weak evidence on its own and
-      // useful alongside a surname match. It must not DEMOTE a stronger
-      // reason — my first version assigned rank 2 unconditionally when the
-      // hint fired, which pushed a 'contains' match from rank 0 to 2 and
-      // ranked 'Kim Kittrell' BELOW an out-of-org 'Angela Kittrell'. The
-      // better evidence has to win.
+      // 'email-hint' means only that the mailbox names the right family, which
+      // every same-surname colleague satisfies — @clolry's output showed
+      // eight Halls all labelled email-hint, which told him nothing and made
+      // the list look more informative than it was.
+      //
+      // So it is only a REASON when nothing better applies, and it never
+      // demotes a stronger one. My first version assigned rank 2
+      // unconditionally and pushed a 'contains' match from 0 to 2.
       if (rank > 2 && email.split('@')[0].toUpperCase()
                            .replace(/[^A-Z]/g, '').indexOf(rosterLast) > -1) {
         reason = 'email-hint';
@@ -855,6 +977,34 @@ var DirectoryLookup = (function () {
       if (a.rank !== b.rank) return a.rank - b.rank;
       return a.email < b.email ? -1 : 1;
     });
+
+    // A LIST WITH NO DISTINGUISHING SIGNAL IS WORSE THAN NO LIST.
+    //
+    // @clolry's output for 'Hall,Joseph C' offered eight Halls — Adam, Brian,
+    // Christopher, Dan, David, Deanna, Ellis, Emma — every one labelled
+    // 'email-hint', which is true of anyone named Hall and therefore says
+    // nothing. The first was pre-filled into the accept command, so the
+    // path of least resistance was to assign Adam Hall's address to Joseph
+    // Hall.
+    //
+    // When nothing in the list has a forename signal, the honest answer is
+    // that the directory cannot distinguish them. Returning them ranked
+    // implies an order the evidence does not support.
+    var hasSignal = out.some(function (o) {
+      return o.reason === 'email-confirms-name' ||
+             o.reason === 'initial' || o.reason === 'contains';
+    });
+    if (!hasSignal && out.length > 2) {
+      return out.map(function (o) {
+        var copy = {};
+        Object.keys(o).forEach(function (k) { copy[k] = o[k]; });
+        // Flagged rather than dropped: knowing eight people share the surname
+        // is itself useful, and the UI can say so without offering a pick.
+        copy.indistinguishable = true;
+        copy.reason = 'surname-only';
+        return copy;
+      });
+    }
     return out;
   }
 
@@ -863,6 +1013,8 @@ var DirectoryLookup = (function () {
     suggestCandidates: suggestCandidates,
     nameKey: nameKey,
     stripNameSuffix: stripNameSuffix,
+    emailTokens: emailTokens,
+    emailConfirmsName: emailConfirmsName,
     splitDirectorySuffix: splitDirectorySuffix,
     candidateOrgMatches: candidateOrgMatches,
     candidateMatches: candidateMatches,

@@ -91,8 +91,8 @@ The Apps Script Run button passes no arguments, so these wrap the functions that
 | `runDirectoryPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1408 | Preview the directory email lookup, and print the result. |
 | `runDirectoryResolve()` | `lets_app/server/99_triggers/Diagnostics.js` | 1458 | Resolve directory email addresses and WRITE them to HC_Positions. |
 | `runEmailResolutionQueue()` | `lets_app/server/99_triggers/Diagnostics.js` | 1486 | Show the email-resolution queue: who needs an address, and what to offer. |
-| `runSaveEmailOverride()` | `lets_app/server/99_triggers/Diagnostics.js` | 1544 | Record one admin email decision. |
-| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 1577 | Print the current budget dashboard payload. |
+| `runSaveEmailOverride()` | `lets_app/server/99_triggers/Diagnostics.js` | 1563 | Record one admin email decision. |
+| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 1596 | Print the current budget dashboard payload. |
 
 ## Diagnostics — safe to run any time, write nothing
 

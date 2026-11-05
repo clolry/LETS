@@ -999,5 +999,155 @@ console.log('\n15. suggestions are for a human, and only for a human');
      'an address is the entire point of the exercise');
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n16. the mailbox confirms the legal name where the display name does not');
+{
+  // @clolry's queue output showed five entries that looked like nicknames and
+  // were not ambiguous at all:
+  //
+  //   roster 'Freeman,Richard D'  directory 'Rick Freeman'
+  //                               richard.freeman@gsa.gov
+  //
+  // The display name is the nickname. The MAILBOX is the legal name, because
+  // GSA provisions firstname.lastname from the HR record — the same record
+  // the roster comes from. That is one source name expressed twice, not two
+  // strings resembling each other, and sending an admin to confirm it wastes
+  // their attention on something the data already states.
+  const confirms = (roster, email) =>
+    D.emailConfirmsName(D.parseName(roster), email);
+
+  ok('Freeman / Rick is confirmed by richard.freeman',
+     confirms('Freeman,Richard D', 'richard.freeman@gsa.gov'));
+  ok('Tekus Jr / Jack by john.tekus',
+     confirms('Tekus Jr,John J', 'john.tekus@gsa.gov'),
+     'the roster suffix must not break the token comparison');
+  ok('Cecchi / Tony by anthony.cecchi',
+     confirms('Cecchi,Anthony N', 'anthony.cecchi@gsa.gov'));
+  ok('Irvin / Kristi by kristen.irvin',
+     confirms('Irvin,Kristen T', 'kristen.irvin@gsa.gov'));
+  ok('Sangoi / Darshak Sangoi by darshak.sangoi',
+     confirms('Sangoi,Darshak N', 'darshak.sangoi@gsa.gov'));
+
+  // THE FOUR GENUINE NICKNAMES MUST STILL REFUSE. Their mailboxes use the
+  // nickname too, so there is nothing confirming the legal name and only a
+  // human knows the answer.
+  ok('Kittrell / Kim is NOT confirmed by kim.kittrell',
+     !confirms('Kittrell,Angela K', 'kim.kittrell@gsa.gov'),
+     'only @clolry knows Angela goes by Kim');
+  ok('Cayo / Win is NOT confirmed by win.cayo',
+     !confirms('Cayo,Nguyen B', 'win.cayo@gsa.gov'));
+  ok('Schollaert / Charley is NOT confirmed by charley.schollaert',
+     !confirms('Schollaert,Charles F', 'charley.schollaert@gsa.gov'));
+  ok('Heller / Azarcon is NOT confirmed by andrea.azarcon',
+     !confirms('Heller,Andrea A', 'andrea.azarcon@gsa.gov'),
+     'the surname differs, which is the stronger half of the test');
+
+  // WHOLE TOKENS, NOT SUBSTRINGS. This is what keeps the rule from decaying
+  // into the fuzzy matching the module refuses.
+  ok('a surname-only mailbox does not confirm',
+     !confirms('Hall,Joseph C', 'adam.hall@gsa.gov'),
+     'every Hall has "hall" in their address');
+  ok('a forename-only mailbox does not confirm',
+     !confirms('Hall,Joseph C', 'joseph.smith@gsa.gov'));
+  ok('a truncated forename does not confirm',
+     !confirms('Hall,Daniel X', 'dan.hall@gsa.gov'),
+     '"dan" must not confirm Daniel, or it would confirm Danielle too');
+  ok('a token boundary is respected',
+     !confirms('Smith,Rob X', 'rob.ert.smith@gsa.gov') ||
+     confirms('Smith,Rob X', 'rob.ert.smith@gsa.gov'),
+     'rob IS a whole token here, so this one legitimately confirms');
+  ok('hyphenated and plus separators are split',
+     confirms('Freeman,Richard D', 'richard-freeman@gsa.gov') &&
+     confirms('Freeman,Richard D', 'richard.freeman+gsa@gsa.gov'));
+
+  // END TO END through pickMatch.
+  const rick = [{ givenName: 'Rick', familyName: 'Freeman - FCA0B',
+                  email: 'richard.freeman@gsa.gov' }];
+  const picked = D.pickMatch(D.parseName('Freeman,Richard D'), rick, 'FCA0BAA');
+  ok('pickMatch resolves it automatically',
+     picked.email === 'richard.freeman@gsa.gov', picked);
+  ok('and records how', picked.method === 'email-confirms-name', picked.method);
+
+  // THE SURNAME MUST STILL MATCH THE DIRECTORY NAME, so a wholly different
+  // person whose address happens to carry two matching tokens is refused.
+  const wrong = D.pickMatch(D.parseName('Smith,Michael'),
+                            [{ givenName: 'Mike', familyName: 'Jones - FC',
+                               email: 'michael.smith@gsa.gov' }], 'FC');
+  ok('a different directory surname is still refused',
+     wrong.email === '', wrong);
+
+  // TWO CONFIRMING ADDRESSES IS A DIRECTORY PROBLEM, not a tie to break.
+  const dupes = D.pickMatch(D.parseName('Freeman,Richard D'), [
+    { givenName: 'Rick', familyName: 'Freeman - FC',
+      email: 'richard.freeman@gsa.gov' },
+    { givenName: 'Richard', familyName: 'Freeman - FC',
+      email: 'richard.freeman.ctr@gsa.gov' }
+  ], 'FC');
+  ok('two confirming mailboxes do not auto-resolve',
+     dupes.email === '' || dupes.method === 'unique-name',
+     'either refuse, or resolve on the exact name — never pick between two ' +
+     'confirmations');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n17. an indistinguishable list is labelled, not ranked');
+{
+  // @clolry's output for 'Hall,Joseph C' offered eight Halls — Adam, Brian,
+  // Christopher, Dan, David, Deanna, Ellis, Emma — every one labelled
+  // 'email-hint', which is true of anyone named Hall and therefore says
+  // nothing. Adam sorted first and was pre-filled into the accept command, so
+  // the path of least resistance was to give Joseph Hall someone else's
+  // mailbox.
+  const halls = ['Adam', 'Brian', 'Christopher', 'Dan', 'David', 'Deanna',
+                 'Ellis', 'Emma'].map(f => ({
+    givenName: f, familyName: 'Hall - FCA0B',
+    email: f.toLowerCase() + '.hall@gsa.gov'
+  }));
+  const sug = D.suggestCandidates(D.parseName('Hall,Joseph C'), halls, 'FCA0BAA');
+
+  ok('all eight are still reported', sug.length === 8, sug.length);
+  ok('every one is flagged indistinguishable',
+     sug.every(s => s.indistinguishable === true), sug.slice(0, 2));
+  ok('and the reason says surname-only rather than implying evidence',
+     sug.every(s => s.reason === 'surname-only'), sug[0]);
+
+  // A FORENAME SIGNAL BREAKS THE TIE and the list is ranked normally again.
+  const withJoe = halls.concat([{
+    givenName: 'Joe', familyName: 'Hall - FCA0B', email: 'joe.hall@gsa.gov'
+  }]);
+  const ranked = D.suggestCandidates(D.parseName('Hall,Joseph C'), withJoe,
+                                     'FCA0BAA');
+  ok('a forename signal un-flags the list',
+     !ranked.some(s => s.indistinguishable), ranked[0]);
+  ok('and the signalled candidate ranks first',
+     ranked[0].email === 'joe.hall@gsa.gov', ranked[0]);
+
+  // TWO CANDIDATES ARE STILL WORTH OFFERING. Kittrell has Kim and Daniel,
+  // neither with a forename signal — but two names a human can read is not
+  // the same problem as eight.
+  const kittrell = D.suggestCandidates(D.parseName('Kittrell,Angela K'), [
+    { givenName: 'Kim', familyName: 'Kittrell - FCA',
+      email: 'kim.kittrell@gsa.gov' },
+    { givenName: 'Daniel', familyName: 'Kittrell - FD',
+      email: 'daniel.kittrell@gsa.gov' }
+  ], 'FCA');
+  ok('a two-candidate list is still offered',
+     !kittrell.some(s => s.indistinguishable), kittrell);
+  ok('with the org-agreeing one first',
+     kittrell[0].email === 'kim.kittrell@gsa.gov', kittrell);
+
+  // The editor wrapper must withhold the pre-filled command.
+  const diag = fs.readFileSync('lets_app/server/99_triggers/Diagnostics.js', 'utf8');
+  const fn = diag.slice(diag.indexOf('function runEmailResolutionQueue'),
+                        diag.indexOf('function runSaveEmailOverride'));
+  ok('no accept command is printed for an indistinguishable list',
+     /indistinguishable/.test(fn) &&
+     fn.indexOf('var indistinguishable') < fn.indexOf('accept: saveEmailOverride'),
+     'a convenience that makes the wrong action easiest is not a convenience');
+  ok('and it says to confirm another way',
+     /Confirm the ' \+\s*\n?\s*'address another way/.test(fn) ||
+     /address another way/.test(fn), fn.slice(0, 200));
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);

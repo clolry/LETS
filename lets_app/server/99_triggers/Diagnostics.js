@@ -1514,9 +1514,28 @@ function runEmailResolutionQueue() {
       console.log('    [' + sug.reason + (sug.orgAgrees ? ' +org' : '') +
                   ']  ' + sug.directoryName + '  ' + sug.email);
     });
-    // The exact call to accept one, because retyping a position number from a
-    // log is how the wrong person gets an address.
-    if (q.suggestions.length) {
+
+    // NO PRE-FILLED COMMAND WHEN THE CANDIDATES ARE INDISTINGUISHABLE.
+    //
+    // @clolry's output for 'Hall,Joseph C' listed eight Halls and pre-filled
+    // Adam Hall's address into the accept line, because he sorted first
+    // alphabetically. Every one carried the same reason, so there was no
+    // evidence for that order — and the path of least resistance was to give
+    // Joseph Hall someone else's mailbox.
+    //
+    // A convenience that makes the wrong action easiest is not a
+    // convenience. Where the directory cannot distinguish, the command is
+    // withheld and the position number is still printed for a deliberate
+    // decision.
+    var indistinguishable = q.suggestions.length &&
+                            q.suggestions[0].indistinguishable;
+    if (indistinguishable) {
+      console.log('    -> ' + q.suggestions.length + ' people share this ' +
+                  'surname and nothing distinguishes them. Confirm the ' +
+                  'address another way before entering it.');
+    } else if (q.suggestions.length) {
+      // The exact call to accept one, because retyping a position number from
+      // a log is how the wrong person gets an address.
       console.log('    accept: saveEmailOverride({positionNumber:"' +
                   q.positionNumber + '", email:"' + q.suggestions[0].email +
                   '", matchedDirectoryName:"' +
