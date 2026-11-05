@@ -1098,7 +1098,7 @@ function getEmailResolutionQueue(opts) {
           orgCode: p.orgCode,
           officeTitle: p.officeTitle,
           supervisoryStatus: p.supervisoryStatus,
-          isSupervisor: String(p.supervisoryStatus) === '2',
+          isSupervisor: isHcSupervisoryCode(p.supervisoryStatus),
           parsedName: parsed,
           autoRefusalReason: '',
           willResolveAutomatically: true,
@@ -1126,7 +1126,7 @@ function getEmailResolutionQueue(opts) {
         supervisoryStatus: p.supervisoryStatus,
         // Named so the UI can say WHY this person matters: a supervisor with
         // no address cannot sign in at all.
-        isSupervisor: String(p.supervisoryStatus) === '2',
+        isSupervisor: isHcSupervisoryCode(p.supervisoryStatus),
         parsedName: parsed,
         autoRefusalReason: auto.reason || '',
         suggestions: suggestions.slice(0, 8)

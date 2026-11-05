@@ -249,8 +249,18 @@ function debugReviewerPerf(targetEmail) {
 function _seedReviewerMapFromUnifiedRoles(reviewerMap, emailToBUName, emailToSectorCode, sectorToBU) {
   try {
     var data = _getUnifiedRoleData();
-    // Build reverse map sectorName -> 4-char code for sector_override
+    // Build reverse map sectorName -> SERVICE_CENTER code for sector_override
     // resolution. Done once; loadOrgLookups is itself cached.
+    //
+    // FULL SERVICE-CENTER CODES, from the stored hierarchy. This took
+    // `substring(0, 4)`, which on this org produces FCA0 / FCB0 / FCC0 —
+    // codes that do not exist — and collapses the 22 centers into 6. The
+    // scope label on a reviewer row was therefore shared by up to five
+    // directors.
+    //
+    // isSectorDirector now returns full codes too. Both sides had to move
+    // together: a correct code on one side and a truncation on the other
+    // never compare equal, and the reviewer's queue comes back empty.
     var sectorNameToCode = {};
     try {
       var orgLookups = loadOrgLookups();
@@ -258,7 +268,7 @@ function _seedReviewerMapFromUnifiedRoles(reviewerMap, emailToBUName, emailToSec
       for (var oc in orgToSector) {
         if (!orgToSector.hasOwnProperty(oc)) continue;
         var sName = orgToSector[oc];
-        var sCode = String(oc).substring(0, 4).toUpperCase();
+        var sCode = _resolveServiceCenterCode(oc);
         if (sName && sCode && !sectorNameToCode[sName]) {
           sectorNameToCode[sName] = sCode;
         }
@@ -761,28 +771,39 @@ function getAdminDashboard(userEmail, period, customStart, customEnd) {
         // (e.g., "Burns,Spencer S"), so click-to-drill name search matches.
         var emailToSDName = {};
 
-        // Walk HC staffing once to find every SD position (Sector Director,
-        // Grade 15, supervisoryStatus 2). For each filled seat, capture
-        // email -> sector code + email -> staffing name.
+        // Walk HC staffing once to find every Service Center Director.
+        //
+        // WAS A TITLE MATCH, AND FOUND NOBODY. This asked for officeTitle
+        // containing 'sector director' plus grade 15 plus supervisoryStatus
+        // '2'. No position in this organization carries that title, so this
+        // table showed no SCD rows at all — and a performance report that
+        // silently omits a whole reviewer tier reads as "they reviewed
+        // nothing" rather than as a bug.
+        //
+        // Now asks getSectorDirector per service center, so this table and the
+        // routing target cannot disagree about who the director is. That
+        // matters here specifically: this report is where somebody checks
+        // whether a director is keeping up, and naming the wrong person would
+        // be worse than naming none.
         try {
-          var hcBundle = HC.hcGetBundle();
-          if (hcBundle && hcBundle.success && hcBundle.data) {
-            var positions = hcBundle.data;
-            for (var pi = 0; pi < positions.length; pi++) {
-              var p = positions[pi];
-              if (!p || !p.officeTitle || !p.emailAddress || !p.orgCode) continue;
-              if (p.officeTitle.toLowerCase().indexOf('sector director') === -1) continue;
-              if (String(p.grade) !== '15') continue;
-              if (String(p.supervisoryStatus) !== '2') continue;
-              var sdEmail = String(p.emailAddress).toLowerCase();
-              var sdSector = String(p.orgCode).toUpperCase().substring(0, 4);
-              if (!emailToSectorCode[sdEmail]) emailToSectorCode[sdEmail] = sdSector;
-              if (p.employeeName && !emailToSDName[sdEmail]) {
-                emailToSDName[sdEmail] = p.employeeName;
-              }
+          var hcOrgs = HC.hcGetOrgHierarchy() || [];
+          for (var oi = 0; oi < hcOrgs.length; oi++) {
+            if (String(hcOrgs[oi].orgLevel || '').toUpperCase() !== 'SERVICE_CENTER') continue;
+            var scCode = String(hcOrgs[oi].orgCode || '').toUpperCase();
+            if (!scCode) continue;
+            var scd = getSectorDirector(scCode, db);
+            if (!scd || !scd.email) continue;
+            var sdEmail = String(scd.email).toLowerCase();
+            // THE FULL SERVICE-CENTER CODE, not a 4-char truncation of it. A
+            // truncation collapsed the 22 centers into 6 buckets, so five
+            // directors shared one scope label and the drill-down filtered to
+            // the wrong set.
+            if (!emailToSectorCode[sdEmail]) emailToSectorCode[sdEmail] = scCode;
+            if (scd.name && !emailToSDName[sdEmail]) {
+              emailToSDName[sdEmail] = scd.name;
             }
           }
-        } catch (e) { console.warn('reviewerPerformance: HC SD walk failed: ' + e.message); }
+        } catch (e) { console.warn('reviewerPerformance: HC SCD walk failed: ' + e.message); }
 
         // Seed BU/AAS-FO/Sector-override reviewers from Travel_User_Roles.
         _seedReviewerMapFromUnifiedRoles(reviewerMap, emailToBUName, emailToSectorCode, sectorToBU);

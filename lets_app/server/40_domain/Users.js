@@ -1831,28 +1831,55 @@ function _orphanPendingForRoleChange(args) {
 function _findHCSectorDirector(sectorName) {
   if (!sectorName) return null;
   try {
-    var bundle = HC.hcGetBundle();
-    if (!bundle || !bundle.success || !bundle.data) return null;
+    // ASKS getSectorDirector PER SERVICE CENTER, rather than scanning for a
+    // title.
+    //
+    // The scan matched officeTitle against 'sector director' — a title no
+    // position in this organization holds — so it returned null for every
+    // scope, and every deactivated sector_override holder's pending requests
+    // were ORPHANED instead of cascading to the real director. Orphaning is
+    // the deliberate last resort here, so the failure looked like the
+    // designed behavior.
+    //
+    // THE AMBIGUITY GUARD IS STILL NEEDED, and on this org it is more likely
+    // than before rather than less: HC_Orgs.Sector is 'ASD' on all 137 rows,
+    // so a single scope name matches every service center. Cascading to one
+    // of 22 directors chosen by iteration order would hand somebody else's
+    // pending travel to the wrong approver — strictly worse than orphaning,
+    // which at least surfaces as unassigned work.
+    var orgs = HC.hcGetOrgHierarchy() || [];
     var matches = [];
-    for (var i = 0; i < bundle.data.length; i++) {
-      var p = bundle.data[i];
-      if (!p || !p.org || !p.officeTitle || !p.emailAddress) continue;
-      if (p.org.sector !== sectorName) continue;
-      if (String(p.officeTitle).toLowerCase().indexOf('sector director') === -1) continue;
-      if (String(p.grade) !== '15') continue;
-      if (String(p.supervisoryStatus) !== '2') continue;
-      var occ = String(p.occupancyStatus || '').toUpperCase();
-      if (occ === 'VACANT' || occ === 'OBLIGATED') continue;
+    var seen = {};
+
+    for (var i = 0; i < orgs.length; i++) {
+      if (String(orgs[i].orgLevel || '').toUpperCase() !== 'SERVICE_CENTER') continue;
+      if (String(orgs[i].sector || '') !== sectorName) continue;
+      var code = String(orgs[i].orgCode || '').toUpperCase();
+      if (!code) continue;
+
+      var scd = getSectorDirector(code);
+      if (!scd || !scd.email) continue;
+
+      // One person directing two centers under the same scope name is not an
+      // ambiguity — it is the same answer twice.
+      var key = String(scd.email).toLowerCase();
+      if (seen[key]) continue;
+      seen[key] = true;
+
       matches.push({
-        name: p.employeeName || '',
-        email: p.emailAddress,
-        buName: (p.org && p.org.businessUnit) || ''
+        name: scd.name || '',
+        email: scd.email,
+        buName: ''
       });
     }
+
     if (matches.length === 0) return null;
     if (matches.length > 1) {
       console.warn('_findHCSectorDirector: ambiguous — ' + matches.length +
-        ' SDs match sector "' + sectorName + '" across BUs; not auto-cascading');
+        ' Service Center Directors match scope "' + sectorName + '"; not ' +
+        'auto-cascading. Pending requests will be orphaned for an admin to ' +
+        'reassign, which is correct: picking one of them would hand somebody ' +
+        'else\'s travel to the wrong approver.');
       return null;
     }
     return matches[0];

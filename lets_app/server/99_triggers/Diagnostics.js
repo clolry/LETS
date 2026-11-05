@@ -431,12 +431,32 @@ function diagHcData() {
           'these fail every grade comparison: ' +
           badGrades.map(function (p) { return p.positionNumber + '=' + p.grade; }).join(', ')));
 
+    // SAME RULE AS THE GATE. This line exists to tell an admin how many
+    // people hold access with no role row, so applying a different test than
+    // canAccessTrip would make it a number that merely looks authoritative.
     var sups = bundle.data.filter(function (p) {
-      return String(p.supervisoryStatus) === '2' &&
-             String(p.occupancyStatus).toUpperCase() !== 'VACANT';
+      return isHcSupervisoryCode(p.supervisoryStatus) && isHcSeatOccupied(p);
     });
     console.log('filled supervisors: ' + sups.length +
       ' (each one can access LETS with no role row — G-008)');
+
+    // THE VOCABULARY, BROKEN OUT. isHcSupervisoryCode is a DENY-LIST — it
+    // treats anything other than 8 as supervisory — so a code HR invents
+    // later would widen access silently. Printing the census is what makes
+    // that visible instead of inferred.
+    var census = hcSupervisoryCodeCensus(bundle.data);
+    console.log('supervisory codes: ' + JSON.stringify(census.counts));
+    console.log('  supervisory ' + census.supervisory +
+                ', non-supervisory ' + census.nonSupervisory +
+                ', blank ' + census.blank);
+    var unknownCodes = Object.keys(census.unknown);
+    if (unknownCodes.length) {
+      console.warn('  *** UNRECOGNIZED supervisory code(s): ' +
+                   JSON.stringify(census.unknown) + '. These are being ' +
+                   'treated as SUPERVISORY, which grants LETS access. Confirm ' +
+                   'with HR, then add them to HC_SUPERVISORY_CODES in ' +
+                   '01_constants/HCRules.js.');
+    }
 
     var validation = validateHCData();
     console.log('');
@@ -1281,7 +1301,10 @@ function diagServiceCenterDirectors() {
       if (!p) return;
       var code = String(p.orgCode || '').toUpperCase();
       if (!(code in byCenter)) return;
-      if (String(p.supervisoryStatus) !== '2') return;
+      // The widened rule: anything but 8. Running this diagnostic under the
+      // old '=== 2' test is what made FCA0A look like it had no director —
+      // Taylor Wynings holds one of the CSRA codes.
+      if (!isHcSupervisoryCode(p.supervisoryStatus)) return;
       byCenter[code].push(p);
     });
 
@@ -1345,14 +1368,22 @@ function diagServiceCenterDirectors() {
     titleKeys.forEach(function (t) {
       console.log('  ' + titles[t] + 'x  ' + JSON.stringify(t));
     });
+    // THE ONE REMAINING 'sector director' STRING IN THE CODEBASE, and it is
+    // REPORTING on titles rather than deciding anything. Kept deliberately:
+    // it is the evidence that the retired title match could never have
+    // worked, and it would catch an HR rename that made the old assumption
+    // true again.
     var anySectorDirector = titleKeys.filter(function (t) {
       return t.toLowerCase().indexOf('sector director') > -1;
     });
     console.log('  titles containing "sector director": ' +
                 anySectorDirector.length +
                 (anySectorDirector.length === 0
-                  ? '   <- which is why all five call sites find nobody'
-                  : '   ' + JSON.stringify(anySectorDirector)));
+                  ? '   <- why the retired title match found nobody. ' +
+                    'Identification is now by Org_Level = SERVICE_CENTER.'
+                  : '   ' + JSON.stringify(anySectorDirector) +
+                    ' <- HR has started using this title. Worth knowing, but ' +
+                    'nothing reads it: the rule is the org level.'));
 
     if (noEmail.length) {
       console.log('');

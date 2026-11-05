@@ -109,7 +109,11 @@ function getReviewerDashboard(period, customStart, customEnd, viewAs) {
         return !!(bu && allowedBUNamesUpper[bu]);
       }
       if (scopeType === 'sector') {
-        var sec = String(canonical).substring(0, 4).toUpperCase();
+        // WALKED TO THE SERVICE CENTER, not truncated to 4 characters. A
+        // 4-char prefix of FCA0BAA is 'FCA0', which is not an org code — and
+        // isSectorDirector now hands out full codes, so a truncation here
+        // would never compare equal and the reviewer would see nothing.
+        var sec = _resolveServiceCenterCode(canonical);
         return !!(sec && allowedSectorCodesUpper[sec]);
       }
       return false;
@@ -180,13 +184,16 @@ function getReviewerDashboard(period, customStart, customEnd, viewAs) {
       // submitter's sector would appear in a BU reviewer's "Sectors in
       // your BU" dropdown just because one of its travelers matched.
       var canonicalOrgCode = orgLookups.orgToCurrentOrgCode[submitterOrgCode] || submitterOrgCode;
-      var sectorCode = canonicalOrgCode.substring(0, 4);
+      // The SERVICE CENTER this submitter belongs to, from the stored
+      // hierarchy. '' for anyone at or above a DAC, which is the truth rather
+      // than a failure — they have no service center.
+      var sectorCode = _resolveServiceCenterCode(canonicalOrgCode);
 
       function _addOrgIfInScope(orgCode) {
         if (!orgCode) return;
         if (!_orgBelongsToScope(orgCode)) return;
         var canonical = orgLookups.orgToCurrentOrgCode[orgCode] || orgCode;
-        var sec = String(canonical).substring(0, 4);
+        var sec = _resolveServiceCenterCode(canonical);
         var bu = orgLookups.orgToBU[canonical];
         if (bu) buCodeSet[bu] = true;
         if (sec) sectorCodeSet[sec] = true;
@@ -379,22 +386,28 @@ function _buildTravelerAwareScopeChecker(ctx, travelersByRequestId, orgLookups) 
     for (var c = 0; c < codes.length; c++) codeSet[String(codes[c]).toUpperCase()] = true;
     var canonical = orgLookups.orgToCurrentOrgCode || {};
 
-    // Canonicalize any (current OR former) org code to the current code,
-    // then take the first 4 chars for sector matching. Survives reorg renames.
-    function _sectorPrefix(orgCode) {
+    // Canonicalize any (current OR former) org code to the current code, then
+    // walk it to its SERVICE CENTER. Survives reorg renames.
+    //
+    // RENAMED from _sectorPrefix, because it no longer returns a prefix and a
+    // name that says "prefix" invites the next reader to reintroduce the
+    // truncation. The 4-char rule was correct for the inherited org — their
+    // codes ran QFA (business unit) > QFAA (sector) — and wrong here, where a
+    // service center is five characters and FCA0 is not a code at all.
+    function _sectorOf(orgCode) {
       var current = canonical[orgCode] || orgCode;
-      return String(current || '').substring(0, 4).toUpperCase();
+      return _resolveServiceCenterCode(current);
     }
 
     return function(row, hi) {
       var submitterOrg = String(row[hi['Submitter_Org_Code']] || '');
-      if (submitterOrg && codeSet[_sectorPrefix(submitterOrg)]) return true;
+      if (submitterOrg && codeSet[_sectorOf(submitterOrg)]) return true;
 
       var requestId = row[hi['Request_ID']];
       var travelers = travelersByRequestId[requestId] || [];
       for (var i = 0; i < travelers.length; i++) {
         var oc = travelers[i].orgCode || '';
-        if (oc && codeSet[_sectorPrefix(oc)]) return true;
+        if (oc && codeSet[_sectorOf(oc)]) return true;
       }
       return false;
     };
@@ -780,15 +793,14 @@ function _orgInUserScope(orgCode, ctx, orgToBU, orgToCurrentOrgCode) {
   }
 
   if (ctx.scope.type === 'sector') {
-    // Canonicalize to current org code first so a former code like 'QFAA'
-    // is rewritten to its current 'FAB1' before the 4-char prefix match.
+    // Canonicalize to the current org code first, so a former code is
+    // rewritten before the service-center walk.
     var canonical = (orgToCurrentOrgCode && orgToCurrentOrgCode[orgCode]) || orgCode;
-    var prefix = String(canonical).substring(0, 4).toUpperCase();
-    var codes = ctx.scope.codes || [];
-    for (var c = 0; c < codes.length; c++) {
-      if (prefix === String(codes[c]).toUpperCase()) return true;
-    }
-    return false;
+    // THE SERVICE CENTER, WALKED. ctx.scope.codes now holds full
+    // SERVICE_CENTER codes from isSectorDirector, so both sides of this
+    // comparison speak the same vocabulary. They previously agreed only
+    // because both were truncating.
+    return orgCodeInScope(canonical, ctx.scope.codes || []);
   }
 
   return false;

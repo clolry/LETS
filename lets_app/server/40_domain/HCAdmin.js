@@ -8,7 +8,7 @@
  * is how three specific defects get introduced, all of which fail SILENTLY:
  *
  *   1. Supervisory_Status typed as a number. Access.js:134 compares
- *      String(p.supervisoryStatus) !== '2', and HCData normalizes at the read
+ *      isHcSupervisoryCode(p.supervisoryStatus), and HCData normalizes at the read
  *      boundary — but a sheet edit that makes the column numeric defeats the
  *      zero-padding logic for Grade in the same row.
  *   2. Grade losing its leading zero. A cell holding 07 becomes the number 7,
@@ -149,13 +149,27 @@ function validateHCPosition(position, allPositions, originalPositionNumber, allO
       'check in the system — including the GS-15 Division Director lookup.');
   }
 
-  // Supervisory_Status drives site access (Access.js:416) as well as the
-  // supervisor chain, so a wrong value here silently grants or denies LETS.
-  var sup = String(p.supervisoryStatus || '').trim();
-  if (sup && sup !== '2' && sup !== '4' && sup !== '5' && sup !== '6' && sup !== '7' && sup !== '8') {
+  // Supervisory_Status drives site access as well as the Service Center
+  // Director lookup, so a wrong value here silently grants or denies LETS.
+  //
+  // CHECKED AGAINST THE MEASURED VOCABULARY in 01_constants/HCRules.js rather
+  // than an inline list. The inline list included '6', which does not appear
+  // anywhere on the live roster, and omitted nothing — but it was a second
+  // opinion about what the codes are, maintained separately from the
+  // predicate that acts on them.
+  //
+  // THE WARNING MATTERS MORE NOW, not less. isHcSupervisoryCode is a
+  // deny-list: anything other than 8 counts as supervisory. That fails in the
+  // right direction — a real supervisor is never locked out — but it means an
+  // unrecognized code GRANTS access rather than withholding it. This is the
+  // one place a human is told.
+  var sup = String(p.supervisoryStatus || '').trim().replace(/\.0+$/, '');
+  if (sup && !HC_SUPERVISORY_CODES[sup]) {
     problems.push('Supervisory Status "' + sup + '" is not a recognized code. ' +
-      'Use 2 for a supervisor, or leave it blank. This value grants LETS ' +
-      'access on its own, so an unexpected code is worth checking.');
+      'The roster uses 2 (Supervisor or Manager), 4 (Supervisor CSRA), ' +
+      '5 (Management Official CSRA), 7 (Team Leader) and 8 (Non-Supervisory). ' +
+      'Anything other than 8 is treated as supervisory and GRANTS LETS ' +
+      'access on its own, so confirm this value with HR.');
   }
 
   var occupancy = String(p.occupancyStatus || '').trim().toUpperCase();

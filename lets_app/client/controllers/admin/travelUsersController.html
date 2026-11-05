@@ -29,7 +29,7 @@
  *   addTravelUser / addRoleToUser / setRolePrimary / setRoleActive /
  *   updateTravelUser / deleteRole — write paths
  *
- * Everything HC-derived (sector directors, employee lookup for the Add
+ * Everything HC-derived (Service Center Directors, employee lookup for the Add
  * User typeahead) reads from window.HCDataCenter — IndexedDB-cached on
  * page load, no server roundtrip per render.
  *
@@ -98,7 +98,7 @@
     'bu_reviewer':      { displayLong: _L().bu + ' Reviewer', hasScope: true,  grantable: true,
                           hint: 'Reviews requests for a specific business unit.' },
     'sector_override':  { displayLong: 'Sector Reviewer', hasScope: true,  grantable: true,
-                          hint: 'Overrides the synced sector director for a specific sector.' },
+                          hint: 'Overrides the synced Service Center Director for one service center.' },
     'approved_user':    { displayLong: 'Site Access',     hasScope: false, grantable: true,
                           hint: 'Grants app access to a non-supervisor. No admin or reviewer privileges.' }
    };
@@ -350,6 +350,33 @@
      *     bug ("Sector 1" exists in Army, Defense, AF/Navy/SF, ...)
      *   - one walk, no round trip
      */
+    /**
+     * Seniority rank for a grade, for the "two supervisors in one workgroup"
+     * tie-break.
+     *
+     * @clolry: "when a conflict exists with two 'supervisors' in the same
+     * workgroup you can choose the one that is the higher grade."
+     *
+     * MIRRORS compareHcGrade in 01_constants/HCRules.js, which is the
+     * server's copy. Duplicated because this page derives its scope
+     * client-side from the already-loaded staffing bundle rather than making a
+     * round trip — a deliberate choice documented on _deriveAasScope. If the
+     * two disagree, the Users page names a different director than routing
+     * sends the request to, so they must be changed together.
+     *
+     * SES ABOVE EVERY NUMBER: an SES grade arrives as 'ES', because '00' is
+     * the absence of a grade and would otherwise sort below GS-01.
+     * Unparseable grades rank lowest — 'VT-03' is real in this data, and an
+     * unparseable grade is not evidence of seniority.
+     */
+    _gradeRank: function(g) {
+      var s = String(g === null || g === undefined ? '' : g).trim().toUpperCase();
+      if (!s) return -1;
+      if (s === 'ES' || s === 'SES') return 100;
+      var n = parseInt(s.replace(/\.0+$/, ''), 10);
+      return isNaN(n) ? -1 : n;
+    },
+
     _deriveAasScope: function() {
       if (this._aasScopeCache) return this._aasScopeCache;
       // BUs that exist in HC staffing but aren't TRIP-routable.
@@ -386,18 +413,45 @@
         }
         if (orgCode) buMap[buName].sectors[sectorName].codes[orgCode] = true;
 
-        // First staffed SD position wins for this (BU, sector) bucket.
-        if (!buMap[buName].sectors[sectorName].sd) {
-          var titleLower = String(p.officeTitle || '').toLowerCase();
-          if (titleLower.indexOf('sector director') === -1) continue;
-          if (String(p.grade) !== '15') continue;
-          if (String(p.supervisoryStatus) !== '2') continue;
-          var occ = String(p.occupancyStatus || '').toUpperCase();
-          if (occ === 'VACANT' || occ === 'OBLIGATED') continue;
-          if (!p.emailAddress) continue;
+        // THE SERVICE CENTER DIRECTOR for this bucket: the most senior
+        // supervisory person sitting AT a service center's own code.
+        //
+        // WAS A TITLE MATCH, AND SHOWED NOBODY. This asked for officeTitle
+        // containing 'sector director' plus grade 15 plus supervisoryStatus
+        // '2'. No position in this organization carries that title, so every
+        // sector row on the Users page rendered "no reviewer" — which is
+        // exactly how that page reports a genuinely vacant seat, so the
+        // defect was indistinguishable from the thing it was supposed to
+        // report.
+        //
+        // The three clauses that replace it mirror
+        // Access.getSectorDirector:
+        //   supervisory means anything but code 8 — the old '2' excluded the
+        //     13 people HR records as Supervisor (CSRA), Management Official
+        //     (CSRA) or Team Leader
+        //   the seat must be occupied and have an address
+        //   HIGHEST GRADE WINS, rather than first-one-seen
+        //
+        // 'First staffed position wins' was the old rule and it was
+        // nondeterministic: HCDataCenter's order follows the sheet, so
+        // re-importing the roster could change who this page names as a
+        // center's director.
+        //
+        // THE GRADE-15 TEST IS GONE. @clolry: "I don't know why we would need
+        // to check the grade." Measured, it excluded only two VACANT grade-13
+        // seats — and it would reject an SES director outright, since an SES
+        // grade normalizes to 'ES' rather than a number.
+        if (String(p.supervisoryStatus || '').trim() === '8') continue;
+        if (!String(p.supervisoryStatus || '').trim()) continue;
+        var occ = String(p.occupancyStatus || '').toUpperCase();
+        if (occ === 'VACANT' || occ === 'OBLIGATED') continue;
+        if (!p.emailAddress) continue;
+        var existingSd = buMap[buName].sectors[sectorName].sd;
+        if (!existingSd || self._gradeRank(p.grade) > self._gradeRank(existingSd.grade)) {
           buMap[buName].sectors[sectorName].sd = {
             employeeName: p.employeeName || '',
             email: p.emailAddress,
+            grade: p.grade || '',
             source: 'HC'
           };
         }
@@ -1287,7 +1341,7 @@
       html += '<span class="users-routing__row-actions">';
       if (opts.sectorCount) {
         var caret = opts.sectorsExpanded ? 'fa-chevron-down' : 'fa-chevron-right';
-        html += '<button type="button" class="users-routing__sector-toggle" data-routing-toggle="' + _esc(key) + '" title="Show sector directors">' +
+        html += '<button type="button" class="users-routing__sector-toggle" data-routing-toggle="' + _esc(key) + '" title="Show Service Center Directors">' +
                   '<i aria-hidden="true" class="fas ' + caret + '"></i>' +
                   '<span>' + opts.sectorCount + ' sector' + (opts.sectorCount === 1 ? '' : 's') + '</span>' +
                 '</button>';

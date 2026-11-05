@@ -51,24 +51,82 @@
 // ============================================================================
 
 /**
- * Resolve the active Sector Director for a given sector code.
+ * Resolve the active Service Center Director for an org code.
  *
- * Resolution order:
- *   1. Travel_User_Roles sector_override — if active row for this sector, use it
- *   2. HC auto-derive — find the SD position by:
- *        orgCode === sectorCode
- *        AND officeTitle contains "Sector Director"
- *        AND grade === '15' AND supervisoryStatus === '2' (sanity check)
- *   3. Occupancy gate — if matched position's occupancyStatus is VACANT or
- *      OBLIGATED, return null (caller should cascade to BU stage)
+ * WHAT WAS WRONG, AND HOW LONG IT WAS WRONG FOR
+ * ---------------------------------------------
+ * This used to identify an SCD by matching officeTitle against the literal
+ * string 'sector director'. @clolry: "We don't call them Sector Directors, we
+ * call them Service Center Directors."
  *
- * @param {string} sectorCode - First 4 chars of an org code (e.g. 'QFAA')
+ * No position in this organization carries that title. Measured by
+ * diagServiceCenterDirectors on the live roster: of the 22 service centers'
+ * supervisory occupants, the titles are 9x Supervisory Contract Specialist,
+ * 3x Program Analysis Officer, 2x Supervisory Program Analyst, and nine
+ * others. The count of titles containing 'sector director' is ZERO.
+ *
+ * So this returned null for every submission, determineInitialRouting took
+ * its "no SD found" branch, and every request in LETS started at the DAC
+ * stage. Nothing errored. The service-center review stage simply never
+ * happened, and Sector_Director_Name was blank on every row — which was
+ * accurate, because no SCD had ever reviewed anything.
+ *
+ * THE RULE NOW, AND WHY EACH PART OF IT
+ * -------------------------------------
+ * A Service Center Director is the most senior supervisory person whose own
+ * Dept ID sits at the SERVICE_CENTER level of the org hierarchy.
+ *
+ *   SERVICE_CENTER level, read from HC_Orgs.Org_Level via
+ *   HC.orgAncestorAtLevel        NOT a 4- or 5-character truncation of the
+ *                                org code. Depth varies by branch: FCA has no
+ *                                sub-office level while FCB and FCC do, so
+ *                                FCA0A is two levels deep and FCBAA three.
+ *                                And a person ABOVE a service center has none
+ *                                at all, which a truncation cannot express.
+ *
+ *   supervisory means != 8       isHcSupervisoryCode. The old rule demanded
+ *                                exactly '2', which excluded the 13 people
+ *                                whose HR record says Supervisor (CSRA),
+ *                                Management Official (CSRA) or Team Leader.
+ *                                That is why FCA0A had no director at all.
+ *
+ *   the seat must be occupied    isHcSeatOccupied. A vacant seat cannot
+ *                                approve travel. This is also the tie-break
+ *                                for the two centers that showed multiple
+ *                                supervisory rows: at FCA0E and FCC0B the
+ *                                extras were VACANT.
+ *
+ *   highest grade wins a tie     @clolry: "when a conflict exists with two
+ *                                'supervisors' in the same workgroup you can
+ *                                choose the one that is the higher grade."
+ *                                The old code returned whichever row came
+ *                                first in bundle order — nondeterministic
+ *                                across re-imports, so a center's approver
+ *                                could change because HR re-sorted a sheet.
+ *
+ * THE GRADE-15 REQUIREMENT IS GONE. @clolry: "I don't know why we would need
+ * to check the grade." It was a proxy for seniority that Org_Level already
+ * states, and it excluded nobody real — measured, the only rows it rejected
+ * were two VACANT grade-13 seats at FCA0E. It would also have rejected an SES
+ * director outright, since HCRosterImport normalizes an SES grade to 'ES'
+ * rather than a number.
+ *
+ * @param {string} orgCode - the submitter's full org code, e.g. 'FCA0BAA'
  * @param {TravelDB} [db] - Optional TravelDB instance for cache reuse
  * @returns {Object|null} { name, email, source: 'override'|'hc', positionNumber, occupancyStatus, sectorCode } or null
  */
-function getSectorDirector(sectorCode, db) {
-  if (!sectorCode || sectorCode.length < 4) return null;
-  var sector = sectorCode.substring(0, 4).toUpperCase();
+function getSectorDirector(orgCode, db) {
+  if (!orgCode) return null;
+
+  // THE SERVICE CENTER THIS ORG CODE BELONGS TO, from the stored hierarchy.
+  //
+  // Returns '' for anyone at or above a DAC — FC itself, FCA, FCB, FCBA — and
+  // that is the correct answer rather than a failure. Those people have no
+  // service center, so there is no SCD stage for them and routing starts at
+  // the DAC. The same distinction already drives the per-capita budget split,
+  // which buckets them as isAboveServiceCenter.
+  var sector = _resolveServiceCenterCode(orgCode);
+  if (!sector) return null;
 
   // Step 1: manual override from Travel_User_Roles sector_override
   try {
@@ -108,11 +166,64 @@ function getSectorDirector(sectorCode, db) {
 }
 
 /**
- * Find the SD position record in HC for a given sector.
- * Position-first: identifies the SEAT regardless of occupancy.
+ * Which service center an org code belongs to, from the STORED hierarchy.
+ *
+ * NOT A TRUNCATION. The inherited code took `orgCode.substring(0, 4)` and
+ * called it the sector, which was correct for the previous workgroup — their
+ * codes ran QFA (business unit) > QFAA (sector), so four characters WAS the
+ * sector. It was carried over without re-deriving against this org.
+ *
+ * Here a service center is five characters, so a 4-char prefix of FCA0BAA is
+ * 'FCA0' — which is not an org code at all. The '0' is a filler, not a level.
+ * Measured: the 22 service centers collapse into 6 buckets under that rule,
+ * three of them named for codes that do not exist.
+ *
+ * AND LENGTHENING IT TO 5 WOULD NOT FIX IT. 130 of 137 org codes agree with a
+ * 5-char truncation, but the other 7 are FC, FCA, FCB, FCC, FCBA, FCBB and
+ * FCCA — everyone at or above an office. Truncation hands those people their
+ * OWN code as their service center; the stored walk returns '', which is the
+ * truth: they have none.
+ *
+ * @param {string} orgCode
+ * @returns {string} the SERVICE_CENTER org code, or '' if there is none
+ * @private
+ */
+function _resolveServiceCenterCode(orgCode) {
+  var code = String(orgCode || '').trim().toUpperCase();
+  if (!code) return '';
+  try {
+    var orgs = HC.hcGetOrgHierarchy() || [];
+    if (!orgs.length) {
+      console.warn('_resolveServiceCenterCode: HC_Orgs is empty, so no org ' +
+                   'code can be resolved to a service center. Run ' +
+                   'loadRealOrgCodes().');
+      return '';
+    }
+    var byCode = {};
+    for (var i = 0; i < orgs.length; i++) {
+      byCode[String(orgs[i].orgCode || '').toUpperCase()] = orgs[i];
+    }
+    return HC.orgAncestorAtLevel(code, byCode, 'SERVICE_CENTER') || '';
+  } catch (e) {
+    console.error('_resolveServiceCenterCode: ' + e.message);
+    return '';
+  }
+}
+
+/**
+ * Find the Service Center Director's position record in HC.
+ *
+ * Position-first: identifies the SEAT, then the caller applies its own
+ * occupancy gate. See getSectorDirector's header for why each clause.
+ *
+ * WHY THE SEARCH IS OVER THE WHOLE BUNDLE RATHER THAN A PREFIX MATCH: a
+ * director sits AT the service center's own code, not in a division beneath
+ * it. Somebody in FCA0BAA belongs to a branch; somebody at FCA0B is at the
+ * service-center level. An `indexOf(sector) === 0` test would have matched
+ * every division head in the center and returned whichever came first.
  *
  * @private
- * @param {string} sector - Uppercase 4-char sector code
+ * @param {string} sector - a SERVICE_CENTER org code, e.g. 'FCA0B'
  * @returns {Object|null} HC position record or null
  */
 function _findSectorDirectorPosition(sector) {
@@ -123,18 +234,33 @@ function _findSectorDirectorPosition(sector) {
       return null;
     }
 
+    var want = String(sector || '').toUpperCase();
+    if (!want) return null;
+
     var positions = bundle.data;
+    var best = null;
+
     for (var i = 0; i < positions.length; i++) {
       var p = positions[i];
       if (!p || !p.orgCode) continue;
-      if (String(p.orgCode).toUpperCase() !== sector) continue;
-      if (!p.officeTitle) continue;
-      if (p.officeTitle.toLowerCase().indexOf('sector director') === -1) continue;
-      if (String(p.grade) !== '15') continue;
-      if (String(p.supervisoryStatus) !== '2') continue;
-      return p;
+      // AT the service center's own code, never beneath it.
+      if (String(p.orgCode).toUpperCase() !== want) continue;
+      // Anything other than code 8. The old rule demanded exactly '2' and so
+      // missed the 13 people HR calls Supervisor (CSRA), Management Official
+      // (CSRA) or Team Leader — which is why FCA0A had no director.
+      if (!isHcSupervisoryCode(p.supervisoryStatus)) continue;
+      // A vacant or obligated seat cannot approve travel. This is also what
+      // resolves FCA0E's three supervisory rows and FCC0B's two: the extras
+      // are VACANT.
+      if (!isHcSeatOccupied(p)) continue;
+
+      // HIGHEST GRADE WINS, deterministically. Taking the first match left
+      // the answer dependent on bundle order, so a center's approver could
+      // change because HR re-sorted the source sheet.
+      if (!best || compareHcGrade(p.grade, best.grade) > 0) best = p;
     }
-    return null;
+
+    return best;
   } catch (e) {
     console.error('_findSectorDirectorPosition: HC error: ' + e.message);
     return null;
@@ -161,7 +287,11 @@ function _getSectorDirectorOverride(sector, db) {
     var orgToSector = (orgLookups && orgLookups.orgToSector) || {};
     for (var oc in orgToSector) {
       if (!orgToSector.hasOwnProperty(oc)) continue;
-      if (String(oc).substring(0, 4).toUpperCase() === sector) {
+      // MATCHED ON THE SERVICE CENTER CODE, not a 4-char prefix of it. The
+      // caller now passes a real SERVICE_CENTER code, so this is an exact
+      // comparison; under the old truncation 'FCA0' matched five different
+      // centers and the first one's name won.
+      if (String(oc).toUpperCase() === sector) {
         sectorName = orgToSector[oc];
         break;
       }
@@ -434,7 +564,11 @@ function canAccessTrip(email) {
         var p = positions[i];
         if (!p || !p.emailAddress) continue;
         if (String(p.emailAddress).toLowerCase() !== emailLower) continue;
-        if (String(p.supervisoryStatus) !== '2') continue;
+        // ANY SUPERVISORY CODE, not just '2'. The old test excluded the 13
+        // people whose HR record says Supervisor (CSRA), Management Official
+        // (CSRA) or Team Leader — so each of them was denied LETS entirely,
+        // with no error to point at. See 01_constants/HCRules.js.
+        if (!isHcSupervisoryCode(p.supervisoryStatus)) continue;
         var status = String(p.occupancyStatus || '').toUpperCase();
         if (status === 'VACANT' || status === 'OBLIGATED') continue;
         _logAccessDecision_(emailLower, 'GRANTED', 'hc-supervisor', {
@@ -596,7 +730,11 @@ function getAccessInventory() {
           var status = String(p.occupancyStatus || '').toUpperCase();
           if (status === 'VACANT' || status === 'OBLIGATED') continue;
 
-          if (String(p.supervisoryStatus) === '2') {
+          // Same widened rule as the gate at canAccessTrip, so the access
+          // INVENTORY and the access DECISION cannot disagree about who is a
+          // supervisor. They are read side by side when someone asks why they
+          // cannot sign in.
+          if (isHcSupervisoryCode(p.supervisoryStatus)) {
             out.hcSupervisors.push({
               email: String(p.emailAddress).toLowerCase(),
               name: p.employeeName || '',
@@ -677,7 +815,10 @@ function verifyAccessGate(email) {
         var p = positions[i];
         if (!p || !p.emailAddress) continue;
         if (String(p.emailAddress).toLowerCase() !== emailLower) continue;
-        if (String(p.supervisoryStatus) !== '2') continue;
+        // Must match canAccessTrip's rule exactly: this function EXPLAINS that
+        // decision, and an explanation that applies a different test is worse
+        // than none.
+        if (!isHcSupervisoryCode(p.supervisoryStatus)) continue;
         var status = String(p.occupancyStatus || '').toUpperCase();
         if (status === 'VACANT' || status === 'OBLIGATED') continue;
         reasons.push('hc-supervisor: ' + (p.officeTitle || '(no title)') + ' [' + (p.orgCode || '?') + ', ' + status + ']');
@@ -932,22 +1073,48 @@ function isActiveOSOReviewer(email) {
 }
 
 /**
- * Check if a user is currently an active Sector Director (via override or HC).
- * Walks sector_override role rows first, then scans HC for any SD position they occupy.
+ * Whether this user is a Service Center Director, and of which centers.
+ *
+ * THE RETURNED CODES ARE FULL SERVICE_CENTER ORG CODES — 'FCA0B', 'FCBAA' —
+ * not 4-character prefixes. Every consumer compares them against a request's
+ * org code, so the two sides must speak the same vocabulary; see
+ * orgCodeInScope.
+ *
+ * WHAT CHANGED, AND WHY BOTH HALVES HAD TO CHANGE TOGETHER
+ * -------------------------------------------------------
+ * The HC half matched officeTitle against 'sector director', a title no
+ * position in this organization holds, so it found nobody — ever.
+ *
+ * The override half resolved a sector NAME to codes by taking
+ * `substring(0, 4)` of every org whose Sector matched. Two separate problems
+ * compounded there:
+ *
+ *   HC_Orgs.Sector is 'ASD' on all 137 rows (HCSeed.js), so ONE name matched
+ *   the entire organization; and the 4-char truncation of a 5-char service
+ *   center yielded FCA0 / FCB0 / FCC0, which are not org codes at all.
+ *
+ * Resolved against the real hierarchy, scope "ASD" reached 137 of 137 org
+ * codes. A single sector_override row would have granted read access to every
+ * ASD travel request rather than one center's. diagServiceCenterDirectors
+ * confirmed zero such rows exist, so the over-grant was latent — but it would
+ * have appeared the first time one was granted.
+ *
+ * Fixing only the title match would have made this WORSE, not better: a
+ * newly-correct SCD would return 'FCA0B' while the dashboards still computed
+ * 'FCA0' from the request side, the two would never compare equal, and the
+ * director would reach their queue and see nothing at all.
  *
  * @param {string} email - Email to check
  * @param {TravelDB} [db] - Optional TravelDB instance for cache reuse
- * @returns {Object} { isSD: boolean, sectorCodes: string[] } — sector codes they oversee
+ * @returns {Object} { isSD: boolean, sectorCodes: string[] } full SERVICE_CENTER codes
  */
 function isSectorDirector(email, db) {
   if (!email) return { isSD: false, sectorCodes: [] };
   var emailLower = email.toLowerCase();
   var sectorCodes = [];
 
-  // 1. sector_override.Scope is the sector NAME.
-  // Resolve to 4-char sector codes via HC's orgToSector map so the rest
-  // of the function (and consumers) can keep using codes for sector
-  // identification (which matches how requests carry their sector).
+  // 1. sector_override.Scope holds a sector NAME, so it has to be resolved to
+  //    codes. Resolved to FULL service-center codes via the stored hierarchy.
   try {
     var unifiedRoles = _getUnifiedRolesForEmail(emailLower, db);
     if (unifiedRoles.length > 0) {
@@ -957,11 +1124,14 @@ function isSectorDirector(email, db) {
         if (unifiedRoles[ur].roleType !== 'sector_override') continue;
         var sectorName = unifiedRoles[ur].scope;
         if (!sectorName) continue;
-        // Find every 4-char prefix that maps to this sector name
         for (var oc in orgToSector) {
           if (!orgToSector.hasOwnProperty(oc)) continue;
           if (orgToSector[oc] !== sectorName) continue;
-          var resolved = String(oc).substring(0, 4).toUpperCase();
+          // THE SERVICE CENTER, WALKED, not a prefix. An org whose own level
+          // is above a service center resolves to '' and is skipped rather
+          // than contributing its own code — otherwise a scope matching FCA
+          // would silently cover all five of its centers.
+          var resolved = _resolveServiceCenterCode(oc);
           if (resolved && sectorCodes.indexOf(resolved) === -1) {
             sectorCodes.push(resolved);
           }
@@ -972,22 +1142,36 @@ function isSectorDirector(email, db) {
     console.error('isSectorDirector: unified-roles check failed: ' + eu.message);
   }
 
-  // 2. Check HC for any SD position they occupy (filled, not vacant/obligated)
+  // 2. The HC position they occupy. Same rule as _findSectorDirectorPosition:
+  //    at a service center's own code, supervisory, seat occupied.
   try {
     var bundle = HC.hcGetBundle();
     if (bundle && bundle.success && bundle.data) {
       var positions = bundle.data;
       for (var j = 0; j < positions.length; j++) {
         var p = positions[j];
-        if (!p || !p.officeTitle || !p.emailAddress) continue;
+        if (!p || !p.emailAddress) continue;
         if (String(p.emailAddress).toLowerCase() !== emailLower) continue;
-        if (p.officeTitle.toLowerCase().indexOf('sector director') === -1) continue;
-        if (String(p.grade) !== '15') continue;
-        if (String(p.supervisoryStatus) !== '2') continue;
-        var status = String(p.occupancyStatus || '').toUpperCase();
-        if (status === 'VACANT' || status === 'OBLIGATED') continue;
-        var sec = String(p.orgCode || '').substring(0, 4).toUpperCase();
-        if (sec && sectorCodes.indexOf(sec) === -1) sectorCodes.push(sec);
+        if (!isHcSupervisoryCode(p.supervisoryStatus)) continue;
+        if (!isHcSeatOccupied(p)) continue;
+
+        // Their own code must BE a service center. Somebody supervising a
+        // division inside one is not its director.
+        var own = String(p.orgCode || '').toUpperCase();
+        if (!own) continue;
+        if (_resolveServiceCenterCode(own) !== own) continue;
+
+        // AND THEY MUST BE THE ONE THIS CENTER RESOLVES TO. Without this, any
+        // supervisor sharing a center's code would claim the role — and at
+        // FCA0E and FCC0B there is more than one supervisory row. The
+        // highest-grade rule lives in one place, so asking it here keeps the
+        // reviewer role and the routing target from disagreeing about who the
+        // director is.
+        var director = _findSectorDirectorPosition(own);
+        if (!director) continue;
+        if (String(director.emailAddress || '').toLowerCase() !== emailLower) continue;
+
+        if (sectorCodes.indexOf(own) === -1) sectorCodes.push(own);
       }
     }
   } catch (e) {
@@ -998,6 +1182,42 @@ function isSectorDirector(email, db) {
     isSD: sectorCodes.length > 0,
     sectorCodes: sectorCodes
   };
+}
+
+/**
+ * Whether a request's org code falls inside a reviewer's service-center scope.
+ *
+ * THE ONE PLACE THAT COMPARES A REQUEST TO A SECTOR SCOPE. There were four
+ * copies of this comparison — ReviewerDashboard twice, Admin_Dashboard once,
+ * and the review-assignment path — each written as
+ * `String(orgCode).substring(0, 4).toUpperCase()`, and each therefore
+ * comparing a 4-character truncation against whatever isSectorDirector
+ * happened to return.
+ *
+ * That worked only because BOTH sides were wrong in the same way. Correcting
+ * one side alone leaves a director looking at an empty queue, which reads as
+ * "no requests yet" rather than as a bug — so the comparison is centralized
+ * here and the truncations are gone.
+ *
+ * A REQUEST IN A DIVISION BELONGS TO ITS SERVICE CENTER. The submitter's org
+ * code is their own — FCA0BAA, a branch — so this walks UP to the center
+ * rather than comparing strings. A prefix test would be close but not
+ * equivalent: FCBA and FCBAA share a prefix and are an office and a service
+ * center respectively.
+ *
+ * @param {string} orgCode the request's (or submitter's) org code
+ * @param {Array<string>} scopeCodes full SERVICE_CENTER codes from isSectorDirector
+ * @returns {boolean}
+ */
+function orgCodeInScope(orgCode, scopeCodes) {
+  var scope = scopeCodes || [];
+  if (!scope.length) return false;
+  var sc = _resolveServiceCenterCode(orgCode);
+  if (!sc) return false;
+  for (var i = 0; i < scope.length; i++) {
+    if (String(scope[i] || '').toUpperCase() === sc) return true;
+  }
+  return false;
 }
 
 /**
@@ -1679,12 +1899,10 @@ function _isRequestInUserScope(request, ctx) {
       return false;
     }
     if (ctx.scope.type === 'sector') {
-      var sec = String(canonical).substring(0, 4).toUpperCase();
-      var codes = ctx.scope.codes || [];
-      for (var j = 0; j < codes.length; j++) {
-        if (String(codes[j]).toUpperCase() === sec) return true;
-      }
-      return false;
+      // Walked, not truncated. ctx.scope.codes holds full SERVICE_CENTER
+      // codes from isSectorDirector, so both sides must speak that
+      // vocabulary — see orgCodeInScope.
+      return orgCodeInScope(canonical, ctx.scope.codes || []);
     }
     return false;
   }
@@ -1813,21 +2031,27 @@ function requireRequestEditor(requestId, db) {
 }
 
 /**
- * Look up a sector code's BU name + readable sector name from HC org hierarchy.
+ * A service center's DAC name and readable center name, for display.
+ *
+ * TAKES A FULL SERVICE_CENTER CODE and matches it exactly. It used to
+ * truncate both sides to four characters, which made 'FCA0' match all five of
+ * FCA's centers and return whichever came first — so a reviewer's scope label
+ * could name a different center than the one they actually oversee.
+ *
  * @private
- * @param {string} sectorCode - 4-char sector code (e.g. 'QFAA')
+ * @param {string} sectorCode - a SERVICE_CENTER org code, e.g. 'FCA0B'
  * @returns {Object} { buName: string, sectorName: string } — fields may be empty
  */
 function _describeSector(sectorCode) {
   var result = { buName: '', sectorName: '' };
   if (!sectorCode) return result;
-  var sector = String(sectorCode).substring(0, 4).toUpperCase();
+  var sector = String(sectorCode).toUpperCase();
   try {
     var orgs = HC.hcGetOrgHierarchy();
     for (var i = 0; i < orgs.length; i++) {
       var o = orgs[i];
       if (!o || !o.orgCode) continue;
-      if (String(o.orgCode).substring(0, 4).toUpperCase() !== sector) continue;
+      if (String(o.orgCode).toUpperCase() !== sector) continue;
       if (!result.buName && o.businessUnit) result.buName = o.businessUnit;
       if (!result.sectorName && o.sector) {
         // Normalize "Sector 1 (Systems)" → "Sector 1"

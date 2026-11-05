@@ -57,6 +57,16 @@ function build(opts){
   const ctx=vm.createContext(sandbox);
   vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID='x';",ctx);
   vm.runInContext(fs.readFileSync('lets_app/server/01_constants/Sheets.js','utf8'),ctx);
+  // HCRules.js holds isHcSupervisoryCode, which canAccessTrip's HC-supervisor
+  // path now calls.
+  //
+  // WORTH NOTING WHY THIS FAILED LOUDLY RATHER THAN SILENTLY. Without this
+  // line the call threw a ReferenceError, canAccessTrip's try/catch swallowed
+  // it, and the gate recorded DENIED with reason 'none' — so a missing
+  // dependency locks everyone out instead of letting anyone in. That is the
+  // right direction to fail, and it is also why the only signal was these
+  // assertions: nothing in the log said "the rule is missing".
+  vm.runInContext(fs.readFileSync('lets_app/server/01_constants/HCRules.js','utf8'),ctx);
   // Stub the collaborators canAccessTrip depends on.
   vm.runInContext(`
     var __roles = ${JSON.stringify(opts.roles||{})};
@@ -188,6 +198,7 @@ console.log('8. negative control (the suite must be able to fail)');
     const c2=vm.createContext(sb);
     vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID='x';",c2);
     vm.runInContext(fs.readFileSync('lets_app/server/01_constants/Sheets.js','utf8'),c2);
+    vm.runInContext(fs.readFileSync('lets_app/server/01_constants/HCRules.js','utf8'),c2);
     vm.runInContext(`var __b={success:true,data:[${JSON.stringify(SUP)}]};
       function _getUnifiedRolesForEmail(){return [];}
       function _getUnifiedRoleData(){return {rolesByEmail:{},hasData:true};}

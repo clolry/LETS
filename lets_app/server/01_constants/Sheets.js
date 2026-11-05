@@ -583,9 +583,13 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Employee_Name',
     'Email_Address',
     'Org_Code',                    // FK to HC_Orgs.Org_Code
-    'Office_Title',                // Access.js:132 substring-matches this
-    'Grade',                       // '15', '14', '07' — zero-padded STRING
-    'Supervisory_Status',          // '2' = supervisor. Compared as a STRING
+    'Office_Title',                // Display only. NOT matched for any rule —
+                                   // see HCRules.js for why a title match was
+                                   // the wrong instrument for finding an SCD
+    'Grade',                       // '15', '14', '07' — zero-padded STRING.
+                                   // 'ES' for SES: '00' is no grade at all
+    'Supervisory_Status',          // 2/4/5/7 supervise, 8 does not. Compared
+                                   // as a STRING — isHcSupervisoryCode
     'Occupancy_Status',            // FILLED | VACANT | OBLIGATED
     'LCAT',
     'Location_Code',

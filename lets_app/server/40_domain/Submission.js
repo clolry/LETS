@@ -13,39 +13,50 @@
 // ============================================================================
 
 /**
- * Find the Sector Director for a given org code at submission time.
+ * Find the Service Center Director for an org code at submission time.
  *
- * Thin adapter over getSectorDirector() (TravelReviewerResolver.js) — that's
- * the single source of truth for SD identification across TRIP. Submission
- * routing only needs { name, email }; the resolver returns more, we strip.
+ * Thin adapter over getSectorDirector() in 30_services/Access.js — the single
+ * source of truth for SCD identification. Routing only needs { name, email };
+ * the resolver returns more and this strips it.
  *
- * Resolution order (inherited from getSectorDirector):
- *   1. Travel_User_Roles sector_override for this sector
- *   2. HC position-first auto-derive: orgCode === sectorCode AND
- *      officeTitle contains "Sector Director" AND Grade 15 AND Sup Status 2
- *   3. Occupancy gate: VACANT or OBLIGATED → null (caller cascades to BU)
+ * NO LONGER TRUNCATES THE ORG CODE. It passed `substring(0, 4)`, which was
+ * right for the inherited org (QFA > QFAA, so four characters WAS the sector)
+ * and wrong here, where a service center is five characters and FCA0 is not an
+ * org code at all. getSectorDirector now walks HC_Orgs.Org_Level itself, so
+ * the full code goes through.
+ *
+ * THE LENGTH GUARD IS GONE TOO. `length < 4` rejected nothing real — every ASD
+ * code is at least two characters and the shortest, 'FC', is the Assistant
+ * Commissioner's own. It also made 'FC' look like bad input rather than what
+ * it is: somebody with no service center above them, whose routing correctly
+ * starts at the DAC stage.
  *
  * Migrated 2026-04-30 from the legacy LCAT="SD" rule, which was fragile
  * against HR data drift and didn't honor occupancy or admin overrides.
  *
- * @param {string} submitterOrgCode - Full org code (e.g., 'QFAADA')
+ * @param {string} submitterOrgCode - Full org code, e.g. 'FCA0BAA'
  * @returns {Object|null} { name, email } or null if vacant / not found
  * @server
  */
 function findSectorDirector(submitterOrgCode) {
-  if (!submitterOrgCode || submitterOrgCode.length < 4) {
-    console.log('findSectorDirector: Org code too short, skipping SD lookup');
+  if (!submitterOrgCode) {
+    console.log('findSectorDirector: no org code, skipping SCD lookup');
     return null;
   }
 
-  const sectorCode = submitterOrgCode.substring(0, 4);
-  const sd = getSectorDirector(sectorCode);
+  const sd = getSectorDirector(submitterOrgCode);
   if (!sd) {
-    console.log('findSectorDirector: No SD for sector:', sectorCode);
+    // Two different situations, and the log says which: somebody above a
+    // service center has no SCD stage at all, which is correct; a center with
+    // no filled director is a gap worth seeing.
+    console.log('findSectorDirector: no SCD for org code ' + submitterOrgCode +
+                ' — either it sits above any service center, or that ' +
+                'center\'s director seat is unfilled. Routing cascades to DAC.');
     return null;
   }
 
-  console.log('findSectorDirector: Resolved SD via ' + sd.source + ':', sd.name, sd.email);
+  console.log('findSectorDirector: resolved SCD via ' + sd.source + ' for ' +
+              sd.sectorCode + ':', sd.name, sd.email);
   return { name: sd.name || '', email: sd.email };
 }
 
@@ -1216,7 +1227,10 @@ function simulateSubmissionRouting(submitterEmail, opts) {
     orgCode: info.orgCode || '',
     buCode: info.buCode || '',
     buName: info.buName || '',
-    sectorCode: (info.orgCode || '').substring(0, 4) || '',
+    // The real service center, walked. A 4-char truncation printed 'FCA0' —
+    // not an org code — in the one output a human reads when routing has gone
+    // wrong.
+    sectorCode: _resolveServiceCenterCode(info.orgCode || ''),
     source: info.source || (info.success ? 'unknown' : 'not-found')
   };
   if (!info.orgCode) {

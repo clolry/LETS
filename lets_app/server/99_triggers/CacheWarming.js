@@ -1606,7 +1606,7 @@ function _probeHcForUser(needle) {
     if (!p) return;
     if (p.emailAddress) emailCount++;
     if (p.orgCode) hasOrgCode++;
-    if (String(p.supervisoryStatus) === '2') supStatus2++;
+    if (isHcSupervisoryCode(p.supervisoryStatus)) supStatus2++;
     var ss = String(p.supervisoryStatus === undefined ? '(undef)' : p.supervisoryStatus);
     supStatusDistinct[ss] = (supStatusDistinct[ss] || 0) + 1;
     var os = String(p.occupancyStatus === undefined ? '(undef)' : (p.occupancyStatus || '(empty)')).toUpperCase();
@@ -1614,7 +1614,10 @@ function _probeHcForUser(needle) {
   });
   console.log('Positions with emailAddress filled: ' + emailCount + ' / ' + positions.length);
   console.log('Positions with orgCode filled:      ' + hasOrgCode + ' / ' + positions.length);
-  console.log('Positions with supervisoryStatus=2: ' + supStatus2 + ' / ' + positions.length);
+  // Counts every SUPERVISORY code, not just 2 — the label said '=2' while
+  // the gate it describes admits 2, 4, 5 and 7.
+  console.log('Positions that are supervisory (code != 8): ' + supStatus2 +
+              ' / ' + positions.length);
   console.log('supervisoryStatus distribution: ' + JSON.stringify(supStatusDistinct));
   console.log('occupancyStatus distribution:   ' + JSON.stringify(occStatusDistinct));
 

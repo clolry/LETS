@@ -45,7 +45,8 @@
  * 16 sites compare HR values as STRINGS:
  *
  *   Access.js:133        String(p.grade) !== '15'
- *   Access.js:134        String(p.supervisoryStatus) !== '2'
+ *   Access.js            isHcSupervisoryCode(p.supervisoryStatus)
+ *                        (01_constants/HCRules.js — anything but code 8)
  *   Request.js:137       String(supervisor.grade || '').trim() === '15'
  *   ... and 13 more
  *
