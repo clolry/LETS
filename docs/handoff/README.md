@@ -8,6 +8,7 @@ numbers are right.
 |---|---|
 | [`01-gogov-reconciliation.md`](01-gogov-reconciliation.md) | **Task 1.** Monthly Go.gov expense report reconciliation |
 | [`02-existing-travel-import.md`](02-existing-travel-import.md) | **Task 2.** Importing existing travel, and verifying budget arithmetic |
+| [`03-directory-sweep-completion.md`](03-directory-sweep-completion.md) | **Open bug.** The directory email sweep reports false completion |
 
 Both documents are self-contained. Read this page first for the branch
 situation and why these two tasks were chosen.
