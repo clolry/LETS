@@ -443,8 +443,14 @@
         // grade normalizes to 'ES' rather than a number.
         if (String(p.supervisoryStatus || '').trim() === '8') continue;
         if (!String(p.supervisoryStatus || '').trim()) continue;
+        // ONLY VACANT MEANS NOBODY IS THERE. Excluding OBLIGATED removed
+        // Scott Eberle, the acting supervisor of FCC0C, and left that center
+        // naming a grade-14 "Lead" instead — so this page would have shown
+        // the wrong person as its director. Mirrors
+        // HCRules.isHcSeatOccupied on the server.
         var occ = String(p.occupancyStatus || '').toUpperCase();
-        if (occ === 'VACANT' || occ === 'OBLIGATED') continue;
+        if (occ === 'VACANT') continue;
+        if (!String(p.employeeName || '').trim()) continue;
         if (!p.emailAddress) continue;
         var existingSd = buMap[buName].sectors[sectorName].sd;
         if (!existingSd || self._gradeRank(p.grade) > self._gradeRank(existingSd.grade)) {

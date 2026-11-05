@@ -1310,13 +1310,24 @@ function diagServiceCenterDirectors() {
 
     var counts = { none: 0, one: 0, many: 0 };
     var noEmail = [];
-    var wouldFailGrade = [];
     var titles = {};
+    var unresolved = [];
+    var obligatedDirectors = [];
 
     scCodes.forEach(function (code) {
       var found = byCenter[code];
       var orgName = String((byCode[code] || {}).division || '');
       var label = code + '  ' + orgName;
+
+      // WHO ROUTING WOULD ACTUALLY PICK. The candidate list below is the raw
+      // evidence; this is the answer.
+      //
+      // Asked rather than re-derived, so this report cannot disagree with the
+      // approver a request is sent to. The two disagreeing is what let a
+      // grade-14 "Lead" look like FCC0C's director while Eberle sat in the
+      // same list — the output showed the facts and I read them wrongly.
+      var resolved = null;
+      try { resolved = getSectorDirector(code); } catch (e) { /* reported below */ }
 
       if (!found.length) {
         counts.none++;
@@ -1324,6 +1335,7 @@ function diagServiceCenterDirectors() {
         // A center with no supervisory person at its own code is not
         // necessarily an error — the seat may be vacant, or the director may
         // sit one level up. Both are worth seeing.
+        unresolved.push(code + ' ' + orgName + ' (no supervisory position)');
         return;
       }
       if (found.length === 1) counts.one++;
@@ -1331,15 +1343,28 @@ function diagServiceCenterDirectors() {
 
       console.log('  [' + (found.length === 1 ? ' 1 ' : found.length + '!') +
                   '] ' + label);
+
+      if (resolved && resolved.email) {
+        console.log('     ROUTES TO: ' + resolved.name + '  <' +
+                    resolved.email + '>  via ' + resolved.source +
+                    ', seat ' + resolved.occupancyStatus);
+        if (String(resolved.occupancyStatus).toUpperCase() === 'OBLIGATED') {
+          obligatedDirectors.push(code + ' ' + resolved.name);
+        }
+      } else {
+        console.log('     ROUTES TO: *** NOBODY — this center cascades to ' +
+                    'the DAC stage ***');
+        unresolved.push(code + ' ' + orgName +
+                        ' (candidates exist but none is reachable)');
+      }
+
       found.forEach(function (p) {
         var occ = String(p.occupancyStatus || '').toUpperCase();
-        var gradeNote = (String(p.grade) === '15') ? '' : '   <- grade is ' +
-          JSON.stringify(String(p.grade)) + ', so the current grade check ' +
-          'would REJECT this person';
-        if (String(p.grade) !== '15') {
-          wouldFailGrade.push(code + ' ' + p.employeeName + ' grade ' + p.grade);
-        }
-        if (!p.emailAddress) noEmail.push(code + ' ' + p.employeeName);
+        var isPick = !!(resolved && resolved.email &&
+          String(p.emailAddress || '').toLowerCase() ===
+            String(resolved.email).toLowerCase());
+        var gradeNote = isPick ? '   <-- SELECTED' : '';
+        if (!p.emailAddress) noEmail.push(code + ' ' + (p.employeeName || '(vacant seat)'));
         titles[String(p.officeTitle || '(blank)')] =
           (titles[String(p.officeTitle || '(blank)')] || 0) + 1;
 
@@ -1387,22 +1412,22 @@ function diagServiceCenterDirectors() {
 
     if (noEmail.length) {
       console.log('');
-      console.log('NO EMAIL (' + noEmail.length + ') — Access.js:98 returns ' +
-                  'null without one, so routing would cascade past these ' +
-                  'centers even after the title fix:');
+      console.log('CANDIDATE ROWS WITH NO EMAIL (' + noEmail.length + '):');
       noEmail.forEach(function (x) { console.log('  ' + x); });
+      console.log('  Most of these are VACANT seats — a staffing fact, not a ' +
+                  'data gap. A row with a NAME and no address is the real ' +
+                  'problem: there is nobody to route to, so ' +
+                  'getSectorDirector returns null and that center cascades ' +
+                  'to the DAC. Compare against the cascade list above.');
     }
 
-    if (wouldFailGrade.length) {
-      console.log('');
-      console.log('THE GRADE CHECK WOULD EXCLUDE ' + wouldFailGrade.length +
-                  ' of these people:');
-      wouldFailGrade.forEach(function (x) { console.log('  ' + x); });
-      console.log('  All five call sites require grade "15". @clolry: "I ' +
-                  'don\'t know why we would need to check the grade." Note ' +
-                  'that an SES director normalizes to "SES", not a number, ' +
-                  'so the check rejects them too.');
-    }
+    // THE GRADE-15 CHECK IS GONE, so there is nothing left to report about it.
+    // @clolry: "I don't know why we would need to check the grade." Measured,
+    // it rejected only vacant seats and a grade-14 acting lead — and it would
+    // have rejected an SES director outright, since an SES grade normalizes
+    // to 'ES' rather than a number. The grade now serves exactly one purpose:
+    // breaking a tie between two reachable supervisors at one center, marked
+    // SELECTED above.
 
     // ------------------------------------------------------------------
     // WHAT A sector_override ROW WOULD CURRENTLY GRANT

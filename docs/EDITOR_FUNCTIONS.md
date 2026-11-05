@@ -85,14 +85,14 @@ The Apps Script Run button passes no arguments, so these wrap the functions that
 
 | Function | File | Line | What it does |
 |---|---|---:|---|
-| `runRosterPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1579 | Preview the HR roster import, and print the result. |
-| `runRosterImport()` | `lets_app/server/99_triggers/Diagnostics.js` | 1652 | Apply the HR roster import. DESTRUCTIVE — replaces every row in |
-| `runClearHCPositions()` | `lets_app/server/99_triggers/Diagnostics.js` | 1739 | Empty HC_Positions. DESTRUCTIVE. |
-| `runDirectoryPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1763 | Preview the directory email lookup, and print the result. |
-| `runDirectoryResolve()` | `lets_app/server/99_triggers/Diagnostics.js` | 1813 | Resolve directory email addresses and WRITE them to HC_Positions. |
-| `runEmailResolutionQueue()` | `lets_app/server/99_triggers/Diagnostics.js` | 1901 | Show the email-resolution queue: who needs an address, and what to offer. |
-| `runSaveEmailOverride()` | `lets_app/server/99_triggers/Diagnostics.js` | 1982 | Record one admin email decision. |
-| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 2015 | Print the current budget dashboard payload. |
+| `runRosterPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1604 | Preview the HR roster import, and print the result. |
+| `runRosterImport()` | `lets_app/server/99_triggers/Diagnostics.js` | 1677 | Apply the HR roster import. DESTRUCTIVE — replaces every row in |
+| `runClearHCPositions()` | `lets_app/server/99_triggers/Diagnostics.js` | 1764 | Empty HC_Positions. DESTRUCTIVE. |
+| `runDirectoryPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1788 | Preview the directory email lookup, and print the result. |
+| `runDirectoryResolve()` | `lets_app/server/99_triggers/Diagnostics.js` | 1838 | Resolve directory email addresses and WRITE them to HC_Positions. |
+| `runEmailResolutionQueue()` | `lets_app/server/99_triggers/Diagnostics.js` | 1926 | Show the email-resolution queue: who needs an address, and what to offer. |
+| `runSaveEmailOverride()` | `lets_app/server/99_triggers/Diagnostics.js` | 2007 | Record one admin email decision. |
+| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 2040 | Print the current budget dashboard payload. |
 
 ## Diagnostics — safe to run any time, write nothing
 
@@ -158,9 +158,9 @@ Simulations do not submit anything. The FAS tracker test functions DO write a ro
 | `_bustRoutingCachesForTesting()` | `lets_app/server/40_domain/Submission.js` | 1331 | Editor helper: clear every cache that could be holding stale role |
 | `_testRouting()` | `lets_app/server/40_domain/Submission.js` | 1367 | Editor convenience wrapper: edit TEST_EMAIL + TEST_OVERHEAD, save, |
 | `simulateAllRoutingPaths()` | `lets_app/server/40_domain/Submission.js` | 1408 | Walk HC staffing for one representative submitter per BU and simulate |
-| `simulateRoutingForList(…)` | `lets_app/server/40_domain/Submission.js` | 1503 | Run simulateSubmissionRouting across a hand-picked list of submissions. |
-| `_testRoutingList()` | `lets_app/server/40_domain/Submission.js` | 1551 | Editor convenience wrapper for simulateRoutingForList. Edit the |
-| `_testAllRoutingPaths()` | `lets_app/server/40_domain/Submission.js` | 1697 | Editor convenience wrapper for simulateAllRoutingPaths. Logs a flat |
+| `simulateRoutingForList(…)` | `lets_app/server/40_domain/Submission.js` | 1505 | Run simulateSubmissionRouting across a hand-picked list of submissions. |
+| `_testRoutingList()` | `lets_app/server/40_domain/Submission.js` | 1553 | Editor convenience wrapper for simulateRoutingForList. Edit the |
+| `_testAllRoutingPaths()` | `lets_app/server/40_domain/Submission.js` | 1699 | Editor convenience wrapper for simulateAllRoutingPaths. Logs a flat |
 | `submitFASTrackerTestRow()` | `lets_app/server/91_setup/FASTrackerTest.js` | 55 | Appends one diagnostic row to the TEST tracker copy. |
 | `deleteFASTrackerTestRows()` | `lets_app/server/91_setup/FASTrackerTest.js` | 201 | Deletes every row whose Event Name carries FAS_TEST_ROW_MARKER. |
 

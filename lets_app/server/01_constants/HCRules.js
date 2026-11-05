@@ -108,20 +108,46 @@ function isHcSupervisoryCode(code) {
  * Shared because the access gate and the Service Center Director lookup must
  * agree: a seat nobody occupies cannot sign in and cannot approve travel.
  *
- * OBLIGATED COUNTS AS NOT PRESENT HERE, which differs from the HEADCOUNT
- * rule, and the difference is deliberate.
+ * ONLY VACANT MEANS NOBODY IS THERE. An OBLIGATED row with a name and an
+ * address is a REAL, REACHABLE PERSON.
  *
- *   headcount   counts Eberle at his obligated seat, because he is a real
- *               person who travels and has nowhere else to be counted
- *               (HCData.hcCountableByPerson)
- *   presence    does not, because an obligated seat means its occupant is
- *               working somewhere else, and THAT row is where they sign in
- *               and approve from
+ * I had this wrong, in this function, one commit after fixing the identical
+ * mistake in the headcount. The first version excluded OBLIGATED and
+ * justified it as "the occupant is working elsewhere, so THAT row is where
+ * they sign in and approve from" — which is true of the eleven people who
+ * hold both a TEMP PROMOTION row and an OBLIGATED one, and false of everyone
+ * else.
  *
- * Both are right for their own question. Keeping them separate — rather than
- * sharing one "is this seat real" predicate — is what lets Eberle be counted
- * in FCC0C's denominator while still being matched for access against his
- * temp-promotion row, if he has one.
+ * Measured on the live feed: 19 OBLIGATED rows against 11 TEMP PROMOTION
+ * rows. At least eight people have ONLY an obligated row, so there is no
+ * other row for them to be found at. @clolry, twice: "Scott Eberle is acting
+ * as the supervisor for FCC0C."
+ *
+ * WHAT THE EXCLUSION ACTUALLY DID, measured against @clolry's live run:
+ *
+ *   FCC0C had three candidates — Chong (FILLED, grade 14, "Lead Acquisition
+ *   Program Management Specialist"), Eberle (OBLIGATED, grade 15,
+ *   "Acquisition Manager") and a vacancy. Filtering OBLIGATED removed Eberle
+ *   BEFORE the highest-grade tie-break could run, so the center resolved to
+ *   Chong.
+ *
+ * That is worse than resolving to nobody. Routing would have sent the
+ * center's travel to someone who is not its approver and looked like it was
+ * working. The retired grade-15 check had been masking it by rejecting Chong
+ * too; dropping that check is what exposed it.
+ *
+ * SO THIS NOW DIFFERS FROM THE HEADCOUNT RULE ONLY IN WHAT IT IS ASKING:
+ *
+ *   headcount   which ONE seat represents a person, so nobody is counted
+ *               twice (HCData.hcCountableByPerson prefers the
+ *               non-obligated row when there is one)
+ *   presence    whether there is a person in this seat at all, which an
+ *               obligated seat with an occupant plainly has
+ *
+ * A NAME IS REQUIRED, and that is the test doing the real work. The live feed
+ * carries 225 rows with no name, of which only 207 say VACANT — the other 18
+ * are authorized-but-empty seats whose status column reads APPROVED. Trusting
+ * the status alone would make all 18 look occupied.
  *
  * @param {Object} position an HC bundle record or roster row
  * @returns {boolean}
@@ -129,8 +155,28 @@ function isHcSupervisoryCode(code) {
 function isHcSeatOccupied(position) {
   if (!position) return false;
   var occ = String(position.occupancyStatus || '').trim().toUpperCase();
-  if (occ === 'VACANT' || occ === 'OBLIGATED') return false;
+  if (occ === 'VACANT') return false;
   return !!String(position.employeeName || '').trim();
+}
+
+/**
+ * Whether this position's occupant is reachable for approval or sign-in.
+ *
+ * Presence plus a working address. Separated from isHcSeatOccupied because
+ * the two failures need different words: a seat with nobody in it is a
+ * VACANCY, and a seat whose occupant has no address in the roster is a DATA
+ * GAP somebody can fix.
+ *
+ * @clolry's live run shows five of the 22 centers with a director lacking an
+ * address — four of those are vacant seats, so the only real gap is the one
+ * the diagnostic names.
+ *
+ * @param {Object} position
+ * @returns {boolean}
+ */
+function isHcPositionReachable(position) {
+  if (!isHcSeatOccupied(position)) return false;
+  return !!String(position.emailAddress || '').trim();
 }
 
 /**
@@ -217,6 +263,7 @@ if (typeof module !== 'undefined' && module.exports) {
     HC_NON_SUPERVISORY_CODE: HC_NON_SUPERVISORY_CODE,
     isHcSupervisoryCode: isHcSupervisoryCode,
     isHcSeatOccupied: isHcSeatOccupied,
+    isHcPositionReachable: isHcPositionReachable,
     compareHcGrade: compareHcGrade,
     hcSupervisoryCodeCensus: hcSupervisoryCodeCensus
   };

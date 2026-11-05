@@ -150,10 +150,26 @@ function getSectorDirector(orgCode, db) {
   var match = _findSectorDirectorPosition(sector);
   if (!match) return null;
 
-  // Step 3: occupancy gate — VACANT and OBLIGATED both = unfilled
+  // Step 3: reachability gate. ONLY VACANT MEANS NOBODY IS THERE.
+  //
+  // This read `status === 'VACANT' || status === 'OBLIGATED'`, which removed
+  // Scott Eberle — the acting supervisor of FCC0C, whose seat is OBLIGATED at
+  // grade 15 — and left the center resolving to a grade-14 "Lead". That is
+  // worse than resolving to nobody: routing would have sent the center's
+  // travel to someone who is not its approver and looked like it worked.
+  //
+  // _findSectorDirectorPosition already applies isHcSeatOccupied, so this is
+  // now only the ADDRESS check. Kept separate because the two failures need
+  // different words — a vacancy is a staffing fact, a missing address is a
+  // roster gap somebody can fix.
   var status = String(match.occupancyStatus || '').toUpperCase();
-  if (status === 'VACANT' || status === 'OBLIGATED') return null;
-  if (!match.emailAddress) return null;
+  if (!isHcPositionReachable(match)) {
+    console.log('getSectorDirector: ' + sector + ' resolves to ' +
+                (match.employeeName || '(unnamed)') + ' but that row has no ' +
+                'email address, so there is nobody to route to. Cascading to ' +
+                'the DAC stage.');
+    return null;
+  }
 
   return {
     name: match.employeeName || '',
@@ -569,8 +585,19 @@ function canAccessTrip(email) {
         // (CSRA) or Team Leader — so each of them was denied LETS entirely,
         // with no error to point at. See 01_constants/HCRules.js.
         if (!isHcSupervisoryCode(p.supervisoryStatus)) continue;
+        // ONLY VACANT MEANS NOBODY IS THERE.
+        //
+        // This excluded OBLIGATED too, and that is the same mistake as the
+        // headcount's: an obligated row is the seat of a REAL person, not an
+        // empty one. Measured on the live feed, 19 OBLIGATED against 11
+        // TEMP PROMOTION — so at least eight people have no other row to be
+        // matched against and were denied LETS entirely.
+        //
+        // The symptom here is the worst kind: "I cannot sign in", with an
+        // Access_Log line reading DENIED/none and nothing pointing at the
+        // cause.
         var status = String(p.occupancyStatus || '').toUpperCase();
-        if (status === 'VACANT' || status === 'OBLIGATED') continue;
+        if (!isHcSeatOccupied(p)) continue;
         _logAccessDecision_(emailLower, 'GRANTED', 'hc-supervisor', {
           positionNumber: p.positionNumber,
           officeTitle: p.officeTitle,
@@ -728,7 +755,8 @@ function getAccessInventory() {
           var p = bundle.data[i];
           if (!p || !p.emailAddress) continue;
           var status = String(p.occupancyStatus || '').toUpperCase();
-          if (status === 'VACANT' || status === 'OBLIGATED') continue;
+          // Same rule as the gate: only VACANT means nobody is in the seat.
+          if (!isHcSeatOccupied(p)) continue;
 
           // Same widened rule as the gate at canAccessTrip, so the access
           // INVENTORY and the access DECISION cannot disagree about who is a
@@ -820,7 +848,7 @@ function verifyAccessGate(email) {
         // than none.
         if (!isHcSupervisoryCode(p.supervisoryStatus)) continue;
         var status = String(p.occupancyStatus || '').toUpperCase();
-        if (status === 'VACANT' || status === 'OBLIGATED') continue;
+        if (!isHcSeatOccupied(p)) continue;
         reasons.push('hc-supervisor: ' + (p.officeTitle || '(no title)') + ' [' + (p.orgCode || '?') + ', ' + status + ']');
         break;
       }
@@ -1298,8 +1326,10 @@ function _isBuLeadByTitle(email) {
       var p = bundle.data[i];
       if (!p || !p.officeTitle || !p.emailAddress) continue;
       if (String(p.emailAddress).toLowerCase() !== emailLower) continue;
-      var status = String(p.occupancyStatus || '').toUpperCase();
-      if (status === 'VACANT' || status === 'OBLIGATED') continue;
+      // Only VACANT. A Chief of Staff serving a temp promotion is still the
+      // Chief of Staff, and excluding OBLIGATED would deny them the access
+      // this title exists to grant.
+      if (!isHcSeatOccupied(p)) continue;
 
       var titleLower = String(p.officeTitle).toLowerCase();
       var isCos = titleLower.indexOf('chief of staff') !== -1;

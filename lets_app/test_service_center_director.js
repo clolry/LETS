@@ -149,11 +149,17 @@ const POSITIONS = [
   // A genuine tie: two OCCUPIED supervisory seats at one center.
   P('9', 'low.grade@gsa.gov', 'Low,Grade', 'FCB0A', '2', '14', 'FILLED'),
   P('10', 'high.grade@gsa.gov', 'High,Grade', 'FCB0A', '7', '15', 'FILLED'),
-  // Scott Eberle: acting supervisor, OBLIGATED seat. Counted in the headcount
-  // (see test_hc_data.js) but he cannot APPROVE from a seat he is not in.
-  P('11', 'scott.eberle@gsa.gov', 'Eberle,Scott M', 'FCC0C', '2', '15', 'OBLIGATED', 'Acquisition Manager'),
+  // FCC0C, EXACTLY AS @clolry's LIVE RUN SHOWS IT. This is the shape that
+  // caught my error: the obligated seat is the SENIOR one.
+  P('11', 'nicole.chong@gsa.gov', 'Chong,Nicole Marie', 'FCC0C', '2', '14', 'FILLED', 'Lead Acquisition Program Management Specialist'),
+  P('12', 'scott.eberle@gsa.gov', 'Eberle,Scott M', 'FCC0C', '2', '15', 'OBLIGATED', 'Acquisition Manager'),
+  P('13', '', '', 'FCC0C', '2', '14', 'VACANT', 'Lead Acquisition Program Management Specialist'),
   // A center whose only supervisory seat is unfilled.
-  P('12', '', '', 'FCB0B', '2', '15', 'VACANT', 'Supervisory Compliance Analyst')
+  P('14', '', '', 'FCB0B', '2', '15', 'VACANT', 'Supervisory Compliance Analyst'),
+  // A named occupant with NO ADDRESS. Occupied, but unreachable — there is
+  // nobody to route to, which is a different failure from a vacancy and needs
+  // different words.
+  P('15', '', 'Noaddress,Sam', 'FCCAA', '2', '15', 'FILLED', 'Business Manager')
 ];
 
 const A = build(POSITIONS);
@@ -247,13 +253,57 @@ console.log('\n3. an unoccupied seat cannot approve; a tie goes to the grade');
   ok('a center whose only supervisory seat is vacant has no director',
      A.scd('FCB0B') === null, A.scd('FCB0B'));
 
-  // AN OBLIGATED SEAT CANNOT APPROVE. Eberle is counted in FCC0C's headcount
-  // because he is a real person who travels, and he is NOT its approver,
-  // because an obligated seat means he is working elsewhere. Two different
-  // questions, deliberately answered differently — see HCRules.isHcSeatOccupied.
-  ok('an OBLIGATED director is not the approver',
-     A.scd('FCC0C') === null,
-     'he is counted in the headcount but cannot approve from a seat he is not in');
+  // AN OBLIGATED SEAT HOLDS A REAL PERSON. @clolry, twice: "Scott Eberle is
+  // acting as the supervisor for FCC0C."
+  //
+  // I HAD THIS WRONG AND THIS ASSERTION IS THE CORRECTION. The first version
+  // of isHcSeatOccupied excluded OBLIGATED, reasoning that the occupant must
+  // be working elsewhere — true of the eleven people who also hold a
+  // TEMP PROMOTION row, false of the eight or so who do not. Measured: 19
+  // OBLIGATED rows against 11 TEMP PROMOTION rows.
+  //
+  // WHAT THE EXCLUSION ACTUALLY DID, on this exact fixture: Eberle was
+  // filtered out BEFORE the grade tie-break could run, so FCC0C resolved to
+  // Chong — grade 14, "Lead Acquisition Program Management Specialist".
+  //
+  // That is worse than resolving to nobody. Routing would have sent the
+  // center's travel to someone who is not its approver and looked like it was
+  // working. The retired grade-15 check had masked it by rejecting Chong too;
+  // dropping that check is what exposed it.
+  const c = A.scd('FCC0C');
+  ok('an OBLIGATED supervisor IS the approver',
+     c && c.email === 'scott.eberle@gsa.gov', c);
+  ok('and wins on grade over a FILLED junior',
+     c && c.email !== 'nicole.chong@gsa.gov',
+     'excluding OBLIGATED named the grade-14 Lead instead');
+  ok('the obligated status is carried through, not hidden',
+     c && c.occupancyStatus === 'OBLIGATED',
+     'so a reader can see why the seat looks odd');
+
+  // AND THE HEADCOUNT RULE IS STILL SEPARATE. hcCountableByPerson prefers a
+  // person's NON-obligated row when they have one, so nobody is counted
+  // twice. The two rules ask different questions:
+  //   presence  — is there a person in this seat?        (OBLIGATED: yes)
+  //   headcount — which ONE seat represents this person?  (prefer the other)
+  const RULES = require('./server/01_constants/HCRules.js');
+  ok('presence says yes to an occupied obligated seat',
+     RULES.isHcSeatOccupied({ employeeName: 'Eberle,Scott M',
+                              occupancyStatus: 'OBLIGATED' }));
+  ok('but a VACANT seat is still nobody',
+     !RULES.isHcSeatOccupied({ employeeName: '', occupancyStatus: 'VACANT' }));
+  ok('and so is an APPROVED seat with no name — 18 live rows are this shape',
+     !RULES.isHcSeatOccupied({ employeeName: '', occupancyStatus: 'APPROVED' }),
+     'trusting the status column alone would create 18 phantom people');
+
+  // REACHABILITY IS A SEPARATE QUESTION FROM PRESENCE, because the two
+  // failures need different words: a vacancy is a staffing fact, a missing
+  // address is a roster gap somebody can fix.
+  ok('an occupied seat with no address is occupied but NOT reachable',
+     RULES.isHcSeatOccupied({ employeeName: 'X,Y', occupancyStatus: 'FILLED' }) &&
+     !RULES.isHcPositionReachable({ employeeName: 'X,Y', occupancyStatus: 'FILLED' }));
+  ok('and such a center resolves to nobody, so routing cascades',
+     A.scd('FCCAA') === null,
+     'there is a person in the seat, but no address to route to');
 
   // THE TIE-BREAK. @clolry: "when a conflict exists with two 'supervisors' in
   // the same workgroup you can choose the one that is the higher grade."
@@ -345,6 +395,15 @@ console.log('\n5. both sides of the scope comparison speak the same vocabulary')
      'the reviewer role and the routing target must name the same person');
   ok('while the higher-graded one is',
      A.isSD('high.grade@gsa.gov').isSD === true);
+
+  // THE REVIEWER ROLE AND THE ROUTING TARGET MUST NAME THE SAME PERSON.
+  // Eberle is FCC0C's approver, so he must also hold the reviewer role —
+  // otherwise requests arrive in a queue he cannot open.
+  const eb = A.isSD('scott.eberle@gsa.gov');
+  ok('the obligated-seat director holds the reviewer role',
+     eb.isSD === true && eb.sectorCodes[0] === 'FCC0C', eb);
+  ok('and the junior who was wrongly selected does not',
+     A.isSD('nicole.chong@gsa.gov').isSD === false);
 }
 
 // ---------------------------------------------------------------------------
@@ -488,7 +547,53 @@ console.log('\n7. negative controls — each half must be able to fail');
        'so a re-import could silently change who approves a center travel');
   }
 
-  // CONTROL 4: truncate to 4 characters again. The branch code must stop
+  // CONTROL 4: exclude OBLIGATED from presence again. THE ERROR I ACTUALLY
+  // MADE — and the control proves the damage was not "no director" but "the
+  // WRONG director", which is why it got past me.
+  {
+    const rules = fs.readFileSync(SERVER + '01_constants/HCRules.js', 'utf8');
+    const patchedRules = rules.replace(
+      "  if (occ === 'VACANT') return false;",
+      "  if (occ === 'VACANT' || occ === 'OBLIGATED') return false;");
+    ok('control 4 patched the presence rule', patchedRules !== rules);
+
+    const sandbox = {
+      console: { log() {}, warn() {}, error() {} },
+      JSON, Date, Object, String, Number, Array, Math, parseFloat, parseInt,
+      isNaN, RegExp, Error, Boolean,
+      SpreadsheetApp: { openById: () => ({ getSheetByName: () => null }) },
+      CacheService: { getScriptCache: () => ({ get: () => null, put() {}, remove() {}, removeAll() {} }) },
+      PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
+      Session: { getActiveUser: () => ({ getEmail: () => 't@gsa.gov' }) }
+    };
+    const ctx = vm.createContext(sandbox);
+    vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID='x';", ctx);
+    vm.runInContext(fs.readFileSync(SERVER + '01_constants/Sheets.js', 'utf8'), ctx);
+    vm.runInContext(patchedRules, ctx, { filename: 'HCRules.patched.js' });
+    vm.runInContext(fs.readFileSync(SERVER + '20_data/HCData.js', 'utf8'), ctx);
+    vm.runInContext(`
+      var __orgs = ${JSON.stringify(ORGS)};
+      var __pos  = ${JSON.stringify(POSITIONS)};
+      HC.hcGetOrgHierarchy = function () { return __orgs; };
+      HC.hcGetBundle = function () { return { success: true, data: __pos }; };
+      function _getUnifiedRolesForEmail() { return []; }
+      function _getUnifiedRoleData() { return { rolesByEmail: {}, hasData: true }; }
+      function loadOrgLookups() { return { orgToBU: {}, orgToSector: {}, orgToCurrentOrgCode: {} }; }
+      function TravelDB() {}
+    `, ctx);
+    vm.runInContext(
+      src.slice(src.indexOf('function getSectorDirector'),
+                src.indexOf('// UNIFIED USER/ROLE READER')),
+      ctx, { filename: 'Access.ctl4.js' });
+    const got = vm.runInContext("getSectorDirector('FCC0C')", ctx);
+    ok('excluding OBLIGATED names the WRONG person, not nobody',
+       got && got.email === 'nicole.chong@gsa.gov', got);
+    ok('and that is why it was not obvious — a plausible name appeared',
+       got !== null,
+       'a null would have been reported; a grade-14 Lead looked like an answer');
+  }
+
+  // CONTROL 5: truncate to 4 characters again. The branch code must stop
   // resolving, and a center must resolve to the wrong thing or to nothing.
   {
     const patched = src.replace(

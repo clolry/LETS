@@ -1429,8 +1429,10 @@ function simulateAllRoutingPaths() {
       var bu = p.org.businessUnit || '';
       if (!bu || EXCLUDED_BUS[bu]) continue;
       if (perBUSample[bu]) continue;
-      var occ = String(p.occupancyStatus || '').toUpperCase();
-      if (occ === 'VACANT' || occ === 'OBLIGATED') continue;
+      // Only VACANT. This picks a SAMPLE person per BU for a routing
+      // dry-run, so an obligated-seat occupant is a perfectly good sample —
+      // they are a real employee who submits travel.
+      if (!isHcSeatOccupied(p)) continue;
       perBUSample[bu] = {
         email: p.emailAddress,
         name: p.employeeName || '',
