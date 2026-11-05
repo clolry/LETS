@@ -353,10 +353,17 @@ console.log('\n6. negative controls (each turns a refusal into a guess)');
 
   // 6b — match on the forename INITIAL. Plausible-looking, and it makes every
   // 'M Smith' match Michael, Mary and Mark.
+  //
+  // The patch target moved when candidateMatches gained the displayName
+  // fallback: the comparison now reads a resolved `given` variable rather
+  // than c.givenName directly. The old patch string silently stopped
+  // matching, so this control passed while patching nothing — which is
+  // exactly the failure mode a negative control exists to prevent, appearing
+  // in the negative control itself.
   const initialMatch = src.replace(
     `    var firstOk = nameKey(parsed.first) &&
-                  nameKey(parsed.first) === nameKey(c.givenName);`,
-    `    var pf = nameKey(parsed.first), cf = nameKey(c.givenName);
+                  nameKey(parsed.first) === nameKey(given);`,
+    `    var pf = nameKey(parsed.first), cf = nameKey(given);
     var firstOk = pf && cf && (pf === cf || cf.charAt(0) === pf.charAt(0));`);
   ok('negative control patched the forename comparison', initialMatch !== src);
   {
@@ -480,6 +487,137 @@ console.log('\n7. the network layer is guarded and separated');
   ok('the search asks for enough results to detect ambiguity',
      /pageSize: 30/.test(resolve),
      'pageSize 1 would hide every ambiguous name and resolve it confidently');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n8. the People API leaves givenName/familyName empty');
+{
+  // @clolry's first live sweep: 50 lookups, 0 resolved, 46 refused with
+  // "1 directory entr(ies) were returned ... but none matched exactly on both
+  // surname and forename".
+  //
+  // One candidate returned and rejected, 46 times, is not 46 wrong people. It
+  // is one systematic mismatch: the People API populates names.displayName on
+  // every directory result but leaves givenName and familyName EMPTY on many,
+  // particularly DOMAIN_CONTACT entries. nameKey('') is falsy, so both
+  // comparisons failed for every such candidate.
+  const only = (display, email) =>
+    ({ givenName: '', familyName: '', middleName: '', displayName: display, email });
+
+  const hale = D.pickMatch(D.parseName('Hale,Lawrence C'),
+                           [only('Lawrence Hale', 'lawrence.hale@gsa.gov')]);
+  ok('a displayName-only candidate now matches',
+     hale.email === 'lawrence.hale@gsa.gov', hale);
+  ok('and is still recorded as a unique-name match',
+     hale.method === 'unique-name', hale.method);
+
+  // 'Surname, Forename' order, which some directories use.
+  ok('a comma-ordered displayName parses correctly',
+     D.pickMatch(D.parseName('Hale,Lawrence C'),
+                 [only('Hale, Lawrence', 'l@gsa.gov')]).email === 'l@gsa.gov');
+
+  // A middle initial in the displayName must not break the surname.
+  ok('a middle initial in the displayName is tolerated',
+     D.pickMatch(D.parseName('Hale,Lawrence C'),
+                 [only('Lawrence C Hale', 'l@gsa.gov')]).email === 'l@gsa.gov');
+
+  // 'NMN' is HR shorthand for "no middle name" and appears as a literal
+  // middle name in the roster — 'Patnaik,Udaya NMN'.
+  ok('NMN is treated as no middle name',
+     D.pickMatch(D.parseName('Patnaik,Udaya NMN'),
+                 [only('Udaya Patnaik', 'u@gsa.gov')]).email === 'u@gsa.gov');
+  ok('and does not block a candidate that HAS a middle name',
+     D.pickMatch(D.parseName('Patnaik,Udaya NMN'),
+                 [{ givenName: 'Udaya', familyName: 'Patnaik',
+                    middleName: 'Kumar', email: 'u@gsa.gov' }]).email === 'u@gsa.gov');
+
+  // A TRAILING SUFFIX IS NOT THE SURNAME. 'John Tekus Jr' parsed to surname
+  // 'Jr', so 'Tekus Jr,John J' could never match its own directory entry. The
+  // comma branch already stripped suffixes; the forename-first branch did
+  // not, and the displayName fallback is what made that gap reachable.
+  const parsedDisplay = D.parseName('John Tekus Jr');
+  ok('a suffix in a forename-first name is stripped',
+     parsedDisplay.last === 'Tekus' && parsedDisplay.suffix === 'Jr',
+     parsedDisplay);
+  ok('so a suffixed roster name matches its suffixed directory entry',
+     D.pickMatch(D.parseName('Tekus Jr,John J'),
+                 [only('John Tekus Jr', 'j@gsa.gov')]).email === 'j@gsa.gov');
+
+  // A real multi-word surname must NOT be mistaken for a suffix.
+  ok('a multi-word surname is not treated as a suffix',
+     D.parseName('Hans Van Der Berg').suffix === '',
+     D.parseName('Hans Van Der Berg'));
+  // Two tokens must be untouched: 'Melissa Mould' has no suffix to strip.
+  ok('a two-token name is unchanged',
+     D.parseName('Melissa Mould').last === 'Mould' &&
+     D.parseName('Melissa Mould').first === 'Melissa');
+
+  // THE STRUCTURED FIELDS STILL WIN when present, because the API has already
+  // done the hard part for 'Van Der Berg'.
+  const both = D.pickMatch(D.parseName('Berg,Hans'), [{
+    givenName: 'Hans', familyName: 'Berg', middleName: '',
+    displayName: 'Someone Else Entirely', email: 'h@gsa.gov'
+  }]);
+  ok('structured fields take precedence over displayName',
+     both.email === 'h@gsa.gov', both);
+
+  // AND NOTHING IS LOOSENED. This changes WHERE the name is read from, not
+  // how strictly it is judged — every refusal in §4 must still refuse.
+  ok('a nickname in a displayName is STILL refused',
+     D.pickMatch(D.parseName('Smith,Michael'),
+                 [only('Mike Smith', 'm@gsa.gov')]).email === '',
+     'the displayName fallback must not become a fuzzy match');
+  ok('a spelling variant in a displayName is STILL refused',
+     D.pickMatch(D.parseName('Erikson,Jon'),
+                 [only('John Ericson', 'j@gsa.gov')]).email === '');
+  ok('an ambiguous displayName pair is STILL refused',
+     D.pickMatch(D.parseName('Smith,Michael'),
+                 [only('Michael Smith', 'a@gsa.gov'),
+                  only('Michael Smith', 'b@gsa.gov')]).method === 'ambiguous');
+  ok('and a surname-only displayName match is STILL refused',
+     D.pickMatch(D.parseName('Smith,Michael'),
+                 [only('Jennifer Smith', 'j@gsa.gov')]).email === '');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n9. a systematic mismatch is diagnosable without guessing');
+{
+  // The refusal message said a candidate was returned and rejected but never
+  // showed WHAT was returned, so finding the empty-givenName cause took a
+  // hypothesis. That is the gap this closes.
+  const resolve = fs.readFileSync('lets_app/server/40_domain/DirectoryResolve.js', 'utf8');
+
+  ok('there is a per-name diagnostic',
+     /function diagnoseDirectoryMatch\(name\)/.test(resolve));
+
+  const diag = resolve.slice(resolve.indexOf('function diagnoseDirectoryMatch'),
+                             resolve.indexOf('function resolveDirectoryEmails'));
+  ok('it prints every name field, quoted',
+     /JSON\.stringify\(c\.givenName\)/.test(diag) &&
+     /JSON\.stringify\(c\.displayName\)/.test(diag),
+     'an empty givenName is invisible unquoted, and that emptiness was the bug');
+  ok('it shows the match verdict per candidate',
+     /candidateMatches\(parsed, c\)/.test(diag));
+  ok('it shows the parsed roster name and the query sent',
+     /parsed      : /.test(diag) && /query       : /.test(diag));
+  ok('it defaults to a real staffed position with no email',
+     /occupancyStatus !== 'VACANT' && list\[i\]\.employeeName/.test(diag),
+     'the Run button passes no arguments, so it must pick its own subject');
+  ok('and it writes nothing',
+     !/setValue|appendRow|clearContent|setProperty/.test(diag));
+
+  // The preview wrapper must not blow the log budget. 50 refusal objects,
+  // each with a paragraph of reason text, is what truncated @clolry's output.
+  const wrapper = fs.readFileSync('lets_app/server/99_triggers/Diagnostics.js', 'utf8');
+  const fn = wrapper.slice(wrapper.indexOf('function runDirectoryPreview'),
+                           wrapper.indexOf('function runDirectoryResolve'));
+  ok('runDirectoryPreview prints the summary, not every refusal',
+     /JSON\.stringify\(d\.summary, null, 2\)/.test(fn) &&
+     !/JSON\.stringify\(r, null, 2\);\n\}/.test(fn), fn.slice(0, 300));
+  ok('and caps the samples it does print',
+     /slice\(0, 10\)/.test(fn));
+  ok('and points at the per-name diagnostic',
+     /diagnoseDirectoryMatch\(\)/.test(fn));
 }
 
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');

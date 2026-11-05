@@ -102,6 +102,10 @@ function _directorySearch_(parsed) {
       givenName: names.givenName || '',
       familyName: names.familyName || '',
       middleName: names.middleName || '',
+      // ALWAYS POPULATED BY THE API, unlike givenName/familyName —
+      // particularly for DOMAIN_CONTACT entries. candidateMatches parses this
+      // when the structured fields are missing, which is what fixed 46 of
+      // @clolry's 50 refusals.
       displayName: names.displayName || '',
       email: String(chosen.value || '').toLowerCase()
     });
@@ -162,6 +166,92 @@ function previewDirectoryEmails(opts) {
     console.error('previewDirectoryEmails failed: ' + e.message);
     return errorResponse('Directory preview failed: ' + e.message);
   }
+}
+
+/**
+ * Prints the RAW directory response for one name.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * @clolry's first sweep refused 46 of 50 lookups with "1 directory entr(ies)
+ * were returned ... but none matched exactly on both surname and forename".
+ * One candidate returned and rejected, 46 times, is not 46 wrong people — it
+ * is one systematic mismatch, and the refusal message could not say which
+ * because it never showed what the directory actually returned.
+ *
+ * The cause was that the People API leaves givenName and familyName empty on
+ * many entries while always populating displayName. Diagnosing that took a
+ * guess; this makes it a lookup.
+ *
+ * Reads nothing from LETS and writes nothing. Safe at any time.
+ *
+ * @param {string} [name] roster-style 'Surname,Forename M'. Defaults to a
+ *        name from the current roster so it can be run from the Run button.
+ * @returns {Object}
+ * @editor
+ */
+function diagnoseDirectoryMatch(name) {
+  var denied = _hcAdminGuard_();
+  if (denied) return denied;
+
+  if (typeof People === 'undefined' || !People || !People.People) {
+    console.log('The People advanced service is not enabled. ' +
+                'Services -> Add a service -> People API (v1).');
+    return { success: false };
+  }
+
+  var who = String(name || '').trim();
+  if (!who) {
+    // The Run button passes no arguments, so pick the first staffed position
+    // that still has no email — the population this is meant to diagnose.
+    var bundle = HC.hcGetBundle();
+    var list = (bundle.success ? bundle.data : []) || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].occupancyStatus !== 'VACANT' && list[i].employeeName &&
+          !list[i].emailAddress) {
+        who = list[i].employeeName;
+        break;
+      }
+    }
+  }
+  if (!who) {
+    console.log('No name supplied and no staffed position without an email.');
+    return { success: false };
+  }
+
+  var parsed = DirectoryLookup.parseName(who);
+  console.log('=== diagnoseDirectoryMatch ===');
+  console.log('roster name : ' + JSON.stringify(who));
+  console.log('parsed      : ' + JSON.stringify(parsed));
+  console.log('query       : "' + parsed.first + ' ' + parsed.last + '"');
+  console.log('');
+
+  var candidates;
+  try {
+    candidates = _directorySearch_(parsed);
+  } catch (e) {
+    console.log('SEARCH FAILED: ' + e.message);
+    return { success: false, error: e.message };
+  }
+
+  console.log(candidates.length + ' candidate(s) returned:');
+  candidates.forEach(function (c, idx) {
+    // EVERY FIELD, quoted. An empty givenName is invisible unquoted, and that
+    // emptiness was the entire bug.
+    console.log('  [' + idx + '] givenName=' + JSON.stringify(c.givenName) +
+                ' familyName=' + JSON.stringify(c.familyName) +
+                ' middleName=' + JSON.stringify(c.middleName) +
+                ' displayName=' + JSON.stringify(c.displayName) +
+                ' email=' + JSON.stringify(c.email));
+    var m = DirectoryLookup.candidateMatches(parsed, c);
+    console.log('        matches=' + m.matches +
+                ' middleAgrees=' + m.middleAgrees);
+  });
+  console.log('');
+
+  var picked = DirectoryLookup.pickMatch(parsed, candidates);
+  console.log('decision: ' + JSON.stringify(picked, null, 2));
+  return picked;
 }
 
 /**

@@ -1407,7 +1407,41 @@ function runClearHCPositions() {
  */
 function runDirectoryPreview() {
   var r = previewDirectoryEmails({});
-  console.log(JSON.stringify(r, null, 2));
+  if (!r || r.success !== true) {
+    console.log(JSON.stringify(r, null, 2));
+    return;
+  }
+
+  // SUMMARY ONLY, plus a capped sample.
+  //
+  // @clolry's run printed "Logging output too large. Truncating output." and
+  // the 50 refusal objects — each carrying a full paragraph of reason text —
+  // were what filled the budget. The summary is the decision; the refusals
+  // are evidence, and ten of them say as much as fifty.
+  var d = r.data;
+  console.log('=== previewDirectoryEmails — NOTHING WAS WRITTEN ===');
+  console.log(JSON.stringify(d.summary, null, 2));
+
+  if ((d.resolved || []).length) {
+    console.log('');
+    console.log('--- resolved (first 10) ---');
+    d.resolved.slice(0, 10).forEach(function (x) {
+      console.log('  ' + x.employeeName + '  ->  ' + x.email +
+                  '   (' + x.method + ')');
+    });
+  }
+
+  if ((d.refused || []).length) {
+    console.log('');
+    console.log('--- refused (first 10) ---');
+    d.refused.slice(0, 10).forEach(function (x) {
+      console.log('  ' + x.employeeName + '  [' + x.method + ', ' +
+                  x.candidateCount + ' candidate(s)]');
+    });
+    console.log('');
+    console.log('To see exactly what the directory returned for one of them, ' +
+                'run diagnoseDirectoryMatch() in 40_domain/DirectoryResolve.js.');
+  }
 }
 
 /**

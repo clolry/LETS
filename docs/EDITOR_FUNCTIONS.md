@@ -52,10 +52,11 @@ The HR feed carries no email column, and Email_Address is how LETS identifies a 
 
 | Function | File | Line | What it does |
 |---|---|---:|---|
-| `previewDirectoryEmails(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 124 | Dry run: what the directory would resolve, without writing anything. |
-| `resolveDirectoryEmails(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 184 | Resolves and WRITES email addresses onto HC_Positions. |
-| `syncDirectoryEmails()` | `lets_app/server/40_domain/DirectoryResolve.js` | 334 | Trigger entry point: resumes the sweep where it stopped. |
-| `installDirectoryLookupTrigger()` | `lets_app/server/40_domain/DirectoryResolve.js` | 351 | Installs an hourly trigger until the sweep completes. |
+| `previewDirectoryEmails(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 128 | Dry run: what the directory would resolve, without writing anything. |
+| `diagnoseDirectoryMatch(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 193 | Prints the RAW directory response for one name. |
+| `resolveDirectoryEmails(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 274 | Resolves and WRITES email addresses onto HC_Positions. |
+| `syncDirectoryEmails()` | `lets_app/server/40_domain/DirectoryResolve.js` | 424 | Trigger entry point: resumes the sweep where it stopped. |
+| `installDirectoryLookupTrigger()` | `lets_app/server/40_domain/DirectoryResolve.js` | 441 | Installs an hourly trigger until the sweep completes. |
 
 ## Budget
 
@@ -87,8 +88,8 @@ The Apps Script Run button passes no arguments, so these wrap the functions that
 | `runRosterImport()` | `lets_app/server/99_triggers/Diagnostics.js` | 1297 | Apply the HR roster import. DESTRUCTIVE — replaces every row in |
 | `runClearHCPositions()` | `lets_app/server/99_triggers/Diagnostics.js` | 1384 | Empty HC_Positions. DESTRUCTIVE. |
 | `runDirectoryPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1408 | Preview the directory email lookup, and print the result. |
-| `runDirectoryResolve()` | `lets_app/server/99_triggers/Diagnostics.js` | 1424 | Resolve directory email addresses and WRITE them to HC_Positions. |
-| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 1445 | Print the current budget dashboard payload. |
+| `runDirectoryResolve()` | `lets_app/server/99_triggers/Diagnostics.js` | 1458 | Resolve directory email addresses and WRITE them to HC_Positions. |
+| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 1479 | Print the current budget dashboard payload. |
 
 ## Diagnostics — safe to run any time, write nothing
 

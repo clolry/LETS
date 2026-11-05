@@ -95,6 +95,20 @@ var DirectoryLookup = (function () {
         out.last = toks[0];
         return out;                    // one token: unusable for matching
       }
+
+      // A TRAILING SUFFIX IS NOT THE SURNAME. 'John Tekus Jr' parsed to
+      // surname 'Jr', forename 'John' — so the roster's 'Tekus Jr,John J'
+      // could never match its own directory entry.
+      //
+      // Found by testing the forename-first branch against the real roster
+      // shapes. The comma branch below already handled suffixes; this one did
+      // not, and the displayName fallback added in candidateMatches is what
+      // made the gap reachable.
+      var tail = toks[toks.length - 1].toUpperCase().replace(/\./g, '');
+      if (toks.length > 2 && SUFFIXES.indexOf(tail) > -1) {
+        out.suffix = toks.pop();
+      }
+
       last = toks[toks.length - 1];
       rest = toks.slice(0, -1).join(' ');
     }
@@ -161,13 +175,50 @@ var DirectoryLookup = (function () {
    */
   function candidateMatches(parsed, candidate) {
     var c = candidate || {};
+
+    // STRUCTURED FIELDS FIRST, THEN displayName.
+    //
+    // @clolry's first live run refused 46 of 50 lookups with
+    // "1 directory entr(ies) were returned ... but none matched exactly on
+    // both surname and forename". A single candidate returned and rejected,
+    // 46 times, is not 46 wrong people — it is one systematic mismatch.
+    //
+    // The People API populates names.displayName for every directory result
+    // but does NOT always populate givenName and familyName, particularly for
+    // DOMAIN_CONTACT entries. Comparing only the structured fields therefore
+    // compares against two empty strings, and nameKey('') is falsy, so lastOk
+    // and firstOk were both false for every such candidate.
+    //
+    // So when the structured fields are absent, the displayName is parsed and
+    // compared instead. THIS IS NOT A LOOSENING: the comparison is still
+    // exact on surname and forename, nicknames and spelling variants are
+    // still refused, and an ambiguous name is still refused. It changes WHERE
+    // the name is read from, not how strictly it is judged.
+    //
+    // The structured fields WIN when present, because 'Van Der Berg, Hans'
+    // splits reliably only when the API has already done it.
+    var given = _str_(c.givenName);
+    var family = _str_(c.familyName);
+    if (!given || !family) {
+      var fromDisplay = parseName(_str_(c.displayName));
+      // Only fill what is missing. A candidate with a familyName and no
+      // givenName should keep its real familyName.
+      if (!given) given = fromDisplay.first;
+      if (!family) family = fromDisplay.last;
+    }
+
     var lastOk = nameKey(parsed.last) &&
-                 nameKey(parsed.last) === nameKey(c.familyName);
+                 nameKey(parsed.last) === nameKey(family);
     var firstOk = nameKey(parsed.first) &&
-                  nameKey(parsed.first) === nameKey(c.givenName);
+                  nameKey(parsed.first) === nameKey(given);
 
     var pm = nameKey(parsed.middle);
     var cm = nameKey(c.middleName);
+    // 'NMN' is HR shorthand for "no middle name" and appears in the roster as
+    // a literal middle name — 'Patnaik,Udaya NMN'. Treated as absent, or it
+    // would never agree with a real middle name and could only ever fail a
+    // tie-break.
+    if (pm === 'NMN') pm = '';
     var middleAgrees = false;
     if (pm && cm) {
       // An initial on either side matches a full name starting with it:
