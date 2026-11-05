@@ -5,8 +5,8 @@ for f in lets_app/test_*.js orgchart_app/test_*.js; do node "$f" >/dev/null || e
 node scripts/gen-editor-functions.js --check
 ```
 
-40 suites, 18 verify.yml guards, 87 editor functions. Branch `sandbox`, level
-with `origin/sandbox` at `6414596`. Clean tree, nothing uncommitted.
+39 suites, 18 verify.yml guards, 77 editor functions. Branch `sandbox`.
+Clean tree, nothing uncommitted.
 
 ---
 
@@ -54,24 +54,25 @@ status-group membership in `01_constants/Status.js`, a stage label in
 appears 87 times across 26 files — that is the blast radius to expect for a
 new stage.
 
-### §0.2 Smaller things that are ready to do
+### §0.2 Done since, and the one thing still outstanding
 
-- **Delete the directory email lookup.** ~5,100 lines across
-  `30_services/DirectoryLookup.js`, `40_domain/DirectoryResolve.js` and
-  `test_directory_lookup.js`, plus the People API scope in `appsscript.json`.
-  It existed only because the old HR feed had no email column. The new feed's
-  coverage is **821 of 821 named rows, zero blank, zero malformed** —
-  @clolry's own `diagnoseHrFeedSource()` run. Keep `HC_Email_Overrides` and
-  `saveEmailOverride`: it is the only way to correct one person's address that
-  survives the daily import.
-- **The 22-row per-capita table is computed and rendered nowhere.**
-  `BudgetDashboard.js:1059` puts `serviceCenters` in the payload;
-  `travelBudgetDashboardPage.html` reads `d.offices` (4 DACs) and never
-  touches it. The only way to see the 22 centers today is
-  `showServiceCenterHeadcount()` in the editor.
+- **The directory email lookup is deleted** (`512cf3a`). 5,494 lines removed.
+  `40_domain/EmailOverrides.js` keeps the five functions that matter —
+  `saveEmailOverride` and `readEmailOverrides` are the ONLY correction path
+  that survives an import, because `importRoster` clears and rewrites every
+  HC_Positions row. The People advanced service is gone from
+  `appsscript.json`; `test_access_audit.js` asserts it stays gone, and that
+  no explicit `oauthScopes` list appears.
+- **The per-service-center table is on the budget dashboard** (`174e076`).
+  22 rows grouped under their DAC with subtotals, showing staff, share,
+  allocation, pending, actual, remaining and utilization. `test_budget_dashboard.js`
+  §10 runs the renderer rather than grepping it, and the controlling assertion
+  is that `renderBudget` actually CALLS it — everything else would pass on a
+  page that defines the function and never invokes it.
 - **`setupTravelDatabase()` still needs running** to create `Feedback`,
   `Historical_Events`, `Budget_Allocations`, `Expense_Imports`,
-  `Travel_Imports` and `Import_Batches`. Idempotent; safe to re-run.
+  `Travel_Imports` and `Import_Batches`. Idempotent; safe to re-run. **This is
+  the one outstanding setup step.**
 
 ---
 
@@ -320,6 +321,17 @@ Four occurrences now, and the newest is the clearest:
 - **Count-threshold guards do not bite.** `grep -c ... -lt 5` passed when a
   fifth entry point was added and any single guard deleted.
 
+### A payload nobody renders is not a feature
+
+The per-center split was computed correctly, returned in the payload, covered
+by tests, and visible only in an editor log. Nothing failed. @clolry asked for
+it as though it did not exist, which is the right reading.
+
+`test_budget_dashboard.js` §10 now guards the whole chain by RUNNING the
+renderer, and its load-bearing assertion is that `renderBudget` calls it —
+every other assertion in the section would pass on a page that defines the
+function and never invokes it.
+
 ### A scripted multi-part edit can half-apply
 
 The missing report sections were caused by a Python edit that applied its
@@ -369,6 +381,9 @@ request.
 | TEMP PROMOTION rows | 11 |
 | Directors from an OBLIGATED seat | 1 (Eberle, FCC0C) |
 | FY27 travel log rows | 30 |
+| Test suites | 39 |
+| verify.yml guards | 18 |
+| Editor functions | 77 |
 
 ---
 
@@ -530,14 +545,17 @@ environment. **This is a handoff note, not a tracker.**
   **not browser-verified; no live import has run**
 - Go.gov parser + matcher (`30_services/GogovSync.js`)
 - Event attendance history (`30_services/EventHistory.js`)
-- Directory email lookup (`30_services/DirectoryLookup.js`) — **obsolete,
-  delete it**
+- Per-service-center allocations and spend, on the budget dashboard page
+  (`40_domain/BudgetDashboard.js`, `client/pages/travelBudgetDashboardPage.html`)
+- Email override corrections (`40_domain/EmailOverrides.js`) — what remains of
+  the deleted directory subsystem
 
 **Diagnostics worth knowing about**, all read-only, all admin-guarded:
 
 | function | file | what it answers |
 |---|---|---|
 | `diagServiceCenterDirectors()` | `99_triggers/Diagnostics.js` | who each center routes to, and why |
+| `runBudgetDashboard()` | `99_triggers/Diagnostics.js` | the whole payload, including the 22 center rows |
 | `diagnoseHrFeedSource()` | `40_domain/HCRosterSync.js` | the feed's columns, vocabularies, email coverage |
 | `diagAll()` | `99_triggers/Diagnostics.js` | everything, including the code census |
 | `showServiceCenterHeadcount()` | `40_domain/HCRosterSync.js` | the 22-row per-capita table |
