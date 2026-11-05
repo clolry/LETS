@@ -46,19 +46,6 @@ The roster drives approval routing, supervisor-based site access and every per-c
 | `validateHCData()` | `lets_app/server/91_setup/HCSeed.js` | 916 | Read-only sanity check on whatever is currently in the HC tabs. |
 | `clearHCPositions(…)` | `lets_app/server/91_setup/HCSeed.js` | 1103 | Empties HC_Positions. Keeps HC_Orgs. |
 
-## Email addresses — Google directory lookup
-
-The HR feed carries no email column, and Email_Address is how LETS identifies a signed-in user. Requires the People advanced service: Apps Script editor -> Services -> People API (v1).
-
-| Function | File | Line | What it does |
-|---|---|---:|---|
-| `previewDirectoryEmails(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 180 | Dry run: what the directory would resolve, without writing anything. |
-| `diagnoseDirectoryBuild()` | `lets_app/server/40_domain/DirectoryResolve.js` | 351 | Reports which build of the directory matcher is deployed. |
-| `diagnoseDirectoryMatch(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 498 | Prints the RAW directory response for one name. |
-| `resolveDirectoryEmails(…)` | `lets_app/server/40_domain/DirectoryResolve.js` | 579 | Resolves and WRITES email addresses onto HC_Positions. |
-| `syncDirectoryEmails()` | `lets_app/server/40_domain/DirectoryResolve.js` | 869 | Trigger entry point: resumes the sweep where it stopped. |
-| `installDirectoryLookupTrigger()` | `lets_app/server/40_domain/DirectoryResolve.js` | 886 | Installs an hourly trigger until the sweep completes. |
-
 ## Budget
 
 | Function | File | Line | What it does |
@@ -67,7 +54,7 @@ The HR feed carries no email column, and Email_Address is how LETS identifies a 
 
 ## Reference data syncs and their triggers
 
-Per diem rates, GSA City Pair airfares and the directory sweep. Each `install…Trigger` removes its own prior trigger first, so running one twice does not create two schedules.
+Per diem rates and GSA City Pair airfares. Each `install…Trigger` removes its own prior trigger first, so running one twice does not create two schedules.
 
 | Function | File | Line | What it does |
 |---|---|---:|---|
@@ -81,18 +68,14 @@ Per diem rates, GSA City Pair airfares and the directory sweep. Each `install…
 
 ## Editor runners — wrappers for functions that take arguments
 
-The Apps Script Run button passes no arguments, so these wrap the functions that need them. **`runRosterImport` and `runDirectoryResolve` WRITE DATA.** The other three write nothing. Each wrapper prints its result, because a value returned to the Run button is never displayed.
+The Apps Script Run button passes no arguments, so these wrap the functions that need them. **`runRosterImport` WRITES DATA.** The others write nothing. Each wrapper prints its result, because a value returned to the Run button is never displayed.
 
 | Function | File | Line | What it does |
 |---|---|---:|---|
-| `runRosterPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1648 | Preview the HR roster import, and print the result. |
-| `runRosterImport()` | `lets_app/server/99_triggers/Diagnostics.js` | 1721 | Apply the HR roster import. DESTRUCTIVE — replaces every row in |
-| `runClearHCPositions()` | `lets_app/server/99_triggers/Diagnostics.js` | 1808 | Empty HC_Positions. DESTRUCTIVE. |
-| `runDirectoryPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1832 | Preview the directory email lookup, and print the result. |
-| `runDirectoryResolve()` | `lets_app/server/99_triggers/Diagnostics.js` | 1882 | Resolve directory email addresses and WRITE them to HC_Positions. |
-| `runEmailResolutionQueue()` | `lets_app/server/99_triggers/Diagnostics.js` | 1970 | Show the email-resolution queue: who needs an address, and what to offer. |
-| `runSaveEmailOverride()` | `lets_app/server/99_triggers/Diagnostics.js` | 2051 | Record one admin email decision. |
-| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 2084 | Print the current budget dashboard payload. |
+| `runRosterPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1652 | Preview the HR roster import, and print the result. |
+| `runRosterImport()` | `lets_app/server/99_triggers/Diagnostics.js` | 1725 | Apply the HR roster import. DESTRUCTIVE — replaces every row in |
+| `runClearHCPositions()` | `lets_app/server/99_triggers/Diagnostics.js` | 1812 | Empty HC_Positions. DESTRUCTIVE. |
+| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 1829 | Print the current budget dashboard payload. |
 
 ## Diagnostics — safe to run any time, write nothing
 
@@ -100,20 +83,20 @@ Start with `diagAll`. These read and report; none of them change data.
 
 | Function | File | Line | What it does |
 |---|---|---:|---|
-| `diagAll()` | `lets_app/server/99_triggers/Diagnostics.js` | 85 | Runs every diagnostic. Start here after a deploy. |
-| `diagEnvironment()` | `lets_app/server/99_triggers/Diagnostics.js` | 115 | Environment, database binding, and Script Property presence. |
-| `diagCityPairs()` | `lets_app/server/99_triggers/Diagnostics.js` | 275 | City Pair data: how much, how fresh, and does a lookup work. |
-| `diagHcData()` | `lets_app/server/99_triggers/Diagnostics.js` | 375 | HC roster: counts, referential problems, and a live supervisor-chain walk. |
-| `diagAirportPrefs()` | `lets_app/server/99_triggers/Diagnostics.js` | 492 | Stored airport preferences and whether promotion is working. |
-| `diagTriggers()` | `lets_app/server/99_triggers/Diagnostics.js` | 557 | Installed triggers, and whether their handlers still exist. |
-| `diagDutyStationAirports()` | `lets_app/server/99_triggers/Diagnostics.js` | 615 | Does every HC duty-station city resolve to an airport? |
-| `diagUnresolvedCityNames()` | `lets_app/server/99_triggers/Diagnostics.js` | 690 | Zero-argument companion to diagDutyStationAirports. |
-| `diagCityNamesForState(…)` | `lets_app/server/99_triggers/Diagnostics.js` | 747 | Every city name GSA uses in one state, with its airport codes. |
-| `diagFasTrackerRow()` | `lets_app/server/99_triggers/Diagnostics.js` | 841 | Prints the FAS tracker row LETS would submit, beside the expected columns. |
-| `diagFasTrackerHeader()` | `lets_app/server/99_triggers/Diagnostics.js` | 961 | Compares the live tracker header against FAS_TRACKER_COLUMNS. |
-| `diagTripOverviewFields()` | `lets_app/server/99_triggers/Diagnostics.js` | 1025 | Trip Overview and budget-attribution fields on recent requests. |
-| `diagAccess()` | `lets_app/server/99_triggers/Diagnostics.js` | 1110 | Who currently holds site access, and by which path. |
-| `diagServiceCenterDirectors()` | `lets_app/server/99_triggers/Diagnostics.js` | 1237 | Who the Service Center Directors actually are, and who holds a sector scope. |
+| `diagAll()` | `lets_app/server/99_triggers/Diagnostics.js` | 89 | Runs every diagnostic. Start here after a deploy. |
+| `diagEnvironment()` | `lets_app/server/99_triggers/Diagnostics.js` | 119 | Environment, database binding, and Script Property presence. |
+| `diagCityPairs()` | `lets_app/server/99_triggers/Diagnostics.js` | 279 | City Pair data: how much, how fresh, and does a lookup work. |
+| `diagHcData()` | `lets_app/server/99_triggers/Diagnostics.js` | 379 | HC roster: counts, referential problems, and a live supervisor-chain walk. |
+| `diagAirportPrefs()` | `lets_app/server/99_triggers/Diagnostics.js` | 496 | Stored airport preferences and whether promotion is working. |
+| `diagTriggers()` | `lets_app/server/99_triggers/Diagnostics.js` | 561 | Installed triggers, and whether their handlers still exist. |
+| `diagDutyStationAirports()` | `lets_app/server/99_triggers/Diagnostics.js` | 619 | Does every HC duty-station city resolve to an airport? |
+| `diagUnresolvedCityNames()` | `lets_app/server/99_triggers/Diagnostics.js` | 694 | Zero-argument companion to diagDutyStationAirports. |
+| `diagCityNamesForState(…)` | `lets_app/server/99_triggers/Diagnostics.js` | 751 | Every city name GSA uses in one state, with its airport codes. |
+| `diagFasTrackerRow()` | `lets_app/server/99_triggers/Diagnostics.js` | 845 | Prints the FAS tracker row LETS would submit, beside the expected columns. |
+| `diagFasTrackerHeader()` | `lets_app/server/99_triggers/Diagnostics.js` | 965 | Compares the live tracker header against FAS_TRACKER_COLUMNS. |
+| `diagTripOverviewFields()` | `lets_app/server/99_triggers/Diagnostics.js` | 1029 | Trip Overview and budget-attribution fields on recent requests. |
+| `diagAccess()` | `lets_app/server/99_triggers/Diagnostics.js` | 1114 | Who currently holds site access, and by which path. |
+| `diagServiceCenterDirectors()` | `lets_app/server/99_triggers/Diagnostics.js` | 1241 | Who the Service Center Directors actually are, and who holds a sector scope. |
 
 ## Cache warming and adoption checks
 

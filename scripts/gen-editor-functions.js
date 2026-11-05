@@ -59,11 +59,12 @@ const GROUPS = [
     match: (f) => /HCRosterSync\.js|HCSeed\.js/.test(f)
   },
   {
-    title: 'Email addresses — Google directory lookup',
-    note: 'The HR feed carries no email column, and Email_Address is how ' +
-          'LETS identifies a signed-in user. Requires the People advanced ' +
-          'service: Apps Script editor -> Services -> People API (v1).',
-    match: (f) => /DirectoryResolve\.js/.test(f)
+    title: 'Email address corrections',
+    note: 'The HR feed is authoritative — measured coverage is 821 of 821 ' +
+          'named rows — so these are for the exception. An override is the ' +
+          'ONLY correction that survives the next import: a hand edit to ' +
+          'HC_Positions is cleared and rewritten by importRoster.',
+    match: (f) => /EmailOverrides\.js/.test(f)
   },
   {
     title: 'Budget',
@@ -71,23 +72,23 @@ const GROUPS = [
   },
   {
     title: 'Reference data syncs and their triggers',
-    note: 'Per diem rates, GSA City Pair airfares and the directory sweep. ' +
-          'Each `install…Trigger` removes its own prior trigger first, so ' +
-          'running one twice does not create two schedules.',
+    note: 'Per diem rates and GSA City Pair airfares. Each ' +
+          '`install…Trigger` removes its own prior trigger first, so running ' +
+          'one twice does not create two schedules.',
     match: (f) => /CityPairSync\.js|PerDiemSync\.js|PerDiemGSA\.js/.test(f)
   },
   {
     // MUST PRECEDE the Diagnostics group below. These live in Diagnostics.js
-    // but two of them WRITE, and the Diagnostics heading promises they do not.
+    // but one of them WRITES, and the Diagnostics heading promises they do
+    // not.
     // A generated document that makes a false safety claim is worse than one
     // that is merely incomplete — someone runs `runRosterImport` believing
     // the heading.
     title: 'Editor runners — wrappers for functions that take arguments',
     note: 'The Apps Script Run button passes no arguments, so these wrap the ' +
-          'functions that need them. **`runRosterImport` and ' +
-          '`runDirectoryResolve` WRITE DATA.** The other three write nothing. ' +
-          'Each wrapper prints its result, because a value returned to the ' +
-          'Run button is never displayed.',
+          'functions that need them. **`runRosterImport` WRITES DATA.** The ' +
+          'others write nothing. Each wrapper prints its result, because a ' +
+          'value returned to the Run button is never displayed.',
     match: (f, n) => /Diagnostics\.js/.test(f) && /^run[A-Z]/.test(n)
   },
   {

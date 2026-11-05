@@ -36,7 +36,6 @@ test_travel_import.js
 test_service_center_director.js
 test_hc_roster_import.js
 test_hc_chunked_cache.js
-test_directory_lookup.js
 preview.html
 node_modules/**
 .git/**

@@ -1012,11 +1012,21 @@ function importRoster(token) {
     // effect — and the natural response is to type it in again, and lose it
     // again.
     //
-    // The feed has no email column at all today, so every address in the
-    // roster came either from the directory sweep or from an admin. If the
-    // feed ever gains one, the FEED wins: HR is authoritative about an
-    // address it actually publishes, and an override exists to fill a gap
-    // rather than to contradict the source.
+    // THE FEED WINS WHEN IT HAS AN ADDRESS. @clolry: "the email address
+    // provided in this data source is definitive and without question", and
+    // measured coverage is 821 of 821 named rows — so in practice an override
+    // almost never applies.
+    //
+    // That is a change from when this was written: the previous feed had no
+    // email column at all, so every address came from the directory sweep or
+    // from an admin. The precedence is unchanged and still correct — HR is
+    // authoritative about an address it actually publishes, and an override
+    // exists to fill a gap rather than to contradict the source.
+    //
+    // Kept rather than deleted with the rest of the subsystem because this is
+    // the ONLY correction path that survives an import. A hand edit to
+    // HC_Positions lives until tomorrow morning, then this function clears
+    // the row and the person silently stops being able to sign in.
     var overrides = {};
     try {
       overrides = readEmailOverrides();
@@ -1055,9 +1065,14 @@ function importRoster(token) {
         'Duty_Station_City': r.dutyStationCity,
         'Duty_Station_State': r.dutyStationState,
         'Is_Active': true,
-        'Created_By': createdAtByPn[r.positionNumber] ? '' : 'fas-hr-feed',
+        // PROVENANCE, and the name is the source it actually came from.
+        // Was 'fas-hr-feed' when the roster came from the FAS HRLinks feed.
+        // Rows written before this change keep the old stamp; nothing reads
+        // these values, so mixed provenance is harmless and the truthful name
+        // is worth more than uniformity.
+        'Created_By': createdAtByPn[r.positionNumber] ? '' : 'fc-wf-feed',
         'Created_At': createdAtByPn[r.positionNumber] || now,
-        'Updated_By': 'fas-hr-feed:' + actor,
+        'Updated_By': 'fc-wf-feed:' + actor,
         'Updated_At': now
       };
       // Mapped over the schema headers, never built by hand: writes are

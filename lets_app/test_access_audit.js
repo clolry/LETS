@@ -211,5 +211,47 @@ console.log('8. negative control (the suite must be able to fail)');
        vm.runInContext("canAccessTrip('sup@gsa.gov')",c2)===true);
   }
 }
+// ---------------------------------------------------------------------------
+console.log('\nthe manifest grants no scope the code does not need');
+{
+  // RELOCATED from test_directory_lookup.js, which was deleted with the
+  // directory subsystem. The assertion outlived its original subject and is
+  // recorded here because this suite is about what the app is permitted to do.
+  //
+  // NO EXPLICIT oauthScopes LIST. Apps Script derives scopes from the code it
+  // can see. Pinning an explicit list REPLACES that inference, so every scope
+  // not enumerated silently stops being requested — and the symptom is a
+  // runtime permission error in whichever feature was left out, not a build
+  // failure.
+  //
+  // The original reason for asserting this was that adding directory.readonly
+  // by hand looked like the obvious way to enable the People API. It was not,
+  // and the subsystem that needed it is gone.
+  const manifest = JSON.parse(
+    fs.readFileSync('lets_app/appsscript.json', 'utf8'));
+  ok('the manifest pins no explicit oauthScopes list',
+     !('oauthScopes' in manifest),
+     'an explicit list replaces scope inference and breaks what it omits');
+
+  // THE PEOPLE ADVANCED SERVICE IS GONE. It existed only to read the domain
+  // directory, which was only needed because the old HR feed had no email
+  // column. The FC workforce report carries one — 821 of 821 named rows — so
+  // the subsystem was deleted, and leaving the service enabled would mean
+  // every user granting directory.readonly for a capability nothing uses.
+  const services = ((manifest.dependencies || {}).enabledAdvancedServices || [])
+    .map(s => s.userSymbol);
+  ok('the People advanced service is not enabled',
+     services.indexOf('People') === -1, services);
+  ok('and the app still runs as USER_ACCESSING',
+     manifest.webapp.executeAs === 'USER_ACCESSING',
+     'which is why an admin-only scope could never have worked here');
+
+  // The two that ARE needed, so removing one is a deliberate act rather than
+  // an accident.
+  ok('Drive and Gmail are still enabled',
+     services.indexOf('Drive') > -1 && services.indexOf('Gmail') > -1,
+     services);
+}
+
 console.log(fails?('\n'+fails+' FAILURE(S)'):'\nALL ASSERTIONS PASSED!');
 process.exit(fails?1:0);

@@ -91,12 +91,20 @@ console.log('1. no write operations anywhere in the file');
   // nothing its target would refuse. ADDING TO THIS LIST IS A DECISION:
   // confirm the new target guards itself before doing it, because a wrapper
   // makes a function one click away in the editor.
+  // previewDirectoryEmails, resolveDirectoryEmails and
+  // getEmailResolutionQueue are GONE with the directory subsystem. Removing
+  // them here is deliberate rather than tidy: leaving a dead name in this
+  // list would let a future wrapper 'delegate' to a function that does not
+  // exist and still pass, since the check is a substring match.
   const GUARDED_TARGETS = ['previewRosterImport','importRoster',
-    'previewDirectoryEmails','resolveDirectoryEmails','getBudgetDashboard',
-    'clearHCPositions','getEmailResolutionQueue','saveEmailOverride'];
+    'getBudgetDashboard','clearHCPositions','saveEmailOverride'];
   const runnerNames=(runners.match(/^function (run\w+)\(/gm)||[])
     .map(l=>l.replace(/^function /,'').replace(/\($/,''));
-  ok('there are wrappers', runnerNames.length>=5, runnerNames);
+  // FOUR, down from six: runDirectoryPreview and runDirectoryResolve went
+  // with the directory subsystem. The threshold is lowered rather than
+  // removed — a count that can never fail is not a check — and it is a
+  // >= so adding a wrapper does not break it.
+  ok('there are wrappers', runnerNames.length>=4, runnerNames);
   runnerNames.forEach(fn=>{
     const body=runners.slice(runners.indexOf('function '+fn+'('));
     const end=body.indexOf('\n}');
@@ -113,7 +121,7 @@ console.log('1. no write operations anywhere in the file');
   // across function boundaries — the last diag… function is within 4,000
   // characters of the runners below it, so it failed on code that is correct.
   // A character-window regex cannot express "inside this function".
-  const WRITERS = ['importRoster', 'resolveDirectoryEmails', 'releaseSetAside',
+  const WRITERS = ['importRoster', 'releaseSetAside',
                    'clearHCPositions', 'saveEmailOverride'];
   const diagNames = (src.match(/^function (diag\w+)\(/gm) || [])
     .map(l => l.replace(/^function /, '').replace(/\($/, ''));

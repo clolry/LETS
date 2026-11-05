@@ -673,13 +673,20 @@ const TRAVEL_SHEET_SCHEMAS = {
     'Email_Address',
     // How this address was arrived at:
     //   ADMIN_MANUAL      typed by an administrator
-    //   ADMIN_CONFIRMED   a directory candidate the admin confirmed
-    //   DIRECTORY_AUTO    resolved automatically, recorded for audit
-    // Stored because 'someone decided this' and 'a machine matched this' need
-    // different levels of trust when the two disagree.
+    //   ADMIN_CONFIRMED   an administrator confirmed a suggested candidate
+    //   ADMIN_NO_ADDRESS  a deliberate record that this person has none
+    //   DIRECTORY_AUTO    historical — resolved by the directory sweep
+    //
+    // DIRECTORY_AUTO rows exist in the data and nothing writes them any more.
+    // The sweep that produced them was deleted once the HR feed gained an
+    // email column. The value stays in this list because the ROWS stay: a
+    // value that cannot be written but can be read is still part of the
+    // schema, and silently dropping it would make an existing row
+    // unexplainable.
     'Resolution_Method',
-    // The directory candidate accepted, when there was one. Lets an audit see
-    // that an admin picked 'Kittrell,Kim' rather than inventing an address.
+    // The directory candidate accepted, when there was one. Historical, for
+    // the same reason — it let an audit see that an admin picked
+    // 'Kittrell,Kim' rather than inventing an address.
     'Matched_Directory_Name',
     'Notes',
     'Is_Active',
