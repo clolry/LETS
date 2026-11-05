@@ -144,6 +144,19 @@ var DirectoryLookup = (function () {
   }
 
   /**
+   * How many consecutive lookup failures mean "stop".
+   *
+   * @clolry's sweep errored 281 times in a row after 113 successes, then 275
+   * after 125. That is a quota, not 556 unmatched people, and continuing
+   * through it spends the execution budget on calls that cannot succeed.
+   *
+   * Eight rather than two or three: a single unlucky name can fail for its
+   * own reasons, and stopping a 400-lookup sweep on one bad row would make
+   * the feature useless. Eight in a row is a pattern.
+   */
+  var ERROR_STREAK_LIMIT = 8;
+
+  /**
    * Generational suffixes, recognised on either side of a comparison.
    *
    * Module scope rather than a local in parseName, because candidateMatches
@@ -409,11 +422,20 @@ var DirectoryLookup = (function () {
     // short, no spaces, letters and digits. 'Smith - Jones' is not a
     // suffixed surname, and 'Hale - Office of Acquisition' is a description
     // rather than a code — neither should be stripped as if it were FC.
-    // UPPERCASE OR DIGITS ONLY. GSA org codes are 'FC', 'FCA0B', 'FAS' —
-    // always upper. Requiring that rejects 'Smith - Jones', which my first
+    // UPPERCASE, DIGITS AND HYPHENS. GSA org codes are 'FC', 'FCA0B', and
+    // also 'IX-C', 'Q2AADC-C', '5P2SS3F1-C' — @clolry's queue output showed
+    // all three forms, and the earlier letters-and-digits-only rule left them
+    // attached to the surname. 'Hall - IX-C' then compared as surname
+    // 'Hall - IX-C' and matched nothing.
+    //
+    // Requiring UPPERCASE still rejects 'Smith - Jones', which my first
     // version split into surname 'Smith' and org 'JONES', inventing an org
-    // out of somebody's double-barrelled name and discarding half of it.
-    if (!tail || tail.length > 8 || !/^[A-Z0-9]+$/.test(tail)) {
+    // from somebody's double-barrelled name and discarding half of it.
+    //
+    // 12 characters rather than 8, because '5P2SS3F1-C' is 10. Still short
+    // enough that a descriptive tail — 'Office of Acquisition' — is not
+    // mistaken for a code.
+    if (!tail || tail.length > 12 || !/^[A-Z0-9][A-Z0-9\-]*$/.test(tail)) {
       return { name: raw, org: '' };
     }
     return { name: raw.slice(0, at).trim(), org: tail.toUpperCase() };
@@ -974,8 +996,16 @@ var DirectoryLookup = (function () {
     var out = {
       resolved: [], refused: [], skipped: 0,
       lookups: 0, nextIndex: start, complete: false,
-      stoppedBecause: ''
+      stoppedBecause: '',
+      // Counted separately from refusals. A refusal is a DECISION — the name
+      // was ambiguous, or nothing matched. An error is an ATTEMPT THAT DID
+      // NOT HAPPEN, and conflating them makes a throttled run look like a
+      // matching failure.
+      errors: 0,
+      errorSamples: [],
+      rateLimited: false
     };
+    var consecutiveErrors = 0;
 
     var list = positions || [];
     var i = start;
@@ -1007,13 +1037,66 @@ var DirectoryLookup = (function () {
 
       var r = resolveOne(p, searchFn, verifyFn);
       out.lookups++;
-      if (r.email) out.resolved.push(r);
-      else out.refused.push(r);
+      if (r.email) {
+        out.resolved.push(r);
+        consecutiveErrors = 0;
+      } else {
+        out.refused.push(r);
+        if (r.method === 'error') {
+          out.errors++;
+          consecutiveErrors++;
+          // Keep the first few messages. @clolry's sweep reported 281 errors
+          // and the log showed only '[error, 0 candidate(s)]' — the reason
+          // was recorded per row and never surfaced, so the cause was
+          // invisible.
+          if (out.errorSamples.length < 5) {
+            out.errorSamples.push(r.employeeName + ': ' + r.reason);
+          }
+        } else {
+          consecutiveErrors = 0;
+        }
+      }
+
+      // STOP ON A RUN OF CONSECUTIVE ERRORS.
+      //
+      // @clolry's first run: 113 resolved, then 281 errors in a row. Its
+      // second: 125 resolved, then 275. The pattern is a quota — roughly 120
+      // lookups per execution, after which every call fails.
+      //
+      // Continuing through 275 doomed calls wastes the remainder of the
+      // budget and, worse, marks 275 positions as attempted so the run
+      // reports a failure rate that is really a throttle. Stopping early
+      // leaves them untried, which is honest and lets the next run reach
+      // them.
+      if (consecutiveErrors >= ERROR_STREAK_LIMIT) {
+        out.stoppedBecause = consecutiveErrors + ' consecutive lookup ' +
+                             'errors — almost certainly a rate limit. ' +
+                             'Stopped rather than burning the remaining budget.';
+        out.rateLimited = true;
+        i++;                       // this position was attempted
+        break;
+      }
     }
 
     out.nextIndex = i;
-    out.complete = i >= list.length;
-    if (out.complete) out.stoppedBecause = 'finished';
+
+    // 'COMPLETE' MEANS EVERY POSITION WAS ATTEMPTED SUCCESSFULLY, not merely
+    // that the loop reached the end.
+    //
+    // @clolry's third run printed 'SWEEP COMPLETE' with 556 positions having
+    // errored across the three runs — two thirds of the roster still had no
+    // address. The flag meant 'end of list' and was read, reasonably, as
+    // 'done'. A resumable sweep whose completion signal ignores failures is
+    // worse than one with no signal.
+    out.reachedEnd = i >= list.length;
+    out.complete = out.reachedEnd && out.errors === 0;
+    if (out.complete) {
+      out.stoppedBecause = 'finished';
+    } else if (out.reachedEnd && out.errors) {
+      out.stoppedBecause = 'reached the end of the roster, but ' + out.errors +
+                           ' lookup(s) failed and were not resolved. Re-run ' +
+                           'to retry them.';
+    }
     return out;
   }
 
@@ -1045,11 +1128,27 @@ var DirectoryLookup = (function () {
       resolved: (batch.resolved || []).length,
       refused: (batch.refused || []).length,
       skipped: batch.skipped,
+      // SEPARATE FROM REFUSALS. A refusal is a decision about a person; an
+      // error is a call that never completed. @clolry's run reported '287
+      // refused' when 281 of those were a rate limit, which reads as a
+      // matching failure and is not one.
+      errors: batch.errors || 0,
+      errorSamples: batch.errorSamples || [],
+      rateLimited: !!batch.rateLimited,
+      reachedEnd: !!batch.reachedEnd,
       byMethod: byMethod,
       refusedByReason: byReason,
       complete: batch.complete,
       nextIndex: batch.nextIndex,
-      note: 'Refusals are deliberate. ' + byReason.ambiguous + ' name(s) match ' +
+      note: (batch.errors
+              ? ((batch.rateLimited
+                   ? 'STOPPED EARLY: '
+                   : 'WARNING: ') + batch.errors + ' lookup(s) FAILED rather ' +
+                 'than being refused — these are calls that did not complete, ' +
+                 'almost certainly a rate limit, and those positions still ' +
+                 'have no address. Re-run to retry them. ')
+              : '') +
+            'Refusals are deliberate. ' + byReason.ambiguous + ' name(s) match ' +
             'more than one person in the directory, and choosing between them ' +
             'would risk granting LETS access to the wrong person — those must ' +
             'be set by hand in the roster editor.'
@@ -1166,8 +1265,33 @@ var DirectoryLookup = (function () {
       }
 
       if (rank > 0 && rosterFirst && candFirst) {
-        if (rosterFirst.charAt(0) === candFirst.charAt(0)) {
-          reason = 'initial';
+        // A SHARED FIRST LETTER IS NOT A SIGNAL.
+        //
+        // @clolry's queue offered 'Jermaine Hall' as the top suggestion for
+        // 'Hall,Joseph C', with a pre-filled accept command — because both
+        // forenames start with J. That is the eight-Halls trap exactly,
+        // re-entered through the 'initial' reason, and it was worse than the
+        // original: a confident single suggestion rather than an obvious
+        // list.
+        //
+        // Measured against the real nicknames in this roster, a shared PREFIX
+        // of three or more characters separates them cleanly:
+        //
+        //   Charles/Charley 6   Kristen/Kristi 5   Bradley/Brad 4
+        //   Katherine/Kate  3   Richard/Rick   3
+        //   Joseph/Jermaine 1   Michael/Mary   1   Anthony/Tony 0
+        //
+        // Three is where real diminutives sit and coincidence does not. The
+        // genuine short forms that share nothing — Anthony/Tony,
+        // Angela/Kim — cannot be reached by prefix at all and must stay with
+        // a human, which is correct.
+        var shared = 0;
+        while (shared < rosterFirst.length && shared < candFirst.length &&
+               rosterFirst.charAt(shared) === candFirst.charAt(shared)) {
+          shared++;
+        }
+        if (shared >= 3) {
+          reason = 'nickname-prefix';
           rank = 0;
         }
         if (rosterFirst.indexOf(candFirst) === 0 ||
@@ -1226,7 +1350,8 @@ var DirectoryLookup = (function () {
     // implies an order the evidence does not support.
     var hasSignal = out.some(function (o) {
       return o.reason === 'email-confirms-name' ||
-             o.reason === 'initial' || o.reason === 'contains';
+             o.reason === 'compound-surname' ||
+             o.reason === 'nickname-prefix' || o.reason === 'contains';
     });
     if (!hasSignal && out.length > 2) {
       return out.map(function (o) {

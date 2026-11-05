@@ -1120,8 +1120,13 @@ console.log('\n17. an indistinguishable list is labelled, not ranked');
      sug.every(s => s.reason === 'surname-only'), sug[0]);
 
   // A FORENAME SIGNAL BREAKS THE TIE and the list is ranked normally again.
+  //
+  // 'Joe' shares only two leading characters with 'Joseph', and a shared
+  // first letter is no longer a signal — @clolry's queue offered 'Jermaine
+  // Hall' as the top pick for 'Hall,Joseph C' on exactly that basis. 'Joseph'
+  // here shares six, which is a real diminutive.
   const withJoe = halls.concat([{
-    givenName: 'Joe', familyName: 'Hall - FCA0B', email: 'joe.hall@gsa.gov'
+    givenName: 'Joseph', familyName: 'Hall - FCA0B', email: 'joe.hall@gsa.gov'
   }]);
   const ranked = D.suggestCandidates(D.parseName('Hall,Joseph C'), withJoe,
                                      'FCA0BAA');
@@ -1435,6 +1440,106 @@ console.log('\n21. two certain resolutions must not collide');
      'a collision is the only outcome that leaves two people one identity');
   ok('and names both positions involved',
      /alreadyHeldByName/.test(wrapper), wrapper.slice(0, 200));
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n22. a shared first letter is not a signal');
+{
+  // @clolry's queue offered 'Jermaine Hall' as the TOP suggestion for
+  // 'Hall,Joseph C', with a pre-filled accept command — because both
+  // forenames begin with J. That is the eight-Halls trap re-entered through
+  // the 'initial' reason, and worse than the original: one confident
+  // suggestion instead of an obviously undecidable list.
+  const prefix = (a, b) => {
+    const x = D.nameKey(a), y = D.nameKey(b);
+    let n = 0;
+    while (n < x.length && n < y.length && x[n] === y[n]) n++;
+    return n;
+  };
+
+  // Measured against the real names in this roster. Three characters
+  // separates genuine diminutives from coincidence.
+  ok('Charles/Charley share 6', prefix('Charles', 'Charley') === 6);
+  ok('Kristen/Kristi share 5', prefix('Kristen', 'Kristi') === 5);
+  ok('Bradley/Brad share 4', prefix('Bradley', 'Brad') === 4);
+  ok('Katherine/Kate share 3', prefix('Katherine', 'Kate') === 3);
+  ok('Richard/Rick share 3', prefix('Richard', 'Rick') === 3);
+  ok('Joseph/Jermaine share only 1', prefix('Joseph', 'Jermaine') === 1,
+     'which is why it must not be a signal');
+  ok('Michael/Mary share only 1', prefix('Michael', 'Mary') === 1);
+
+  const halls = [
+    { givenName: 'Jermaine', familyName: 'Hall - IX-C',
+      email: 'jermaine.hall@gsa.gov' },
+    { givenName: 'Adam', familyName: 'Hall - FCA0B', email: 'adam.hall@gsa.gov' },
+    { givenName: 'Brian', familyName: 'Hall', email: 'brian.j.hall@gsa.gov' },
+    { givenName: 'David', familyName: 'Hall', email: 'david.hall@gsa.gov' }
+  ];
+  const sug = D.suggestCandidates(D.parseName('Hall,Joseph C'), halls, 'FCA0BAA');
+  ok('Jermaine is not offered as a nickname match',
+     !sug.some(s => s.reason === 'nickname-prefix'), sug.map(s => s.reason));
+  ok('and the list is flagged indistinguishable again',
+     sug.every(s => s.indistinguishable === true),
+     'four Halls with no forename signal is undecidable');
+
+  // A REAL DIMINUTIVE STILL RESOLVES.
+  const kate = D.suggestCandidates(D.parseName('Koch,Katherine R'), [
+    { givenName: 'Kate', familyName: 'Koch - FCA0E', email: 'kate.koch@gsa.gov' },
+    { givenName: 'Gary', familyName: 'Koch', email: 'gary.koch@gsa.gov' },
+    { givenName: 'Mary Kate', familyName: 'Koch', email: 'marykate.koch@gsa.gov' }
+  ], 'FCA0EDA');
+  ok('Katherine/Kate is offered as a nickname-prefix',
+     kate[0].reason === 'nickname-prefix' &&
+     kate[0].email === 'kate.koch@gsa.gov', kate[0]);
+  ok('and Mary Kate is not promoted over her',
+     kate[0].email !== 'marykate.koch@gsa.gov',
+     'MARYKATE shares no prefix with KATHERINE');
+
+  ok('Bradley/Brad is offered',
+     D.suggestCandidates(D.parseName('Ludlow,Bradley W'),
+       [{ givenName: 'Brad', familyName: 'Ludlow - FCA0E',
+          email: 'brad.ludlow@gsa.gov' }], 'FCA0EC')[0].reason === 'contains');
+  ok('Charles/Charley is offered',
+     D.suggestCandidates(D.parseName('Schollaert,Charles F'),
+       [{ givenName: 'Charley', familyName: 'Schollaert - FCA0B',
+          email: 'charley.schollaert@gsa.gov' }], 'FCA0BBA')[0].reason ===
+       'nickname-prefix');
+
+  // THE ONES WITH NO SHARED PREFIX STAY WITH A HUMAN, which is correct —
+  // Anthony/Tony and Angela/Kim cannot be reached by any prefix rule.
+  ok('Angela/Kim shares nothing', prefix('Angela', 'Kim') === 0);
+  ok('Anthony/Tony shares nothing', prefix('Anthony', 'Tony') === 0,
+     'these need @clolry, and always will');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n23. GSA org suffixes are not all four characters');
+{
+  // @clolry's output showed three forms the earlier rule missed:
+  //   'Hall - IX-C'   'Nicholson - Q2AADC-C'   'Barksdale - 5P2SS3F1-C'
+  // All three stayed attached to the surname, so 'Hall - IX-C' compared as a
+  // surname of 'Hall - IX-C' and matched nothing.
+  ok('a hyphenated org code is split',
+     D.splitDirectorySuffix('Hall - IX-C').name === 'Hall' &&
+     D.splitDirectorySuffix('Hall - IX-C').org === 'IX-C',
+     D.splitDirectorySuffix('Hall - IX-C'));
+  ok('a longer one too',
+     D.splitDirectorySuffix('Nicholson - Q2AADC-C').name === 'Nicholson');
+  ok('and a ten-character one',
+     D.splitDirectorySuffix('Barksdale - 5P2SS3F1-C').name === 'Barksdale',
+     '5P2SS3F1-C is 10 characters; the cap was 8');
+  ok('a plain org code still works',
+     D.splitDirectorySuffix('Hall - FCA0B').org === 'FCA0B');
+
+  // AND THE LIMITS HOLD. A name must not be mistaken for a code.
+  ok('a double-barrelled name is not split',
+     D.splitDirectorySuffix('Smith - Jones').org === '',
+     'requiring uppercase is what rejects this');
+  ok('a descriptive tail is not split',
+     D.splitDirectorySuffix('Hale - Office of Acq').org === '');
+  ok('and a hyphenated surname is untouched',
+     D.splitDirectorySuffix('Mbeki-Lawson').org === '',
+     'the delimiter is space-hyphen-space');
 }
 
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
