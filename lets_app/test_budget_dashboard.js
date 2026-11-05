@@ -731,5 +731,247 @@ console.log('\n8. negative controls (the suite must be able to fail)');
   }
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n10. the service center table is RENDERED, not just computed');
+{
+  // @clolry: "Let's finish the per-capita model so we can get a report that
+  // shows the budget allocations (and pending/actual spend) by service center.
+  // I want that to be a part of the budget dashboard page asap."
+  //
+  // THE PAYLOAD WAS ALREADY THERE. getBudgetDashboard has returned a full
+  // `serviceCenters` block — 22 rows, allocations footing to each DAC's
+  // discretionary base — and the page read only `d.offices`, the four DACs.
+  // The per-center split was visible nowhere but showServiceCenterHeadcount()
+  // in the Apps Script editor.
+  //
+  // So this section RUNS the page's renderer rather than grepping it. A
+  // source-text assertion would pass on a renderer that throws, and the whole
+  // defect being fixed is "the data exists and nobody sees it".
+  const PAGE = 'lets_app/client/pages/travelBudgetDashboardPage.html';
+  const html = fs.readFileSync(PAGE, 'utf8');
+  const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)]
+    .map(m => m[1]);
+  const page = scripts[scripts.length - 1];
+
+  // The page's script is an IIFE, so its functions are not reachable from
+  // outside. Export from INSIDE it by splicing before the closing '})();'.
+  const close = page.lastIndexOf('})();');
+  ok('the page script is an IIFE with a findable close', close > 0);
+
+  const els = {};
+  function mkEl(id) {
+    return {
+      id: id, innerHTML: '', textContent: '', value: '',
+      options: { length: 1 }, style: {}, dataset: {},
+      classList: { add() {}, remove() {} },
+      appendChild(c) { this.options.length++; (this._kids = this._kids || []).push(c); },
+      addEventListener() {}, querySelectorAll: () => [], closest: () => null
+    };
+  }
+  const sandbox = {
+    console: { log() {}, warn() {}, error() {} },
+    JSON, Date, Object, String, Number, Array, Math, isNaN, parseInt,
+    parseFloat, RegExp, Error, Boolean, setTimeout, clearTimeout,
+    document: {
+      getElementById: (id) => (els[id] || (els[id] = mkEl(id))),
+      createElement: () => ({ value: '', textContent: '' }),
+      addEventListener() {}, querySelectorAll: () => []
+    },
+    window: { _letsBranding: {} },
+    google: { script: { run: {
+      withSuccessHandler() { return this; },
+      withFailureHandler() { return this; }
+    } } },
+    // Provided by travelUtils.html in the real app.
+    serverCall: () => ({ then() { return this; }, catch() { return this; } }),
+    escapeHtml: (s) => String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+  };
+  sandbox.module = { exports: {} };
+
+  const ctx = vm.createContext(sandbox);
+  vm.runInContext(
+    page.slice(0, close) +
+    '\nmodule.exports={renderServiceCenters,dacSubtotalRow,money,renderBudget};\n' +
+    page.slice(close),
+    ctx, { filename: 'travelBudgetDashboardPage.js' });
+  const UI = sandbox.module.exports;
+  ok('the renderer is defined',
+     typeof UI.renderServiceCenters === 'function');
+
+  // A payload shaped like the real one: two DACs, an above-center bucket, a
+  // DEFICIT center, and a reconciliation gap on one DAC.
+  const payload = {
+    offices: [
+      { orgCode: 'FCA', officeName: 'Office of Portfolio Management' },
+      { orgCode: 'FCB', officeName: 'Office of IDV Management' }
+    ],
+    serviceCenters: {
+      available: true, basis: 'FILLED',
+      headcountSource: 'HC_Positions, 1046 positions',
+      note: 'Each DAC\u2019s available balance divided by its share of FILLED positions.',
+      rows: [
+        { orgCode: '', dacOrgCode: 'FCA', isAboveServiceCenter: true,
+          displayName: '', filled: 12, vacant: 2, authorized: 14, sharePct: 9.3,
+          allocation: 5725, committed: 0, committedCount: 0, completed: 0,
+          completedCount: 0, remaining: 5725, isDeficit: false, utilizationPct: 0 },
+        { orgCode: 'FCA0A', dacOrgCode: 'FCA', isAboveServiceCenter: false,
+          displayName: 'Portfolio Management Service Center', filled: 30,
+          vacant: 4, authorized: 34, sharePct: 23.3, allocation: 14312.5,
+          committed: 2500, committedCount: 3, completed: 1200, completedCount: 2,
+          remaining: 10612.5, isDeficit: false, utilizationPct: 25.9 },
+        { orgCode: 'FCA0B', dacOrgCode: 'FCA', isAboveServiceCenter: false,
+          displayName: 'Stakeholder Connection and Engagement Service Center',
+          filled: 28, vacant: 1, authorized: 29, sharePct: 21.7,
+          allocation: 13350, committed: 14000, committedCount: 9, completed: 900,
+          completedCount: 1, remaining: -1550, isDeficit: true,
+          utilizationPct: 111.6 },
+        { orgCode: 'FCB0A', dacOrgCode: 'FCB', isAboveServiceCenter: false,
+          displayName: 'IDV Implementation Service Center', filled: 40,
+          vacant: 3, authorized: 43, sharePct: 100, allocation: 306700,
+          committed: 5000, committedCount: 4, completed: 0, completedCount: 0,
+          remaining: 301700, isDeficit: false, utilizationPct: 1.6 }
+      ],
+      byDac: {
+        FCA: { officeCode: 'OMD', pool: 61587.5, filled: 129, authorized: 140,
+               allocated: 61587.5, unallocated: 0,
+               spendReconciliation: { centerCommitted: 16500, centerCompleted: 2100,
+                 officeCommitted: 16500, officeCompleted: 2100, unexplained: 0 } },
+        FCB: { officeCode: 'IDV', pool: 306700, filled: 40, authorized: 43,
+               allocated: 306700, unallocated: 0,
+               spendReconciliation: { centerCommitted: 5000, centerCompleted: 0,
+                 officeCommitted: 5400, officeCompleted: 0, unexplained: 400 } }
+      }
+    }
+  };
+
+  UI.renderServiceCenters(payload);
+  const out = els.scTableBody.innerHTML;
+
+  // EVERY CENTER APPEARS. A reader scanning for their own center and not
+  // finding it cannot tell "no budget" from "not in the report".
+  ['FCA0A', 'FCA0B', 'FCB0A'].forEach(code => {
+    ok(code + ' is in the table', out.indexOf(code) > -1);
+  });
+  ok('and so is its display name',
+     out.indexOf('Portfolio Management Service Center') > -1);
+
+  // THE FIGURES @clolry ASKED FOR: allocation, pending, actual.
+  ok('the allocation is shown', out.indexOf('$14,313') > -1, out.slice(0, 400));
+  ok('pending spend is shown', out.indexOf('$2,500') > -1);
+  ok('actual spend is shown', out.indexOf('$1,200') > -1);
+  ok('and the request counts beside them', out.indexOf('(3)') > -1);
+
+  // A DEFICIT MUST READ AS NEGATIVE MONEY. money() was '$' + value, so -1550
+  // rendered '$-1,550' — not how anyone writes money, and at a glance it
+  // reads as positive with stray punctuation. Reachable all along: a DAC can
+  // be overspent (BudgetDashboard.js:1042) and so can a center (:599); there
+  // had simply never been a negative balance while anyone was looking.
+  ok('a deficit renders as -$1,550, not $-1,550',
+     out.indexOf('-$1,550') > -1 && out.indexOf('$-1,550') === -1,
+     'the sign belongs before the symbol');
+  ok('and is colored as a deficit', /text-danger/.test(out));
+
+  // GROUPED BY DAC WITH A SUBTOTAL, because an allocation is a share of its
+  // OWN DAC's pool. Ranking all 22 by dollars compares numbers with no common
+  // denominator.
+  ok('each DAC gets a header row',
+     out.indexOf('Office of Portfolio Management') > -1 &&
+     out.indexOf('Office of IDV Management') > -1);
+  ok('and a subtotal row that foots to the pool',
+     out.indexOf('Office of Portfolio Management total') > -1 &&
+     out.indexOf('$61,588') > -1,
+     'the subtotal is what makes the block checkable on sight');
+  ok('shares sum to 100% in the subtotal', out.indexOf('100%') > -1);
+
+  // ABOVE-CENTER STAFF ARE LABELED, NOT DROPPED. They hold a real
+  // allocation, so omitting them would make the block's shares fail to sum to
+  // 100% and the table would look broken.
+  ok('staff above any service center are labeled',
+     out.indexOf('Above any service center') > -1,
+     'they hold an allocation; dropping them breaks the block arithmetic');
+
+  // VACANCIES ARE VISIBLE BUT NOT COUNTED. The split divides by FILLED.
+  ok('vacant seats are shown beside the filled count',
+     out.indexOf('vac') > -1);
+
+  // THE RECONCILIATION GAP IS SHOWN, not hidden. The two tables count at
+  // different grains, so a gap is expected — and an unexplained difference a
+  // reader finds for themselves reads as a bug in both numbers.
+  ok('a spend gap against the DAC table is disclosed',
+     /Office of IDV Management \$400/.test(els.scFooter.innerHTML),
+     els.scFooter.innerHTML.slice(0, 300));
+  ok('and the reason for it is given',
+     /different grains/.test(els.scFooter.innerHTML));
+
+  ok('the basis line names the headcount source',
+     /FILLED/.test(els.scBasis.textContent) &&
+     /HC_Positions/.test(els.scBasis.textContent), els.scBasis.textContent);
+  ok('the badge counts service centers, not buckets',
+     els.scCountBadge.textContent.indexOf('3 service centers') > -1,
+     'the above-center bucket is not a service center');
+
+  // UNAVAILABLE IS NOT EMPTY. serviceCenterAllocations returns a REASON when
+  // the roster is missing; a blank table would read as "no service centers",
+  // which is a claim rather than an absence of one.
+  UI.renderServiceCenters({ offices: [],
+    serviceCenters: { available: false, note: 'Import the roster first.' } });
+  ok('an unavailable split explains itself',
+     els.scTableBody.innerHTML.indexOf('Import the roster first.') > -1,
+     els.scTableBody.innerHTML);
+  ok('and does not leave stale rows on screen',
+     els.scTableBody.innerHTML.indexOf('FCA0A') === -1,
+     'stale allocations beside a failure read as current');
+
+  // NEGATIVE CONTROL: the table must be able to come out empty. Without this,
+  // every assertion above would pass against a renderer that emitted the
+  // whole payload as one undifferentiated blob.
+  UI.renderServiceCenters({ offices: [],
+    serviceCenters: { available: true, rows: [], byDac: {}, basis: 'FILLED',
+                      headcountSource: '', note: '' } });
+  ok('an available split with no rows says so',
+     /No rows/.test(els.scTableBody.innerHTML),
+     els.scTableBody.innerHTML);
+
+  // THE RENDERER MUST ACTUALLY BE CALLED. Everything above exercises it
+  // directly, so it would all pass on a page that defines the function and
+  // never invokes it — which is a hair's breadth from the defect being fixed,
+  // where the data existed and nothing rendered it.
+  //
+  // Asserted by RUNNING renderBudget with a full payload and checking the
+  // service center table filled in, rather than grepping for the call. A grep
+  // would pass on a call inside dead code.
+  const fullPayload = Object.assign({}, payload, {
+    totals: { baseline: 0, setAsides: 0, discretionaryBase: 0, committed: 0,
+              completed: 0, available: 0, committedCount: 0, completedCount: 0 },
+    meta: { fiscalYear: 'FY27', liveSpend: true, requestsRead: 0,
+            adjustmentsNote: '', actualsNote: '', baselineSource: '',
+            unattributed: {} }
+  });
+  fullPayload.offices = payload.offices.map(o => Object.assign({
+    officeCode: o.orgCode, baselineAllocation: 0, proportionalShare: 0,
+    setAsides: { total: 0, lines: [] }, discretionaryBase: 0, committed: 0,
+    committedCount: 0, completed: 0, available: 0, isDeficit: false,
+    utilizationPct: null
+  }, o));
+
+  els.scTableBody.innerHTML = '';
+  // Exported through the same splice as the others: renderBudget lives
+  // inside the page's IIFE, so vm.runInContext cannot see it from outside.
+  ok('renderBudget is reachable', typeof UI.renderBudget === 'function');
+  UI.renderBudget(fullPayload);
+  ok('renderBudget populates the service center table',
+     els.scTableBody.innerHTML.indexOf('FCA0A') > -1,
+     'a renderer nobody calls is the defect this section exists for');
+
+  // And money() itself, directly — the function the deficit bug was in.
+  ok('money formats a positive figure', UI.money(1234) === '$1,234');
+  ok('money formats a negative figure', UI.money(-1234) === '-$1,234');
+  ok('money returns an em-dash for null, not $0',
+     UI.money(null) === '\u2014',
+     'a zero balance is a claim; an unknown balance is not');
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);

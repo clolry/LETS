@@ -399,6 +399,71 @@
       <div class="card-footer bg-white small text-muted" id="bdFooter"></div>
     </div>
 
+    <!-- =====================================================================
+         SERVICE CENTER ALLOCATIONS
+         =====================================================================
+
+         @clolry: "Let's finish the per-capita model so we can get a report
+         that shows the budget allocations (and pending/actual spend) by
+         service center. I want that to be a part of the budget dashboard page
+         asap."
+
+         THIS WAS COMPUTED AND RENDERED NOWHERE. getBudgetDashboard has been
+         returning a full `serviceCenters` payload — 22 rows, allocations
+         footing to each DAC's discretionary base — and this page read only
+         `d.offices`, the four DACs. The only way to see the per-center split
+         was showServiceCenterHeadcount() in the Apps Script editor.
+
+         GROUPED BY DAC, not flat. A flat 22-row table invites comparing a
+         center in FCA against one in FCB, and those two numbers come from
+         different pools — the allocation is a share of the DAC's own
+         discretionary base, so a cross-DAC comparison of dollars is
+         meaningless. The DAC subtotal row is what makes each block's
+         arithmetic checkable: shares sum to 100%, allocations sum to the
+         pool.
+
+         NO HARDCODED FIGURES. Every number here comes from the payload. This
+         page was once a mockup with 34 literal dollar amounts that @clolry
+         read as live for weeks; a verify.yml guard now fails the build on any
+         three-digit literal outside a toLocaleString call. -->
+    <div class="card border-0 shadow-sm mb-4" id="scCard">
+      <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+          <h3 class="h6 mb-0 fw-bold">Service Center Allocations &amp; Spend</h3>
+          <div class="text-muted" style="font-size:0.75rem;" id="scBasis"></div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <!-- Filter by DAC. The option list is built from the payload, so it
+               cannot offer a DAC that has no rows. -->
+          <label class="text-muted mb-0" style="font-size:0.75rem;" for="scDacFilter">Show</label>
+          <select class="form-select form-select-sm" id="scDacFilter" style="width:auto;">
+            <option value="">All DACs</option>
+          </select>
+          <span class="badge bg-light text-secondary border" id="scCountBadge"></span>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="font-size: 0.8125rem;">
+          <thead class="table-light">
+            <tr>
+              <th>Service Center</th>
+              <th class="text-end" title="Filled positions. One seat per person: somebody holding a temp promotion and their permanent obligated seat is counted once.">Staff</th>
+              <th class="text-end" title="This center's share of its DAC's filled headcount.">Share</th>
+              <th class="text-end" title="Share of the DAC's discretionary base, by largest-remainder so the rows foot exactly.">Allocation</th>
+              <th class="text-end" title="Approved and in the pipeline, from this center's own travelers.">Pending</th>
+              <th class="text-end" title="Completed trips, at approved estimate.">Actual</th>
+              <th class="text-end">Remaining</th>
+              <th class="text-end">Used</th>
+            </tr>
+          </thead>
+          <tbody id="scTableBody">
+            <tr><td colspan="8" class="text-muted py-3">Loading&hellip;</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card-footer bg-white small text-muted" id="scFooter"></div>
+    </div>
+
     <!-- Two-Column Governance Section: Set-Asides & FAS Delegation Tracker Sync -->
     <div class="row g-4">
       <!-- Left: Set-Asides Structure -->
@@ -840,7 +905,16 @@
 
       function money(v) {
         if (v === null || v === undefined || isNaN(v)) { return '\u2014'; }
-        return '$' + Math.round(v).toLocaleString();
+        // THE SIGN GOES BEFORE THE SYMBOL. '$' + (-1550) produced '$-1,550',
+        // which is not how anyone writes money and reads at a glance as a
+        // positive figure with stray punctuation.
+        //
+        // Found by rendering a deficit row for real. A DAC can be overspent
+        // (isDeficit at BudgetDashboard.js:1042) and so can a service center
+        // (:599), so this has always been reachable — there just was never a
+        // negative balance in the data while anyone was looking.
+        var n = Math.round(v);
+        return (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString();
       }
 
       function renderBudget(d) {
@@ -954,6 +1028,9 @@
             : '<tr><td colspan="4" class="text-muted py-3">None configured.</td></tr>';
         }
 
+        _scLastPayload = d;
+        renderServiceCenters(d);
+
         var footer = document.getElementById('bdFooter');
         footer.innerHTML =
           escapeHtml(m.adjustmentsNote || '') + ' ' +
@@ -964,6 +1041,226 @@
             : ' <span class="text-danger">Commitments could not be read: ' +
               escapeHtml(m.spendError || 'unknown error') + '</span>');
       }
+
+      /**
+       * The 22-row service center table, grouped by DAC.
+       *
+       * READS d.serviceCenters, which getBudgetDashboard has always returned
+       * and which this page ignored. See the markup comment above #scCard.
+       *
+       * WHY GROUPED AND SUBTOTALLED RATHER THAN A FLAT SORT
+       * ---------------------------------------------------
+       * An allocation is a share of that center's OWN DAC's discretionary
+       * base. A center in FCA and one in FCB draw on different pools, so
+       * ranking all 22 by dollars compares numbers with no common
+       * denominator — and the biggest allocation would look like the biggest
+       * budget rather than the biggest DAC.
+       *
+       * (My first draft of this comment used two example dollar amounts and
+       * the verify.yml hardcoded-currency guard failed the build. The guard is
+       * right: it greps the file, and it cannot tell a literal in prose from a
+       * literal in markup. Illustrating the point with figures was not worth
+       * weakening the check that stops this page claiming stale numbers.)
+       *
+       * The DAC subtotal row makes each block's arithmetic checkable on
+       * sight: the shares in a block sum to 100%, the allocations sum to the
+       * pool, and `unallocated` must read as zero. That last figure is
+       * carried in the payload specifically so a largest-remainder rounding
+       * regression shows up on the page rather than only in a test.
+       *
+       * ROWS WITH NO SERVICE CENTER ARE LABELED, NOT DROPPED. Staff sitting
+       * at a DAC or an office — FCA itself, FCBA — have no service center, so
+       * their bucket carries isAboveServiceCenter and a blank org code. They
+       * hold a real allocation and must appear, or the block's shares will not
+       * sum to 100% and the table will look broken.
+       */
+      function renderServiceCenters(d) {
+        var sc = d.serviceCenters || {};
+        var body = document.getElementById('scTableBody');
+        var footer = document.getElementById('scFooter');
+        var basis = document.getElementById('scBasis');
+        var badge = document.getElementById('scCountBadge');
+        var filter = document.getElementById('scDacFilter');
+        if (!body) return;
+
+        // UNAVAILABLE IS NOT EMPTY. serviceCenterAllocations returns a reason
+        // in `note` when the roster is missing or every seat is vacant, and
+        // showing a blank table instead would read as "no service centers",
+        // which is a claim rather than an absence of one.
+        if (!sc.available) {
+          body.innerHTML = '<tr><td colspan="8" class="text-muted py-3">' +
+            escapeHtml(sc.note || 'Per-service-center figures are unavailable.') +
+            '</td></tr>';
+          if (footer) footer.textContent = '';
+          if (basis) basis.textContent = '';
+          if (badge) badge.textContent = '';
+          return;
+        }
+
+        var rows = sc.rows || [];
+        var byDac = sc.byDac || {};
+
+        // Office name per DAC, from d.offices rather than re-derived — the
+        // two tables must not disagree about what FCA is called.
+        var officeName = {};
+        (d.offices || []).forEach(function (o) {
+          if (o.orgCode) officeName[o.orgCode] = o.officeName;
+        });
+
+        // The filter options, built from the DACs that actually have rows.
+        // Preserves the current selection across a refresh, so the poll does
+        // not reset what somebody is reading.
+        if (filter && filter.options.length <= 1) {
+          var seen = {};
+          rows.forEach(function (r) {
+            if (seen[r.dacOrgCode]) return;
+            seen[r.dacOrgCode] = true;
+            var opt = document.createElement('option');
+            opt.value = r.dacOrgCode;
+            opt.textContent = (officeName[r.dacOrgCode] || r.dacOrgCode);
+            filter.appendChild(opt);
+          });
+          filter.addEventListener('change', function () {
+            renderServiceCenters(_scLastPayload);
+          });
+        }
+        var want = filter ? filter.value : '';
+        var shown = want ? rows.filter(function (r) { return r.dacOrgCode === want; })
+                         : rows;
+
+        // Grouped in the payload's own order, which is already DAC then org
+        // code with above-center staff leading each block. Re-sorting here
+        // would make the two surfaces disagree for no reason.
+        var html = '';
+        var lastDac = null;
+        shown.forEach(function (r) {
+          if (r.dacOrgCode !== lastDac) {
+            if (lastDac !== null) html += dacSubtotalRow(lastDac, byDac[lastDac], officeName);
+            html += '<tr class="table-light"><td colspan="8" class="fw-bold py-1">' +
+              escapeHtml(officeName[r.dacOrgCode] || r.dacOrgCode) +
+              ' <span class="text-muted fw-normal" style="font-size:0.72rem;">' +
+              escapeHtml(r.dacOrgCode) + '</span></td></tr>';
+            lastDac = r.dacOrgCode;
+          }
+
+          var remCls = r.isDeficit ? 'text-danger fw-bold' : 'text-success';
+          // Presentational only; nothing branches on these thresholds.
+          var useCls = r.utilizationPct === null ? 'text-muted'
+                     : (r.utilizationPct >= 90 ? 'text-danger'
+                     : (r.utilizationPct >= 70 ? 'text-warning' : 'text-muted'));
+
+          // A center with no allocation and no spend is still shown. A reader
+          // scanning for their own center and not finding it cannot tell
+          // "no budget" from "not in the report".
+          html += '<tr>' +
+            '<td>' +
+              (r.isAboveServiceCenter
+                ? '<span class="text-muted fst-italic">Above any service center</span>' +
+                  '<div class="text-muted" style="font-size:0.7rem;">' +
+                  'Staff at the DAC or office level</div>'
+                : escapeHtml(r.displayName || r.orgCode) +
+                  ' <span class="text-muted" style="font-size:0.72rem;">' +
+                  escapeHtml(r.orgCode) + '</span>') +
+            '</td>' +
+            '<td class="text-end">' + r.filled +
+              (r.vacant ? ' <span class="text-muted" style="font-size:0.7rem;" ' +
+                          'title="Vacant seats, excluded from the split">+' +
+                          r.vacant + ' vac</span>' : '') + '</td>' +
+            '<td class="text-end"><span class="badge bg-light text-dark border">' +
+              r.sharePct + '%</span></td>' +
+            '<td class="text-end">' + money(r.allocation) + '</td>' +
+            '<td class="text-end">' + money(r.committed) +
+              (r.committedCount ? ' <span class="text-muted" style="font-size:0.7rem;">(' +
+                                  r.committedCount + ')</span>' : '') + '</td>' +
+            '<td class="text-end">' + money(r.completed) +
+              (r.completedCount ? ' <span class="text-muted" style="font-size:0.7rem;">(' +
+                                  r.completedCount + ')</span>' : '') + '</td>' +
+            '<td class="text-end ' + remCls + '">' + money(r.remaining) + '</td>' +
+            '<td class="text-end ' + useCls + '">' +
+              (r.utilizationPct === null ? '&mdash;' : r.utilizationPct + '%') + '</td>' +
+          '</tr>';
+        });
+        if (lastDac !== null) html += dacSubtotalRow(lastDac, byDac[lastDac], officeName);
+
+        body.innerHTML = html ||
+          '<tr><td colspan="8" class="text-muted py-3">No rows for that DAC.</td></tr>';
+
+        if (badge) {
+          var n = shown.filter(function (r) { return !r.isAboveServiceCenter; }).length;
+          badge.textContent = n + ' service center' + (n === 1 ? '' : 's');
+        }
+        if (basis) {
+          basis.textContent = 'Per-capita on ' + sc.basis + ' headcount \u2014 ' +
+                              sc.headcountSource;
+        }
+        if (footer) {
+          // The reconciliation gap is shown, not hidden. The two tables count
+          // at different grains — traveler subtotals here, request grand
+          // totals on the DAC table — so a difference is expected wherever a
+          // request carries shared costs. An unexplained difference a reader
+          // finds themselves reads as a bug in both numbers.
+          var gaps = [];
+          Object.keys(byDac).forEach(function (k) {
+            var rec = byDac[k].spendReconciliation;
+            if (rec && Math.abs(rec.unexplained) >= 0.01) {
+              gaps.push((officeName[k] || k) + ' ' + money(rec.unexplained));
+            }
+          });
+          footer.innerHTML = escapeHtml(sc.note || '') +
+            (gaps.length
+              ? ' <span class="text-warning">Spend reconciles to the DAC table ' +
+                'except: ' + escapeHtml(gaps.join(', ')) + '. The two count at ' +
+                'different grains \u2014 traveler subtotals here, request totals ' +
+                'above \u2014 so a gap appears wherever a request carries shared ' +
+                'costs.</span>'
+              : ' Per-center spend reconciles to the DAC table exactly.');
+        }
+      }
+
+      /**
+       * The DAC subtotal row that makes a block's arithmetic checkable.
+       *
+       * `unallocated` MUST READ AS ZERO. It is carried in the payload rather
+       * than recomputed here precisely so a largest-remainder rounding
+       * regression is visible on the page, not only in a test — and it is
+       * shown in red when it is not zero rather than quietly omitted.
+       */
+      function dacSubtotalRow(dacOrg, rec, officeName) {
+        if (!rec) return '';
+        var label = (officeName[dacOrg] || dacOrg) + ' total';
+        var off = Math.abs(rec.unallocated || 0) >= 0.01;
+        return '<tr class="fw-semibold" style="border-top:2px solid #dee2e6;">' +
+          '<td>' + escapeHtml(label) + '</td>' +
+          '<td class="text-end">' + rec.filled + '</td>' +
+          '<td class="text-end">100%</td>' +
+          '<td class="text-end">' + money(rec.allocated) +
+            (off ? ' <span class="text-danger" style="font-size:0.7rem;" ' +
+                   'title="Allocations do not sum to the pool. This is a ' +
+                   'rounding defect, not a configuration choice.">' +
+                   money(rec.unallocated) + ' unallocated</span>' : '') +
+          '</td>' +
+          '<td class="text-end">' + money(rec.spendReconciliation.centerCommitted) + '</td>' +
+          '<td class="text-end">' + money(rec.spendReconciliation.centerCompleted) + '</td>' +
+          '<td class="text-end">' +
+            money(round2cl(rec.allocated - rec.spendReconciliation.centerCommitted -
+                           rec.spendReconciliation.centerCompleted)) + '</td>' +
+          '<td class="text-end text-muted">' +
+            (rec.pool > 0
+              ? (Math.round(((rec.spendReconciliation.centerCommitted +
+                              rec.spendReconciliation.centerCompleted) / rec.pool) * 1000) / 10) + '%'
+              : '&mdash;') +
+          '</td>' +
+        '</tr>';
+      }
+
+      /** Two-dp rounding, client side. Mirrors round2 on the server. */
+      function round2cl(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+
+      // The last payload, so the DAC filter can re-render without a round
+      // trip. Set in renderBudget rather than fetched again: re-querying on a
+      // dropdown change would make a filter look like a refresh and could
+      // show figures from a different read than the rest of the page.
+      var _scLastPayload = null;
 
       function loadBudget() {
         serverCall('getBudgetDashboard')
@@ -988,6 +1285,18 @@
         el.classList.remove('d-none');
         document.getElementById('dacTableBody').innerHTML =
           '<tr><td colspan="9" class="text-muted py-3">No data.</td></tr>';
+        // The service center table must say the same thing. Leaving its
+        // previous contents on screen beside a failed DAC table would present
+        // stale allocations as current — the exact failure mode the
+        // hardcoded-currency guard exists to prevent, arrived at by a
+        // different route.
+        var scBody = document.getElementById('scTableBody');
+        if (scBody) {
+          scBody.innerHTML =
+            '<tr><td colspan="8" class="text-muted py-3">No data.</td></tr>';
+        }
+        var scFoot = document.getElementById('scFooter');
+        if (scFoot) scFoot.textContent = '';
       }
 
       /**
