@@ -40,8 +40,8 @@ The roster drives approval routing, supervisor-based site access and every per-c
 |---|---|---:|---|
 | `diagnoseHrFeedSource()` | `lets_app/server/40_domain/HCRosterSync.js` | 128 | Reports which HR feed source this DEPLOYMENT is actually reading, and how |
 | `previewRosterImport(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 379 | Dry run: what importing the feed would change. |
-| `showServiceCenterHeadcount()` | `lets_app/server/40_domain/HCRosterSync.js` | 813 | The per-service-center headcount, as a readable table. |
-| `importRoster(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 1019 | Applies the import. Destructive: replaces every row in HC_Positions. |
+| `showServiceCenterHeadcount()` | `lets_app/server/40_domain/HCRosterSync.js` | 858 | The per-service-center headcount, as a readable table. |
+| `importRoster(…)` | `lets_app/server/40_domain/HCRosterSync.js` | 1064 | Applies the import. Destructive: replaces every row in HC_Positions. |
 | `seedHCTestData(…)` | `lets_app/server/91_setup/HCSeed.js` | 708 | Seeds both HC tabs with FICTIONAL test data. |
 | `validateHCData()` | `lets_app/server/91_setup/HCSeed.js` | 916 | Read-only sanity check on whatever is currently in the HC tabs. |
 | `clearHCPositions(…)` | `lets_app/server/91_setup/HCSeed.js` | 1103 | Empties HC_Positions. Keeps HC_Orgs. |

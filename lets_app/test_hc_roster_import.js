@@ -1912,6 +1912,29 @@ console.log('\n25. the preview reports ONE denominator, and names the fields it 
   ok('and names what duty city and state actually drive',
      /airfare from the duty city/.test(sync) && /OCONUS/.test(sync),
      'they are not display fields — a silent change there moves money');
+
+  // A SHRINKING TITLE CAN REVOKE ACCESS. @clolry's preview showed the FC feed
+  // truncating Position Title: 'Asst. Commissioner, Office of Acq. Solutions
+  // Development' arrives as 'Asst. Commissioner, Office of'.
+  //
+  // Access.js:865 admits a Chief of Staff or Client Executive by SEARCHING
+  // THE TITLE for those words, so a title carrying them late would lose them
+  // and the person would stop being able to sign in with nothing to explain
+  // it. 'Chief of Staff' as a whole title is 14 characters and survives;
+  // 'Supervisory Program Analyst (Chief of Staff)' would not.
+  ok('the preview checks whether a BU-lead title loses its matched words',
+     /BU_LEAD_WORDS/.test(code),
+     'a title match is access, so a shorter title is a revocation');
+  ok('and states the all-clear when none does, rather than staying silent',
+     /No BU-lead title/.test(sync),
+     'absence of a warning is not the same as a check having run');
+  ok('and tells the admin what to do first when one would',
+     /Travel_User_Roles row BEFORE applying/.test(sync));
+  ok('the words it checks are the ones Access.js actually matches',
+     /'chief of staff', 'client executive'/.test(sync) &&
+     /'chief of staff'/.test(
+       fs.readFileSync('lets_app/server/30_services/Access.js', 'utf8')),
+     'two copies of a match list is how one goes stale');
 }
 
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');

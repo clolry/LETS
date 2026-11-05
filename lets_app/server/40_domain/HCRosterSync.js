@@ -697,6 +697,51 @@ function _logRosterPreview_(p) {
       });
     }
 
+    // BU-LEAD ACCESS IS MATCHED ON THE TITLE STRING, so a title that gets
+    // shorter can revoke somebody's access silently.
+    //
+    // Access.js:865 admits a Chief of Staff or Client Executive by searching
+    // officeTitle for those words. The FC feed truncates Position Title —
+    // @clolry's preview showed 'Asst. Commissioner, Office of Acq. Solutions
+    // Development' arriving as 'Asst. Commissioner, Office of' — so a title
+    // carrying the matched words LATE would lose them.
+    //
+    // 'Chief of Staff' as a whole title is 14 characters and survives. A
+    // title like 'Supervisory Program Analyst (Chief of Staff)' would not,
+    // and the person would simply stop being able to sign in.
+    //
+    // Checked against the CURRENT roster rather than reasoned about, because
+    // which titles exist is a fact about the data.
+    var BU_LEAD_WORDS = ['chief of staff', 'client executive'];
+    var losses = [];
+    (p.changes || []).forEach(function (ch) {
+      (ch.fields || []).forEach(function (f) {
+        if (f.field !== 'officeTitle') return;
+        var before = String(f.from || '').toLowerCase();
+        var after = String(f.to || '').toLowerCase();
+        BU_LEAD_WORDS.forEach(function (w) {
+          if (before.indexOf(w) > -1 && after.indexOf(w) === -1) {
+            losses.push((ch.row && ch.row.employeeName) || '?');
+          }
+        });
+      });
+    });
+    if (losses.length) {
+      L.push('');
+      L.push('  *** ' + losses.length + ' BU-LEAD TITLE(S) WOULD LOSE THEIR ' +
+             'MATCHED WORDS ***');
+      losses.slice(0, 10).forEach(function (n) { L.push('    ' + n); });
+      L.push('  Access.js admits a Chief of Staff or Client Executive by');
+      L.push('  searching the title for those words. These people would stop');
+      L.push('  being able to sign in, with nothing to explain it. Give them a');
+      L.push('  Travel_User_Roles row BEFORE applying this import.');
+    } else {
+      L.push('');
+      L.push('  No BU-lead title (Chief of Staff / Client Executive) loses its');
+      L.push('  matched words in this import, so no access is revoked by a');
+      L.push('  title change.');
+    }
+
     L.push('');
     L.push('  A LARGE COUNT ON emailAddress IS THE EXPECTED RESULT of moving');
     L.push('  from the old FAS feed, which carried no email column at all, to');
