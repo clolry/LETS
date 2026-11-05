@@ -1893,8 +1893,25 @@ console.log('\n25. the preview reports ONE denominator, and names the fields it 
      /fields changed, across those rows/.test(sync));
   ok('and says which fields are expected to move versus alarming',
      /A LARGE COUNT ON emailAddress IS THE EXPECTED RESULT/.test(sync) &&
-     /would be a different matter/.test(sync),
+     /the hierarchy is about to be rewritten/.test(sync),
      'the reader has to decide whether to apply it');
+
+  // AND IT SHOWS AN EXAMPLE VALUE PER FIELD. A count is not enough:
+  // @clolry's run reported dutyStationState changing on 1045 of 1046 rows,
+  // which could mean full state names replacing abbreviations, or the column
+  // being blanked, or 'VA' compared against 'va'. Those have very different
+  // consequences and the count reads the same for all three.
+  ok('the report shows one example of each changed field',
+     /one example of each, old -> new/.test(sync),
+     'a count cannot distinguish a format change from data loss');
+  ok('and renders an empty new value as (blank) rather than nothing',
+     /\(blank\)/.test(sync),
+     'an invisible blank is how a column gets erased without anyone noticing');
+  ok('and warns that a change to blank is a LOSS',
+     /is a LOSS/.test(sync));
+  ok('and names what duty city and state actually drive',
+     /airfare from the duty city/.test(sync) && /OCONUS/.test(sync),
+     'they are not display fields — a silent change there moves money');
 }
 
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');

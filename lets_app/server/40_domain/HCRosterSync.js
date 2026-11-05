@@ -662,12 +662,53 @@ function _logRosterPreview_(p) {
     cfKeys.forEach(function (k) {
       L.push('    ' + k.padEnd(26) + String(cf[k]).padStart(5));
     });
+
+    // AN EXAMPLE OF EACH, old value to new.
+    //
+    // A COUNT IS NOT ENOUGH, and @clolry's run is why. It reported
+    // dutyStationState changing on 1045 of 1046 rows, which could mean the
+    // new feed carries full state names where the old one carried
+    // abbreviations, or that it is blanking the column, or that 'VA' is being
+    // compared against 'va'. Those have very different consequences and the
+    // count reads the same for all three.
+    //
+    // Duty station is not a display field: travelRequestAirfare prices from
+    // the duty city, and travelRequestState keys the OCONUS determination off
+    // the state. A silent change there moves money.
+    var seen = {};
+    var samples = [];
+    (p.changes || []).forEach(function (ch) {
+      (ch.fields || []).forEach(function (f) {
+        if (seen[f.field]) return;
+        seen[f.field] = true;
+        samples.push({
+          field: f.field,
+          pn: (ch.row && ch.row.positionNumber) || '?',
+          from: f.from === '' ? '(blank)' : f.from,
+          to: f.to === '' ? '(blank)' : f.to
+        });
+      });
+    });
+    if (samples.length) {
+      L.push('');
+      L.push('  one example of each, old -> new:');
+      samples.forEach(function (s) {
+        L.push('    ' + s.field.padEnd(26) + s.from + '  ->  ' + s.to);
+      });
+    }
+
     L.push('');
     L.push('  A LARGE COUNT ON emailAddress IS THE EXPECTED RESULT of moving');
     L.push('  from the old FAS feed, which carried no email column at all, to');
-    L.push('  the FC workforce report, which does. A large count on orgCode or');
-    L.push('  reportsToPositionNumber would be a different matter — that would');
-    L.push('  mean the hierarchy is about to be rewritten, and every per-capita');
+    L.push('  the FC workforce report, which does.');
+    L.push('');
+    L.push('  READ THE EXAMPLES ABOVE BEFORE APPLYING. A change from a real');
+    L.push('  value to (blank) is a LOSS — the new feed does not carry that');
+    L.push('  column, and applying it would erase data the old one had. Duty');
+    L.push('  city and state are not display fields: the travel form prices');
+    L.push('  airfare from the duty city and decides OCONUS from the state.');
+    L.push('  A large count on orgCode or reportsToPositionNumber would mean');
+    L.push('  the hierarchy is about to be rewritten, and every per-capita');
     L.push('  share with it.');
   }
   L.push('');
