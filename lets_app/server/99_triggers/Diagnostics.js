@@ -42,13 +42,20 @@
  * EDITOR RUNNERS, at the foot of this file. Wrappers for functions that take
  * arguments, which the Run button cannot supply:
  *
- *   runRosterPreview()     preview the HR roster import      writes nothing
- *   runRosterImport()      apply it                          WRITES
- *   clearTravelDBCache()   clear + re-warm every cached tab  cache only
+ *   runRosterPreview()        preview the HR roster import   writes nothing
+ *   runRosterImport()         apply it                       WRITES
+ *   runLiabilityLogImport()   preview + apply the FY27 log    WRITES
+ *   clearTravelDBCache()      clear + re-warm cached tabs    cache only
  *   runBudgetDashboard()   print the FY27 budget payload     writes nothing
  *
- * runRosterImport is the only one that writes, and it is the exception to the
- * rule at the end of this header; the reason is in the comment above it.
+ * runRosterImport and runLiabilityLogImport are the two that write, and they
+ * are the exception to the rule at the end of this header; the reason is in
+ * the comment above each.
+ *
+ * Both print the full preview BEFORE writing, so the protection a token gives
+ * is intact — the plan is on screen above the write either way. What the
+ * wrapper removes is the need to paste a token into a scratch function,
+ * which the Run dropdown cannot do because it passes no arguments.
  *
  * runDirectoryPreview and runDirectoryResolve are GONE. They drove a
  * name-matching sweep that inferred email addresses from the domain
@@ -2039,6 +2046,77 @@ function runClearHCPositions() {
   console.log(JSON.stringify({
     success: r.success, removed: r.removed, error: r.error, message: r.message
   }, null, 2));
+}
+
+/**
+ * Preview the FY27 travel log import, then APPLY it. WRITES DATA.
+ *
+ * WHY THIS WRAPPER EXISTS
+ * -----------------------
+ * @clolry: "how do I run the importLiabilityLog with the token argument"
+ *
+ * He cannot, from the Run dropdown — the editor passes no arguments, so a
+ * function taking a token is unrunnable there. The token exists so a commit
+ * cannot apply a plan nobody read, and that protection is worth keeping; what
+ * is not worth keeping is making him paste a token into a scratch function to
+ * get past it.
+ *
+ * So this runs the preview, prints it, and passes the token straight through.
+ * The protection is unchanged — the plan is still printed in full above the
+ * write, and it is still the preview's own token.
+ *
+ * Mirrors runRosterImport, which solves the same problem for the roster.
+ *
+ * WHAT IT REFUSES
+ * ---------------
+ * Nothing to import, and nothing else. There is no equivalent of the roster
+ * importer's delete-refusal because this import never removes a row: an
+ * absent log row leaves its Requests row alone. A trip that was cancelled
+ * shows up as a CANCELLED status, not a deletion.
+ *
+ * IT DOES NOT REFUSE ON BLOCKED ROWS. A blocked row imports nothing and is
+ * listed; the other rows are still real travel and still belong in the
+ * budget. Refusing the whole batch over one unattributable traveler would
+ * leave every figure wrong rather than one figure missing.
+ *
+ * @editor
+ */
+function runLiabilityLogImport() {
+  var p = previewLiabilityLogImport();
+  if (!p || p.success !== true) {
+    console.log('PREVIEW FAILED — nothing imported.');
+    return p;
+  }
+
+  if (!p.inserts && !p.updates) {
+    console.log('');
+    console.log('NOTHING TO DO: ' + p.unchanged + ' trip(s) already match LETS' +
+                (p.blocked ? ', and ' + p.blocked + ' are blocked (see above)' : '') +
+                '. Nothing was written.');
+    return p;
+  }
+
+  if (p.blocked) {
+    console.log('');
+    console.log('NOTE: ' + p.blocked + ' row(s) are BLOCKED and will import ' +
+                'nothing. The rest still import — see the list above for what ' +
+                'to fix in the sheet, then run this again to pick them up.');
+  }
+
+  console.log('');
+  console.log('--- applying ---');
+  var r = importLiabilityLog(p.token);
+  console.log(JSON.stringify(r, null, 2));
+
+  if (r && r.success && r.data && r.data.keyFailures &&
+      r.data.keyFailures.length) {
+    console.log('');
+    console.log('*** ' + r.data.keyFailures.length + ' KEY WRITE(S) FAILED ***');
+    console.log('Those rows have no LETS_Key in the log sheet, so the next run ' +
+                'will import them AGAIN as duplicates. This account needs EDIT ' +
+                'access to the log spreadsheet. Fix that before re-running.');
+  }
+  return r;
 }
 
 /**

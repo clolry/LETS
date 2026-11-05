@@ -97,7 +97,12 @@ console.log('1. no write operations anywhere in the file');
   // list would let a future wrapper 'delegate' to a function that does not
   // exist and still pass, since the check is a substring match.
   const GUARDED_TARGETS = ['previewRosterImport','importRoster',
-    'getBudgetDashboard','clearHCPositions','saveEmailOverride'];
+    'getBudgetDashboard','clearHCPositions','saveEmailOverride',
+    // The FY27 travel log pair. Both are admin-gated in
+    // 40_domain/LiabilityLogAdmin.js, and the wrapper exists because the Run
+    // dropdown passes no arguments — importLiabilityLog takes a token, so it
+    // is unrunnable from the editor without one.
+    'previewLiabilityLogImport','importLiabilityLog'];
   const runnerNames=(runners.match(/^function (run\w+)\(/gm)||[])
     .map(l=>l.replace(/^function /,'').replace(/\($/,''));
   // FOUR, down from six: runDirectoryPreview and runDirectoryResolve went
@@ -122,7 +127,8 @@ console.log('1. no write operations anywhere in the file');
   // characters of the runners below it, so it failed on code that is correct.
   // A character-window regex cannot express "inside this function".
   const WRITERS = ['importRoster', 'releaseSetAside',
-                   'clearHCPositions', 'saveEmailOverride'];
+                   'clearHCPositions', 'saveEmailOverride',
+                   'importLiabilityLog'];
   const diagNames = (src.match(/^function (diag\w+)\(/gm) || [])
     .map(l => l.replace(/^function /, '').replace(/\($/, ''));
   ok('there are diagnostics to check', diagNames.length >= 8, diagNames.length);

@@ -458,5 +458,71 @@ console.log('\n8. the fiscal-year filter, and why it is a filter');
      "otherwise this importer would try to update Go.gov's rows");
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n9. the editor can actually run it');
+{
+  // @clolry: "how do I run the importLiabilityLog with the token argument"
+  //
+  // He cannot. The Apps Script Run dropdown passes NO ARGUMENTS, so a
+  // function taking a token is unrunnable from the editor — it would receive
+  // undefined and refuse. The token protection is worth keeping; making
+  // somebody paste a token into a scratch function to get past it is not.
+  const diag = fs.readFileSync(SERVER + '99_triggers/Diagnostics.js', 'utf8');
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '')
+                        .replace(/^\s*\/\/.*$/gm, '');
+  const code = strip(diag);
+
+  ok('there is a zero-argument wrapper',
+     /function runLiabilityLogImport\(\)/.test(code),
+     'the Run dropdown cannot pass a token');
+
+  const body = code.slice(code.indexOf('function runLiabilityLogImport'),
+                          code.indexOf('function runBudgetDashboard'));
+
+  // THE PREVIEW STILL RUNS FIRST, and its output is still printed. That is
+  // what the token was protecting — not the token itself, but the guarantee
+  // that nobody applies a plan they did not see.
+  ok('it runs the preview before applying',
+     body.indexOf('previewLiabilityLogImport()') <
+     body.indexOf('importLiabilityLog('),
+     'the plan must be on screen above the write');
+  ok('and passes the preview\'s OWN token through',
+     /importLiabilityLog\(p\.token\)/.test(body),
+     'a hand-made token would defeat the binding entirely');
+  ok('a failed preview writes nothing',
+     /PREVIEW FAILED/.test(body) &&
+     body.indexOf('PREVIEW FAILED') < body.indexOf('importLiabilityLog('));
+
+  // NOTHING TO DO IS NOT A FAILURE, and saying so matters: a re-run on an
+  // unchanged sheet is the normal case once the log is imported.
+  ok('it reports "nothing to do" rather than applying an empty plan',
+     /NOTHING TO DO/.test(body));
+
+  // IT DOES NOT REFUSE OVER BLOCKED ROWS. A blocked row imports nothing and
+  // is listed; the others are real travel and belong in the budget. Refusing
+  // the batch over one unattributable traveler leaves every figure wrong
+  // rather than one figure missing.
+  ok('blocked rows are noted but do not stop the import',
+     /NOTE: /.test(body) && !/REFUSING/.test(body),
+     'one bad row must not withhold the whole batch');
+
+  // A FAILED KEY WRITE IS CALLED OUT LOUDLY, because those rows will
+  // duplicate on the next run and the cause is a permission the admin can
+  // fix.
+  ok('a key-write failure is reported after the apply',
+     /KEY WRITE\(S\) FAILED/.test(body) && /needs EDIT /.test(diag),
+     'silent duplicates are the one outcome worth shouting about');
+
+  // The file's own index must list it as a WRITER. That header promises the
+  // diag* family changes nothing, and a wrapper that writes has to be
+  // visibly outside it.
+  ok('the file header lists it among the writers',
+     /runLiabilityLogImport\(\)\s+preview \+ apply the FY27 log\s+WRITES/.test(diag),
+     'the header is the first thing a reader trusts');
+  ok('and it is named run..., not diag...',
+     !/function diagLiabilityLog/.test(code),
+     'a diag* that writes would make the family promise untrue');
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);
