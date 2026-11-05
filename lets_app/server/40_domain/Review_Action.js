@@ -353,6 +353,31 @@ function submitReviewAction(requestId, action, comments, sectionComments, actAs)
  */
 function getActionConfig(action, currentStatus) {
   const configs = {
+    // ===== Supervisor Actions =====
+    //
+    // THE FIRST STAGE. @clolry: "our Chief of Staff wants individual
+    // employees to submit requests on their own (and route through their
+    // supervisor/director/SCD, etc)." The inherited chain started at the
+    // Service Center Director because a director was the submitter.
+    //
+    // ADDED, NOT SUBSTITUTED — "Supervisor does not replace SCD" — so an
+    // approval here forwards to PENDING_SECTOR rather than to the DAC.
+    'supervisor_approve': {
+      valid: currentStatus === STATUS_CODES.PENDING_SUPERVISOR,
+      actionName: ACTION_TYPES.SUPERVISOR_APPROVED,
+      newStatus: STATUS_CODES.PENDING_SECTOR,
+      requiresComments: false,
+      nextReviewer: true,
+      successMessage: 'Request approved and forwarded to Service Center Director review'
+    },
+    'supervisor_needs_info': {
+      valid: currentStatus === STATUS_CODES.PENDING_SUPERVISOR,
+      actionName: ACTION_TYPES.SUPERVISOR_NEEDS_INFO,
+      newStatus: STATUS_CODES.NEEDS_INFO_SUPERVISOR,
+      requiresComments: true,
+      nextReviewer: false,
+      successMessage: 'Request returned to submitter for more information'
+    },
     // ===== Sector Director Actions =====
     'sector_approve': {
       valid: currentStatus === STATUS_CODES.PENDING_SECTOR,
@@ -420,7 +445,13 @@ function getActionConfig(action, currentStatus) {
       successMessage: 'Request denied by FAS'
     },
     'deny': {
-      valid: [STATUS_CODES.PENDING_SECTOR, STATUS_CODES.PENDING_BU, STATUS_CODES.PENDING_OSO].includes(currentStatus),
+      // PENDING_SUPERVISOR IS INCLUDED. A supervisor who can approve must be
+      // able to deny — omitting it would leave the first stage with approve
+      // and needs-info only, so the one person closest to the work could not
+      // say no, and a request they object to would have to be cancelled by
+      // the submitter or pushed up to somebody with less context.
+      valid: [STATUS_CODES.PENDING_SUPERVISOR, STATUS_CODES.PENDING_SECTOR,
+              STATUS_CODES.PENDING_BU, STATUS_CODES.PENDING_OSO].includes(currentStatus),
       actionName: ACTION_TYPES.DENIED,
       newStatus: STATUS_CODES.DENIED,
       requiresComments: true,
@@ -444,10 +475,25 @@ function getActionConfig(action, currentStatus) {
       successMessage: 'Request cancelled'
     },
     'resubmit': {
-      valid: [STATUS_CODES.NEEDS_INFO_SECTOR, STATUS_CODES.NEEDS_INFO_BU, STATUS_CODES.NEEDS_INFO_OSO].includes(currentStatus),
+      valid: [STATUS_CODES.NEEDS_INFO_SUPERVISOR, STATUS_CODES.NEEDS_INFO_SECTOR,
+              STATUS_CODES.NEEDS_INFO_BU, STATUS_CODES.NEEDS_INFO_OSO].includes(currentStatus),
       actionName: ACTION_TYPES.RESUBMITTED,
-      newStatus: currentStatus === STATUS_CODES.NEEDS_INFO_SECTOR ? STATUS_CODES.PENDING_SECTOR :
-                 currentStatus === STATUS_CODES.NEEDS_INFO_BU ? STATUS_CODES.PENDING_BU : STATUS_CODES.PENDING_OSO,
+      // RETURNS TO THE STAGE THAT ASKED, never forward. A supervisor who
+      // asked for more information must see the answer; sending it to the SCD
+      // instead would let a request past the stage that had an objection, and
+      // the supervisor would never learn it was resolved.
+      //
+      // The chain here is a lookup rather than a ternary ladder. The ladder
+      // ended in a bare `: PENDING_OSO`, so a NEEDS_INFO status it did not
+      // enumerate silently became an OSO request — adding a fourth stage to
+      // that shape is how NEEDS_INFO_SUPERVISOR would have landed in the
+      // wrong queue.
+      newStatus: ({
+        [STATUS_CODES.NEEDS_INFO_SUPERVISOR]: STATUS_CODES.PENDING_SUPERVISOR,
+        [STATUS_CODES.NEEDS_INFO_SECTOR]:     STATUS_CODES.PENDING_SECTOR,
+        [STATUS_CODES.NEEDS_INFO_BU]:         STATUS_CODES.PENDING_BU,
+        [STATUS_CODES.NEEDS_INFO_OSO]:        STATUS_CODES.PENDING_OSO
+      })[currentStatus],
       requiresComments: false,
       nextReviewer: true,
       successMessage: 'Request resubmitted for review'
@@ -469,6 +515,7 @@ function getActionConfig(action, currentStatus) {
  * @private @server
  */
 function getReviewerRole(action) {
+  if (action.startsWith('supervisor_')) return 'Supervisor';
   if (action.startsWith('sector_')) return 'Sector_Director';
   if (action.startsWith('bu_')) return 'BU_Reviewer';
   if (action.startsWith('oso_')) return 'OSO_Reviewer';
@@ -512,7 +559,9 @@ function lookupNextReviewer(newStatus, requestId) {
     var fas = getFASReviewer();
     return fas && fas.email ? { name: fas.name, email: fas.email } : null;
   }
-  if (newStatus !== STATUS_CODES.PENDING_BU && newStatus !== STATUS_CODES.PENDING_SECTOR) {
+  if (newStatus !== STATUS_CODES.PENDING_BU &&
+      newStatus !== STATUS_CODES.PENDING_SECTOR &&
+      newStatus !== STATUS_CODES.PENDING_SUPERVISOR) {
     return null;
   }
 
@@ -536,6 +585,17 @@ function lookupNextReviewer(newStatus, requestId) {
       if (newStatus === STATUS_CODES.PENDING_SECTOR) {
         const sd = findSectorDirector(orgCode);
         return sd ? { name: sd.name, email: sd.email } : null;
+      }
+      if (newStatus === STATUS_CODES.PENDING_SUPERVISOR) {
+        // THE SUBMITTER MUST BE EXCLUDED HERE TOO, which is why this reads
+        // Submitter_Email off the row rather than resolving the org alone.
+        // This path runs on a RESUBMIT after the supervisor asked for more
+        // information — so without the exclusion, a supervisor who had
+        // submitted their own request would be handed it back by the
+        // resubmission, having been correctly skipped at submission time.
+        const submitter = String(row[headerIndex['Submitter_Email']] || '').trim();
+        const sup = findSubmitterSupervisor(orgCode, submitter);
+        return sup ? { name: sup.name, email: sup.email } : null;
       }
     }
   } catch (e) {
@@ -632,7 +692,9 @@ function _lookupNextReviewerFromDb(newStatus, requestId, db) {
     return null;
   }
 
-  if (newStatus === STATUS_CODES.PENDING_BU || newStatus === STATUS_CODES.PENDING_SECTOR) {
+  if (newStatus === STATUS_CODES.PENDING_BU ||
+      newStatus === STATUS_CODES.PENDING_SECTOR ||
+      newStatus === STATUS_CODES.PENDING_SUPERVISOR) {
     // Re-resolve from current Travel_User_Roles config using the
     // request's stored Submitter_Org_Code + Submitter_BU as the
     // routing input. The snapshot fields (BU_Reviewer_Email,
@@ -648,6 +710,15 @@ function _lookupNextReviewerFromDb(newStatus, requestId, db) {
         if (newStatus === STATUS_CODES.PENDING_BU) {
           const bu = lookupBUReviewer(buCode, buName);
           return bu ? { name: bu.name, email: bu.email } : null;
+        }
+        if (newStatus === STATUS_CODES.PENDING_SUPERVISOR) {
+          // Excludes the submitter — see the note in lookupNextReviewer. This
+          // is the resubmit path, and a supervisor who submitted their own
+          // request must not receive it back now when they were skipped at
+          // submission.
+          const submitter = String(rows[i][headerIndex['Submitter_Email']] || '').trim();
+          const sup = findSubmitterSupervisor(orgCode, submitter);
+          return sup ? { name: sup.name, email: sup.email } : null;
         }
         const sd = findSectorDirector(orgCode);
         return sd ? { name: sd.name, email: sd.email } : null;
@@ -713,7 +784,38 @@ function _sendReviewActionNotificationWithData(requestData, actionConfig, commen
     };
 
     // Route to appropriate email function based on action
-    if (actionName === ACTION_TYPES.SECTOR_APPROVED) {
+    if (actionName === ACTION_TYPES.SUPERVISOR_APPROVED) {
+      // The first stage. CC is travelers only — the request has not reached
+      // the SCD yet, and notifying an approver about something they have not
+      // been asked to review is how they learn to filter the mailbox that
+      // later carries their real queue.
+      var supApprCc = _buildStageCcList({
+        submitterEmail: request.submitterEmail,
+        travelers: emailRequest.travelers,
+        currentReviewerEmail: currentUser,
+        stage: 'Supervisor'
+      });
+      sendApprovalNotification(requestId, emailRequest, 'Supervisor', '', {
+        approverName: reviewerName,
+        nextReviewerName: nextReviewer ? nextReviewer.name
+                                       : 'the Service Center Director',
+        ccEmails: supApprCc
+      });
+      if (nextReviewer && nextReviewer.email) {
+        sendReviewerAssignmentNotification(requestId, emailRequest, nextReviewer);
+      }
+
+    } else if (actionName === ACTION_TYPES.SUPERVISOR_NEEDS_INFO) {
+      var supNiCc = _buildStageCcList({
+        submitterEmail: request.submitterEmail,
+        travelers: emailRequest.travelers,
+        currentReviewerEmail: currentUser,
+        stage: 'Supervisor'
+      });
+      sendNeedsInfoNotification(requestId, emailRequest, reviewerName, comments,
+                                sectionComments, 'Supervisor', supNiCc);
+
+    } else if (actionName === ACTION_TYPES.SECTOR_APPROVED) {
       // Notify submitter of Sector Director approval
       // CC travelers + SD (same stage-aware pattern as needs-info)
       const nextReviewerName = nextReviewer ? nextReviewer.name : 'the BU reviewer';

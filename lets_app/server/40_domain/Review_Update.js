@@ -86,10 +86,20 @@ function updateRequestClassification(requestId, travelTypes, missionCriticalType
     // Submitter can edit at any pending or needs_info stage. Locked once
     // the request reaches a terminal state (APPROVED_GOGOV, COMPLETED,
     // CANCELLED, DENIED).
+    // REQUEST_EDITABLE_STATUSES in 30_services/Access.js is the same list and
+    // is NOT reused here on purpose — this file is 40_domain and that
+    // constant is a var in 30_services, so Apps Script's load order makes the
+    // reference work while a Node test of this file alone would not see it.
+    //
+    // Both copies now carry the supervisor statuses. Missing them here would
+    // lock a submitter out of editing at the very stage most likely to need
+    // it: their own supervisor asked for a change.
     const editableStatuses = [
       STATUS_CODES.DRAFT,
-      STATUS_CODES.PENDING_SECTOR, STATUS_CODES.PENDING_BU, STATUS_CODES.PENDING_OSO, STATUS_CODES.PENDING_FAS,
-      STATUS_CODES.NEEDS_INFO_SECTOR, STATUS_CODES.NEEDS_INFO_BU, STATUS_CODES.NEEDS_INFO_OSO
+      STATUS_CODES.PENDING_SUPERVISOR, STATUS_CODES.PENDING_SECTOR,
+      STATUS_CODES.PENDING_BU, STATUS_CODES.PENDING_OSO, STATUS_CODES.PENDING_FAS,
+      STATUS_CODES.NEEDS_INFO_SUPERVISOR, STATUS_CODES.NEEDS_INFO_SECTOR,
+      STATUS_CODES.NEEDS_INFO_BU, STATUS_CODES.NEEDS_INFO_OSO
     ];
     if (!editableStatuses.includes(status)) {
       return errorResponse(`Cannot edit request in status: ${status}`);
@@ -266,10 +276,20 @@ function updateRequestOverview(requestId, tripName, locationType, eventStartDate
 
     // Check status allows editing
     const status = currentRequest[statusCol];
+    // REQUEST_EDITABLE_STATUSES in 30_services/Access.js is the same list and
+    // is NOT reused here on purpose — this file is 40_domain and that
+    // constant is a var in 30_services, so Apps Script's load order makes the
+    // reference work while a Node test of this file alone would not see it.
+    //
+    // Both copies now carry the supervisor statuses. Missing them here would
+    // lock a submitter out of editing at the very stage most likely to need
+    // it: their own supervisor asked for a change.
     const editableStatuses = [
       STATUS_CODES.DRAFT,
-      STATUS_CODES.PENDING_SECTOR, STATUS_CODES.PENDING_BU, STATUS_CODES.PENDING_OSO, STATUS_CODES.PENDING_FAS,
-      STATUS_CODES.NEEDS_INFO_SECTOR, STATUS_CODES.NEEDS_INFO_BU, STATUS_CODES.NEEDS_INFO_OSO
+      STATUS_CODES.PENDING_SUPERVISOR, STATUS_CODES.PENDING_SECTOR,
+      STATUS_CODES.PENDING_BU, STATUS_CODES.PENDING_OSO, STATUS_CODES.PENDING_FAS,
+      STATUS_CODES.NEEDS_INFO_SUPERVISOR, STATUS_CODES.NEEDS_INFO_SECTOR,
+      STATUS_CODES.NEEDS_INFO_BU, STATUS_CODES.NEEDS_INFO_OSO
     ];
     if (!editableStatuses.includes(status)) {
       return errorResponse(`Cannot edit request in status: ${status}`);

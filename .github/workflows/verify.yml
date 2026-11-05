@@ -346,6 +346,32 @@ jobs:
         # excluding it resolved the center to a grade-14 Lead instead.
         run: node lets_app/test_service_center_director.js
 
+      - name: Supervisor review stage tests
+        # THE STAGE EVERY EMPLOYEE'S REQUEST NOW STARTS AT. @clolry: "our
+        # Chief of Staff wants individual employees to submit requests on
+        # their own (and route through their supervisor/director/SCD, etc).
+        # I'm concerned that this shift hasn't been included in the design."
+        # It had not been: 866 of 1,046 roster positions are non-supervisory
+        # and none of them could even sign in.
+        #
+        # §4 is the section that earns the rest. A new status missing from one
+        # of the eighteen lists it checks does not throw — it produces a quiet
+        # wrong answer: an admin pipeline count that omits a stage, a stalled
+        # report that never surfaces a request stuck at it, a submitter with a
+        # question from their supervisor and no button to answer it.
+        #
+        # §5 asserts what the new site-access path does NOT grant. Admitting
+        # every employee is the widest access change in this project's
+        # history, and it is only safe because role stays 'none', the reviewer
+        # dashboard refuses a non-reviewer, and HCPrivacy withholds employee
+        # ID, grade and duty address.
+        #
+        # §6 carries four negative controls. Control 1 removes the
+        # requestor-exclusion and shows a supervisor approving their own
+        # request; control 3 points a supervisor approval at the DAC and shows
+        # the service-center review silently vanishing.
+        run: node lets_app/test_supervisor_stage.js
+
       - name: Org chart tests
         # Includes the cross-project agreement check: orgchart_app/HCRead.js is
         # a deliberate SECOND implementation of lets_app HCData.js, so both are

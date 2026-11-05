@@ -747,8 +747,14 @@ function getMyTravelRequests(sharedDb) {
       }
 
       // Requests pending this user's review
+      // PENDING_SUPERVISOR IS FIRST. This is the list that decides whether a
+      // request appears in "pending your review" on the portal, so omitting
+      // the new stage would leave a supervisor with an assigned request and
+      // no visible sign of it.
       if (currentReviewerEmail.toLowerCase() === userEmail.toLowerCase() &&
-          (status === STATUS_CODES.PENDING_SECTOR || status === STATUS_CODES.PENDING_BU || status === STATUS_CODES.PENDING_OSO || status === STATUS_CODES.PENDING_FAS)) {
+          (status === STATUS_CODES.PENDING_SUPERVISOR || status === STATUS_CODES.PENDING_SECTOR ||
+           status === STATUS_CODES.PENDING_BU || status === STATUS_CODES.PENDING_OSO ||
+           status === STATUS_CODES.PENDING_FAS)) {
         pendingReview.push(request);
       }
 

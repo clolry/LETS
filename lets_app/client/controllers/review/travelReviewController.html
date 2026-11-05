@@ -840,7 +840,7 @@
         const statusConfig = TravelUtils?.TRAVEL_CONFIG?.STATUS || {};
         const editableStatuses = [
           ...(statusConfig.NEEDS_INFO || ['NEEDS_INFO_SECTOR', 'NEEDS_INFO_BU', 'NEEDS_INFO_OSO']),
-          'PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS'
+          'PENDING_SUPERVISOR', 'PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS'
         ];
         return editableStatuses.includes(request.status);
       }
@@ -1252,7 +1252,7 @@
         const statusConfig = TravelUtils?.TRAVEL_CONFIG?.STATUS || {};
         const editableStatuses = [
           ...(statusConfig.NEEDS_INFO || ['NEEDS_INFO_SECTOR', 'NEEDS_INFO_BU', 'NEEDS_INFO_OSO']),
-          'PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS', 'DRAFT'
+          'PENDING_SUPERVISOR', 'PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS', 'DRAFT'
         ];
         return editableStatuses.includes(request.status);
       }
@@ -2028,7 +2028,7 @@
         const statusConfig = TravelUtils?.TRAVEL_CONFIG?.STATUS || {};
         const editableStatuses = [
           ...(statusConfig.NEEDS_INFO || ['NEEDS_INFO_SECTOR', 'NEEDS_INFO_BU', 'NEEDS_INFO_OSO']),
-          'PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS', 'DRAFT'
+          'PENDING_SUPERVISOR', 'PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS', 'DRAFT'
         ];
         return editableStatuses.includes(request.status);
       }
@@ -2313,7 +2313,7 @@
         const statusConfig = TravelUtils?.TRAVEL_CONFIG?.STATUS || {};
         const editableStatuses = [
           ...(statusConfig.NEEDS_INFO || ['NEEDS_INFO_SECTOR', 'NEEDS_INFO_BU', 'NEEDS_INFO_OSO']),
-          'PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS', 'DRAFT'
+          'PENDING_SUPERVISOR', 'PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS', 'DRAFT'
         ];
         return editableStatuses.includes(request.status);
       }
@@ -3888,7 +3888,7 @@
         const statusConfig = TravelUtils?.TRAVEL_CONFIG?.STATUS || {};
         const editableStatuses = [
           ...(statusConfig.NEEDS_INFO || ['NEEDS_INFO_SECTOR', 'NEEDS_INFO_BU', 'NEEDS_INFO_OSO']),
-          'PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS', 'DRAFT'
+          'PENDING_SUPERVISOR', 'PENDING_SECTOR', 'PENDING_BU', 'PENDING_OSO', 'PENDING_FAS', 'DRAFT'
         ];
         return editableStatuses.includes(request.status);
       }
@@ -7411,10 +7411,20 @@
         return;
       }
 
-      // Determine the specific approve action type for backend
-      const hasApproveAction = actions.includes('sector_approve') || actions.includes('bu_approve') ||
+      // Determine the specific approve action type for backend.
+      //
+      // SUPERVISOR IS FIRST IN BOTH LADDERS, matching the stage order. The
+      // server decides which action is valid for the current status
+      // (Review_Action.getActionConfig), so only one of these can ever be in
+      // `actions` — but the order still matters: if a future status made two
+      // valid at once, the ladder must pick the EARLIER stage, or an approval
+      // would skip a review.
+      const hasApproveAction = actions.includes('supervisor_approve') ||
+                               actions.includes('sector_approve') || actions.includes('bu_approve') ||
                                actions.includes('oso_approve') || actions.includes('fas_approve');
-      if (actions.includes('sector_approve')) {
+      if (actions.includes('supervisor_approve')) {
+        this._approveActionType = 'supervisor_approve';
+      } else if (actions.includes('sector_approve')) {
         this._approveActionType = 'sector_approve';
       } else if (actions.includes('bu_approve')) {
         this._approveActionType = 'bu_approve';
@@ -7427,7 +7437,9 @@
       }
 
       // Determine the specific needs_info action type for backend
-      if (actions.includes('sector_needs_info')) {
+      if (actions.includes('supervisor_needs_info')) {
+        this._needsInfoActionType = 'supervisor_needs_info';
+      } else if (actions.includes('sector_needs_info')) {
         this._needsInfoActionType = 'sector_needs_info';
       } else if (actions.includes('bu_needs_info')) {
         this._needsInfoActionType = 'bu_needs_info';
@@ -8121,7 +8133,9 @@
       // Keys are stored Status values; only the labels are configurable.
       const L = window.TravelUtils.stageLabels();
       const statuses = {
+        'PENDING_SUPERVISOR': { label: 'Pending Supervisor Review', class: 'pending' },
         'PENDING_SECTOR': { label: 'Pending ' + L.sector + ' Review', class: 'pending' },
+        'NEEDS_INFO_SUPERVISOR': { label: 'Needs Info (Supervisor)', class: 'needs-info' },
         'NEEDS_INFO_SECTOR': { label: 'Needs Info (' + L.sector + ')', class: 'needs-info' },
         'PENDING_BU': { label: 'Pending ' + L.bu + ' Review', class: 'pending' },
         'NEEDS_INFO_BU': { label: 'Needs Info (' + L.bu + ')', class: 'needs-info' },

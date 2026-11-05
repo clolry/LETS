@@ -61,6 +61,66 @@ function findSectorDirector(submitterOrgCode) {
 }
 
 /**
+ * Find the submitter's own supervisor at submission time.
+ *
+ * @clolry: "Supervisor is the highest grade != 8 in the same org code as the
+ * requestor."
+ *
+ * THIS STAGE DID NOT EXIST BEFORE. The inherited workflow started at the
+ * Service Center Director because AAS built TRIP for directors to submit on
+ * their staff's behalf. @clolry: "our Chief of Staff wants individual
+ * employees to submit requests on their own (and route through their
+ * supervisor/director/SCD, etc)."
+ *
+ * THE REQUESTOR IS EXCLUDED, so a supervisor filing their own request is not
+ * handed it back. @clolry: "yes, supervisor submission goes to the next
+ * approver." determineInitialRouting already applies that rule at the three
+ * stages below this one; this keeps it consistent.
+ *
+ * RETURNS NULL RATHER THAN A PLACEHOLDER when the org has no other reachable
+ * supervisor — a one-person org, or an org whose only supervisor is the person
+ * asking. The caller cascades to the SCD stage, which is correct: there is no
+ * supervisor review to do.
+ *
+ * The rule itself is pure and lives in 01_constants/HCRules.js, so it can be
+ * tested against a tie, a vacant seat and a lone employee without a
+ * spreadsheet. This function is only the HC read around it.
+ *
+ * @param {string} submitterOrgCode the submitter's own org code
+ * @param {string} submitterEmail   who is asking, excluded from the result
+ * @returns {Object|null} { name, email } or null
+ * @server
+ */
+function findSubmitterSupervisor(submitterOrgCode, submitterEmail) {
+  if (!submitterOrgCode) {
+    console.log('findSubmitterSupervisor: no org code, skipping supervisor stage');
+    return null;
+  }
+  try {
+    var bundle = HC.hcGetBundle();
+    if (!bundle || !bundle.success || !bundle.data) {
+      console.warn('findSubmitterSupervisor: HC bundle unavailable, so the ' +
+                   'supervisor stage is skipped and routing starts at the SCD.');
+      return null;
+    }
+    var sup = findHcSupervisorForOrg(bundle.data, submitterOrgCode, submitterEmail);
+    if (!sup) {
+      console.log('findSubmitterSupervisor: nobody in ' + submitterOrgCode +
+                  ' supervises ' + submitterEmail + ' — either they are its ' +
+                  'only supervisor or it has none. Routing starts at the SCD.');
+      return null;
+    }
+    console.log('findSubmitterSupervisor: ' + submitterOrgCode + ' -> ' +
+                sup.employeeName + ' <' + sup.emailAddress + '> grade ' +
+                sup.grade + ', code ' + sup.supervisoryStatus);
+    return { name: sup.employeeName || '', email: sup.emailAddress };
+  } catch (e) {
+    console.error('findSubmitterSupervisor: ' + e.message);
+    return null;
+  }
+}
+
+/**
  * Determine the initial review level and current reviewer based on smart routing
  *
  * Two-phase approach:
@@ -68,21 +128,30 @@ function findSectorDirector(submitterOrgCode) {
  *     - Submitter is OSO Reviewer → start at FAS (overhead) or APPROVED_GOGOV (client-paid)
  *     - Submitter is BU Reviewer  → start at OSO
  *     - Submitter is Sector Director → start at BU
- *     - Otherwise → start at Sector (or BU if no SD found)
+ *     - Otherwise → start at Supervisor, then Sector
  *
  *   Phase 2 — Vacancy cascade:
  *     If the target stage's reviewer is vacant/missing, skip to the next stage.
  *     Repeats until a stage with a valid reviewer is found (or reaches FAS/APPROVED).
  *
+ * THE SUPERVISOR STAGE IS NEW, AND IT IS FIRST. @clolry: "Supervisor does not
+ * replace SCD." So the chain is Supervisor -> Sector -> BU -> OSO -> FAS, and
+ * the three existing skip rules are unchanged: somebody who is already an
+ * approver further down starts below their own stage, because the supervisor
+ * review would be redundant for them.
+ *
  * @param {string} submitterEmail - Email of the person submitting
  * @param {Object} sectorDirector - { name, email } or null
  * @param {Object} buReviewer - { name, email } or null
  * @param {Array} travelers - Traveler data from formData (for overhead check)
+ * @param {Object} [supervisor] - { name, email } or null. OPTIONAL on purpose:
+ *        omitting it reproduces the pre-supervisor-stage chain exactly, which
+ *        is what the diagnostic dry-run path and the older tests rely on.
  * @returns {Object} { initialLevel, currentReviewerName, currentReviewerEmail, status }
  * @private
  * @server
  */
-function determineInitialRouting(submitterEmail, sectorDirector, buReviewer, travelers) {
+function determineInitialRouting(submitterEmail, sectorDirector, buReviewer, travelers, supervisor) {
   const submitterLower = (submitterEmail || '').toLowerCase();
 
   // Get OSO reviewer info — use local getOSOReviewers() (cached) instead of cross-service call
@@ -95,6 +164,7 @@ function determineInitialRouting(submitterEmail, sectorDirector, buReviewer, tra
   const isOSOReviewer = osoReviewer?.email && submitterLower === osoReviewer.email.toLowerCase();
 
   console.log('Smart routing: submitter=', submitterLower);
+  console.log('Smart routing: Supervisor=', supervisor?.email);
   console.log('Smart routing: SD=', sectorDirector?.email, 'isSD=', isSD);
   console.log('Smart routing: BU Reviewer=', buReviewer?.email, 'isBUReviewer=', isBUReviewer);
   console.log('Smart routing: OSO Reviewer=', osoReviewer?.email, 'isOSOReviewer=', isOSOReviewer);
@@ -108,16 +178,29 @@ function determineInitialRouting(submitterEmail, sectorDirector, buReviewer, tra
 
   var startStage;
 
+  // NOTE THE ORDER: the deepest role wins. Somebody who is both a supervisor
+  // and the SCD must not be sent to their own supervisor stage, and the
+  // existing rules already express that for the three lower stages.
+  //
+  // THERE IS NO `isSupervisor` SKIP RULE, and that is deliberate.
+  // findSubmitterSupervisor already excludes the requestor, so `supervisor`
+  // is never the submitter — a supervisor filing their own request gets the
+  // next person up in their own org, or null if there is none. Adding a skip
+  // rule here would ALSO skip the real supervisor of a supervisor, which is
+  // not what @clolry asked for: "yes, supervisor submission goes to the next
+  // approver" means the next APPROVER, not the next stage.
   if (isOSOReviewer) {
-    startStage = 'FAS'; // skip SD, BU, OSO
+    startStage = 'FAS'; // skip Supervisor, SD, BU, OSO
   } else if (isBUReviewer) {
-    startStage = 'OSO'; // skip SD, BU
+    startStage = 'OSO'; // skip Supervisor, SD, BU
   } else if (isSD) {
-    startStage = 'BU';  // skip SD
+    startStage = 'BU';  // skip Supervisor, SD
+  } else if (_isValid(supervisor)) {
+    startStage = 'Supervisor';
   } else if (_isValid(sectorDirector)) {
     startStage = 'Sector';
   } else {
-    startStage = 'BU';  // no SD found
+    startStage = 'BU';  // no supervisor and no SD found
   }
 
   console.log('Smart routing: Phase 1 starting stage =', startStage);
@@ -125,7 +208,21 @@ function determineInitialRouting(submitterEmail, sectorDirector, buReviewer, tra
   // ========== Phase 2: Vacancy cascade — skip stages with vacant reviewers ==========
   // Walk forward through the approval chain until we find a stage with a valid reviewer
 
-  // Sector → BU → OSO → FAS → APPROVED
+  // Supervisor → Sector → BU → OSO → FAS → APPROVED
+  if (startStage === 'Supervisor') {
+    if (_isValid(supervisor)) {
+      console.log('Smart routing: Routing to the submitter\'s supervisor');
+      return {
+        initialLevel: 'Supervisor',
+        currentReviewerName: supervisor.name,
+        currentReviewerEmail: supervisor.email,
+        status: STATUS_CODES.PENDING_SUPERVISOR
+      };
+    }
+    console.log('Smart routing: no supervisor resolved, cascading to Sector');
+    startStage = 'Sector';
+  }
+
   if (startStage === 'Sector') {
     if (_isValid(sectorDirector)) {
       console.log('Smart routing: Routing to Sector Director');
@@ -371,12 +468,19 @@ function submitTravelRequestV2(formData) {
     const buReviewer = lookupBUReviewer(submitterBUCode, submitterBUName);
     console.log('submitTravelRequestV2: BU Reviewer found:', buReviewer ? JSON.stringify(buReviewer) : 'null');
 
-    // Look up Sector Director based on submitter's org code (first 4 chars)
+    // Look up the Service Center Director for the submitter's org code. Walks
+    // HC_Orgs to the SERVICE_CENTER level; no truncation.
     const sectorDirector = findSectorDirector(submitterOrgCode);
-    console.log('submitTravelRequestV2: Sector Director found:', sectorDirector ? JSON.stringify(sectorDirector) : 'null');
+    console.log('submitTravelRequestV2: Service Center Director found:', sectorDirector ? JSON.stringify(sectorDirector) : 'null');
+
+    // The submitter's own supervisor — the first stage. Resolved from the
+    // submitter's org code, excluding the submitter, so a supervisor filing
+    // their own request is not handed it back.
+    const supervisor = findSubmitterSupervisor(submitterOrgCode, userEmail);
+    console.log('submitTravelRequestV2: Supervisor found:', supervisor ? JSON.stringify(supervisor) : 'null');
 
     // Determine initial routing based on submitter's role
-    const routing = determineInitialRouting(userEmail, sectorDirector, buReviewer, formData.travelers);
+    const routing = determineInitialRouting(userEmail, sectorDirector, buReviewer, formData.travelers, supervisor);
     console.log('submitTravelRequestV2: Routing determined:', JSON.stringify(routing));
 
     // ========== Calculate totals ==========
@@ -1243,12 +1347,17 @@ function simulateSubmissionRouting(submitterEmail, opts) {
   // Reviewer lookups (same as real submission path) — pass buName so
   // routing matches HC staffing's operational BU, not the 3-char prefix.
   var sectorDirector = findSectorDirector(trace.submitter.orgCode);
+  var supervisor = findSubmitterSupervisor(trace.submitter.orgCode, submitterEmail);
   var buReviewer = lookupBUReviewer(trace.submitter.buCode, trace.submitter.buName);
   var osoData = getOSOReviewers();
   var aasFoPrimary = osoData ? osoData.primary : null;
   var fasReviewer = getFASReviewer();
 
   trace.reviewers = {
+    // THE SUPERVISOR IS THE FIRST STAGE, so it leads the list. A trace that
+    // still showed the SCD first would describe a chain the code no longer
+    // walks, and this output exists to be read when routing has gone wrong.
+    supervisor: supervisor || null,
     sectorDirector: sectorDirector || null,
     buReviewer: buReviewer || null,
     aasFoPrimary: aasFoPrimary || null,
@@ -1265,7 +1374,18 @@ function simulateSubmissionRouting(submitterEmail, opts) {
   // (orgCode is just the 3-char BU prefix) legitimately don't sit in any
   // sector and should cascade past the Sector stage to BU.
   if (!sectorDirector && trace.submitter.orgCode && trace.submitter.orgCode.length >= 4) {
-    trace.gaps.push('No sector director resolved for sector "' + trace.submitter.sectorCode + '".');
+    trace.gaps.push('No Service Center Director resolved for "' +
+                    (trace.submitter.sectorCode || '(no service center)') + '".');
+  }
+  // NOT A GAP. An org whose only supervisor is the submitter, or which has
+  // none, legitimately has no supervisor review — the request starts at the
+  // SCD. Reported as a warning so it is visible without reading as a
+  // misconfiguration somebody should go and fix.
+  if (!supervisor && trace.submitter.orgCode) {
+    trace.warnings.push('No supervisor resolved in "' + trace.submitter.orgCode +
+      '" other than the submitter — the supervisor stage is skipped and ' +
+      'routing starts at the Service Center Director. Expected for a ' +
+      'one-person org, or when the submitter IS its only supervisor.');
   }
   if (!buReviewer && trace.submitter.buName) {
     // Commissioner's Office and Innovation are intentionally excluded
@@ -1290,7 +1410,13 @@ function simulateSubmissionRouting(submitterEmail, opts) {
   trace.skipRules = {
     isOSOReviewer: !!(aasFoPrimary && aasFoPrimary.email && sl === aasFoPrimary.email.toLowerCase()),
     isBUReviewer:  !!(buReviewer && buReviewer.email && sl === buReviewer.email.toLowerCase()),
-    isSD:          !!(sectorDirector && sectorDirector.email && sl === sectorDirector.email.toLowerCase())
+    isSD:          !!(sectorDirector && sectorDirector.email && sl === sectorDirector.email.toLowerCase()),
+    // THERE IS NO isSupervisor SKIP RULE, and its absence is worth stating in
+    // the trace rather than leaving a reader to wonder. findSubmitterSupervisor
+    // already excludes the submitter, so the supervisor is never the person
+    // asking — a skip rule here would also skip the real supervisor OF a
+    // supervisor, which is not what was asked for.
+    supervisorExcludesSubmitter: true
   };
 
   // Run the real routing decision (pure function, no writes). Travelers
@@ -1299,7 +1425,8 @@ function simulateSubmissionRouting(submitterEmail, opts) {
   var travelers = isOverhead
     ? [{ isClientPaid: 'Overhead' }]
     : [{ isClientPaid: 'Client' }];
-  var routing = determineInitialRouting(submitterEmail, sectorDirector, buReviewer, travelers);
+  var routing = determineInitialRouting(submitterEmail, sectorDirector, buReviewer,
+                                        travelers, supervisor);
   trace.routing = {
     stage: routing.initialLevel,
     status: routing.status,

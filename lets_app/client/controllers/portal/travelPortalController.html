@@ -1168,7 +1168,8 @@
       const counts = {
         all: this._allRequests.length,
         pending: this._allRequests.filter(r =>
-          r.status === 'PENDING_SECTOR' || r.status === 'PENDING_BU' || r.status === 'PENDING_OSO' || r.status === 'PENDING_FAS'
+          r.status === 'PENDING_SUPERVISOR' || r.status === 'PENDING_SECTOR' ||
+          r.status === 'PENDING_BU' || r.status === 'PENDING_OSO' || r.status === 'PENDING_FAS'
         ).length,
         approved: this._allRequests.filter(r =>
           r.status === 'APPROVED_GOGOV'
@@ -1197,7 +1198,8 @@
 
       if (filter === 'pending') {
         filtered = this._allRequests.filter(r =>
-          r.status === 'PENDING_SECTOR' || r.status === 'PENDING_BU' || r.status === 'PENDING_OSO' || r.status === 'PENDING_FAS'
+          r.status === 'PENDING_SUPERVISOR' || r.status === 'PENDING_SECTOR' ||
+          r.status === 'PENDING_BU' || r.status === 'PENDING_OSO' || r.status === 'PENDING_FAS'
         );
       } else if (filter === 'approved') {
         filtered = this._allRequests.filter(r =>
@@ -1509,12 +1511,18 @@
       const foLabel = L.fo;
 
       const statusMap = {
+        // 'Supervisor Review' is not a branding label: every workgroup has
+        // supervisors, and the word names the relationship rather than this
+        // org's title for a role. SCD and DAC are configurable because they
+        // ARE this org's titles.
+        'PENDING_SUPERVISOR': { label: 'Supervisor Review', class: 'pending', icon: 'fa-clock' },
         'PENDING_SECTOR': { label: sectorLabel + ' Review', class: 'pending', icon: 'fa-clock' },
         'PENDING_BU': { label: buLabel + ' Review', class: 'pending', icon: 'fa-clock' },
         'PENDING_OSO': { label: foLabel + ' Review', class: 'pending-oso', icon: 'fa-clock' },
         'PENDING_FAS': { label: 'FAS Review', class: 'pending-oso', icon: 'fa-clock' },
         'APPROVED_GOGOV': { label: 'Approved', class: 'approved', icon: 'fa-check-circle' },
         'COMPLETED': { label: 'Completed', class: 'completed', icon: 'fa-flag-checkered' },
+        'NEEDS_INFO_SUPERVISOR': { label: 'Needs Info', class: 'needs-info', icon: 'fa-exclamation-circle' },
         'NEEDS_INFO_SECTOR': { label: 'Needs Info', class: 'needs-info', icon: 'fa-exclamation-circle' },
         'NEEDS_INFO_BU': { label: 'Needs Info', class: 'needs-info', icon: 'fa-exclamation-circle' },
         'NEEDS_INFO_OSO': { label: 'Needs Info', class: 'needs-info', icon: 'fa-exclamation-circle' },

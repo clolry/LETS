@@ -72,10 +72,10 @@ The Apps Script Run button passes no arguments, so these wrap the functions that
 
 | Function | File | Line | What it does |
 |---|---|---:|---|
-| `runRosterPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1652 | Preview the HR roster import, and print the result. |
-| `runRosterImport()` | `lets_app/server/99_triggers/Diagnostics.js` | 1725 | Apply the HR roster import. DESTRUCTIVE — replaces every row in |
-| `runClearHCPositions()` | `lets_app/server/99_triggers/Diagnostics.js` | 1812 | Empty HC_Positions. DESTRUCTIVE. |
-| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 1829 | Print the current budget dashboard payload. |
+| `runRosterPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1876 | Preview the HR roster import, and print the result. |
+| `runRosterImport()` | `lets_app/server/99_triggers/Diagnostics.js` | 1949 | Apply the HR roster import. DESTRUCTIVE — replaces every row in |
+| `runClearHCPositions()` | `lets_app/server/99_triggers/Diagnostics.js` | 2036 | Empty HC_Positions. DESTRUCTIVE. |
+| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 2053 | Print the current budget dashboard payload. |
 
 ## Diagnostics — safe to run any time, write nothing
 
@@ -83,20 +83,22 @@ Start with `diagAll`. These read and report; none of them change data.
 
 | Function | File | Line | What it does |
 |---|---|---:|---|
-| `diagAll()` | `lets_app/server/99_triggers/Diagnostics.js` | 89 | Runs every diagnostic. Start here after a deploy. |
-| `diagEnvironment()` | `lets_app/server/99_triggers/Diagnostics.js` | 119 | Environment, database binding, and Script Property presence. |
-| `diagCityPairs()` | `lets_app/server/99_triggers/Diagnostics.js` | 279 | City Pair data: how much, how fresh, and does a lookup work. |
-| `diagHcData()` | `lets_app/server/99_triggers/Diagnostics.js` | 379 | HC roster: counts, referential problems, and a live supervisor-chain walk. |
-| `diagAirportPrefs()` | `lets_app/server/99_triggers/Diagnostics.js` | 496 | Stored airport preferences and whether promotion is working. |
-| `diagTriggers()` | `lets_app/server/99_triggers/Diagnostics.js` | 561 | Installed triggers, and whether their handlers still exist. |
-| `diagDutyStationAirports()` | `lets_app/server/99_triggers/Diagnostics.js` | 619 | Does every HC duty-station city resolve to an airport? |
-| `diagUnresolvedCityNames()` | `lets_app/server/99_triggers/Diagnostics.js` | 694 | Zero-argument companion to diagDutyStationAirports. |
-| `diagCityNamesForState(…)` | `lets_app/server/99_triggers/Diagnostics.js` | 751 | Every city name GSA uses in one state, with its airport codes. |
-| `diagFasTrackerRow()` | `lets_app/server/99_triggers/Diagnostics.js` | 845 | Prints the FAS tracker row LETS would submit, beside the expected columns. |
-| `diagFasTrackerHeader()` | `lets_app/server/99_triggers/Diagnostics.js` | 965 | Compares the live tracker header against FAS_TRACKER_COLUMNS. |
-| `diagTripOverviewFields()` | `lets_app/server/99_triggers/Diagnostics.js` | 1029 | Trip Overview and budget-attribution fields on recent requests. |
-| `diagAccess()` | `lets_app/server/99_triggers/Diagnostics.js` | 1114 | Who currently holds site access, and by which path. |
-| `diagServiceCenterDirectors()` | `lets_app/server/99_triggers/Diagnostics.js` | 1241 | Who the Service Center Directors actually are, and who holds a sector scope. |
+| `diagAll()` | `lets_app/server/99_triggers/Diagnostics.js` | 94 | Runs every diagnostic. Start here after a deploy. |
+| `diagEnvironment()` | `lets_app/server/99_triggers/Diagnostics.js` | 125 | Environment, database binding, and Script Property presence. |
+| `diagDatabase()` | `lets_app/server/99_triggers/Diagnostics.js` | 321 | What is actually in the database, tab by tab, and what the cache thinks. |
+| `clearTravelDBCache()` | `lets_app/server/99_triggers/Diagnostics.js` | 459 | Clears every TravelDB cache entry, so the next read comes from the sheet. |
+| `diagCityPairs()` | `lets_app/server/99_triggers/Diagnostics.js` | 503 | City Pair data: how much, how fresh, and does a lookup work. |
+| `diagHcData()` | `lets_app/server/99_triggers/Diagnostics.js` | 603 | HC roster: counts, referential problems, and a live supervisor-chain walk. |
+| `diagAirportPrefs()` | `lets_app/server/99_triggers/Diagnostics.js` | 720 | Stored airport preferences and whether promotion is working. |
+| `diagTriggers()` | `lets_app/server/99_triggers/Diagnostics.js` | 785 | Installed triggers, and whether their handlers still exist. |
+| `diagDutyStationAirports()` | `lets_app/server/99_triggers/Diagnostics.js` | 843 | Does every HC duty-station city resolve to an airport? |
+| `diagUnresolvedCityNames()` | `lets_app/server/99_triggers/Diagnostics.js` | 918 | Zero-argument companion to diagDutyStationAirports. |
+| `diagCityNamesForState(…)` | `lets_app/server/99_triggers/Diagnostics.js` | 975 | Every city name GSA uses in one state, with its airport codes. |
+| `diagFasTrackerRow()` | `lets_app/server/99_triggers/Diagnostics.js` | 1069 | Prints the FAS tracker row LETS would submit, beside the expected columns. |
+| `diagFasTrackerHeader()` | `lets_app/server/99_triggers/Diagnostics.js` | 1189 | Compares the live tracker header against FAS_TRACKER_COLUMNS. |
+| `diagTripOverviewFields()` | `lets_app/server/99_triggers/Diagnostics.js` | 1253 | Trip Overview and budget-attribution fields on recent requests. |
+| `diagAccess()` | `lets_app/server/99_triggers/Diagnostics.js` | 1338 | Who currently holds site access, and by which path. |
+| `diagServiceCenterDirectors()` | `lets_app/server/99_triggers/Diagnostics.js` | 1465 | Who the Service Center Directors actually are, and who holds a sector scope. |
 
 ## Cache warming and adoption checks
 
@@ -113,23 +115,23 @@ Mostly internal verification used while refactoring. `forceRefreshHCStaffingBund
 | `_checkAllTriggersHealth()` | `lets_app/server/99_triggers/CacheWarming.js` | 234 | List every installed project trigger with handler name + source + event |
 | `_checkSheetNamesAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 289 | Verify every name in SHEET_NAMES (01_constants/Sheets.js) resolves to an |
 | `_verifyStatusActionAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 328 | Verify Chunk 8b adoption: every STATUS_CODES / ACTION_TYPES value resolves |
-| `_verifySubmissionDomainAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 466 | Verify Chunk 10.E Submission domain adoption: confirms function existence |
-| `_verifyAdminDomainAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 556 | Verify Chunk 10.D Admin domain adoption: live calls to read endpoints, |
-| `_verifyReportingDomainAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 653 | Verify Chunk 10.C Reporting domain adoption: calls reportGetFilterOptions |
-| `_verifyFeedbackDomainAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 746 | Verify Chunk 10.B Feedback domain adoption: calls checkNpsEligibility + |
-| `_verifyReviewDomainAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 825 | Verify Chunk 10.F.1 Review domain adoption: confirms function existence, |
-| `_verifyValidationLibrary()` | `lets_app/server/99_triggers/CacheWarming.js` | 944 | Verify Chunk 11 Validation library: exercises every require* guard with |
-| `_verifyEmailColorMirror()` | `lets_app/server/99_triggers/CacheWarming.js` | 1140 | Verify Chunk 13 EMAIL_STYLES.colors integrity: |
-| `_verifyUsersDomainAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 1237 | Verify Chunk 10.A Users domain adoption: live call to listTravelUsers returns |
-| `_verifyTravelDBWriteHelpers()` | `lets_app/server/99_triggers/CacheWarming.js` | 1336 | Verify Chunk 10.0 TravelDB write helpers. Creates a temp scratch sheet inside |
-| `_diagnoseGSACitiesWarmer()` | `lets_app/server/99_triggers/CacheWarming.js` | 1465 | Diagnostic: report status of the GSA cities warming trigger + cache. |
-| `_probeHcDistinctValues(…)` | `lets_app/server/99_triggers/CacheWarming.js` | 1516 | Diagnostic: list every distinct value of a given field across the HC bundle |
-| `_probeHcForUser(…)` | `lets_app/server/99_triggers/CacheWarming.js` | 1569 | Diagnostic: search the HC bundle for ANY position where any field contains |
-| `_verifyDateTimeAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 1673 | Verify Chunk 9 adoption: every DateTime.js helper exists, produces expected |
-| `_probeDateFormats()` | `lets_app/server/99_triggers/CacheWarming.js` | 1785 | Probe date-column shapes across every sheet. Reports JS types + string |
-| `_checkAllPageTemplates()` | `lets_app/server/99_triggers/CacheWarming.js` | 1973 | Smoke-test every served page template by running it through full GAS |
-| `installCityPairWarmingTrigger()` | `lets_app/server/99_triggers/CacheWarming.js` | 2212 | Install (or reinstall) the city-pair warming trigger. |
-| `removeCityPairWarmingTrigger()` | `lets_app/server/99_triggers/CacheWarming.js` | 2226 | Remove the city-pair warming trigger. |
+| `_verifySubmissionDomainAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 470 | Verify Chunk 10.E Submission domain adoption: confirms function existence |
+| `_verifyAdminDomainAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 560 | Verify Chunk 10.D Admin domain adoption: live calls to read endpoints, |
+| `_verifyReportingDomainAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 657 | Verify Chunk 10.C Reporting domain adoption: calls reportGetFilterOptions |
+| `_verifyFeedbackDomainAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 750 | Verify Chunk 10.B Feedback domain adoption: calls checkNpsEligibility + |
+| `_verifyReviewDomainAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 829 | Verify Chunk 10.F.1 Review domain adoption: confirms function existence, |
+| `_verifyValidationLibrary()` | `lets_app/server/99_triggers/CacheWarming.js` | 948 | Verify Chunk 11 Validation library: exercises every require* guard with |
+| `_verifyEmailColorMirror()` | `lets_app/server/99_triggers/CacheWarming.js` | 1144 | Verify Chunk 13 EMAIL_STYLES.colors integrity: |
+| `_verifyUsersDomainAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 1241 | Verify Chunk 10.A Users domain adoption: live call to listTravelUsers returns |
+| `_verifyTravelDBWriteHelpers()` | `lets_app/server/99_triggers/CacheWarming.js` | 1340 | Verify Chunk 10.0 TravelDB write helpers. Creates a temp scratch sheet inside |
+| `_diagnoseGSACitiesWarmer()` | `lets_app/server/99_triggers/CacheWarming.js` | 1469 | Diagnostic: report status of the GSA cities warming trigger + cache. |
+| `_probeHcDistinctValues(…)` | `lets_app/server/99_triggers/CacheWarming.js` | 1520 | Diagnostic: list every distinct value of a given field across the HC bundle |
+| `_probeHcForUser(…)` | `lets_app/server/99_triggers/CacheWarming.js` | 1573 | Diagnostic: search the HC bundle for ANY position where any field contains |
+| `_verifyDateTimeAdoption()` | `lets_app/server/99_triggers/CacheWarming.js` | 1677 | Verify Chunk 9 adoption: every DateTime.js helper exists, produces expected |
+| `_probeDateFormats()` | `lets_app/server/99_triggers/CacheWarming.js` | 1789 | Probe date-column shapes across every sheet. Reports JS types + string |
+| `_checkAllPageTemplates()` | `lets_app/server/99_triggers/CacheWarming.js` | 1977 | Smoke-test every served page template by running it through full GAS |
+| `installCityPairWarmingTrigger()` | `lets_app/server/99_triggers/CacheWarming.js` | 2216 | Install (or reinstall) the city-pair warming trigger. |
+| `removeCityPairWarmingTrigger()` | `lets_app/server/99_triggers/CacheWarming.js` | 2230 | Remove the city-pair warming trigger. |
 
 ## Testing and routing simulation
 
@@ -137,13 +139,13 @@ Simulations do not submit anything. The FAS tracker test functions DO write a ro
 
 | Function | File | Line | What it does |
 |---|---|---:|---|
-| `simulateSubmissionRouting(…)` | `lets_app/server/40_domain/Submission.js` | 1180 | Trace what would happen if `submitterEmail` submitted a request right now. |
-| `_bustRoutingCachesForTesting()` | `lets_app/server/40_domain/Submission.js` | 1331 | Editor helper: clear every cache that could be holding stale role |
-| `_testRouting()` | `lets_app/server/40_domain/Submission.js` | 1367 | Editor convenience wrapper: edit TEST_EMAIL + TEST_OVERHEAD, save, |
-| `simulateAllRoutingPaths()` | `lets_app/server/40_domain/Submission.js` | 1408 | Walk HC staffing for one representative submitter per BU and simulate |
-| `simulateRoutingForList(…)` | `lets_app/server/40_domain/Submission.js` | 1505 | Run simulateSubmissionRouting across a hand-picked list of submissions. |
-| `_testRoutingList()` | `lets_app/server/40_domain/Submission.js` | 1553 | Editor convenience wrapper for simulateRoutingForList. Edit the |
-| `_testAllRoutingPaths()` | `lets_app/server/40_domain/Submission.js` | 1699 | Editor convenience wrapper for simulateAllRoutingPaths. Logs a flat |
+| `simulateSubmissionRouting(…)` | `lets_app/server/40_domain/Submission.js` | 1284 | Trace what would happen if `submitterEmail` submitted a request right now. |
+| `_bustRoutingCachesForTesting()` | `lets_app/server/40_domain/Submission.js` | 1458 | Editor helper: clear every cache that could be holding stale role |
+| `_testRouting()` | `lets_app/server/40_domain/Submission.js` | 1494 | Editor convenience wrapper: edit TEST_EMAIL + TEST_OVERHEAD, save, |
+| `simulateAllRoutingPaths()` | `lets_app/server/40_domain/Submission.js` | 1535 | Walk HC staffing for one representative submitter per BU and simulate |
+| `simulateRoutingForList(…)` | `lets_app/server/40_domain/Submission.js` | 1632 | Run simulateSubmissionRouting across a hand-picked list of submissions. |
+| `_testRoutingList()` | `lets_app/server/40_domain/Submission.js` | 1680 | Editor convenience wrapper for simulateRoutingForList. Edit the |
+| `_testAllRoutingPaths()` | `lets_app/server/40_domain/Submission.js` | 1826 | Editor convenience wrapper for simulateAllRoutingPaths. Logs a flat |
 | `submitFASTrackerTestRow()` | `lets_app/server/91_setup/FASTrackerTest.js` | 55 | Appends one diagnostic row to the TEST tracker copy. |
 | `deleteFASTrackerTestRows()` | `lets_app/server/91_setup/FASTrackerTest.js` | 201 | Deletes every row whose Event Name carries FAS_TEST_ROW_MARKER. |
 
@@ -153,7 +155,7 @@ Simulations do not submit anything. The FAS tracker test functions DO write a ro
 |---|---|---:|---|
 | `initEmailConfigDefaults()` | `lets_app/server/00_config/Props.js` | 792 | Report the effective email sender configuration. Read-only. |
 | `_verifyAllPropsKeys()` | `lets_app/server/00_config/Props.js` | 810 | Verify every key in PROPS_KEYS resolves either to a set property OR a |
-| `initTravelEmailConfig()` | `lets_app/server/30_services/Email.js` | 113 | Initialize travel email configuration. Delegates to Props.js |
+| `initTravelEmailConfig()` | `lets_app/server/30_services/Email.js` | 114 | Initialize travel email configuration. Delegates to Props.js |
 | `debugReviewerPerf(…)` | `lets_app/server/40_domain/Admin_Dashboard.js` | 143 | Diagnostic: per-action breakdown for a single reviewer email. |
 
 ---

@@ -581,14 +581,25 @@ function getAvailableActions(status, isCurrentReviewer, isSubmitter) {
     actions.push('submitter_cancel');
   }
 
-  // Submitter can edit when in NEEDS_INFO state
-  if (isSubmitter && [STATUS_CODES.NEEDS_INFO_SECTOR, STATUS_CODES.NEEDS_INFO_BU, STATUS_CODES.NEEDS_INFO_OSO].includes(status)) {
+  // Submitter can edit when in NEEDS_INFO state.
+  //
+  // NEEDS_INFO_SUPERVISOR MUST BE HERE. Omitting it would leave a submitter
+  // whose supervisor asked a question with no way to answer it — the request
+  // sits in their portal, the status says more information is needed, and no
+  // button appears. A dead end with no error.
+  if (isSubmitter && [STATUS_CODES.NEEDS_INFO_SUPERVISOR, STATUS_CODES.NEEDS_INFO_SECTOR,
+                      STATUS_CODES.NEEDS_INFO_BU, STATUS_CODES.NEEDS_INFO_OSO].includes(status)) {
     actions.push('edit_and_resubmit');
   }
 
   // Reviewer actions
   if (isCurrentReviewer) {
-    if (status === STATUS_CODES.PENDING_SECTOR) {
+    if (status === STATUS_CODES.PENDING_SUPERVISOR) {
+      // Same three as every other review stage. A supervisor who can approve
+      // must be able to deny — see the note on 'deny' in
+      // Review_Action.getActionConfig.
+      actions.push('supervisor_approve', 'supervisor_needs_info', 'deny', 'cancel');
+    } else if (status === STATUS_CODES.PENDING_SECTOR) {
       actions.push('sector_approve', 'sector_needs_info', 'deny', 'cancel');
     } else if (status === STATUS_CODES.PENDING_BU) {
       actions.push('bu_approve', 'bu_needs_info', 'deny', 'cancel');

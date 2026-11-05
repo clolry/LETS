@@ -371,5 +371,89 @@ console.log('5. property values are not dumped into the log');
      'it is a diagnostic; it must stay safe to run at any time');
 }
 
+// ---------------------------------------------------------------------------
+// diagDatabase + clearTravelDBCache
+// ---------------------------------------------------------------------------
+{
+  console.log('\ndatabase diagnostics');
+
+  // WHY THESE EXIST. @clolry: "He shows that the numbers on the budget page
+  // have adjusted; however, I do not. I've reloaded the page multiple times
+  // including a hard open-apple-R. Admin portal is giving me an error in the
+  // bottom right corner 'Error Requests sheet not found'."
+  //
+  // Two people on one deployment saw different numbers, and the error text
+  // pointed at the wrong cause.
+  const src = fs.readFileSync(SRC, 'utf8');
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '')
+                        .replace(/^\s*\/\/.*$/gm, '');
+  const diag = strip(src).slice(strip(src).indexOf('function diagDatabase'),
+                                strip(src).indexOf('function clearTravelDBCache'));
+  const clear = strip(src).slice(strip(src).indexOf('function clearTravelDBCache'));
+
+  ok('diagDatabase exists', diag.length > 300);
+
+  // IT MUST READ THE SHEET DIRECTLY, not through TravelDB. The whole purpose
+  // is to compare the sheet against the cache, and going through TravelDB
+  // would POPULATE the cache — destroying the evidence being looked for and
+  // making the disagreement disappear on first run.
+  ok('it opens the spreadsheet directly',
+     /SpreadsheetApp\.openById\(TRAVEL_DB_SPREADSHEET_ID\)/.test(diag));
+  ok('and does NOT go through TravelDB for the counts',
+     diag.indexOf('new TravelDB()') === -1,
+     'reading through the cache would populate it and hide the disagreement');
+  ok('it reads the cache keys TravelDB actually uses',
+     /'tdb_' \+ name/.test(diag), 'a different prefix would always read null');
+
+  // THE IDENTITY OF THE SPREADSHEET LEADS. Two people reading two different
+  // workbooks is the first thing to rule out, and a row count proves nothing
+  // without it.
+  ok('it names the spreadsheet and its URL',
+     /getName\(\)/.test(diag) && /getUrl\(\)/.test(diag));
+  ok('and says plainly that nothing else matters if it is the wrong one',
+     /IF THIS IS NOT THE WORKBOOK YOU EXPECT/.test(diag));
+
+  // THE MISLEADING ERROR IS EXPLAINED, with the three cases separated.
+  // TravelDB._readFromSheet returns empty headers for a MISSING tab and for
+  // an EMPTY one, and seven call sites render both as "sheet not found" — so
+  // acting on the literal wording sends somebody to setupTravelDatabase,
+  // which creates tabs and would change nothing.
+  ok('it distinguishes a missing tab from an empty one',
+     /IS LITERAL HERE/.test(diag) && /MEANS THE TAB IS EMPTY/.test(diag),
+     'the same message is produced by two different problems');
+  ok('and from a cache holding an empty result',
+     /is a CACHE holding an empty result/.test(diag));
+  ok('it points at the fix rather than describing the problem',
+     /clearTravelDBCache\(\)/.test(diag));
+
+  // Read-only. This one is in the diag* family and the family's promise is
+  // that none of them change data.
+  ok('diagDatabase writes nothing',
+     !/appendRow|setValues|deleteRow|\.put\(|setValue\(/.test(diag),
+     'it is a diagnostic; it must stay safe to run at any time');
+
+  // clearTravelDBCache is NOT a diag* function, deliberately — it changes
+  // state. It changes only cache state, and the naming keeps it out of the
+  // family whose promise it would otherwise break.
+  ok('the cache clearer is not named diag*',
+     /function clearTravelDBCache/.test(src) &&
+     !/function diagClearCache/.test(src),
+     'a diag* that mutates would make the family promise untrue');
+  ok('it clears every warmed sheet',
+     /TDB_WARM_SHEETS/.test(clear));
+  ok('and the budget tabs that are NOT in the warm list',
+     /SHEET_NAMES\.TRAVEL_IMPORTS/.test(clear) &&
+     /SHEET_NAMES\.BUDGET_ALLOCATIONS/.test(clear),
+     'a stale entry for one of those would survive a "clear everything"');
+  ok('it re-warms rather than only deleting',
+     /db\.invalidate\(name\)/.test(clear),
+     'invalidate() re-reads from the sheet, so no racing page load can ' +
+     're-cache a stale read');
+
+  // In diagAll, so somebody running the one function they remember sees it.
+  ok('diagDatabase runs as part of diagAll',
+     /diagAll[\s\S]{0,600}diagDatabase\(\)/.test(strip(src)));
+}
+
 console.log(fails?('\n'+fails+' FAILURE(S)'):'\nALL ASSERTIONS PASSED!');
 process.exit(fails?1:0);
