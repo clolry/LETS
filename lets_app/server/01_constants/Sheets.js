@@ -110,6 +110,33 @@ const SHEET_NAMES = {
   // money GSA paid — see the schema comment.
   EXPENSE_IMPORTS:    'Expense_Imports',
 
+  // ==========================================================================
+  // EXISTING-TRAVEL IMPORT (Chiquita's reconciliation workbook)
+  // ==========================================================================
+  //
+  // The staging ledger and the batch register for the repeatable import of
+  // travel that already exists outside LETS.
+  //
+  // WHY A STAGING LEDGER RATHER THAN WRITING STRAIGHT TO Requests
+  // ------------------------------------------------------------
+  // Three requirements force it, and each is unachievable without it:
+  //
+  //   DUPLICATE PREVENTION needs somewhere to remember the source ID that a
+  //   LETS row came from. Requests has Gogov_Request_ID, but only one column
+  //   and no record of WHICH import run set it.
+  //
+  //   ROLLBACK needs to know exactly which rows a batch created or changed,
+  //   and what they held beforehand. Nothing on Requests records that.
+  //
+  //   INCREMENTAL RUNS need the previous run's values to diff against, or
+  //   "changed" cannot be distinguished from "new".
+  //
+  // So every source row lands in Travel_Imports first, is diffed there, and
+  // is only then projected into Requests. The ledger is the audit trail; the
+  // Requests row is the projection.
+  TRAVEL_IMPORTS:     'Travel_Imports',
+  IMPORT_BATCHES:     'Import_Batches',
+
   // Learned per-traveler airport preferences. See 30_services/AirportPrefs.js.
   TRAVELER_AIRPORT_PREFS: 'Traveler_Airport_Prefs'
 };
@@ -969,6 +996,276 @@ const TRAVEL_SHEET_SCHEMAS = {
                               // Go.gov's Org Level 3 is 'F' for every row and
                               // levels 4-5 are empty
     'Org_Code',
+    'Notes',
+    'Created_At',
+    'Created_By'
+  ],
+
+  // ==========================================================================
+  // EXISTING-TRAVEL IMPORT — THE STAGING LEDGER
+  // ==========================================================================
+  //
+  // One row per SOURCE RECORD per import, from Chiquita's reconciliation
+  // workbook. The authoritative record of what was imported, from where, by
+  // whom, and what it changed.
+  //
+  // MEASURED AGAINST THE REAL WORKBOOK before this schema was written —
+  // `_Expense Report Calculations File for LETS.xlsx`, 8 tabs. The findings
+  // below are the reason for columns that would otherwise look redundant.
+  //
+  // SCOPE: @clolry chose FY27 only, ASD employees only. That is 28 requests
+  // ($46,196.19) and 11 expense reports ($17,043.12 approved) out of 1,024
+  // and 274 raw rows. 246 of 274 expense rows are 'Not ASD Employee'.
+  Travel_Imports: [
+    'Import_ID',              // PK. imp_<batch>_<n>
+    'Import_Batch_ID',        // FK to Import_Batches. Every row carries it so
+                              // a batch can be reversed as a unit
+
+    // ----------------------------------------------------------------------
+    // THE SOURCE IDENTITY — this is what makes the import idempotent
+    // ----------------------------------------------------------------------
+    'Source_System',          // 'gogov-workbook' | 'manual'. Named rather
+                              // than assumed: the workbook is a staging file
+                              // Chiquita maintains, not Go.gov itself, and a
+                              // second source will arrive eventually
+    'Source_Sheet',           // 'TravelRequest' | 'Expense'. The two tabs have
+                              // different keys and different money columns
+    'Source_Row',             // 1-based row number in that tab. For the error
+                              // log: "row 414" is what the user can find
+    'Source_Record_ID',       // THE UPSERT KEY.
+                              //
+                              // For requests: the Go.gov Request ID. Measured
+                              // 1,024 of 1,024 unique across the whole tab, so
+                              // re-importing updates rather than duplicating.
+                              //
+                              // MEASURED HAZARD: 7 of those IDs are all-digit
+                              // ('4946') and the spreadsheet stores them as
+                              // NUMBERS, so a raw read yields '4946.0'. A
+                              // string compare then misses and re-imports them
+                              // as new rows on every single run. Normalised on
+                              // the way in — see TravelImport.normalizeSourceId.
+                              //
+                              // For expenses there is NO source ID at all, so
+                              // this is a composite digest — see below.
+    'Source_Record_Key',      // The human-readable form of the composite key,
+                              // for expenses. MEASURED: (employee, report
+                              // name, report end date) COLLIDES on 2 of 274
+                              // rows — Stacy Buechele filed two 'Trip from WIL
+                              // to WAS' reports ending the same day, $198.60
+                              // and $1,602.06, both real. So amount and submit
+                              // date are part of the key. Deduplicating those
+                              // two would silently lose $198.60.
+    'Source_Row_Hash',        // Digest of every mapped source field. How
+                              // CHANGED is distinguished from UNCHANGED on a
+                              // re-run without comparing 20 columns by hand
+
+    // ----------------------------------------------------------------------
+    // WHAT KIND OF FINANCIAL RECORD THIS IS
+    // ----------------------------------------------------------------------
+    'Record_Kind',            // REQUEST | COMMITMENT | VOUCHER | ACTUAL
+                              //
+                              // These are NOT interchangeable and the budget
+                              // arithmetic depends on the difference:
+                              //
+                              //   REQUEST    submitted, not yet approved
+                              //   COMMITMENT approved, not yet travelled —
+                              //              money promised, draws down the
+                              //              DAC balance
+                              //   VOUCHER    an expense report exists; the
+                              //              claim is filed but not settled
+                              //   ACTUAL     Amount Approved — what GSA PAID
+                              //
+                              // MEASURED: every row in both tabs has Approval
+                              // Status 'Approved' (1,024 and 274 of each), so
+                              // the workbook holds no un-approved requests at
+                              // all. REQUEST is therefore reachable but
+                              // currently unused, and kept because the next
+                              // export may not be so uniform.
+    'Fiscal_Year',            // Computed PER ROW, never per batch.
+                              //
+                              // MEASURED: the workbook spans two fiscal years
+                              // — requests FY2026 $1,129,799 / FY2027 $890,195.
+                              // A batch-level fiscal year would post one to
+                              // the other, which is the most expensive single
+                              // mistake available here.
+                              //
+                              // Requests bucket on START DATE (when the money
+                              // is committed); expenses on REPORT END DATE
+                              // (when the travel finished and consumed the
+                              // year's budget).
+    'Scope_Decision',         // IN_SCOPE | OUT_OF_SCOPE_FY | OUT_OF_SCOPE_ORG |
+                              // OUT_OF_SCOPE_NON_TRAVEL
+                              //
+                              // WHY EXCLUSIONS ARE STORED RATHER THAN DROPPED.
+                              // @clolry scoped this to FY27 + ASD, which
+                              // discards 996 of 1,024 request rows. An
+                              // importer that silently drops 97% of its input
+                              // is indistinguishable from one that is broken.
+                              // Every row is recorded with the reason it was
+                              // excluded, so the preview can state
+                              // "28 imported, 589 wrong fiscal year, 407
+                              // non-ASD" and be checked.
+    'Scope_Reason',           // the specific test that excluded it
+
+    // ----------------------------------------------------------------------
+    // THE SOURCE VALUES, as read (normalised types, original meaning)
+    // ----------------------------------------------------------------------
+    'Employee_Name',          // verbatim from the file
+    'Employee_Name_Normalized', // 'FIRST LAST' uppercase. MEASURED: the two
+                              // tabs disagree — Expense writes 'Dolezal,
+                              // Nathan K.', TravelRequest writes 'Imani
+                              // Higginson', and casing is mixed in both
+    'Trip_Name',              // request 'Name' or expense 'Report Name'
+    'Purpose',                // MEASURED: blank on 561 of 1,024 request rows,
+                              // so it cannot be required
+    'Start_Date',             // requests only
+    'End_Date',               // requests only
+    'Report_End_Date',        // expenses only
+    'Submit_Date',
+
+    // ----------------------------------------------------------------------
+    // MONEY — three columns, because they are three different numbers
+    // ----------------------------------------------------------------------
+    'Estimate_Amount',        // request 'Total Approved Amount'
+    'Claimed_Amount',         // expense 'Report Total' — what the traveller
+                              // CLAIMED. Audit trail only. NEVER the figure
+                              // reconciled against
+    'Approved_Amount',        // expense 'Amount Approved' — what GSA PAID.
+                              // THE RECONCILIATION FIGURE.
+                              //
+                              // MEASURED: these differ on 51 of 274 rows by
+                              // $6,009.34 overall. Within @clolry's FY27 ASD
+                              // scope they differ on 5 of 11 by $863.51.
+                              //
+                              // Chiquita's own workbook computes its variance
+                              // from Report Total, so LETS will not agree with
+                              // her sheet — see the Variance_Basis note below.
+    'Disallowed_Amount',      // Claimed - Approved. Stored because nobody asks
+                              // for it until a traveller disputes a voucher,
+                              // and then it is the only number that matters
+
+    // ----------------------------------------------------------------------
+    // ORG ATTRIBUTION — resolved from LETS, never from the file
+    // ----------------------------------------------------------------------
+    'Source_Office_Symbol',   // the raw HR code, e.g. FCBAEBE
+    'Office_Code',            // FO | OMD | IDV | CM, by longest-prefix match.
+                              // MEASURED: all 28 FY27 ASD symbols resolve —
+                              // FO 2, OMD 5, IDV 17, CM 4
+    'Org_Code',               // FC | FCA | FCB | FCC
+                              //
+                              // NOT taken from the export's own Org Level
+                              // columns: MEASURED Org Level 3 is 'F' for all
+                              // 274 rows and levels 4-5 are empty on all 274.
+                              // The usable attribution is the workbook's
+                              // OfficeSymbol tab (823 rows) plus its
+                              // OffSymbolOverride tab (2 rows) — and those
+                              // overrides matter: they are the only reason 6
+                              // of Cheryl Cameron's and Jeremy
+                              // Wustner-Brown's rows resolve at all
+
+    // ----------------------------------------------------------------------
+    // WHAT THIS ROW DID TO LETS
+    // ----------------------------------------------------------------------
+    'Diff_Status',            // NEW | UNCHANGED | CHANGED | CONFLICT |
+                              // SKIPPED_SCOPE | ERROR
+    'Diff_Detail',            // JSON {field: {from, to}}. What the preview
+                              // shows and what rollback reads to restore
+    'Target_Request_ID',      // the LETS Request_ID created or updated
+    'Match_Status',           // for expense rows: AUTO_MATCHED | NEEDS_REVIEW
+                              // | MANUAL_MATCHED | UNMATCHED
+    'Match_Method',           // 'source-id' | 'lets-id' | 'name-title' |
+                              // 'name-date' | 'manual'
+    'Match_Candidates',       // JSON, so the review screen need not recompute
+    'Match_Confirmed_By',
+    'Match_Confirmed_At',
+
+    // ----------------------------------------------------------------------
+    // THE RECONCILIATION GUARD
+    // ----------------------------------------------------------------------
+    'Overwrote_Verified',     // TRUE only when an administrator explicitly
+                              // overrode a verified financial figure.
+                              //
+                              // @clolry: "Never overwrite verified financial
+                              // records without an explicit reconciliation
+                              // rule." A verified actual — one a human
+                              // confirmed, or one entered manually — is
+                              // evidence. An import re-reading a stale file
+                              // must not quietly replace it. The import
+                              // reports CONFLICT and stops; this column
+                              // records the case where a human decided
+                              // otherwise, and who
+    'Override_Reason',
+    'Override_By',
+    'Error_Message',          // per-row, so one bad row does not void a batch
+    'Notes',
+    'Created_At',
+    'Created_By'
+  ],
+
+  // ==========================================================================
+  // EXISTING-TRAVEL IMPORT — THE BATCH REGISTER
+  // ==========================================================================
+  //
+  // One row per import RUN. @clolry: "repeatable incremental runs during the
+  // transition", which means runs are a first-class object — they have to be
+  // listable, comparable and reversible.
+  //
+  // IMMUTABLE except for the rollback fields. A batch is a historical fact;
+  // the only thing that may later change about it is that it was reversed.
+  Import_Batches: [
+    'Batch_ID',               // PK. bat_<yyyymmddHHmmss>_<4 random>
+    'Source_System',
+    'Source_Label',           // the file name as the admin knows it, e.g.
+                              // '_Expense Report Calculations File for LETS'.
+                              // A batch list showing only IDs is unusable
+    'Source_Sheet',
+    'Mapping_Profile',        // which stored column mapping was used.
+                              // @clolry asked for configurable mappings: a
+                              // changed header is then a remap, not a deploy
+    'Mapping_Snapshot',       // JSON of the mapping AS USED. The profile may
+                              // be edited later; what this batch did must stay
+                              // knowable
+    'Scope_Fiscal_Year',      // 'FY2027'
+    'Scope_Org_Filter',       // 'ASD' | 'ALL'
+    'Row_Count_Source',       // rows read
+    'Row_Count_In_Scope',
+    'Row_Count_New',
+    'Row_Count_Changed',
+    'Row_Count_Unchanged',
+    'Row_Count_Conflict',
+    'Row_Count_Error',
+    'Row_Count_Skipped',
+    'Amount_Total_In_Scope',  // so a batch's financial size is visible in the
+                              // list without opening it
+    'Status',                 // PREVIEW | COMMITTED | ROLLED_BACK | FAILED
+                              //
+                              // PREVIEW is a real persisted state, not a UI
+                              // mode. @clolry asked for an import preview;
+                              // storing it means the preview a user approves
+                              // is provably the thing that gets committed,
+                              // rather than being recomputed between the two
+                              // (and possibly differing).
+    'Committed_At',
+    'Committed_By',
+    'Rolled_Back_At',
+    'Rolled_Back_By',
+    'Rollback_Reason',
+    'Variance_Basis',         // 'amount-approved'. Recorded on every batch
+                              // BECAUSE IT DIFFERS FROM THE SOURCE WORKBOOK.
+                              //
+                              // MEASURED: Chiquita's 'Variance from Travel
+                              // Request' column is computed from Report Total.
+                              // Across the 20 matched rows her workbook states
+                              // -$326.93; using Amount Approved it is
+                              // -$1,491.32. The $1,164.39 gap is exactly the
+                              // disallowed amount — money GSA did not pay,
+                              // counted as though it had.
+                              //
+                              // @clolry already settled this: "we need to use
+                              // Amount Approved rather than Report Total." So
+                              // LETS will not match her sheet, and somebody
+                              // will ask why. This column is the answer, on
+                              // the record, per batch.
     'Notes',
     'Created_At',
     'Created_By'

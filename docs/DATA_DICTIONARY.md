@@ -4,7 +4,7 @@ description: "Every spreadsheet tab, every column, its meaning, sensitivity, and
 status: canonical
 tier: 1
 audience: "project manager, system owner, ISSO, developer planning a schema change"
-last_updated: "2026-10-28"
+last_updated: "2026-11-04"
 evidence_base: "docs/evidence/pass6_schema_census.js"
 ---
 
@@ -734,6 +734,105 @@ No new tab. Imported travel lands in `Requests` like anything else, because the 
 **Every row is identifiable afterwards:** `Primary_Justification` is prefixed `BACKFILL:` and names the administrator, and an `Approval_Log` row with action `BACKFILL_IMPORT` states outright that *"NOT routed for approval and no notifications were sent"*. The log is what someone reads to ask who approved a thing; the honest answer here is nobody, and it has to say so.
 
 > **Duplicates are warned about, not blocked.** @clolry is typing in a quarter of a year, and entering a trip twice across two sittings would consume a DAC's budget twice. But two genuine trips to one event in a month happen — @clolry's own FAS tracker data has several — so the importer returns `needsConfirmation` with the matching request IDs and requires a second, deliberate press.
+
+### 3.5.1c `Travel_Imports` + `Import_Batches` — the repeatable workbook importer
+
+New, and distinct from §3.5.1b. That one is an administrator **typing** a handful of trips. This one loads **Chiquita's reconciliation workbook** repeatably, during the transition off Go.gov.
+
+@clolry: *"Import FY27 travel already requested, approved, or completed, using Chiquita's travel spreadsheet as the initial source (not go.gov). Needs an import preview, validation, error log, duplicate prevention via source IDs, rollback or correction, and repeatable incremental runs."*
+
+#### The scope is 2.7% of the file, and that is the point
+
+@clolry chose **FY27 only, ASD employees only**. Measured against the real workbook:
+
+| | Source rows | In scope | Amount |
+|---|---|---|---|
+| `TravelRequest` → commitments | 1,024 | **28** | **$46,196.19** |
+| `Expense` → actuals | 274 | **10** | **$16,863.62** |
+
+The other 1,260 rows are excluded: 1,173 non-ASD (246 expense rows are literally labelled `Not ASD Employee`), 82 the wrong fiscal year, 5 not travel at all.
+
+> **Every exclusion is stored with its reason, not filtered away.** An importer that silently discards 97% of its input cannot be distinguished from one that is broken, and the first time a trip is missing the question will be "did the importer lose it?". `Scope_Decision` and `Scope_Reason` answer it, and the preview reports the counts.
+
+#### Why a staging ledger rather than writing straight to `Requests`
+
+Three of @clolry's requirements are unachievable without one:
+
+| Requirement | What it needs | Why `Requests` alone cannot |
+|---|---|---|
+| Duplicate prevention via source IDs | A record of which source row produced which LETS row | `Gogov_Request_ID` exists, but there is no record of *which run* set it |
+| Rollback | What a batch created, what it changed, and the before-values | Nothing on `Requests` records that |
+| Repeatable incremental runs | The previous run's values to diff against | "Changed" cannot be distinguished from "new" |
+
+So every source row lands in `Travel_Imports` first, is diffed there, and is only then projected into `Requests`. **The ledger is the audit trail; the `Requests` row is the projection.**
+
+#### Four record kinds, because they are four different financial facts
+
+| Kind | Meaning | Budget effect |
+|---|---|---|
+| `REQUEST` | Submitted, not yet approved | committed |
+| `COMMITMENT` | Approved, not travelled | committed — draws down the DAC balance |
+| `VOUCHER` | Expense report filed, not settled | — |
+| `ACTUAL` | `Amount Approved` — what GSA **paid** | actual spend |
+
+**Derived, never supplied**, for the same reason §3.5.1b derives its status: letting a caller choose would let one trip land in either bucket. `REQUEST` is currently unreachable from this workbook — measured, every row in both tabs has Approval Status `Approved` — and is implemented anyway, because the next export need not be so uniform.
+
+#### The three measured hazards
+
+**1. Seven source IDs are stored as numbers.** `4946` reads back as `'4946.0'`, so a string compare misses and those seven re-import as *new* requests on every run, consuming budget again each time. `normalizeSourceId` resolves both forms to one identity; a CI guard proves it behaviourally.
+
+**2. The expense tab has no ID, and the obvious key collides.** `(employee, report name, report end date)` collides on 2 of 274 rows — Stacy Buechele filed two `Trip from WIL to WAS` reports ending the same day, $198.60 and $1,602.06, both real. Amount and submit date are therefore part of the composite key. A merged key would drop $198.60 and the totals would still look plausible.
+
+**3. A naive fiscal-year filter attaches money to the wrong trip.** Udaya Patnaik's report ends 2026-10-02 (FY2027, in scope); its request `4GNF` starts 2026-09-30 (FY2026, **not** imported). Filter the match pool to FY2027 and `4GNF` disappears, leaving `4NFL` — a different trip three weeks later — as the only title match. $1,176.10 would post against it.
+
+> **What is imported is scoped. What is matched against is not.** A trip straddling the fiscal-year boundary is a real thing: the commitment falls in one year and the actual in the next. `candidatePool` is deliberately unfiltered, and the pool includes rows a *previous* run imported so an expense arriving a month after its request can still find it.
+
+#### The reconciliation rule, made mechanical
+
+@clolry: *"Never overwrite verified financial records without an explicit reconciliation rule."*
+
+`isVerifiedActual` **is** that rule. An actual is verified when a human acted:
+
+- `Actual_Source` is `manual` — somebody read a voucher and typed the figure
+- `Match_Confirmed_By` is set — somebody reviewed an ambiguous match and committed to it
+
+An actual written by a **previous import is not verified**. It is the same class of claim as the one now arriving, which is what makes incremental runs useful.
+
+A conflicting import **refuses to commit** — not a warning, a refusal — and requires a per-row override with a typed reason. The override is recorded in `Overwrote_Verified`, `Override_Reason` and `Override_By`.
+
+#### LETS will not agree with the source workbook, deliberately
+
+Chiquita's `Variance from Travel Request` column is computed from **Report Total** — what the traveller claimed. LETS reconciles against **Amount Approved** — what GSA paid. Tested against all 20 of her matched rows:
+
+| | |
+|---|---|
+| Her workbook's stated total variance | **−$326.93** |
+| Variance on `Amount Approved` | **−$1,491.32** |
+| Gap | **$1,164.39** — exactly the disallowed amount |
+
+@clolry already ruled on this during the Go.gov work: *"we need to use Amount Approved rather than Report Total."* So the difference is correct and permanent, and **every batch records `Variance_Basis`** so the question has an answer on the record rather than becoming an argument later.
+
+#### Six rows are not travel
+
+`Professional Liability Insurance`, $179.50 each, one of them inside the FY27 ASD scope. They have an expense report and no trip — no dates, no destination, no request. A naive importer invents a phantom zero-date "trip" for each and charges a DAC's **travel** budget for insurance. Classified `OUT_OF_SCOPE_NON_TRAVEL` by a pattern list of phrases measured in the real file, and **counted, not dropped**.
+
+#### What the commit writes, and what it does not
+
+Same discipline as §3.5.1b: status derived from dates, reviewer fields **empty**, `Submitted_At` carrying the **travel** date, `Primary_Justification` prefixed `IMPORT:` and naming the batch, source row and source ID, and an `Approval_Log` row stating outright that nothing was routed and no notifications were sent.
+
+**An expense row never creates a request.** It posts an actual onto one. An unmatched expense has nowhere to post, and inventing a request for it would fabricate a trip nobody took — so it stays in the ledger, visible and unposted, and still counts in the batch total.
+
+#### Rollback
+
+Rows the batch created are **deleted**; rows it changed are **restored** from `Diff_Detail`, which recorded the before-value for exactly this purpose.
+
+> **Deletion is descending.** Deleting sheet row 10 shifts row 11 into position 10, so ascending deletion removes the wrong rows after the first — and here the wrong row is somebody's travel request. `test_travel_import.js` §18 proves it with a pre-existing row interleaved among imported ones, and a CI guard protects the sort itself so a refactor cannot quietly drop it.
+>
+> **A request edited since the import is not deleted.** If `Version` has moved past 1 a human has touched it, and rollback reports it by name for manual attention. A rollback that silently destroys an administrator's correction is worse than one that stops and says so.
+
+#### Preview is a persisted state, not a UI mode
+
+@clolry asked for an import preview. A preview the commit *recomputes* is a preview of something else — the file may have changed, the roster may have changed, a concurrent import may have landed. So `previewImport` writes a `PREVIEW` batch and its rows, and `commitImport` reads them back. **What an administrator approved is provably what gets committed.** A batch commits once; `Status` enforces it.
 
 ### 3.5.2a `Historical_Events` — 17 columns, one row per OCCURRENCE
 

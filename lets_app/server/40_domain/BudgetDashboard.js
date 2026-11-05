@@ -76,12 +76,18 @@ var BudgetDashboard = (function () {
 
     return {
       committed: committed,
-      // COMPLETED is the only status meaning travel actually happened. LETS
-      // has no reconciliation step, so there are no post-travel actuals — the
-      // estimate at approval is the best figure available. The payload labels
-      // this `estimatedNotReconciled` so the dashboard stops calling it
-      // "Posted Actuals", which implied a liquidation step that does not
-      // exist.
+      // COMPLETED is the only status meaning travel actually happened.
+      //
+      // WHAT CHANGED WHEN THE IMPORTER LANDED. This used to be the end of the
+      // story: LETS had no reconciliation step, so a COMPLETED row carried
+      // its approved ESTIMATE and the payload said so.
+      //
+      // The existing-travel importer now posts Amount Approved into
+      // Actual_Total for matched rows, so some COMPLETED rows carry a real
+      // liquidated figure and others still carry an estimate. spendByOffice
+      // therefore prefers Actual_Total when it exists and counts how many of
+      // each it saw — because a total that silently mixes the two, while
+      // claiming to be one of them, is worse than either.
       actual: [STATUS_CODES.COMPLETED]
     };
   }
@@ -806,7 +812,19 @@ var BudgetDashboard = (function () {
       byOffice: {},
       unattributed: { committed: 0, actual: 0, count: 0, requestIds: [] },
       requestsRead: 0,
-      statusesSeen: {}
+      statusesSeen: {},
+      // HOW MANY ACTUALS ARE REAL, AND HOW MANY ARE STILL ESTIMATES.
+      //
+      // Before the importer existed, every "actual" was an approved estimate
+      // and the payload said so plainly. Now some rows carry a reconciled
+      // Amount Approved from Go.gov and some do not, so the single word
+      // "actual" covers two different kinds of claim.
+      //
+      // Counted rather than glossed over: a DAC looking at a spend figure
+      // needs to know whether it is what GSA paid or what someone estimated,
+      // and a mixed total that calls itself either one is a misrepresentation.
+      actualBasis: { reconciled: 0, estimated: 0,
+                     reconciledAmount: 0, estimatedAmount: 0 }
     };
 
     var data;
@@ -829,6 +847,9 @@ var BudgetDashboard = (function () {
     var cOrgCode = col('Owning_Org_Code');
     var cTotal = col('Grand_Total');
     var cId = col('Request_ID');
+    // The reconciled figure, when the importer or a human has posted one.
+    // May be absent on an older database, hence the -1 guard everywhere below.
+    var cActual = col('Actual_Total');
 
     if (cStatus === -1 || cTotal === -1) {
       console.warn('BudgetDashboard: Requests lacks Status or Grand_Total');
@@ -852,6 +873,43 @@ var BudgetDashboard = (function () {
 
       var amount = parseFloat(row[cTotal]);
       if (isNaN(amount)) amount = 0;
+
+      // A RECONCILED ACTUAL BEATS THE ESTIMATE, for actual rows only.
+      //
+      // Actual_Total holds Amount Approved — what GSA actually paid — and is
+      // set by the importer or by a human. Where it exists it is the better
+      // figure by definition, so it replaces the estimate in the actual
+      // bucket.
+      //
+      // BLANK IS NOT ZERO. A blank Actual_Total means "not reconciled yet",
+      // and `parseFloat('')` is NaN while `Number('')` is 0 — so this tests
+      // for emptiness BEFORE coercing. Treating blank as zero would wipe the
+      // estimate off every unreconciled completed trip and report a DAC's
+      // spend as far lower than it is.
+      //
+      // Only applied to ACTUAL rows. A committed trip has not happened yet,
+      // so an actual on it would be a contradiction; if one is ever present
+      // the commitment still counts at its estimate.
+      var isReconciled = false;
+      if (isActual && cActual > -1) {
+        var raw = row[cActual];
+        if (raw !== '' && raw !== null && raw !== undefined) {
+          var act = parseFloat(raw);
+          if (!isNaN(act)) {
+            amount = act;
+            isReconciled = true;
+          }
+        }
+      }
+      if (isActual) {
+        if (isReconciled) {
+          out.actualBasis.reconciled++;
+          out.actualBasis.reconciledAmount += amount;
+        } else {
+          out.actualBasis.estimated++;
+          out.actualBasis.estimatedAmount += amount;
+        }
+      }
 
       var office = cOffice > -1 ? String(row[cOffice] || '').trim().toUpperCase() : '';
       if (!office && cOrgCode > -1) {
@@ -895,6 +953,8 @@ var BudgetDashboard = (function () {
     });
     out.unattributed.committed = round2(out.unattributed.committed);
     out.unattributed.actual = round2(out.unattributed.actual);
+    out.actualBasis.reconciledAmount = round2(out.actualBasis.reconciledAmount);
+    out.actualBasis.estimatedAmount = round2(out.actualBasis.estimatedAmount);
 
     return out;
   }
@@ -925,7 +985,10 @@ var BudgetDashboard = (function () {
         // tells the UI the commitment figures are absent rather than zero.
         console.warn('BudgetDashboard: spend unavailable: ' + e.message);
         spend = { byOffice: {}, unattributed: { committed: 0, actual: 0, count: 0 },
-                  requestsRead: 0, statusesSeen: {}, unavailable: e.message };
+                  requestsRead: 0, statusesSeen: {},
+                  actualBasis: { reconciled: 0, estimated: 0,
+                                 reconciledAmount: 0, estimatedAmount: 0 },
+                  unavailable: e.message };
       }
 
       var offices = codes.map(function (code) {
@@ -1031,9 +1094,40 @@ var BudgetDashboard = (function () {
                   'the configured baseline. Set them on the Budget page.'
                 : 'No admin-set allocations yet — these are the configured ' +
                   'baselines. Set the real figures on the Budget admin page.'),
-          actualsNote: 'LETS has no post-travel reconciliation step, so completed ' +
-                       'travel is counted at its approved estimate rather than at ' +
-                       'a liquidated actual.',
+          // WHAT THE "COMPLETED" FIGURE ACTUALLY IS, stated per payload
+          // rather than as a fixed sentence.
+          //
+          // This used to be a constant: "LETS has no post-travel
+          // reconciliation step." That was true and is no longer — the
+          // existing-travel importer posts Amount Approved into Actual_Total
+          // for matched rows. But it only does so for rows it could match, so
+          // the completed total is now a MIX of liquidated actuals and
+          // approved estimates.
+          //
+          // The note therefore reports the split. A dashboard that called a
+          // mixed figure either "actuals" or "estimates" would misrepresent
+          // part of it, and the reader has no way to tell which part.
+          actualBasis: spend.actualBasis,
+          actualsNote: (function () {
+            var b = spend.actualBasis || { reconciled: 0, estimated: 0 };
+            if (!b.reconciled && !b.estimated) {
+              return 'No completed travel yet.';
+            }
+            if (!b.reconciled) {
+              return 'Completed travel is counted at its approved estimate. ' +
+                     'No expense reports have been reconciled against these ' +
+                     'requests yet, so none of this figure is a liquidated actual.';
+            }
+            if (!b.estimated) {
+              return 'All ' + b.reconciled + ' completed trip(s) are reconciled ' +
+                     'against Amount Approved — what GSA paid.';
+            }
+            return b.reconciled + ' of ' + (b.reconciled + b.estimated) +
+                   ' completed trip(s) are reconciled against Amount Approved ' +
+                   '($' + b.reconciledAmount + '); the remaining ' + b.estimated +
+                   ' are counted at their approved estimate ($' + b.estimatedAmount +
+                   ') because no expense report has been matched to them yet.';
+          })(),
           baselineSource: 'BudgetConfig.js — baseline allocations and standing ' +
                           'set-asides are configuration, not database values.',
           // TWO DIFFERENT PROPORTIONALITY RULES ARE ON THIS PAGE AT ONCE, and

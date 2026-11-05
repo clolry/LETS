@@ -47,9 +47,11 @@ scripts/environments-result.txt
 reference_excel_files/report_*.xls
 reference_excel_files/Expense Report*.xls
 reference_excel_files/Travel requests*.xls
+
 # The ASD staffing plan: 806 named staff with position numbers, titles and
 # duty stations. Same reasoning as above, and more of it.
 reference_excel_files/*Staffing Plan*.xlsx
+
 # The ASD FY27 Travel/Liability Log: named travellers, routes, dates and
 # dollar amounts for 30 real trips. @clolry shares it locally so the importer
 # can be written against the real column shapes; it must not be committed.
@@ -59,3 +61,22 @@ reference_excel_files/*Staffing Plan*.xlsx
 # test_hc_roster_import.js §7 fails the build if any server file references
 # this directory at all.
 reference_excel_files/*Travel_Liability Log*.xlsx
+
+# Chiquita's reconciliation workbook, the source for the existing-travel
+# importer.
+#
+# NOT COMMITTED, same reasoning as the Go.gov exports above and more of it.
+# This one carries MORE real personal data than either: ~1,900 traveller
+# names across its two source tabs, 823 real GSA email addresses and 823
+# supervisor names in FasData, and 274 employee IDs. Finding G-056 flags six
+# real employees' addresses in test fixtures as a problem; this would be a far
+# larger instance, and git history is not something you can take back.
+#
+# test_travel_import.js §21 reads a JSON conversion from /tmp when present and
+# SKIPS its measured section when absent, so a fresh checkout still passes.
+# The conversion format is documented in docs/DEPLOYMENT_TRAVEL_IMPORT.md §6.
+#
+# Matched anywhere in the tree, not just at the root, because it arrived at
+# the repository root rather than in reference_excel_files/.
+*Expense Report Calculations*.xlsx
+*Expense Report Calculations*.xls

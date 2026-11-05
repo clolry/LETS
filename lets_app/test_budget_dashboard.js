@@ -32,6 +32,13 @@ const ok = (n, c, x) => {
 const REQ_HEADERS = ['Request_ID', 'Status', 'Trip_Name', 'Owning_Office',
                      'Owning_Org_Code', 'Grand_Total'];
 
+// The same tab WITH the reconciliation column the existing-travel importer
+// writes. Kept separate from REQ_HEADERS deliberately: most of this suite
+// should keep proving the dashboard works on a database that has no
+// Actual_Total at all, because that is what a pre-import deployment looks
+// like.
+const REQ_HEADERS_RECONCILED = REQ_HEADERS.concat(['Actual_Total']);
+
 /**
  * Loads BudgetDashboard.js with a stubbed TravelDB.
  *
@@ -73,6 +80,11 @@ function load(rows, opts) {
 
 const row = (id, status, office, orgCode, total) =>
   [id, status, 'Trip ' + id, office, orgCode, total];
+
+/** A row with a reconciled actual. Blank `actual` means NOT reconciled. */
+const rowRec = (id, status, office, orgCode, total, actual) =>
+  [id, status, 'Trip ' + id, office, orgCode, total,
+   actual === undefined ? '' : actual];
 
 console.log('--- Budget dashboard test suite ---\n');
 
@@ -483,11 +495,20 @@ console.log('\n6. the payload admits what it does not know');
   const m = r.data.meta;
 
   // The mockup's "Posted Actuals / Liquidated post-travel" card implied a
-  // reconciliation step. LETS has none — COMPLETED carries the approved
-  // estimate. Presenting an estimate as a liquidated actual is a claim the
-  // system cannot support.
-  ok('it states there is no reconciliation step',
-     /no post-travel reconciliation/.test(m.actualsNote), m.actualsNote);
+  // reconciliation step that did not exist. One partly exists now — the
+  // existing-travel importer posts Amount Approved into Actual_Total for the
+  // rows it can match — so the note is no longer a constant and reports the
+  // split instead. §6b below covers the mixed case, which is the one a reader
+  // can actually be misled by.
+  ok('with no completed travel it says exactly that',
+     /No completed travel yet/.test(m.actualsNote), m.actualsNote);
+
+  const unreconciled = load([row('C1', 'COMPLETED', 'IDV', 'FCB', 5000)]);
+  const mu = unreconciled.run('getBudgetDashboard()').data.meta;
+  ok('on a database with no Actual_Total column at all, it says so plainly',
+     /approved estimate/.test(mu.actualsNote) &&
+     /not a liquidated actual|none of this figure/.test(mu.actualsNote),
+     mu.actualsNote);
 
   // Allocations are now admin-set and versioned by effective date, so a
   // mid-year change is a row rather than a deploy. @clolry: "each year (or
@@ -519,6 +540,70 @@ console.log('\n6. the payload admits what it does not know');
      sr.data.meta.statusesSeen);
   ok('and counted against no office',
      sr.data.totals.committed === 0, sr.data.totals.committed);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n6b. a reconciled actual replaces the estimate, and blank is NOT zero');
+{
+  // WHAT THE EXISTING-TRAVEL IMPORTER CHANGED HERE.
+  //
+  // Before it, every "completed" figure was an approved estimate. The
+  // importer posts Amount Approved — what GSA actually paid — into
+  // Actual_Total for rows it can match, so the completed total is now a MIX,
+  // and the dashboard has to prefer the reconciled figure without losing the
+  // unreconciled ones.
+  const t = load([
+    // Reconciled: GSA paid 959.99 against a 1044.34 estimate.
+    rowRec('C1', 'COMPLETED', 'IDV', 'FCB', 1044.34, 959.99),
+    // NOT reconciled: blank actual. Must still count at its estimate.
+    rowRec('C2', 'COMPLETED', 'IDV', 'FCB', 2000, ''),
+    // Committed travel has not happened, so an actual on it is a
+    // contradiction and must be ignored.
+    rowRec('A1', 'APPROVED_GOGOV', 'OMD', 'FCA', 500, 123.45)
+  ], { headers: REQ_HEADERS_RECONCILED });
+
+  const r = t.run('getBudgetDashboard()');
+  const by = {};
+  r.data.offices.forEach(o => { by[o.officeCode] = o; });
+
+  // 959.99 (paid) + 2000 (estimate, unreconciled) = 2959.99.
+  ok('the reconciled actual replaces its estimate',
+     by.IDV.completed === 2959.99, by.IDV.completed);
+
+  // THE BLANK TRAP. `parseFloat('')` is NaN but `Number('')` is 0 — so a
+  // naive coercion would count C2 as $0 and report IDV's spend as 959.99
+  // instead of 2959.99. Every unreconciled completed trip would vanish from
+  // the figure while the dashboard still looked entirely plausible.
+  ok('a BLANK actual does not zero out the estimate',
+     by.IDV.completed !== 959.99,
+     'blank means "not reconciled yet", not "cost nothing"');
+
+  ok('a committed row keeps its estimate even if an actual is present',
+     by.OMD.committed === 500, by.OMD.committed);
+  ok('and the stray actual does not leak into the actual bucket',
+     by.OMD.completed === 0, by.OMD.completed);
+
+  // THE SPLIT IS REPORTED. A total that mixes paid and estimated figures,
+  // while calling itself either one, misrepresents part of itself — and the
+  // reader has no way to tell which part.
+  const ab = r.data.meta.actualBasis;
+  ok('the payload counts how many actuals are reconciled', ab.reconciled === 1, ab);
+  ok('and how many are still estimates', ab.estimated === 1, ab);
+  ok('with the amount behind each', ab.reconciledAmount === 959.99 &&
+     ab.estimatedAmount === 2000, ab);
+  ok('and the note states the mix rather than claiming one or the other',
+     /1 of 2/.test(r.data.meta.actualsNote) &&
+     /Amount Approved/.test(r.data.meta.actualsNote) &&
+     /approved estimate/.test(r.data.meta.actualsNote),
+     r.data.meta.actualsNote);
+
+  // The all-reconciled case must not keep hedging.
+  const allRec = load([rowRec('C1', 'COMPLETED', 'IDV', 'FCB', 1044.34, 959.99)],
+                      { headers: REQ_HEADERS_RECONCILED });
+  ok('when everything is reconciled it says so without hedging',
+     /All 1 completed trip\(s\) are reconciled/.test(
+       allRec.run('getBudgetDashboard()').data.meta.actualsNote),
+     allRec.run('getBudgetDashboard()').data.meta.actualsNote);
 }
 
 // ---------------------------------------------------------------------------
