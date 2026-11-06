@@ -1142,5 +1142,187 @@ console.log('\n11. per-center spend prefers the reconciled actual');
   });
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n12. the per-center LOOKUP matches the keys spend was written under');
+{
+  // @clolry: "The service center allocations and spend seem to be using the
+  // estimate rather than actual." Then, when asked for the payload: "I do not
+  // have access to the serviceCenters or byDAC as it was truncated."
+  //
+  // THE GAP THIS SECTION CLOSES. §11 proves spendByServiceCenter produces the
+  // right numbers under keys like 'FCB|FCBAA'. Nothing proved
+  // serviceCenterAllocations LOOKS THEM UP under the same string — and it
+  // builds the key independently, as `dacOrg + '|' + bucket.orgCode`.
+  //
+  // A key that misses falls back to `{committed: 0, actual: 0}`. There is no
+  // error: the allocation renders with no spend against it, which reads as
+  // spend attributed somewhere else rather than as a lookup that failed. Two
+  // independent constructions of one key is exactly how that happens.
+  //
+  // WHY THIS IS TESTABLE WHERE THE LAST ATTEMPT WAS NOT. Both
+  // spendByServiceCenter and serviceCenterAllocations call HC.* from OUTSIDE
+  // the HCData IIFE, so stubbing the exported property works. My earlier
+  // probe stubbed HC.hcGetOrgHierarchy and then called
+  // HC.hcServiceCenterHeadcount, which uses the CLOSURE-LOCAL
+  // hcGetOrgHierarchy — the stub was invisible to it, the function read a
+  // sheet that was not there, and returned counted:0. I nearly reported that
+  // as FC being dropped from the headcount. Here the HEADCOUNT itself is
+  // stubbed, so there is no closure to defeat.
+  const S = __dirname + '/server/';
+
+  const sb = {
+    console: { log() {}, warn() {}, error() {} },
+    JSON, Date, Object, String, Number, Array, Math, isNaN, parseInt,
+    parseFloat, RegExp, Error, Boolean
+  };
+  const ctx = vm.createContext(sb);
+  vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID='x';", ctx);
+  ['01_constants/Sheets.js', '01_constants/Status.js',
+   '00_config/BudgetConfig.js'].forEach(f => {
+    vm.runInContext(fs.readFileSync(S + f, 'utf8'), ctx, { filename: f });
+  });
+
+  // The headcount, stubbed WHOLE — one above-center bucket for FC and two
+  // real centers under FCA. This is the shape @clolry's org actually has:
+  // FC is an AC with staff of its own and no service centers beneath it.
+  vm.runInContext([
+    'var HC = {',
+    '  hcServiceCenterHeadcount: function () {',
+    '    return { success: true, counted: 3, unattributed: 0,',
+    '      byOrgCode: {',
+    "        'FC|':      { orgCode: '', dacOrgCode: 'FC', isAboveServiceCenter: true,",
+    "                      displayName: '', filled: 10, vacant: 0, authorized: 10 },",
+    "        'FCA|FCA0B':{ orgCode: 'FCA0B', dacOrgCode: 'FCA', isAboveServiceCenter: false,",
+    "                      displayName: 'Stakeholder', filled: 20, vacant: 1, authorized: 21 },",
+    "        'FCA|FCA0C':{ orgCode: 'FCA0C', dacOrgCode: 'FCA', isAboveServiceCenter: false,",
+    "                      displayName: 'Workforce', filled: 30, vacant: 2, authorized: 32 }",
+    '      },',
+    "      byDac: { FC: { filled: 10 }, FCA: { filled: 50 } },",
+    '      peopleCounted: 3, lonelyObligated: [] };',
+    '  }',
+    '};',
+    'function BudgetAdmin(){}',
+    'function TravelDB(){}',
+    'TravelDB.prototype.readSheet=function(){return {headers:[],rows:[],headerIndex:{}};};'
+  ].join('\n'), ctx);
+  vm.runInContext(fs.readFileSync(S + '40_domain/BudgetDashboard.js', 'utf8'),
+                  ctx, { filename: 'BudgetDashboard.js' });
+
+  // Offices, in the shape getDashboard builds them.
+  const offices = [
+    { officeCode: 'FO', officeName: 'Front Office / AC', orgCode: 'FC',
+      isDac: false, discretionaryBase: 0, committed: 0, completed: 1176.10 },
+    { officeCode: 'OMD', officeName: 'OMD DAC', orgCode: 'FCA',
+      isDac: true, discretionaryBase: 61587.50, committed: 1017.93,
+      completed: 10259.88 }
+  ];
+
+  // Spend keyed EXACTLY as spendByServiceCenter writes it.
+  const scSpend = {
+    available: true, travelersRead: 3, note: '',
+    unattributed: { committed: 0, actual: 0, count: 0 },
+    byOrgCode: {
+      'FC|':       { committed: 0, actual: 1176.10, committedCount: 0, actualCount: 1 },
+      'FCA|FCA0B': { committed: 1017.93, actual: 4000.00, committedCount: 1, actualCount: 2 },
+      'FCA|FCA0C': { committed: 0, actual: 6259.88, committedCount: 0, actualCount: 3 }
+    }
+  };
+
+  const out = JSON.parse(vm.runInContext(
+    'JSON.stringify(BudgetDashboard.serviceCenterAllocations(' +
+    JSON.stringify(offices) + ', [], ' + JSON.stringify(scSpend) + '))', ctx));
+
+  ok('the allocation table is available', out.available === true, out.note);
+  ok('and has a row per bucket', out.rows.length === 3, out.rows.length);
+
+  const byKey = {};
+  out.rows.forEach(r => {
+    byKey[String(r.dacOrgCode) + '|' + String(r.orgCode)] = r;
+  });
+
+  // THE ASSERTION THAT MATTERS. Every key spend was written under must have
+  // found its row.
+  Object.keys(scSpend.byOrgCode).forEach(k => {
+    ok('spend key ' + JSON.stringify(k) + ' lands on a row',
+       !!byKey[k],
+       'a key with no row is money the table cannot show');
+  });
+
+  // AND THE AMOUNTS ARRIVE, not just the rows. A row that exists but reads
+  // zero is the same symptom from the other direction.
+  ok("FC's above-center row carries its $1,176.10 actual",
+     byKey['FC|'] && byKey['FC|'].completed === 1176.10,
+     byKey['FC|']);
+  ok('and shows ZERO pending, not the estimate',
+     byKey['FC|'] && byKey['FC|'].committed === 0,
+     '@clolry saw $1,450 — the estimate — where the actual belongs');
+  ok('FCA0B carries both its figures',
+     byKey['FCA|FCA0B'] && byKey['FCA|FCA0B'].committed === 1017.93 &&
+     byKey['FCA|FCA0B'].completed === 4000, byKey['FCA|FCA0B']);
+
+  // THE DAC SUBTOTAL MUST RECONCILE TO THE OFFICE FIGURE. With one traveler
+  // per trip the two grains agree exactly, so a non-zero gap here is a real
+  // attribution error rather than the expected shared-cost difference.
+  const fca = out.byDac['FCA'];
+  ok('FCA\'s center spend sums to its office spend',
+     fca && Math.abs(fca.spendReconciliation.unexplained) < 0.01,
+     fca && fca.spendReconciliation);
+  const fc = out.byDac['FC'];
+  ok('and FC\'s does too — the AC is a pool like any other',
+     fc && Math.abs(fc.spendReconciliation.unexplained) < 0.01,
+     fc && fc.spendReconciliation);
+
+  // FC IS AN AC, NOT A DAC, and it still gets a bucket. Its staff have no
+  // service center, so they land under 'FC|' — and an office whose isDac is
+  // false must not be skipped, or its spend is attributed nowhere.
+  ok('the AC itself gets an allocation row',
+     !!byKey['FC|'] && byKey['FC|'].isAboveServiceCenter === true,
+     'FC has staff of its own and no centers beneath it');
+
+  // A ZERO POOL MUST NOT PRODUCE A MISLEADING PERCENTAGE. FC's discretionary
+  // base is 0 — its $4,000 baseline is fully committed to a set-aside — so
+  // any spend against it is infinitely over.
+  ok('a zero-pool row reports no utilization percentage rather than 0%',
+     byKey['FC|'] && byKey['FC|'].utilizationPct === null,
+     '0% against a zero pool would read as unspent');
+
+  // NEGATIVE CONTROL: break the key format on the lookup side only. Every row
+  // must then read zero while the spend object is unchanged — which is
+  // precisely the failure this section exists to detect, and it proves the
+  // assertions above are not passing by accident.
+  {
+    const src = fs.readFileSync(S + '40_domain/BudgetDashboard.js', 'utf8');
+    const patched = src.replace(
+      "var sp = scSpend.byOrgCode[dacOrg + '|' + a.bucket.orgCode] ||",
+      "var sp = scSpend.byOrgCode[dacOrg + ':' + a.bucket.orgCode] ||");
+    ok('control patched the lookup key separator', patched !== src);
+    const c2 = vm.createContext(Object.assign({}, sb));
+    vm.runInContext("var TRAVEL_DB_SPREADSHEET_ID='x';", c2);
+    ['01_constants/Sheets.js', '01_constants/Status.js',
+     '00_config/BudgetConfig.js'].forEach(f => {
+      vm.runInContext(fs.readFileSync(S + f, 'utf8'), c2, { filename: f });
+    });
+    vm.runInContext(vm.runInContext('(function(){return "";})()', ctx) +
+      [
+        'var HC = { hcServiceCenterHeadcount: function () {',
+        '  return { success: true, counted: 3, unattributed: 0, byOrgCode: {',
+        "    'FC|': { orgCode: '', dacOrgCode: 'FC', isAboveServiceCenter: true,",
+        "            displayName: '', filled: 10, vacant: 0, authorized: 10 } },",
+        '    byDac: { FC: { filled: 10 } }, peopleCounted: 1, lonelyObligated: [] };',
+        '} };',
+        'function BudgetAdmin(){}',
+        'function TravelDB(){}',
+        'TravelDB.prototype.readSheet=function(){return {headers:[],rows:[],headerIndex:{}};};'
+      ].join('\n'), c2);
+    vm.runInContext(patched, c2, { filename: 'BudgetDashboard.patched.js' });
+    const bad = JSON.parse(vm.runInContext(
+      'JSON.stringify(BudgetDashboard.serviceCenterAllocations(' +
+      JSON.stringify([offices[0]]) + ', [], ' + JSON.stringify(scSpend) + '))', c2));
+    ok('a mismatched key silently reports zero spend',
+       bad.rows.length === 1 && bad.rows[0].completed === 0,
+       'no error, no warning — just an allocation with nothing against it');
+  }
+}
+
 console.log(fails ? ('\n' + fails + ' FAILURE(S)') : '\nALL ASSERTIONS PASSED!');
 process.exit(fails ? 1 : 0);

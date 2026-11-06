@@ -72,11 +72,11 @@ The Apps Script Run button passes no arguments, so these wrap the functions that
 
 | Function | File | Line | What it does |
 |---|---|---:|---|
-| `runRosterPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 1883 | Preview the HR roster import, and print the result. |
-| `runRosterImport()` | `lets_app/server/99_triggers/Diagnostics.js` | 1956 | Apply the HR roster import. DESTRUCTIVE — replaces every row in |
-| `runClearHCPositions()` | `lets_app/server/99_triggers/Diagnostics.js` | 2043 | Empty HC_Positions. DESTRUCTIVE. |
-| `runLiabilityLogImport()` | `lets_app/server/99_triggers/Diagnostics.js` | 2084 | Preview the FY27 travel log import, then APPLY it. WRITES DATA. |
-| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 2131 | Print the current budget dashboard payload. |
+| `runRosterPreview()` | `lets_app/server/99_triggers/Diagnostics.js` | 2100 | Preview the HR roster import, and print the result. |
+| `runRosterImport()` | `lets_app/server/99_triggers/Diagnostics.js` | 2173 | Apply the HR roster import. DESTRUCTIVE — replaces every row in |
+| `runClearHCPositions()` | `lets_app/server/99_triggers/Diagnostics.js` | 2260 | Empty HC_Positions. DESTRUCTIVE. |
+| `runLiabilityLogImport()` | `lets_app/server/99_triggers/Diagnostics.js` | 2301 | Preview the FY27 travel log import, then APPLY it. WRITES DATA. |
+| `runBudgetDashboard()` | `lets_app/server/99_triggers/Diagnostics.js` | 2348 | Print the current budget dashboard payload. |
 
 ## Diagnostics — safe to run any time, write nothing
 
@@ -84,22 +84,23 @@ Start with `diagAll`. These read and report; none of them change data.
 
 | Function | File | Line | What it does |
 |---|---|---:|---|
-| `diagAll()` | `lets_app/server/99_triggers/Diagnostics.js` | 101 | Runs every diagnostic. Start here after a deploy. |
-| `diagEnvironment()` | `lets_app/server/99_triggers/Diagnostics.js` | 132 | Environment, database binding, and Script Property presence. |
-| `diagDatabase()` | `lets_app/server/99_triggers/Diagnostics.js` | 328 | What is actually in the database, tab by tab, and what the cache thinks. |
-| `clearTravelDBCache()` | `lets_app/server/99_triggers/Diagnostics.js` | 466 | Clears every TravelDB cache entry, so the next read comes from the sheet. |
-| `diagCityPairs()` | `lets_app/server/99_triggers/Diagnostics.js` | 510 | City Pair data: how much, how fresh, and does a lookup work. |
-| `diagHcData()` | `lets_app/server/99_triggers/Diagnostics.js` | 610 | HC roster: counts, referential problems, and a live supervisor-chain walk. |
-| `diagAirportPrefs()` | `lets_app/server/99_triggers/Diagnostics.js` | 727 | Stored airport preferences and whether promotion is working. |
-| `diagTriggers()` | `lets_app/server/99_triggers/Diagnostics.js` | 792 | Installed triggers, and whether their handlers still exist. |
-| `diagDutyStationAirports()` | `lets_app/server/99_triggers/Diagnostics.js` | 850 | Does every HC duty-station city resolve to an airport? |
-| `diagUnresolvedCityNames()` | `lets_app/server/99_triggers/Diagnostics.js` | 925 | Zero-argument companion to diagDutyStationAirports. |
-| `diagCityNamesForState(…)` | `lets_app/server/99_triggers/Diagnostics.js` | 982 | Every city name GSA uses in one state, with its airport codes. |
-| `diagFasTrackerRow()` | `lets_app/server/99_triggers/Diagnostics.js` | 1076 | Prints the FAS tracker row LETS would submit, beside the expected columns. |
-| `diagFasTrackerHeader()` | `lets_app/server/99_triggers/Diagnostics.js` | 1196 | Compares the live tracker header against FAS_TRACKER_COLUMNS. |
-| `diagTripOverviewFields()` | `lets_app/server/99_triggers/Diagnostics.js` | 1260 | Trip Overview and budget-attribution fields on recent requests. |
-| `diagAccess()` | `lets_app/server/99_triggers/Diagnostics.js` | 1345 | Who currently holds site access, and by which path. |
-| `diagServiceCenterDirectors()` | `lets_app/server/99_triggers/Diagnostics.js` | 1472 | Who the Service Center Directors actually are, and who holds a sector scope. |
+| `diagAll()` | `lets_app/server/99_triggers/Diagnostics.js` | 105 | Runs every diagnostic. Start here after a deploy. |
+| `diagEnvironment()` | `lets_app/server/99_triggers/Diagnostics.js` | 137 | Environment, database binding, and Script Property presence. |
+| `diagDatabase()` | `lets_app/server/99_triggers/Diagnostics.js` | 333 | What is actually in the database, tab by tab, and what the cache thinks. |
+| `clearTravelDBCache()` | `lets_app/server/99_triggers/Diagnostics.js` | 471 | Clears every TravelDB cache entry, so the next read comes from the sheet. |
+| `diagCityPairs()` | `lets_app/server/99_triggers/Diagnostics.js` | 515 | City Pair data: how much, how fresh, and does a lookup work. |
+| `diagHcData()` | `lets_app/server/99_triggers/Diagnostics.js` | 615 | HC roster: counts, referential problems, and a live supervisor-chain walk. |
+| `diagAirportPrefs()` | `lets_app/server/99_triggers/Diagnostics.js` | 732 | Stored airport preferences and whether promotion is working. |
+| `diagTriggers()` | `lets_app/server/99_triggers/Diagnostics.js` | 797 | Installed triggers, and whether their handlers still exist. |
+| `diagDutyStationAirports()` | `lets_app/server/99_triggers/Diagnostics.js` | 855 | Does every HC duty-station city resolve to an airport? |
+| `diagUnresolvedCityNames()` | `lets_app/server/99_triggers/Diagnostics.js` | 930 | Zero-argument companion to diagDutyStationAirports. |
+| `diagCityNamesForState(…)` | `lets_app/server/99_triggers/Diagnostics.js` | 987 | Every city name GSA uses in one state, with its airport codes. |
+| `diagFasTrackerRow()` | `lets_app/server/99_triggers/Diagnostics.js` | 1081 | Prints the FAS tracker row LETS would submit, beside the expected columns. |
+| `diagFasTrackerHeader()` | `lets_app/server/99_triggers/Diagnostics.js` | 1201 | Compares the live tracker header against FAS_TRACKER_COLUMNS. |
+| `diagTripOverviewFields()` | `lets_app/server/99_triggers/Diagnostics.js` | 1265 | Trip Overview and budget-attribution fields on recent requests. |
+| `diagAccess()` | `lets_app/server/99_triggers/Diagnostics.js` | 1350 | Who currently holds site access, and by which path. |
+| `diagServiceCenters()` | `lets_app/server/99_triggers/Diagnostics.js` | 1476 | The service-center allocation table, on its own, compactly. |
+| `diagServiceCenterDirectors()` | `lets_app/server/99_triggers/Diagnostics.js` | 1689 | Who the Service Center Directors actually are, and who holds a sector scope. |
 
 ## Cache warming and adoption checks
 

@@ -30,6 +30,10 @@
  *                      START HERE when two people see different numbers, or
  *                      when something reports "Requests sheet not found" —
  *                      which does NOT mean the tab is missing
+ *   diagServiceCenters()  the per-service-center allocation table on its own,
+ *                      compactly. runBudgetDashboard's output is truncated by
+ *                      Apps Script before it reaches this block, so this is
+ *                      the only way to see it
  *   diagServiceCenterDirectors()  who the 22 service centers' directors are,
  *                      and what a sector_override row would currently grant
  *
@@ -113,6 +117,7 @@ function diagAll() {
   diagFasTrackerHeader();
   diagTriggers();
   diagAccess();
+  diagServiceCenters();
   diagServiceCenterDirectors();
   console.log('================================================================');
   console.log('END OF DIAGNOSTICS');
@@ -1415,6 +1420,218 @@ function diagAccess() {
 
   } catch (error) {
     console.log('diagAccess FAILED: ' + error.message);
+  }
+}
+
+/**
+ * The service-center allocation table, on its own, compactly.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * @clolry: "The service center allocations and spend seem to be using the
+ * estimate rather than actual." Then: "I do not have access to the
+ * serviceCenters or byDAC as it was truncated."
+ *
+ * runBudgetDashboard prints the whole payload and Apps Script truncates the
+ * log before reaching the serviceCenters block — the 30 set-aside lines per
+ * office consume the budget first. So the one table in question is the one
+ * part nobody can see.
+ *
+ * This prints 22 rows and four DAC subtotals as fixed-width columns: a few
+ * hundred characters instead of tens of thousands.
+ *
+ * WHAT IT IS FOR, SPECIFICALLY
+ * ----------------------------
+ * Telling a WRONG number from a MISSING one. Those look identical in a UI and
+ * have completely different causes:
+ *
+ *   spendByServiceCenter reads Request_Travelers and scales each subtotal by
+ *   the request's Actual_Total/Grand_Total ratio. Verified in isolation: an
+ *   FC trip estimated $1,449.55 and reconciled to $1,176.10 produces
+ *   {FC| -> actual 1176.10}, correctly.
+ *
+ *   serviceCenterAllocations then looks that up as `dacOrg + '|' + orgCode`.
+ *   If the key it builds does not match the key spendByServiceCenter wrote,
+ *   the lookup falls back to zeros — and a reader sees the allocation with no
+ *   spend against it, which looks like spend being attributed elsewhere.
+ *
+ * So this prints BOTH SIDES: the keys spendByServiceCenter produced, and the
+ * keys the allocation table went looking for. A mismatch is then visible
+ * rather than inferred.
+ *
+ * I COULD NOT ANSWER THIS FROM A TEST HARNESS, and the reason is worth
+ * recording. HCData.js is an IIFE, and hcServiceCenterHeadcount calls the
+ * CLOSURE-LOCAL hcGetOrgHierarchy. Replacing the exported
+ * HC.hcGetOrgHierarchy — which is what a test stub does — changes nothing the
+ * internals see, so the function read a real sheet that was not there and
+ * returned counted:0. I nearly reported that as FC being dropped from the
+ * headcount. spendByServiceCenter calls HC.* from outside the IIFE, so the
+ * same stub DOES work there; two identical-looking harnesses, two different
+ * outcomes.
+ *
+ * Reads nothing but the database. Writes nothing.
+ *
+ * @editor
+ */
+function diagServiceCenters() {
+  try {
+    var _who = Session.getActiveUser().getEmail() || '';
+    if (!_who || typeof isTravelAdmin !== 'function' || !isTravelAdmin(_who)) {
+      console.warn('diagServiceCenters: refused non-admin caller ' +
+                   (_who || '(none)'));
+      return { success: false, error: 'Administrator access is required.' };
+    }
+  } catch (e) {
+    return { success: false, error: 'Could not determine the active user.' };
+  }
+
+  console.log('');
+  console.log('--- SERVICE CENTER ALLOCATIONS AND SPEND ---');
+
+  try {
+    var r = getBudgetDashboard();
+    if (!r || !r.success) {
+      console.log('getBudgetDashboard failed: ' + ((r && r.error) || '?'));
+      return { success: false };
+    }
+    var d = r.data;
+    var sc = d.serviceCenters || {};
+
+    if (!sc.available) {
+      console.log('NOT AVAILABLE: ' + (sc.note || '(no reason given)'));
+      console.log('');
+      console.log('The table is empty for a stated reason rather than showing');
+      console.log('zeros. That is the difference between "no data" and "no');
+      console.log('spend", and the UI cannot show it.');
+      return { success: true, available: false, note: sc.note };
+    }
+
+    console.log('basis: ' + sc.basis + ' — ' + sc.headcountSource);
+    console.log('rows:  ' + (sc.rows || []).length + '   (22 service centers ' +
+                'plus one above-center bucket per DAC)');
+    console.log('');
+
+    // ONE LINE PER CENTER. Money unformatted — toFixed(2), no thousands
+    // separators — because this is read against a spreadsheet, and a comma is
+    // one more thing to strip.
+    console.log('dac   center     staff  share%    allocation    pending     ' +
+                'actual   remaining  used%');
+    (sc.rows || []).forEach(function (row) {
+      var label = row.isAboveServiceCenter ? '(above SC)'
+                                           : (row.orgCode || '?');
+      console.log(
+        '  ' + String(row.dacOrgCode || '?').padEnd(5) +
+        label.padEnd(11) +
+        String(row.filled).padStart(5) +
+        String(row.sharePct).padStart(8) +
+        row.allocation.toFixed(2).padStart(14) +
+        row.committed.toFixed(2).padStart(11) +
+        row.completed.toFixed(2).padStart(11) +
+        row.remaining.toFixed(2).padStart(12) +
+        String(row.utilizationPct === null ? '-' : row.utilizationPct).padStart(7));
+    });
+
+    console.log('');
+    console.log('--- PER DAC: the two tables side by side ---');
+    console.log('');
+    console.log('The DAC table computes spend from Requests.Grand_Total and');
+    console.log('Actual_Total. The center table sums Request_Travelers.Subtotal');
+    console.log('scaled by each request\'s actual/estimate ratio. Different');
+    console.log('grains, so a gap is possible — but it should be ZERO when every');
+    console.log('trip has exactly one traveler, which is true of every row the');
+    console.log('travel log imports.');
+    console.log('');
+    console.log('dac   pool        centers-pending  centers-actual   ' +
+                'office-pending  office-actual   gap');
+    var byDac = sc.byDac || {};
+    Object.keys(byDac).sort().forEach(function (k) {
+      var b = byDac[k];
+      var rec = b.spendReconciliation || {};
+      console.log(
+        '  ' + k.padEnd(5) +
+        b.pool.toFixed(2).padStart(12) +
+        Number(rec.centerCommitted || 0).toFixed(2).padStart(17) +
+        Number(rec.centerCompleted || 0).toFixed(2).padStart(16) +
+        Number(rec.officeCommitted || 0).toFixed(2).padStart(16) +
+        Number(rec.officeCompleted || 0).toFixed(2).padStart(15) +
+        Number(rec.unexplained || 0).toFixed(2).padStart(10));
+      if (b.note) console.log('        note: ' + b.note);
+      if (Math.abs(Number(b.unallocated || 0)) >= 0.01) {
+        console.log('        *** UNALLOCATED ' + Number(b.unallocated).toFixed(2) +
+                    ' — the allocations do not sum to the pool. That is a ' +
+                    'largest-remainder rounding defect, not a setting.');
+      }
+    });
+
+    // THE LOOKUP, BOTH SIDES. This is the point of the whole function.
+    console.log('');
+    console.log('--- THE KEYS, BOTH SIDES ---');
+    console.log('');
+    console.log('spendByServiceCenter writes keys as "DAC|SERVICE_CENTER", and');
+    console.log('serviceCenterAllocations looks them up the same way. A key on');
+    console.log('one side with no partner on the other is spend that exists and');
+    console.log('is attributed nowhere — which reads in the UI as the wrong');
+    console.log('number rather than a missing one.');
+    console.log('');
+
+    var spendKeys = {};
+    (d.meta && d.meta.serviceCenterSpendKeys ? d.meta.serviceCenterSpendKeys : [])
+      .forEach(function (k) { spendKeys[k] = true; });
+
+    var lookupKeys = {};
+    (sc.rows || []).forEach(function (row) {
+      lookupKeys[String(row.dacOrgCode || '') + '|' + String(row.orgCode || '')] = true;
+    });
+
+    var spendList = Object.keys(spendKeys).sort();
+    var lookupList = Object.keys(lookupKeys).sort();
+
+    if (!spendList.length) {
+      console.log('(the payload does not carry the spend keys — see');
+      console.log(' meta.serviceCenterSpendKeys; this build may predate it)');
+    } else {
+      var orphanSpend = spendList.filter(function (k) { return !lookupKeys[k]; });
+      var emptyRows = lookupList.filter(function (k) { return !spendKeys[k]; });
+
+      console.log('spend keys:  ' + spendList.length);
+      console.log('lookup keys: ' + lookupList.length);
+      console.log('');
+      if (orphanSpend.length) {
+        console.log('*** ' + orphanSpend.length + ' SPEND KEY(S) WITH NO ROW TO ' +
+                    'LAND ON — this money is invisible in the table:');
+        orphanSpend.forEach(function (k) { console.log('      ' + JSON.stringify(k)); });
+      } else {
+        console.log('every spend key has a matching row.');
+      }
+      if (emptyRows.length) {
+        console.log('');
+        console.log(emptyRows.length + ' row(s) have no spend at all. Expected ' +
+                    'for a center nobody travelled from:');
+        emptyRows.slice(0, 30).forEach(function (k) {
+          console.log('      ' + JSON.stringify(k));
+        });
+      }
+    }
+
+    // Travelers that resolved to no DAC. Their money is real and counts
+    // nowhere, which is the one failure mode worse than a mismatch.
+    var un = (d.meta && d.meta.serviceCenterUnattributed) || null;
+    if (un && (un.count || 0) > 0) {
+      console.log('');
+      console.log('*** ' + un.count + ' TRAVELER ROW(S) RESOLVED TO NO DAC: ' +
+                  'pending ' + Number(un.committed || 0).toFixed(2) +
+                  ', actual ' + Number(un.actual || 0).toFixed(2));
+      console.log('    Their Org_Code has no DAC or AC ancestor in HC_Orgs, so');
+      console.log('    the money is counted in no center and no DAC.');
+    }
+
+    console.log('');
+    console.log('travelers read: ' + (d.meta ? d.meta.travelersRead : '?'));
+    console.log('Nothing was changed. This is a read-only report.');
+    return { success: true, available: true };
+  } catch (error) {
+    console.log('diagServiceCenters FAILED: ' + error.message);
+    return { success: false, error: error.message };
   }
 }
 

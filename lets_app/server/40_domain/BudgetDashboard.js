@@ -1216,6 +1216,23 @@ var BudgetDashboard = (function () {
               'center.'
             : (scSpend.note || 'Per-center commitments are not available.'),
           travelersRead: scSpend.travelersRead,
+          // THE KEYS SPEND WAS WRITTEN UNDER, for diagServiceCenters.
+          //
+          // spendByServiceCenter writes 'DAC|SERVICE_CENTER' and
+          // serviceCenterAllocations looks the same string up. If the two
+          // disagree the lookup silently falls back to zeros, and a reader
+          // sees an allocation with no spend against it — which looks like
+          // spend attributed to the wrong place rather than a key that missed.
+          //
+          // Carried in meta rather than computed in the diagnostic because the
+          // diagnostic cannot see inside the function, and a second
+          // implementation of the key format is exactly how the two would
+          // drift apart again.
+          serviceCenterSpendKeys: Object.keys(scSpend.byOrgCode || {}),
+          // Travelers whose org code resolved to no DAC. Their money is real
+          // and lands in no center and no DAC, which is worse than a
+          // mismatch: both tables are quietly short by the same amount.
+          serviceCenterUnattributed: scSpend.unattributed || null,
           statusesSeen: spend.statusesSeen
         }
       });
