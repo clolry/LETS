@@ -60,6 +60,21 @@ reference_excel_files/*Staffing Plan*.xlsx
 # LIABILITY_LOG_SHEET_ID script property, never from this folder — and
 # test_hc_roster_import.js §7 fails the build if any server file references
 # this directory at all.
+#
+# MATCHED ANYWHERE IN THE TREE, not just under reference_excel_files/.
+# On 2026-11-05 'Copy of Updated ASD FY27 Travel_Liability Log.xlsx' arrived at
+# the REPOSITORY ROOT and this rule did not cover it: `git check-ignore` said
+# no and `git status` listed it as an untracked file, one `git add -A` away
+# from putting 30 real travelers' names, routes and salaries-adjacent costs
+# into history permanently. The directory-anchored rule had been correct for
+# the file it was written for and silently wrong for the same file in a
+# different place — exactly how the reconciliation workbook's rule was written
+# (see below), and the lesson did not transfer. Both forms are kept: the
+# unanchored pattern is what protects you, the anchored one documents intent.
+*Travel_Liability Log*.xlsx
+*Travel_Liability Log*.xls
+*Travel_Liability_Log*.xlsx
+*Travel_Liability_Log*.xls
 reference_excel_files/*Travel_Liability Log*.xlsx
 
 # Chiquita's reconciliation workbook, the source for the existing-travel
